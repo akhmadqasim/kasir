@@ -1,0 +1,24 @@
+[package]
+name = "kasir"
+version = "0.1.0"
+description = "POS Toko Sembako"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "kasir_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+bcrypt = "0.16"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }

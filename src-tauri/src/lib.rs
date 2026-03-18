@@ -1,0 +1,33 @@
+mod commands;
+mod db;
+mod printing;
+mod utils;
+
+use db::Database;
+use std::fs;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Ensure data directory exists
+    let data_dir = std::env::current_dir()
+        .unwrap_or_default()
+        .parent()
+        .map(|p| p.join("data"))
+        .unwrap_or_else(|| std::path::PathBuf::from("data"));
+
+    fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+
+    let db_path = data_dir.join("kasir.db");
+    let database = Database::new(
+        db_path.to_str().expect("Invalid DB path")
+    ).expect("Failed to initialize database");
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .manage(database)
+        .invoke_handler(tauri::generate_handler![
+            commands::settings::get_store_info,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

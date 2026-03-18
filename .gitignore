@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.bun/
+bun.lockb
+
+# Build output
+dist/
+dist-ssr/
+src-tauri/target/
+
+# Database
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Tauri
+src-tauri/WixTools/
+
+# Temp
+tmp/
+temp/

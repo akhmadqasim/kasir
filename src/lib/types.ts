@@ -1,0 +1,7 @@
+export type PaymentMethod = "cash" | "qris" | "ewallet" | "transfer"
+export type UserRole = "admin" | "kasir"
+export type TransactionStatus = "completed" | "refunded" | "partial_refund"
+export type RefundType = "refund" | "exchange"
+export type ItemCondition = "good" | "damaged" | "expired"
+export type WriteoffReason = "damaged" | "expired" | "lost" | "other"
+export type WriteoffStatus = "pending" | "approved" | "rejected"

@@ -1,0 +1,2 @@
+// Receipt module
+export {}

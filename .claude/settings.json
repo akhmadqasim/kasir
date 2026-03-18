@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun:*)",
+      "Bash(bunx:*)",
+      "Bash(cargo:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(node:*)",
+      "Bash(rustc:*)",
+      "Bash(rustup:*)",
+      "Bash(tauri:*)",
+      "Bash(bun dev)",
+      "Bash(bun run dev)",
+      "Bash(bun run build)",
+      "Bash(bun run test)",
+      "Bash(bun run lint)",
+      "Bash(bun run format)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)"
+    ],
+    "deny": []
+  }
+}
