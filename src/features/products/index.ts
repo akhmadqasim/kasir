@@ -1,2 +1,1 @@
-// Products module
-export {}
+export { ProductsPage } from "./components/products-page"

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 import { OnboardingPage } from "@/features/onboarding/components/onboarding-page"
 import { LoginPage } from "@/features/auth/components/login-page"
+import { ProductsPage } from "@/features/products"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 
@@ -35,12 +36,7 @@ const router = createBrowserRouter([
           },
           {
             path: "products",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Produk</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <ProductsPage />,
           },
           {
             path: "transactions",

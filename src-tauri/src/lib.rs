@@ -32,6 +32,15 @@ pub fn run() {
             commands::settings::get_store_info,
             commands::onboarding::check_onboarding_status,
             commands::onboarding::complete_onboarding,
+            commands::products::search_products,
+            commands::products::get_product_by_barcode,
+            commands::products::create_product,
+            commands::products::update_product,
+            commands::products::delete_product,
+            commands::categories::list_categories,
+            commands::categories::create_category,
+            commands::categories::update_category,
+            commands::categories::delete_category,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
