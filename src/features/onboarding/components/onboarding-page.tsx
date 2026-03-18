@@ -10,6 +10,7 @@ import type { SetupStoreInput, SetupAdminInput } from "../types"
 export function OnboardingPage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [storeData, setStoreData] = useState<SetupStoreInput | null>(null)
+  const [adminData, setAdminData] = useState<SetupAdminInput | null>(null)
   const navigate = useNavigate()
   const completeMutation = useCompleteOnboarding()
 
@@ -20,11 +21,12 @@ export function OnboardingPage() {
     setStep(2)
   }
 
-  const handleAdminSubmit = (adminData: SetupAdminInput) => {
+  const handleAdminSubmit = (data: SetupAdminInput) => {
     if (!storeData) return
+    setAdminData(data)
 
     completeMutation.mutate(
-      { store: storeData, admin: adminData },
+      { input: { store: storeData, admin: data } },
       {
         onSuccess: () => {
           toast.success(t.success)
@@ -45,12 +47,16 @@ export function OnboardingPage() {
           <p className="text-muted-foreground">{t.subtitle}</p>
         </div>
         {step === 1 ? (
-          <StoreInfoForm onNext={handleStoreNext} />
+          <StoreInfoForm onNext={handleStoreNext} initialData={storeData} />
         ) : (
           <AdminSetupForm
             onSubmit={handleAdminSubmit}
-            onBack={() => setStep(1)}
+            onBack={(data) => {
+              setAdminData(data)
+              setStep(1)
+            }}
             isLoading={completeMutation.isPending}
+            initialData={adminData}
           />
         )}
       </div>

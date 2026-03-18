@@ -16,13 +16,14 @@ import type { SetupStoreInput } from "../types"
 
 interface StoreInfoFormProps {
   onNext: (data: SetupStoreInput) => void
+  initialData?: SetupStoreInput | null
 }
 
-export function StoreInfoForm({ onNext }: StoreInfoFormProps) {
-  const [name, setName] = useState("")
-  const [address, setAddress] = useState("")
-  const [phone, setPhone] = useState("")
-  const [email, setEmail] = useState("")
+export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
+  const [name, setName] = useState(initialData?.name ?? "")
+  const [address, setAddress] = useState(initialData?.address ?? "")
+  const [phone, setPhone] = useState(initialData?.phone ?? "")
+  const [email, setEmail] = useState(initialData?.email ?? "")
   const [error, setError] = useState("")
 
   const t = id.onboarding

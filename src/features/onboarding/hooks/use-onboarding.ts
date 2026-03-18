@@ -15,5 +15,5 @@ export function useCheckOnboarding() {
 }
 
 export function useCompleteOnboarding() {
-  return useTauriMutation<void, CompleteOnboardingInput>("complete_onboarding")
+  return useTauriMutation<void, { input: CompleteOnboardingInput }>("complete_onboarding")
 }

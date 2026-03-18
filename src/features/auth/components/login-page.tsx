@@ -17,7 +17,7 @@ export function LoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!username.trim() || !pin.trim()) return
-    loginMutation.mutate({ username: username.trim(), pin })
+    loginMutation.mutate({ input: { username: username.trim(), pin } })
   }
 
   return (

@@ -9,7 +9,7 @@ export function useLogin() {
   const navigate = useNavigate()
   const login = useAuthStore((s) => s.login)
 
-  return useTauriMutation<User, LoginInput>("login", {
+  return useTauriMutation<User, { input: LoginInput }>("login", {
     onSuccess: (user) => {
       login(user)
       navigate("/")

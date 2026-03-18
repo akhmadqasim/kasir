@@ -16,19 +16,21 @@ import type { SetupAdminInput } from "../types"
 
 interface AdminSetupFormProps {
   onSubmit: (data: SetupAdminInput) => void
-  onBack: () => void
+  onBack: (data: SetupAdminInput) => void
   isLoading: boolean
+  initialData?: SetupAdminInput | null
 }
 
 export function AdminSetupForm({
   onSubmit,
   onBack,
   isLoading,
+  initialData,
 }: AdminSetupFormProps) {
-  const [fullName, setFullName] = useState("")
-  const [username, setUsername] = useState("")
-  const [pin, setPin] = useState("")
-  const [confirmPin, setConfirmPin] = useState("")
+  const [fullName, setFullName] = useState(initialData?.full_name ?? "")
+  const [username, setUsername] = useState(initialData?.username ?? "")
+  const [pin, setPin] = useState(initialData?.pin ?? "")
+  const [confirmPin, setConfirmPin] = useState(initialData?.pin ?? "")
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const t = id.onboarding
@@ -126,7 +128,11 @@ export function AdminSetupForm({
           </div>
         </CardContent>
         <CardFooter className="justify-between">
-          <Button type="button" variant="outline" onClick={onBack}>
+          <Button type="button" variant="outline" onClick={() => onBack({
+            full_name: fullName.trim(),
+            username: username.trim(),
+            pin,
+          })}>
             {t.back}
           </Button>
           <Button type="submit" disabled={isLoading}>
