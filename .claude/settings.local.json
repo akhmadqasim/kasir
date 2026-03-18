@@ -1,6 +1,14 @@
 {
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "sqlite-db"
   ],
-  "enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "Bash(for d:*)",
+      "Bash(do echo:*)",
+      "Read(//e/kasir/src/features/**)",
+      "Bash(done)"
+    ]
+  }
 }
