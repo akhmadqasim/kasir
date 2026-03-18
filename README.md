@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+# POS Toko Sembako
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-first, offline-capable.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Framework**: [Tauri v2](https://v2.tauri.app/) (Rust backend + webview frontend)
+- **Frontend**: React 19 + TypeScript (strict mode)
+- **UI**: [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4
+- **State**: Zustand + TanStack Query
+- **Database**: SQLite via rusqlite (Rust-side, WAL mode)
+- **Package Manager**: Bun
 
-## React Compiler
+## Prerequisites
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- [Node.js](https://nodejs.org/) v18+
+- [Bun](https://bun.sh/) v1.3+
+- [Rust](https://rustup.rs/) v1.70+
+- [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (Windows, "Desktop development with C++")
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+```bash
+# Install dependencies
+bun install
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Start development (frontend + Tauri)
+bun run tauri dev
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+# Run frontend only
+bun run dev
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Run tests
+bun run test
+
+# Build for production
+bun run tauri build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Project Structure
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/                    # Frontend (React + TypeScript)
+├── app/                # App entry, router, providers
+├── components/ui/      # shadcn/ui components
+├── features/           # Feature modules
+│   ├── auth/           # Login, session
+│   ├── cashier/        # POS terminal
+│   ├── products/       # Product CRUD
+│   ├── transactions/   # Transaction history
+│   ├── refunds/        # Refund & exchange
+│   ├── stock/          # Stock write-off
+│   ├── reports/        # Sales reports
+│   ├── receipt/        # Receipt printing
+│   ├── onboarding/     # First-time setup
+│   └── settings/       # App settings
+├── hooks/              # Shared hooks
+├── lib/                # Utilities, constants, types
+└── i18n/               # Translations
+
+src-tauri/              # Backend (Rust)
+├── src/
+│   ├── commands/       # Tauri IPC commands
+│   ├── db/             # Database, migrations, models
+│   ├── printing/       # ESC/POS thermal printer
+│   └── utils/          # Error handling, helpers
+└── migrations/         # SQL migration files
+```
+
+## License
+
+Private — All rights reserved.
+
