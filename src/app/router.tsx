@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 import { OnboardingPage } from "@/features/onboarding/components/onboarding-page"
 import { LoginPage } from "@/features/auth/components/login-page"
 import { ProductsPage } from "@/features/products"
+import { CashierPage } from "@/features/cashier"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 
@@ -27,12 +28,7 @@ const router = createBrowserRouter([
           },
           {
             path: "cashier",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Kasir</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <CashierPage />,
           },
           {
             path: "products",

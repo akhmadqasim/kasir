@@ -1,2 +1,1 @@
-// Cashier module
-export {}
+export { CashierPage } from "./components/cashier-page"
