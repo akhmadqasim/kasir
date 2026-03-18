@@ -26,6 +26,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(database)
         .invoke_handler(tauri::generate_handler![
+            commands::auth::login,
+            commands::auth::get_current_user,
+            commands::auth::list_users,
             commands::settings::get_store_info,
             commands::onboarding::check_onboarding_status,
             commands::onboarding::complete_onboarding,

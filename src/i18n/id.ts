@@ -2,12 +2,24 @@ export const id = {
   app: {
     name: "POS Toko Sembako",
   },
+  nav: {
+    cashier: "Kasir",
+    products: "Produk",
+    transactions: "Riwayat",
+    stock: "Stok Write-off",
+    reports: "Laporan",
+    settings: "Pengaturan",
+    users: "Manajemen User",
+  },
   auth: {
     login: "Masuk",
     logout: "Keluar",
     username: "Nama Pengguna",
     pin: "PIN",
     loginButton: "Masuk",
+    loginTitle: "Masuk ke POS",
+    loginSubtitle: "Masukkan username dan PIN Anda",
+    sessionExpired: "Sesi berakhir, silakan login kembali",
   },
   cashier: {
     title: "Kasir",
