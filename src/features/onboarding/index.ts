@@ -1,2 +1,1 @@
-// Onboarding module
-export {}
+export { OnboardingPage } from "./components/onboarding-page"

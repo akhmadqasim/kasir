@@ -27,6 +27,8 @@ pub fn run() {
         .manage(database)
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_store_info,
+            commands::onboarding::check_onboarding_status,
+            commands::onboarding::complete_onboarding,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
