@@ -3,6 +3,7 @@ import { OnboardingPage } from "@/features/onboarding/components/onboarding-page
 import { LoginPage } from "@/features/auth/components/login-page"
 import { ProductsPage } from "@/features/products"
 import { CashierPage } from "@/features/cashier"
+import { SettingsPage } from "@/features/settings"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 
@@ -63,12 +64,7 @@ const router = createHashRouter([
           },
           {
             path: "settings",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Pengaturan</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <SettingsPage />,
           },
           {
             path: "users",
