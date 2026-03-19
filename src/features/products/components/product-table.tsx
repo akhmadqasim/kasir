@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Pencil, Trash2 } from "lucide-react"
+import { Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -38,6 +38,44 @@ interface ProductTableProps {
   totalPages: number
   onPageChange: (page: number) => void
   onEdit: (product: Product) => void
+  sortBy?: string
+  sortOrder?: "asc" | "desc"
+  onSortChange: (column: string) => void
+}
+
+function SortableHeader({
+  label,
+  column,
+  sortBy,
+  sortOrder,
+  onSort,
+  className,
+}: {
+  label: string
+  column: string
+  sortBy?: string
+  sortOrder?: "asc" | "desc"
+  onSort: (column: string) => void
+  className?: string
+}) {
+  const isActive = sortBy === column
+  return (
+    <TableHead className={className}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-3 h-8 gap-1"
+        onClick={() => onSort(column)}
+      >
+        {label}
+        {isActive ? (
+          sortOrder === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
+        )}
+      </Button>
+    </TableHead>
+  )
 }
 
 export function ProductTable({
@@ -47,6 +85,9 @@ export function ProductTable({
   totalPages,
   onPageChange,
   onEdit,
+  sortBy,
+  sortOrder,
+  onSortChange,
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const deleteProduct = useDeleteProduct()
@@ -66,11 +107,11 @@ export function ProductTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{id.products.name}</TableHead>
+              <SortableHeader label={id.products.name} column="name" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} />
               <TableHead>{id.products.barcode}</TableHead>
               <TableHead>{id.products.category}</TableHead>
-              <TableHead className="text-right">{id.products.sellPrice}</TableHead>
-              <TableHead className="text-right">{id.products.stock}</TableHead>
+              <SortableHeader label={id.products.sellPrice} column="sell_price" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
+              <SortableHeader label={id.products.stock} column="stock" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
               <TableHead className="text-right">{id.products.action}</TableHead>
             </TableRow>
           </TableHeader>

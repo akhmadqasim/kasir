@@ -6,6 +6,7 @@ export interface Product {
   category_id: number | null
   buy_price: number
   sell_price: number
+  margin: number
   stock: number
   unit: string
   min_stock: number
@@ -36,6 +37,7 @@ export interface CreateProductInput {
   category_id?: number | null
   buy_price: number
   sell_price: number
+  margin?: number
   stock: number
   unit: string
   min_stock?: number
@@ -50,4 +52,24 @@ export interface SearchProductsParams {
   category_id?: number | null
   page?: number
   per_page?: number
+  sort_by?: string
+  sort_order?: "asc" | "desc"
+}
+
+export interface BulkProductInput {
+  barcode?: string | null
+  name: string
+  category_name?: string | null
+  buy_price: number
+  sell_price: number
+  margin?: number
+  stock: number
+  unit?: string
+}
+
+export interface BulkImportResult {
+  imported: number
+  updated: number
+  skipped: number
+  errors: string[]
 }
