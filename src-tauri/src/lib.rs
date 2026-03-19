@@ -49,6 +49,11 @@ pub fn run() {
             commands::categories::delete_category,
             commands::transactions::create_transaction,
             commands::transactions::get_next_receipt_number,
+            commands::receipt::list_printers,
+            commands::receipt::print_receipt,
+            commands::receipt::test_print,
+            commands::receipt::update_printer_settings,
+            commands::receipt::get_printer_settings_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

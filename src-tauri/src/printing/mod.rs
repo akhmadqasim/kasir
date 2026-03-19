@@ -1,2 +1,6 @@
-// ESC/POS thermal printer driver (stub)
-// TODO: Implement ESC/POS protocol for thermal receipt printing
+pub mod escpos;
+pub mod receipt;
+pub mod usb_printer;
+
+#[cfg(windows)]
+pub mod windows_printer;
