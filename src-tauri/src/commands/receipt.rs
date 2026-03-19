@@ -84,22 +84,7 @@ fn send_to_printer(printer_id: &str, data: &[u8]) -> Result<(), String> {
 pub async fn list_printers() -> Result<Vec<PrinterInfoItem>, AppError> {
     let mut all_printers = Vec::new();
 
-    // List USB printers
-    match crate::printing::usb_printer::list_usb_printers() {
-        Ok(usb_printers) => {
-            for p in usb_printers {
-                all_printers.push(PrinterInfoItem {
-                    id: format!("USB:{}", p.id),
-                    name: format!("{} (USB Direct)", p.name),
-                    printer_type: "usb".to_string(),
-                    is_default: false,
-                });
-            }
-        }
-        Err(_) => {} // USB not available, skip
-    }
-
-    // List Windows printers
+    // List Windows printers only (USB Direct not supported on Windows)
     #[cfg(windows)]
     {
         if let Ok(win_printers) = crate::printing::windows_printer::list_printers() {
