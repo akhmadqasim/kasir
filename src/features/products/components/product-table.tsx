@@ -1,5 +1,7 @@
 import { useState } from "react"
-import { Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import { Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Pin } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core"
+import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -22,6 +24,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { id } from "@/i18n/id"
 import { useDeleteProduct } from "../hooks/use-products"
+import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useQueryClient } from "@tanstack/react-query"
 import type { Product, Category } from "../types"
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -91,6 +95,26 @@ export function ProductTable({
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const deleteProduct = useDeleteProduct()
+  const queryClient = useQueryClient()
+
+  // Fetch pinned product IDs
+  const { data: shortcuts } = useTauriQuery<Array<{ id: number; product_id: number; is_pinned: boolean }>>(
+    "get_popular_products",
+    { limit: 50 }
+  )
+  const pinnedIds = new Set(
+    (shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id)
+  )
+
+  const handleTogglePin = async (productId: number) => {
+    try {
+      const pinned = await invoke<boolean>("toggle_product_pin", { productId })
+      toast.success(pinned ? "Produk di-pin ke shortcut" : "Pin shortcut dihapus")
+      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+    } catch {
+      toast.error("Gagal mengubah pin")
+    }
+  }
 
   const categoryMap = new Map(categories.map((c) => [c.id, c.name]))
 
@@ -145,6 +169,14 @@ export function ProductTable({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleTogglePin(product.id)}
+                        title={pinnedIds.has(product.id) ? "Hapus pin shortcut" : "Pin ke shortcut kasir"}
+                      >
+                        <Pin className={`h-4 w-4 ${pinnedIds.has(product.id) ? "fill-current text-primary" : "text-muted-foreground"}`} />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"

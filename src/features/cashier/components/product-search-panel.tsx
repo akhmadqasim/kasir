@@ -74,7 +74,7 @@ export function ProductSearchPanel() {
 
   const { data: shortcutProducts } = useTauriQuery<ShortcutProduct[]>(
     "get_popular_products",
-    { limit: 20 }
+    { limit: 100 }
   )
 
   const focusInput = useCallback(() => {

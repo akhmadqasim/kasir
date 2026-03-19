@@ -283,7 +283,7 @@ pub async fn get_popular_products(
     db: State<'_, DatabaseConnection>,
     limit: Option<i64>,
 ) -> Result<Vec<ShortcutProduct>, AppError> {
-    let limit = limit.unwrap_or(20).max(1).min(50);
+    let limit = limit.unwrap_or(20).max(1).min(200);
 
     // Get shortcuts with product data: pinned first, then by select_count
     let rows = products::Entity::find()
