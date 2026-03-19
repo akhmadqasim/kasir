@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
+import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
 import { OnboardingPage } from "@/features/onboarding/components/onboarding-page"
 import { LoginPage } from "@/features/auth/components/login-page"
 import { ProductsPage } from "@/features/products"
@@ -6,7 +6,7 @@ import { CashierPage } from "@/features/cashier"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 
-const router = createBrowserRouter([
+const router = createHashRouter([
   {
     path: "/onboarding",
     element: <OnboardingPage />,
