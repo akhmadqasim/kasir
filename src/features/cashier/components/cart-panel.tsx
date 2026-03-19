@@ -66,9 +66,9 @@ export function CartPanel({ onPay }: CartPanelProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Produk</TableHead>
-                <TableHead className="w-[140px] text-center">Qty</TableHead>
-                <TableHead className="w-[120px] text-right">Subtotal</TableHead>
-                <TableHead className="w-[48px]" />
+                <TableHead className="w-[100px] text-center">Qty</TableHead>
+                <TableHead className="w-[90px] text-right">Subtotal</TableHead>
+                <TableHead className="w-[36px]" />
               </TableRow>
             </TableHeader>
             <TableBody>

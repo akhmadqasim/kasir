@@ -24,31 +24,27 @@ export const useCartStore = create<CartStore>((set, get) => ({
     const existing = items.find((item) => item.product_id === product.id)
 
     if (existing) {
-      if (existing.quantity < product.stock) {
-        set({
-          items: items.map((item) =>
-            item.product_id === product.id
-              ? { ...item, quantity: item.quantity + 1 }
-              : item
-          ),
-        })
-      }
+      set({
+        items: items.map((item) =>
+          item.product_id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        ),
+      })
     } else {
-      if (product.stock > 0) {
-        set({
-          items: [
-            ...items,
-            {
-              product_id: product.id,
-              product_name: product.name,
-              product_price: product.sell_price,
-              quantity: 1,
-              stock: product.stock,
-              unit: product.unit,
-            },
-          ],
-        })
-      }
+      set({
+        items: [
+          ...items,
+          {
+            product_id: product.id,
+            product_name: product.name,
+            product_price: product.sell_price,
+            quantity: 1,
+            stock: product.stock,
+            unit: product.unit,
+          },
+        ],
+      })
     }
   },
 
@@ -61,7 +57,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
     const item = items.find((i) => i.product_id === productId)
     if (!item) return
 
-    const validQty = Math.max(1, Math.min(qty, item.stock))
+    const validQty = Math.max(1, qty)
     set({
       items: items.map((i) =>
         i.product_id === productId ? { ...i, quantity: validQty } : i

@@ -1,11 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Search, Barcode, TrendingUp } from "lucide-react"
+import { Search, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import {
   Command,
@@ -17,7 +12,6 @@ import {
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import {
   Empty,
   EmptyDescription,
@@ -33,14 +27,14 @@ import { getProductByBarcode } from "../hooks/use-cashier"
 import { formatRupiah } from "../utils"
 
 export function ProductSearchPanel() {
-  const [barcodeValue, setBarcodeValue] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const barcodeInputRef = useRef<HTMLInputElement>(null)
+  const commandInputRef = useRef<HTMLDivElement>(null)
   const addItem = useCartStore((s) => s.addItem)
 
   useEffect(() => {
-    barcodeInputRef.current?.focus()
+    const input = commandInputRef.current?.querySelector("input")
+    input?.focus()
   }, [])
 
   useEffect(() => {
@@ -61,75 +55,73 @@ export function ProductSearchPanel() {
     { limit: 8 }
   )
 
-  const focusBarcodeInput = useCallback(() => {
-    setTimeout(() => barcodeInputRef.current?.focus(), 50)
+  const focusInput = useCallback(() => {
+    setTimeout(() => {
+      const input = commandInputRef.current?.querySelector("input")
+      input?.focus()
+    }, 50)
   }, [])
 
-  const handleBarcodeSubmit = async (e: React.KeyboardEvent) => {
-    if (e.key !== "Enter" || !barcodeValue.trim()) return
+  const addToCart = (product: Product) => {
+    addItem(product)
+    if (product.stock <= 0) {
+      toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
+    }
+  }
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || !searchQuery.trim()) return
+
+    // Try barcode lookup first
     try {
-      const product = await getProductByBarcode(barcodeValue.trim())
+      const product = await getProductByBarcode(searchQuery.trim())
       if (product) {
-        if (product.stock <= 0) {
-          toast.error("Stok tidak cukup")
-        } else {
-          addItem(product)
-        }
-      } else {
-        toast.error("Produk tidak ditemukan")
+        e.preventDefault()
+        addToCart(product)
+        setSearchQuery("")
+        setDebouncedQuery("")
+        focusInput()
+        return
       }
     } catch {
-      toast.error("Gagal mencari produk")
+      // Not a barcode, continue with search results
     }
 
-    setBarcodeValue("")
-    focusBarcodeInput()
+    // If search results exist, select the first one
+    if (searchResults?.data && searchResults.data.length > 0) {
+      e.preventDefault()
+      addToCart(searchResults.data[0])
+      setSearchQuery("")
+      setDebouncedQuery("")
+      focusInput()
+    }
   }
 
   const handleProductSelect = (product: Product) => {
-    if (product.stock <= 0) {
-      toast.error("Stok tidak cukup")
-      return
-    }
-    addItem(product)
-    focusBarcodeInput()
+    addToCart(product)
+    setSearchQuery("")
+    setDebouncedQuery("")
+    focusInput()
   }
 
   const showSearchResults = debouncedQuery.length > 0
 
   return (
     <div className="flex h-full flex-col">
-      {/* Barcode Input — larger */}
-      <div className="px-4 py-4">
-        <InputGroup className="h-12 text-lg">
-          <InputGroupAddon>
-            <Barcode className="h-5 w-5" />
-          </InputGroupAddon>
-          <InputGroupInput
-            ref={barcodeInputRef}
-            className="text-lg"
-            placeholder="Scan atau ketik barcode..."
-            value={barcodeValue}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBarcodeValue(e.target.value)}
-            onKeyDown={handleBarcodeSubmit}
-          />
-          <InputGroupAddon align="inline-end">
-            <Kbd>Enter</Kbd>
-          </InputGroupAddon>
-        </InputGroup>
-      </div>
-
-      <Separator />
-
-      {/* Product Search with Command */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <Command className="rounded-none border-none" shouldFilter={false}>
-          <CommandInput
-            placeholder="Cari produk..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-          />
+          <div className="relative" ref={commandInputRef}>
+            <CommandInput
+              placeholder="Scan barcode atau cari produk..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+              onKeyDown={handleKeyDown}
+              className="h-12 text-base"
+            />
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <Kbd>Enter</Kbd>
+            </div>
+          </div>
           <CommandList className="max-h-none flex-1">
             {showSearchResults ? (
               searchResults?.data && searchResults.data.length > 0 ? (
@@ -139,7 +131,6 @@ export function ProductSearchPanel() {
                       key={product.id}
                       value={String(product.id)}
                       onSelect={() => handleProductSelect(product)}
-                      disabled={product.stock <= 0}
                       className="flex items-center gap-3 py-2.5"
                     >
                       <div className="min-w-0 flex-1">
@@ -187,7 +178,6 @@ export function ProductSearchPanel() {
                           variant="outline"
                           className="h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
                           onClick={() => handleProductSelect(product)}
-                          disabled={product.stock <= 0}
                         >
                           <span className="w-full truncate text-sm font-medium">
                             {product.name}
@@ -207,7 +197,7 @@ export function ProductSearchPanel() {
                       </EmptyMedia>
                       <EmptyTitle>Cari Produk</EmptyTitle>
                       <EmptyDescription>
-                        Ketik nama produk atau scan barcode
+                        Scan barcode atau ketik nama produk
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
