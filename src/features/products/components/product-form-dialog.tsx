@@ -67,6 +67,11 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
         setBuyPrice(String(product.buy_price))
         setSellPrice(String(product.sell_price))
         setMargin(product.margin ? String(product.margin) : "")
+        // Recalculate margin from actual prices if not set
+        if (!product.margin && product.buy_price > 0 && product.sell_price > 0) {
+          const m = ((product.sell_price - product.buy_price) / product.buy_price) * 100
+          setMargin(m % 1 === 0 ? String(m) : m.toFixed(2))
+        }
         setStock(String(product.stock))
         setUnit(product.unit)
         setMinStock(String(product.min_stock))
@@ -90,6 +95,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
   const recalcSellPrice = (bp: number, m: number) => {
     if (bp > 0 && m > 0) {
       setSellPrice(String(Math.round(bp * (1 + m / 100))))
+    }
+  }
+
+  const recalcMargin = (bp: number, sp: number) => {
+    if (bp > 0 && sp > 0) {
+      const m = ((sp - bp) / bp) * 100
+      setMargin(m % 1 === 0 ? String(m) : m.toFixed(2))
+    } else {
+      setMargin("")
     }
   }
 
@@ -277,7 +291,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       id="margin"
                       type="number"
                       min="0"
-                      step="0.1"
+                      step="any"
                       value={margin}
                       onChange={(e) => {
                         setMargin(e.target.value)
@@ -295,7 +309,10 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       type="number"
                       min="0"
                       value={sellPrice}
-                      onChange={(e) => setSellPrice(e.target.value)}
+                      onChange={(e) => {
+                        setSellPrice(e.target.value)
+                        recalcMargin(Number(buyPrice), Number(e.target.value))
+                      }}
                       placeholder="0"
                     />
                   </div>
