@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query"
 import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import type { CompleteOnboardingInput } from "../types"
 
@@ -15,5 +16,13 @@ export function useCheckOnboarding() {
 }
 
 export function useCompleteOnboarding() {
-  return useTauriMutation<void, { input: CompleteOnboardingInput }>("complete_onboarding")
+  const queryClient = useQueryClient()
+  return useTauriMutation<void, { input: CompleteOnboardingInput }>(
+    "complete_onboarding",
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["check_onboarding_status"] })
+      },
+    }
+  )
 }

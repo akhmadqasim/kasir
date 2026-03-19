@@ -2,15 +2,14 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Card, CardContent } from "@/components/ui/card"
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card"
+  Field,
+  FieldLabel,
+  FieldDescription,
+  FieldGroup,
+  FieldError,
+} from "@/components/ui/field"
 import { id } from "@/i18n/id"
 import type { SetupStoreInput } from "../types"
 
@@ -46,55 +45,68 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>{t.storeInfo}</CardTitle>
-        <CardDescription>{t.step1of2}</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="store-name">{t.storeName} *</Label>
-            <Input
-              id="store-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t.storeNamePlaceholder}
-              autoFocus
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="store-address">{t.address}</Label>
-            <Input
-              id="store-address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="store-phone">{t.phone}</Label>
-            <Input
-              id="store-phone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              type="tel"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="store-email">{t.email}</Label>
-            <Input
-              id="store-email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="justify-end">
-          <Button type="submit">{t.next}</Button>
-        </CardFooter>
-      </form>
+    <Card className="overflow-hidden p-0">
+      <CardContent className="grid p-0 md:grid-cols-2">
+        <form className="p-6 md:p-8" onSubmit={handleSubmit}>
+          <FieldGroup>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <h1 className="text-2xl font-bold">{t.storeInfo}</h1>
+              <p className="text-sm text-balance text-muted-foreground">
+                Lengkapi data toko Anda untuk memulai
+              </p>
+              <p className="text-xs text-muted-foreground">Langkah 1 dari 2</p>
+            </div>
+            <Field>
+              <FieldLabel htmlFor="store-name">{t.storeName} *</FieldLabel>
+              <Input
+                id="store-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t.storeNamePlaceholder}
+                autoFocus
+              />
+              {error && <FieldError>{error}</FieldError>}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="store-address">{t.address}</FieldLabel>
+              <Input
+                id="store-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+              <FieldDescription>Akan ditampilkan di struk</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="store-phone">{t.phone}</FieldLabel>
+              <Input
+                id="store-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                type="tel"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="store-email">{t.email}</FieldLabel>
+              <Input
+                id="store-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+              />
+            </Field>
+            <Field>
+              <Button type="submit" className="w-full">{t.next}</Button>
+            </Field>
+          </FieldGroup>
+        </form>
+        <div className="relative hidden bg-muted md:block">
+          <img
+            src="/onboarding-bg.jpg"
+            alt="Toko Sembako"
+            className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+          />
+        </div>
+      </CardContent>
     </Card>
   )
 }

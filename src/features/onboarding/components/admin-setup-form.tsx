@@ -2,15 +2,14 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Card, CardContent } from "@/components/ui/card"
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card"
+  Field,
+  FieldLabel,
+  FieldDescription,
+  FieldGroup,
+  FieldError,
+} from "@/components/ui/field"
 import { id } from "@/i18n/id"
 import type { SetupAdminInput } from "../types"
 
@@ -66,80 +65,101 @@ export function AdminSetupForm({
     })
   }
 
+  const currentData: SetupAdminInput = {
+    full_name: fullName.trim(),
+    username: username.trim(),
+    pin,
+  }
+
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>{t.adminSetup}</CardTitle>
-        <CardDescription>{t.step2of2}</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="full-name">{t.fullName} *</Label>
-            <Input
-              id="full-name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              autoFocus
-            />
-            {errors.fullName && (
-              <p className="text-sm text-destructive">{errors.fullName}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="username">{t.username} *</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            {errors.username && (
-              <p className="text-sm text-destructive">{errors.username}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pin">{t.pin} *</Label>
-            <Input
-              id="pin"
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              placeholder={t.pinHint}
-            />
-            {errors.pin && (
-              <p className="text-sm text-destructive">{errors.pin}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirm-pin">{t.confirmPin} *</Label>
-            <Input
-              id="confirm-pin"
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-            />
-            {errors.confirmPin && (
-              <p className="text-sm text-destructive">{errors.confirmPin}</p>
-            )}
-          </div>
-        </CardContent>
-        <CardFooter className="justify-between">
-          <Button type="button" variant="outline" onClick={() => onBack({
-            full_name: fullName.trim(),
-            username: username.trim(),
-            pin,
-          })}>
-            {t.back}
-          </Button>
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? id.common.loading : t.submit}
-          </Button>
-        </CardFooter>
-      </form>
+    <Card className="overflow-hidden p-0">
+      <CardContent className="grid p-0 md:grid-cols-2">
+        <form className="p-6 md:p-8" onSubmit={handleSubmit}>
+          <FieldGroup>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <h1 className="text-2xl font-bold">{t.adminSetup}</h1>
+              <p className="text-sm text-balance text-muted-foreground">
+                Buat akun administrator pertama untuk mengelola toko
+              </p>
+              <p className="text-xs text-muted-foreground">Langkah 2 dari 2</p>
+            </div>
+            <Field>
+              <FieldLabel htmlFor="full-name">{t.fullName} *</FieldLabel>
+              <Input
+                id="full-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                autoFocus
+              />
+              {errors.fullName && <FieldError>{errors.fullName}</FieldError>}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="username">{t.username} *</FieldLabel>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              {errors.username && <FieldError>{errors.username}</FieldError>}
+            </Field>
+            <Field>
+              <Field className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel htmlFor="pin">{t.pin} *</FieldLabel>
+                  <Input
+                    id="pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                    placeholder={t.pinHint}
+                  />
+                  {errors.pin && <FieldError>{errors.pin}</FieldError>}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="confirm-pin">
+                    {t.confirmPin} *
+                  </FieldLabel>
+                  <Input
+                    id="confirm-pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={confirmPin}
+                    onChange={(e) =>
+                      setConfirmPin(e.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                  {errors.confirmPin && (
+                    <FieldError>{errors.confirmPin}</FieldError>
+                  )}
+                </Field>
+              </Field>
+              <FieldDescription>4-6 digit angka</FieldDescription>
+            </Field>
+            <Field className="grid grid-cols-2 gap-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onBack(currentData)}
+              >
+                {t.back}
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? id.common.loading : t.submit}
+              </Button>
+            </Field>
+          </FieldGroup>
+        </form>
+        <div className="relative hidden bg-muted md:block">
+          <img
+            src="/onboarding-bg.jpg"
+            alt="Toko Sembako"
+            className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+          />
+        </div>
+      </CardContent>
     </Card>
   )
 }

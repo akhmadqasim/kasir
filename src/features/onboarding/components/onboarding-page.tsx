@@ -40,24 +40,24 @@ export function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md space-y-6 px-4">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">{id.app.name}</h1>
-          <p className="text-muted-foreground">{t.subtitle}</p>
-        </div>
+    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10 overflow-y-auto">
+      <div className="w-full max-w-sm md:max-w-4xl">
         {step === 1 ? (
-          <StoreInfoForm onNext={handleStoreNext} initialData={storeData} />
+          <div className="animate-in fade-in duration-300">
+            <StoreInfoForm onNext={handleStoreNext} initialData={storeData} />
+          </div>
         ) : (
-          <AdminSetupForm
-            onSubmit={handleAdminSubmit}
-            onBack={(data) => {
-              setAdminData(data)
-              setStep(1)
-            }}
-            isLoading={completeMutation.isPending}
-            initialData={adminData}
-          />
+          <div className="animate-in fade-in duration-300">
+            <AdminSetupForm
+              onSubmit={handleAdminSubmit}
+              onBack={(data) => {
+                setAdminData(data)
+                setStep(1)
+              }}
+              isLoading={completeMutation.isPending}
+              initialData={adminData}
+            />
+          </div>
         )}
       </div>
     </div>
