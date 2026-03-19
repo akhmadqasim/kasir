@@ -131,7 +131,7 @@ export function PaymentDialog({
                 <Input
                   id="payment-amount"
                   type="number"
-                  className="mt-1 h-12 text-lg tabular-nums"
+                  className="mt-1 h-12 text-lg text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   placeholder="0"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
