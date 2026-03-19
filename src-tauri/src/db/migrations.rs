@@ -4,6 +4,7 @@ use crate::utils::AppError;
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001_initial", include_str!("../../migrations/001_initial.sql")),
     ("002_add_margin", include_str!("../../migrations/002_add_margin.sql")),
+    ("003_product_shortcuts", include_str!("../../migrations/003_product_shortcuts.sql")),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

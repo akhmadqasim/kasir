@@ -39,6 +39,8 @@ pub fn run() {
             commands::products::update_product,
             commands::products::delete_product,
             commands::products::get_popular_products,
+            commands::products::track_product_selection,
+            commands::products::toggle_product_pin,
             commands::products::bulk_create_products,
             commands::products::save_template_file,
             commands::categories::list_categories,

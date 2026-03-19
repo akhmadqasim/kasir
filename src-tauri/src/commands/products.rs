@@ -6,7 +6,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::entity::products;
+use crate::entity::{product_shortcuts, products};
 use crate::utils::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -270,35 +270,123 @@ pub async fn delete_product(
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+pub struct ShortcutProduct {
+    #[serde(flatten)]
+    pub product: products::Model,
+    pub is_pinned: bool,
+    pub select_count: i64,
+}
+
 #[tauri::command]
 pub async fn get_popular_products(
     db: State<'_, DatabaseConnection>,
     limit: Option<i64>,
-) -> Result<Vec<products::Model>, AppError> {
-    let limit = limit.unwrap_or(8).max(1).min(20);
+) -> Result<Vec<ShortcutProduct>, AppError> {
+    let limit = limit.unwrap_or(20).max(1).min(50);
 
-    let products = products::Entity::find()
+    // Get shortcuts with product data: pinned first, then by select_count
+    let rows = products::Entity::find()
         .from_raw_sql(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             r#"SELECT p.id, p.barcode, p.sku, p.name, p.category_id, p.buy_price,
                       p.sell_price, p.margin, p.stock, p.unit, p.min_stock, p.is_active,
                       p.created_at, p.updated_at
                FROM products p
-               INNER JOIN (
-                   SELECT product_id, SUM(quantity) as total_sold
-                   FROM transaction_items
-                   GROUP BY product_id
-                   ORDER BY total_sold DESC
-                   LIMIT $1
-               ) top ON p.id = top.product_id
+               INNER JOIN product_shortcuts s ON p.id = s.product_id
                WHERE p.is_active = 1
-               ORDER BY top.total_sold DESC"#,
+                 AND (s.is_pinned = 1 OR s.select_count > 0)
+               ORDER BY s.is_pinned DESC, s.select_count DESC
+               LIMIT $1"#,
             vec![limit.into()],
         ))
         .all(db.inner())
         .await?;
 
-    Ok(products)
+    // Get shortcut metadata for each product
+    let product_ids: Vec<i64> = rows.iter().map(|p| p.id).collect();
+    let shortcuts = product_shortcuts::Entity::find()
+        .filter(product_shortcuts::Column::ProductId.is_in(product_ids))
+        .all(db.inner())
+        .await?;
+
+    let result: Vec<ShortcutProduct> = rows
+        .into_iter()
+        .map(|p| {
+            let shortcut = shortcuts.iter().find(|s| s.product_id == p.id);
+            ShortcutProduct {
+                product: p,
+                is_pinned: shortcut.map_or(false, |s| s.is_pinned),
+                select_count: shortcut.map_or(0, |s| s.select_count),
+            }
+        })
+        .collect();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn track_product_selection(
+    db: State<'_, DatabaseConnection>,
+    product_id: i64,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let existing = product_shortcuts::Entity::find()
+        .filter(product_shortcuts::Column::ProductId.eq(product_id))
+        .one(db.inner())
+        .await?;
+
+    if let Some(shortcut) = existing {
+        let mut active: product_shortcuts::ActiveModel = shortcut.into();
+        active.select_count = Set(active.select_count.unwrap() + 1);
+        active.last_selected_at = Set(Some(now));
+        active.update(db.inner()).await?;
+    } else {
+        let new_shortcut = product_shortcuts::ActiveModel {
+            id: NotSet,
+            product_id: Set(product_id),
+            select_count: Set(1),
+            is_pinned: Set(false),
+            last_selected_at: Set(Some(now.clone())),
+            created_at: Set(Some(now)),
+        };
+        new_shortcut.insert(db.inner()).await?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_product_pin(
+    db: State<'_, DatabaseConnection>,
+    product_id: i64,
+) -> Result<bool, AppError> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let existing = product_shortcuts::Entity::find()
+        .filter(product_shortcuts::Column::ProductId.eq(product_id))
+        .one(db.inner())
+        .await?;
+
+    if let Some(shortcut) = existing {
+        let new_pinned = !shortcut.is_pinned;
+        let mut active: product_shortcuts::ActiveModel = shortcut.into();
+        active.is_pinned = Set(new_pinned);
+        active.update(db.inner()).await?;
+        Ok(new_pinned)
+    } else {
+        let new_shortcut = product_shortcuts::ActiveModel {
+            id: NotSet,
+            product_id: Set(product_id),
+            select_count: Set(0),
+            is_pinned: Set(true),
+            last_selected_at: Set(Some(now.clone())),
+            created_at: Set(Some(now)),
+        };
+        new_shortcut.insert(db.inner()).await?;
+        Ok(true)
+    }
 }
 
 #[tauri::command]

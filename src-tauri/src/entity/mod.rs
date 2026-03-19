@@ -1,5 +1,6 @@
 pub mod categories;
 pub mod exchange_items;
+pub mod product_shortcuts;
 pub mod products;
 pub mod refund_items;
 pub mod refunds;

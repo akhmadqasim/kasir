@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Search, TrendingUp } from "lucide-react"
+import { Search, Pin, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
+import { invoke } from "@tauri-apps/api/core"
 import { Kbd } from "@/components/ui/kbd"
 import {
   Command,
@@ -20,17 +21,38 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useQueryClient } from "@tanstack/react-query"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
 import { formatRupiah } from "../utils"
 
+interface ShortcutProduct {
+  id: number
+  barcode: string | null
+  sku: string | null
+  name: string
+  category_id: number | null
+  buy_price: number
+  sell_price: number
+  margin: number
+  stock: number
+  unit: string
+  min_stock: number | null
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+  is_pinned: boolean
+  select_count: number
+}
+
 export function ProductSearchPanel() {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const commandInputRef = useRef<HTMLDivElement>(null)
   const addItem = useCartStore((s) => s.addItem)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const input = commandInputRef.current?.querySelector("input")
@@ -50,9 +72,9 @@ export function ProductSearchPanel() {
     { enabled: debouncedQuery.length > 0 }
   )
 
-  const { data: popularProducts } = useTauriQuery<Product[]>(
+  const { data: shortcutProducts } = useTauriQuery<ShortcutProduct[]>(
     "get_popular_products",
-    { limit: 8 }
+    { limit: 20 }
   )
 
   const focusInput = useCallback(() => {
@@ -62,12 +84,35 @@ export function ProductSearchPanel() {
     }, 50)
   }, [])
 
-  const addToCart = (product: Product) => {
+  const trackSelection = useCallback(async (productId: number) => {
+    try {
+      await invoke("track_product_selection", { productId })
+      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+    } catch {
+      // Silent fail — tracking is non-critical
+    }
+  }, [queryClient])
+
+  const handleTogglePin = useCallback(async (e: React.MouseEvent, productId: number) => {
+    e.stopPropagation()
+    try {
+      const pinned = await invoke<boolean>("toggle_product_pin", { productId })
+      toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
+      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+    } catch {
+      toast.error("Gagal mengubah pin")
+    }
+  }, [queryClient])
+
+  const addToCart = useCallback((product: Product | ShortcutProduct, isManualSearch: boolean) => {
     addItem(product)
     if (product.stock <= 0) {
       toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
     }
-  }
+    if (isManualSearch) {
+      trackSelection(product.id)
+    }
+  }, [addItem, trackSelection])
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key !== "Enter" || !searchQuery.trim()) return
@@ -77,7 +122,7 @@ export function ProductSearchPanel() {
       const product = await getProductByBarcode(searchQuery.trim())
       if (product) {
         e.preventDefault()
-        addToCart(product)
+        addToCart(product, false)
         setSearchQuery("")
         setDebouncedQuery("")
         focusInput()
@@ -90,7 +135,7 @@ export function ProductSearchPanel() {
     // If search results exist, select the first one
     if (searchResults?.data && searchResults.data.length > 0) {
       e.preventDefault()
-      addToCart(searchResults.data[0])
+      addToCart(searchResults.data[0], true)
       setSearchQuery("")
       setDebouncedQuery("")
       focusInput()
@@ -98,9 +143,14 @@ export function ProductSearchPanel() {
   }
 
   const handleProductSelect = (product: Product) => {
-    addToCart(product)
+    addToCart(product, true)
     setSearchQuery("")
     setDebouncedQuery("")
+    focusInput()
+  }
+
+  const handleShortcutSelect = (product: ShortcutProduct) => {
+    addToCart(product, false)
     focusInput()
   }
 
@@ -163,28 +213,39 @@ export function ProductSearchPanel() {
                 <CommandEmpty>Produk tidak ditemukan</CommandEmpty>
               )
             ) : (
-              /* Popular Products Shortcuts */
+              /* Shortcut Products */
               <div className="p-4">
-                {popularProducts && popularProducts.length > 0 ? (
+                {shortcutProducts && shortcutProducts.length > 0 ? (
                   <div>
                     <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
                       <TrendingUp className="h-4 w-4" />
-                      Produk Terlaris
+                      Produk Favorit
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {popularProducts.map((product) => (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                      {shortcutProducts.map((product) => (
                         <Button
                           key={product.id}
                           variant="outline"
-                          className="h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
-                          onClick={() => handleProductSelect(product)}
+                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
+                          onClick={() => handleShortcutSelect(product)}
                         >
+                          {product.is_pinned && (
+                            <Pin className="absolute right-1.5 top-1.5 h-3 w-3 fill-current text-primary" />
+                          )}
                           <span className="w-full truncate text-sm font-medium">
                             {product.name}
                           </span>
                           <span className="text-xs tabular-nums text-muted-foreground">
                             {formatRupiah(product.sell_price)}
                           </span>
+                          <button
+                            type="button"
+                            className="absolute bottom-1 right-1 hidden rounded p-0.5 hover:bg-muted group-hover:block"
+                            onClick={(e) => handleTogglePin(e, product.id)}
+                            title={product.is_pinned ? "Hapus pin" : "Pin produk"}
+                          >
+                            <Pin className={`h-3 w-3 ${product.is_pinned ? "fill-current text-primary" : "text-muted-foreground"}`} />
+                          </button>
                         </Button>
                       ))}
                     </div>
@@ -197,7 +258,7 @@ export function ProductSearchPanel() {
                       </EmptyMedia>
                       <EmptyTitle>Cari Produk</EmptyTitle>
                       <EmptyDescription>
-                        Scan barcode atau ketik nama produk
+                        Scan barcode atau ketik nama produk. Produk yang sering dicari akan tampil di sini.
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
