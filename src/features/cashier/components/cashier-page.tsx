@@ -25,14 +25,14 @@ export function CashierPage() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-64px)]">
-        {/* Left: Cart (60%) */}
-        <div className="flex w-[60%] flex-col border-r">
+      <div className="grid h-full grid-cols-12 gap-4">
+        {/* Left: Cart (4/12) */}
+        <div className="col-span-4 flex flex-col overflow-hidden rounded-xl border bg-card">
           <CartPanel onPay={() => setPaymentOpen(true)} />
         </div>
 
-        {/* Right: Product Search (40%) */}
-        <div className="flex w-[40%] flex-col">
+        {/* Right: Product Search (8/12) */}
+        <div className="col-span-8 flex flex-col overflow-hidden rounded-xl border bg-card">
           <ProductSearchPanel />
         </div>
       </div>

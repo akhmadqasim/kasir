@@ -1,5 +1,6 @@
-import { Minus, Plus, X } from "lucide-react"
+import { Minus, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { TableCell, TableRow } from "@/components/ui/table"
 import type { CartItem } from "../types"
 import { formatRupiah } from "../utils"
 
@@ -17,50 +18,53 @@ export function CartItemRow({
   const subtotal = item.product_price * item.quantity
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border p-3">
-      <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{item.product_name}</p>
-        <p className="text-sm text-muted-foreground">
-          {formatRupiah(item.product_price)} / {item.unit}
-        </p>
-      </div>
-
-      <div className="flex items-center gap-1">
+    <TableRow>
+      <TableCell>
+        <div className="min-w-0">
+          <p className="truncate font-medium">{item.product_name}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatRupiah(item.product_price)} / {item.unit}
+          </p>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onUpdateQuantity(item.product_id, item.quantity - 1)}
+            disabled={item.quantity <= 1}
+          >
+            <Minus className="h-3 w-3" />
+          </Button>
+          <span className="w-8 text-center font-medium tabular-nums">
+            {item.quantity}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onUpdateQuantity(item.product_id, item.quantity + 1)}
+            disabled={item.quantity >= item.stock}
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
+      </TableCell>
+      <TableCell className="text-right font-semibold tabular-nums">
+        {formatRupiah(subtotal)}
+      </TableCell>
+      <TableCell>
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
-          className="h-8 w-8"
-          onClick={() => onUpdateQuantity(item.product_id, item.quantity - 1)}
-          disabled={item.quantity <= 1}
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          onClick={() => onRemove(item.product_id)}
         >
-          <Minus className="h-4 w-4" />
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
-        <span className="w-10 text-center font-medium tabular-nums">
-          {item.quantity}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => onUpdateQuantity(item.product_id, item.quantity + 1)}
-          disabled={item.quantity >= item.stock}
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="w-28 text-right">
-        <p className="font-semibold tabular-nums">{formatRupiah(subtotal)}</p>
-      </div>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive hover:text-destructive"
-        onClick={() => onRemove(item.product_id)}
-      >
-        <X className="h-4 w-4" />
-      </Button>
-    </div>
+      </TableCell>
+    </TableRow>
   )
 }

@@ -3,6 +3,20 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { useCartStore } from "../hooks/use-cart-store"
 import { CartItemRow } from "./cart-item-row"
 import { formatRupiah } from "../utils"
@@ -23,13 +37,11 @@ export function CartPanel({ onPay }: CartPanelProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center gap-2 p-4 pb-2">
+      <div className="flex items-center gap-2 px-4 py-3">
         <ShoppingCart className="h-5 w-5" />
         <h2 className="text-lg font-semibold">Keranjang</h2>
         {items.length > 0 && (
-          <Badge variant="secondary">
-            {itemCount} item
-          </Badge>
+          <Badge variant="secondary">{itemCount} item</Badge>
         )}
       </div>
 
@@ -37,32 +49,48 @@ export function CartPanel({ onPay }: CartPanelProps) {
 
       {/* Cart Items */}
       {items.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center text-muted-foreground">
-            <ShoppingCart className="mx-auto mb-2 h-12 w-12 opacity-30" />
-            <p>Keranjang kosong</p>
-          </div>
-        </div>
+        <Empty className="flex-1 border-none">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ShoppingCart />
+            </EmptyMedia>
+            <EmptyTitle>Keranjang Kosong</EmptyTitle>
+            <EmptyDescription>
+              Scan barcode atau cari produk untuk menambahkan ke keranjang
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <ScrollArea className="flex-1 p-4">
-          <div className="flex flex-col gap-2">
-            {items.map((item) => (
-              <CartItemRow
-                key={item.product_id}
-                item={item}
-                onUpdateQuantity={updateQuantity}
-                onRemove={removeItem}
-              />
-            ))}
-          </div>
+        <ScrollArea className="flex-1">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produk</TableHead>
+                <TableHead className="w-[140px] text-center">Qty</TableHead>
+                <TableHead className="w-[120px] text-right">Subtotal</TableHead>
+                <TableHead className="w-[48px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => (
+                <CartItemRow
+                  key={item.product_id}
+                  item={item}
+                  onUpdateQuantity={updateQuantity}
+                  onRemove={removeItem}
+                />
+              ))}
+            </TableBody>
+          </Table>
         </ScrollArea>
       )}
 
       {/* Footer */}
-      <div className="border-t bg-background p-4">
+      <Separator />
+      <div className="bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-lg font-medium">Total</span>
-          <span className="text-2xl font-bold tabular-nums">
+          <span className="text-xl font-semibold">Total</span>
+          <span className="text-3xl font-bold tabular-nums">
             {formatRupiah(total)}
           </span>
         </div>
