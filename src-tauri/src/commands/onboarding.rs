@@ -1,8 +1,11 @@
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::NotSet, DatabaseConnection, EntityTrait, PaginatorTrait, Set,
+    TransactionTrait,
+};
 use serde::Deserialize;
 use tauri::State;
 
-use crate::db::Database;
-use crate::db::models::store_info::StoreInfo;
+use crate::entity::{store_info, users};
 use crate::utils::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -27,25 +30,36 @@ pub struct CompleteOnboardingInput {
 }
 
 #[tauri::command]
-pub fn check_onboarding_status(db: State<'_, Database>) -> Result<bool, AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM store_info", [], |row| row.get(0))?;
+pub async fn check_onboarding_status(
+    db: State<'_, DatabaseConnection>,
+) -> Result<bool, AppError> {
+    let count = store_info::Entity::find().count(db.inner()).await?;
     Ok(count == 0)
 }
 
 #[tauri::command]
-pub fn complete_onboarding(
-    db: State<'_, Database>,
+pub async fn complete_onboarding(
+    db: State<'_, DatabaseConnection>,
     input: CompleteOnboardingInput,
-) -> Result<StoreInfo, AppError> {
+) -> Result<store_info::Model, AppError> {
+    // Idempotency: if already onboarded, return existing store info
+    let existing = store_info::Entity::find().one(db.inner()).await?;
+    if let Some(store) = existing {
+        return Ok(store);
+    }
+
     let store_name = input.store.name.trim().to_string();
     if store_name.is_empty() {
-        return Err(AppError::Validation("Nama toko tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Nama toko tidak boleh kosong".to_string(),
+        ));
     }
 
     let admin_username = input.admin.username.trim().to_string();
     if admin_username.is_empty() {
-        return Err(AppError::Validation("Username admin tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Username admin tidak boleh kosong".to_string(),
+        ));
     }
 
     let pin = &input.admin.pin;
@@ -55,53 +69,41 @@ pub fn complete_onboarding(
         ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    let txn = db.begin().await?;
 
-    conn.execute_batch("BEGIN")?;
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let result = (|| -> Result<StoreInfo, AppError> {
-        conn.execute(
-            "INSERT INTO store_info (name, address, phone, email) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![store_name, input.store.address, input.store.phone, input.store.email],
-        )?;
+    let store = store_info::ActiveModel {
+        id: NotSet,
+        name: Set(store_name),
+        address: Set(input.store.address),
+        phone: Set(input.store.phone),
+        email: Set(input.store.email),
+        logo_path: Set(None),
+        additional_info: Set(None),
+        created_at: Set(Some(now.clone())),
+        updated_at: Set(Some(now.clone())),
+    };
 
-        let pin_hash = bcrypt::hash(&input.admin.pin, 12)
-            .map_err(|e| AppError::Internal(format!("Gagal hash PIN: {}", e)))?;
+    let store_result = store.insert(&txn).await?;
 
-        conn.execute(
-            "INSERT INTO users (username, pin_hash, full_name, role, is_active) VALUES (?1, ?2, ?3, 'admin', 1)",
-            rusqlite::params![admin_username, pin_hash, input.admin.full_name.trim()],
-        )?;
+    let pin_hash = bcrypt::hash(&input.admin.pin, 12)
+        .map_err(|e| AppError::Internal(format!("Gagal hash PIN: {}", e)))?;
 
-        let store_info = conn.query_row(
-            "SELECT id, name, address, phone, email, logo_path, additional_info, created_at, updated_at FROM store_info WHERE id = 1",
-            [],
-            |row| {
-                Ok(StoreInfo {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    address: row.get(2)?,
-                    phone: row.get(3)?,
-                    email: row.get(4)?,
-                    logo_path: row.get(5)?,
-                    additional_info: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                })
-            },
-        )?;
+    let admin = users::ActiveModel {
+        id: NotSet,
+        username: Set(admin_username),
+        pin_hash: Set(pin_hash),
+        full_name: Set(input.admin.full_name.trim().to_string()),
+        role: Set("admin".to_string()),
+        is_active: Set(true),
+        created_at: Set(Some(now.clone())),
+        updated_at: Set(Some(now)),
+    };
 
-        Ok(store_info)
-    })();
+    admin.insert(&txn).await?;
 
-    match result {
-        Ok(store_info) => {
-            conn.execute_batch("COMMIT")?;
-            Ok(store_info)
-        }
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            Err(e)
-        }
-    }
+    txn.commit().await?;
+
+    Ok(store_result)
 }

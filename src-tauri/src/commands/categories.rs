@@ -1,112 +1,86 @@
-use crate::db::Database;
-use crate::db::models::category::Category;
-use crate::utils::AppError;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set,
+};
 use tauri::State;
 
+use crate::entity::{categories, products};
+use crate::utils::AppError;
+
 #[tauri::command]
-pub fn list_categories(db: State<'_, Database>) -> Result<Vec<Category>, AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at FROM categories ORDER BY name"
-    )?;
-
-    let categories = stmt
-        .query_map([], |row| {
-            Ok(Category {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(categories)
+pub async fn list_categories(
+    db: State<'_, DatabaseConnection>,
+) -> Result<Vec<categories::Model>, AppError> {
+    let cats = categories::Entity::find()
+        .order_by_asc(categories::Column::Name)
+        .all(db.inner())
+        .await?;
+    Ok(cats)
 }
 
 #[tauri::command]
-pub fn create_category(
-    db: State<'_, Database>,
+pub async fn create_category(
+    db: State<'_, DatabaseConnection>,
     name: String,
     description: Option<String>,
-) -> Result<Category, AppError> {
+) -> Result<categories::Model, AppError> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Nama kategori tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Nama kategori tidak boleh kosong".to_string(),
+        ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    let new_cat = categories::ActiveModel {
+        id: NotSet,
+        name: Set(name),
+        description: Set(description),
+        created_at: Set(Some(
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        )),
+    };
 
-    conn.execute(
-        "INSERT INTO categories (name, description) VALUES (?1, ?2)",
-        rusqlite::params![name, description],
-    )?;
-
-    let id = conn.last_insert_rowid();
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at FROM categories WHERE id = ?1"
-    )?;
-    let category = stmt.query_row([id], |row| {
-        Ok(Category {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            description: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    })?;
-
-    Ok(category)
+    let result = new_cat.insert(db.inner()).await?;
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn update_category(
-    db: State<'_, Database>,
+pub async fn update_category(
+    db: State<'_, DatabaseConnection>,
     id: i64,
     name: String,
     description: Option<String>,
-) -> Result<Category, AppError> {
+) -> Result<categories::Model, AppError> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Nama kategori tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Nama kategori tidak boleh kosong".to_string(),
+        ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    let existing = categories::Entity::find_by_id(id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Kategori tidak ditemukan".to_string()))?;
 
-    let rows = conn.execute(
-        "UPDATE categories SET name = ?1, description = ?2 WHERE id = ?3",
-        rusqlite::params![name, description, id],
-    )?;
+    let mut active: categories::ActiveModel = existing.into();
+    active.name = Set(name);
+    active.description = Set(description);
 
-    if rows == 0 {
-        return Err(AppError::NotFound("Kategori tidak ditemukan".to_string()));
-    }
-
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at FROM categories WHERE id = ?1"
-    )?;
-    let category = stmt.query_row([id], |row| {
-        Ok(Category {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            description: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    })?;
-
-    Ok(category)
+    let result = active.update(db.inner()).await?;
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn delete_category(db: State<'_, Database>, id: i64) -> Result<(), AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-
-    // Check if any active products use this category
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM products WHERE category_id = ?1 AND is_active = 1",
-        [id],
-        |row| row.get(0),
-    )?;
+pub async fn delete_category(
+    db: State<'_, DatabaseConnection>,
+    id: i64,
+) -> Result<(), AppError> {
+    let count = products::Entity::find()
+        .filter(products::Column::CategoryId.eq(id))
+        .filter(products::Column::IsActive.eq(true))
+        .count(db.inner())
+        .await?;
 
     if count > 0 {
         return Err(AppError::Validation(format!(
@@ -115,9 +89,11 @@ pub fn delete_category(db: State<'_, Database>, id: i64) -> Result<(), AppError>
         )));
     }
 
-    let rows = conn.execute("DELETE FROM categories WHERE id = ?1", [id])?;
+    let result = categories::Entity::delete_by_id(id)
+        .exec(db.inner())
+        .await?;
 
-    if rows == 0 {
+    if result.rows_affected == 0 {
         return Err(AppError::NotFound("Kategori tidak ditemukan".to_string()));
     }
 

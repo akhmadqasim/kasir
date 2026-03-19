@@ -1,9 +1,13 @@
-use crate::db::Database;
-use crate::db::models::product::Product;
-use crate::utils::AppError;
-use rusqlite::OptionalExtension;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, Condition, DatabaseConnection, DbBackend,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement,
+    TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use tauri::State;
+
+use crate::entity::products;
+use crate::utils::AppError;
 
 #[derive(Debug, Deserialize)]
 pub struct ProductSearchParams {
@@ -11,11 +15,13 @@ pub struct ProductSearchParams {
     pub category_id: Option<i64>,
     pub page: Option<i64>,
     pub per_page: Option<i64>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct PaginatedProducts {
-    pub data: Vec<Product>,
+    pub data: Vec<products::Model>,
     pub total: i64,
     pub page: i64,
     pub per_page: i64,
@@ -30,6 +36,7 @@ pub struct CreateProductInput {
     pub category_id: Option<i64>,
     pub buy_price: f64,
     pub sell_price: f64,
+    pub margin: Option<f64>,
     pub stock: i64,
     pub unit: String,
     pub min_stock: Option<i64>,
@@ -44,106 +51,102 @@ pub struct UpdateProductInput {
     pub category_id: Option<i64>,
     pub buy_price: f64,
     pub sell_price: f64,
+    pub margin: Option<f64>,
     pub stock: i64,
     pub unit: String,
     pub min_stock: Option<i64>,
 }
 
-fn row_to_product(row: &rusqlite::Row) -> rusqlite::Result<Product> {
-    Ok(Product {
-        id: row.get(0)?,
-        barcode: row.get(1)?,
-        sku: row.get(2)?,
-        name: row.get(3)?,
-        category_id: row.get(4)?,
-        buy_price: row.get(5)?,
-        sell_price: row.get(6)?,
-        stock: row.get(7)?,
-        unit: row.get(8)?,
-        min_stock: row.get(9)?,
-        is_active: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
-    })
+#[derive(Debug, Deserialize)]
+pub struct BulkProductInput {
+    pub barcode: Option<String>,
+    pub name: String,
+    pub category_name: Option<String>,
+    pub buy_price: f64,
+    pub sell_price: f64,
+    pub margin: Option<f64>,
+    pub stock: i64,
+    pub unit: Option<String>,
 }
 
-const PRODUCT_COLUMNS: &str =
-    "id, barcode, sku, name, category_id, buy_price, sell_price, stock, unit, min_stock, is_active, created_at, updated_at";
+#[derive(Debug, Serialize)]
+pub struct BulkImportResult {
+    pub imported: i64,
+    pub updated: i64,
+    pub skipped: i64,
+    pub errors: Vec<String>,
+}
+
+fn build_search_condition(params: &ProductSearchParams) -> Condition {
+    let mut condition = Condition::all().add(products::Column::IsActive.eq(true));
+
+    if let Some(ref query) = params.query {
+        let trimmed = query.trim();
+        if !trimmed.is_empty() {
+            let mut text_search = Condition::any()
+                .add(products::Column::Name.contains(trimmed))
+                .add(products::Column::Barcode.contains(trimmed))
+                .add(products::Column::Sku.contains(trimmed));
+
+            // Also match sell_price if query looks like a number
+            if let Ok(price) = trimmed.parse::<f64>() {
+                text_search = text_search.add(products::Column::SellPrice.eq(price));
+            }
+
+            condition = condition.add(text_search);
+        }
+    }
+
+    if let Some(cat_id) = params.category_id {
+        condition = condition.add(products::Column::CategoryId.eq(cat_id));
+    }
+
+    condition
+}
 
 #[tauri::command]
-pub fn search_products(
-    db: State<'_, Database>,
+pub async fn search_products(
+    db: State<'_, DatabaseConnection>,
     params: ProductSearchParams,
 ) -> Result<PaginatedProducts, AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(50).max(1);
     let offset = (page - 1) * per_page;
 
-    let mut where_clauses: Vec<String> = vec!["is_active = 1".to_string()];
-    let mut sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    let mut param_idx = 1;
+    let total = products::Entity::find()
+        .filter(build_search_condition(&params))
+        .count(db.inner())
+        .await? as i64;
 
-    if let Some(ref query) = params.query {
-        let trimmed = query.trim();
-        if !trimmed.is_empty() {
-            where_clauses.push(format!(
-                "(name LIKE ?{} OR barcode = ?{})",
-                param_idx,
-                param_idx + 1
-            ));
-            sql_params.push(Box::new(format!("%{}%", trimmed)));
-            sql_params.push(Box::new(trimmed.to_string()));
-            param_idx += 2;
-        }
-    }
+    let total_pages = if total == 0 {
+        1
+    } else {
+        (total + per_page - 1) / per_page
+    };
 
-    if let Some(cat_id) = params.category_id {
-        where_clauses.push(format!("category_id = ?{}", param_idx));
-        sql_params.push(Box::new(cat_id));
-        param_idx += 1;
-    }
+    let sort_col = match params.sort_by.as_deref() {
+        Some("sell_price") => products::Column::SellPrice,
+        Some("stock") => products::Column::Stock,
+        _ => products::Column::Name,
+    };
 
-    let where_sql = where_clauses.join(" AND ");
+    let query = products::Entity::find()
+        .filter(build_search_condition(&params));
 
-    // Count total
-    let count_sql = format!("SELECT COUNT(*) FROM products WHERE {}", where_sql);
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = sql_params.iter().map(|p| p.as_ref()).collect();
-    let total: i64 = conn.query_row(&count_sql, param_refs.as_slice(), |row| row.get(0))?;
+    let query = if params.sort_order.as_deref() == Some("desc") {
+        query.order_by_desc(sort_col)
+    } else {
+        query.order_by_asc(sort_col)
+    };
 
-    let total_pages = if total == 0 { 1 } else { (total + per_page - 1) / per_page };
-
-    // Fetch page
-    let select_sql = format!(
-        "SELECT {} FROM products WHERE {} ORDER BY name LIMIT ?{} OFFSET ?{}",
-        PRODUCT_COLUMNS, where_sql, param_idx, param_idx + 1
-    );
-    let mut select_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(ref query) = params.query {
-        let trimmed = query.trim();
-        if !trimmed.is_empty() {
-            select_params.push(Box::new(format!("%{}%", trimmed)));
-            select_params.push(Box::new(trimmed.to_string()));
-        }
-    }
-    if let Some(cat_id) = params.category_id {
-        select_params.push(Box::new(cat_id));
-    }
-    select_params.push(Box::new(per_page));
-    select_params.push(Box::new(offset));
-
-    let select_refs: Vec<&dyn rusqlite::types::ToSql> =
-        select_params.iter().map(|p| p.as_ref()).collect();
-
-    let mut stmt = conn.prepare(&select_sql)?;
-    let products = stmt
-        .query_map(select_refs.as_slice(), row_to_product)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let data = query
+        .offset(Some(offset as u64))
+        .limit(Some(per_page as u64))
+        .all(db.inner())
+        .await?;
 
     Ok(PaginatedProducts {
-        data: products,
+        data,
         total,
         page,
         per_page,
@@ -152,123 +155,303 @@ pub fn search_products(
 }
 
 #[tauri::command]
-pub fn get_product_by_barcode(
-    db: State<'_, Database>,
+pub async fn get_product_by_barcode(
+    db: State<'_, DatabaseConnection>,
     barcode: String,
-) -> Result<Option<Product>, AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let sql = format!(
-        "SELECT {} FROM products WHERE barcode = ?1 AND is_active = 1",
-        PRODUCT_COLUMNS
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let product = stmt
-        .query_row([&barcode], row_to_product)
-        .optional()
-        .map_err(AppError::Database)?;
-
+) -> Result<Option<products::Model>, AppError> {
+    let product = products::Entity::find()
+        .filter(products::Column::Barcode.eq(&barcode))
+        .filter(products::Column::IsActive.eq(true))
+        .one(db.inner())
+        .await?;
     Ok(product)
 }
 
 #[tauri::command]
-pub fn create_product(
-    db: State<'_, Database>,
+pub async fn create_product(
+    db: State<'_, DatabaseConnection>,
     input: CreateProductInput,
-) -> Result<Product, AppError> {
+) -> Result<products::Model, AppError> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Nama produk tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Nama produk tidak boleh kosong".to_string(),
+        ));
     }
     if input.sell_price <= 0.0 {
-        return Err(AppError::Validation("Harga jual harus lebih dari 0".to_string()));
+        return Err(AppError::Validation(
+            "Harga jual harus lebih dari 0".to_string(),
+        ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-    let min_stock = input.min_stock.unwrap_or(0);
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    conn.execute(
-        "INSERT INTO products (barcode, sku, name, category_id, buy_price, sell_price, stock, unit, min_stock)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params![
-            input.barcode,
-            input.sku,
-            name,
-            input.category_id,
-            input.buy_price,
-            input.sell_price,
-            input.stock,
-            input.unit,
-            min_stock,
-        ],
-    )?;
+    let new_product = products::ActiveModel {
+        id: NotSet,
+        barcode: Set(input.barcode),
+        sku: Set(input.sku),
+        name: Set(name),
+        category_id: Set(input.category_id),
+        buy_price: Set(input.buy_price),
+        sell_price: Set(input.sell_price),
+        margin: Set(input.margin.unwrap_or(0.0)),
+        stock: Set(input.stock),
+        unit: Set(input.unit),
+        min_stock: Set(Some(input.min_stock.unwrap_or(0))),
+        is_active: Set(true),
+        created_at: Set(Some(now.clone())),
+        updated_at: Set(Some(now)),
+    };
 
-    let id = conn.last_insert_rowid();
-    let sql = format!("SELECT {} FROM products WHERE id = ?1", PRODUCT_COLUMNS);
-    let mut stmt = conn.prepare(&sql)?;
-    let product = stmt.query_row([id], row_to_product)?;
-
+    let product = new_product.insert(db.inner()).await?;
     Ok(product)
 }
 
 #[tauri::command]
-pub fn update_product(
-    db: State<'_, Database>,
+pub async fn update_product(
+    db: State<'_, DatabaseConnection>,
     input: UpdateProductInput,
-) -> Result<Product, AppError> {
+) -> Result<products::Model, AppError> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Nama produk tidak boleh kosong".to_string()));
+        return Err(AppError::Validation(
+            "Nama produk tidak boleh kosong".to_string(),
+        ));
     }
     if input.sell_price <= 0.0 {
-        return Err(AppError::Validation("Harga jual harus lebih dari 0".to_string()));
+        return Err(AppError::Validation(
+            "Harga jual harus lebih dari 0".to_string(),
+        ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-    let min_stock = input.min_stock.unwrap_or(0);
+    let existing = products::Entity::find_by_id(input.id)
+        .filter(products::Column::IsActive.eq(true))
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan".to_string()))?;
 
-    let rows = conn.execute(
-        "UPDATE products SET barcode = ?1, sku = ?2, name = ?3, category_id = ?4,
-         buy_price = ?5, sell_price = ?6, stock = ?7, unit = ?8, min_stock = ?9,
-         updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?10 AND is_active = 1",
-        rusqlite::params![
-            input.barcode,
-            input.sku,
-            name,
-            input.category_id,
-            input.buy_price,
-            input.sell_price,
-            input.stock,
-            input.unit,
-            min_stock,
-            input.id,
-        ],
-    )?;
+    let mut active: products::ActiveModel = existing.into();
+    active.barcode = Set(input.barcode);
+    active.sku = Set(input.sku);
+    active.name = Set(name);
+    active.category_id = Set(input.category_id);
+    active.buy_price = Set(input.buy_price);
+    active.sell_price = Set(input.sell_price);
+    active.margin = Set(input.margin.unwrap_or(0.0));
+    active.stock = Set(input.stock);
+    active.unit = Set(input.unit);
+    active.min_stock = Set(Some(input.min_stock.unwrap_or(0)));
+    active.updated_at = Set(Some(
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    ));
 
-    if rows == 0 {
-        return Err(AppError::NotFound("Produk tidak ditemukan".to_string()));
-    }
-
-    let sql = format!("SELECT {} FROM products WHERE id = ?1", PRODUCT_COLUMNS);
-    let mut stmt = conn.prepare(&sql)?;
-    let product = stmt.query_row([input.id], row_to_product)?;
-
+    let product = active.update(db.inner()).await?;
     Ok(product)
 }
 
 #[tauri::command]
-pub fn delete_product(db: State<'_, Database>, id: i64) -> Result<(), AppError> {
-    let conn = db.conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+pub async fn delete_product(
+    db: State<'_, DatabaseConnection>,
+    id: i64,
+) -> Result<(), AppError> {
+    let existing = products::Entity::find_by_id(id)
+        .filter(products::Column::IsActive.eq(true))
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan".to_string()))?;
 
-    let rows = conn.execute(
-        "UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND is_active = 1",
-        [id],
-    )?;
+    let mut active: products::ActiveModel = existing.into();
+    active.is_active = Set(false);
+    active.updated_at = Set(Some(
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    ));
+    active.update(db.inner()).await?;
 
-    if rows == 0 {
-        return Err(AppError::NotFound("Produk tidak ditemukan".to_string()));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_popular_products(
+    db: State<'_, DatabaseConnection>,
+    limit: Option<i64>,
+) -> Result<Vec<products::Model>, AppError> {
+    let limit = limit.unwrap_or(8).max(1).min(20);
+
+    let products = products::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            r#"SELECT p.id, p.barcode, p.sku, p.name, p.category_id, p.buy_price,
+                      p.sell_price, p.margin, p.stock, p.unit, p.min_stock, p.is_active,
+                      p.created_at, p.updated_at
+               FROM products p
+               INNER JOIN (
+                   SELECT product_id, SUM(quantity) as total_sold
+                   FROM transaction_items
+                   GROUP BY product_id
+                   ORDER BY total_sold DESC
+                   LIMIT $1
+               ) top ON p.id = top.product_id
+               WHERE p.is_active = 1
+               ORDER BY top.total_sold DESC"#,
+            vec![limit.into()],
+        ))
+        .all(db.inner())
+        .await?;
+
+    Ok(products)
+}
+
+#[tauri::command]
+pub async fn bulk_create_products(
+    db: State<'_, DatabaseConnection>,
+    products: Vec<BulkProductInput>,
+) -> Result<BulkImportResult, AppError> {
+    use crate::entity::categories as cat_ent;
+    use crate::entity::products as prod_ent;
+
+    let txn = db.begin().await?;
+
+    let mut imported: i64 = 0;
+    let mut updated: i64 = 0;
+    let mut skipped: i64 = 0;
+    let mut errors: Vec<String> = Vec::new();
+
+    for (idx, input) in products.iter().enumerate() {
+        let row_num = idx + 1;
+        let name = input.name.trim().to_string();
+
+        if name.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        if input.sell_price <= 0.0 {
+            skipped += 1;
+            errors.push(format!("Baris {}: Harga jual harus lebih dari 0", row_num));
+            continue;
+        }
+
+        let unit = input
+            .unit
+            .as_deref()
+            .map(|u| u.trim())
+            .filter(|u| !u.is_empty())
+            .unwrap_or("pcs")
+            .to_string();
+
+        // Resolve category
+        let category_id: Option<i64> = match &input.category_name {
+            Some(cat_name) if !cat_name.trim().is_empty() => {
+                let cat_trimmed = cat_name.trim();
+                let existing = cat_ent::Entity::find()
+                    .filter(cat_ent::Column::Name.eq(cat_trimmed))
+                    .one(&txn)
+                    .await?;
+
+                match existing {
+                    Some(cat) => Some(cat.id),
+                    None => {
+                        let new_cat = cat_ent::ActiveModel {
+                            id: NotSet,
+                            name: Set(cat_trimmed.to_string()),
+                            description: Set(None),
+                            created_at: Set(Some(
+                                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                            )),
+                        };
+                        let cat = new_cat.insert(&txn).await?;
+                        Some(cat.id)
+                    }
+                }
+            }
+            _ => None,
+        };
+
+        // Resolve barcode
+        let barcode = input
+            .barcode
+            .as_deref()
+            .map(|b| b.trim())
+            .filter(|b| !b.is_empty())
+            .map(|b| b.to_string());
+
+        // Check existing product by barcode
+        let existing_product = match &barcode {
+            Some(bc) => {
+                prod_ent::Entity::find()
+                    .filter(prod_ent::Column::Barcode.eq(bc.as_str()))
+                    .one(&txn)
+                    .await?
+            }
+            None => None,
+        };
+
+        let margin = input.margin.unwrap_or(0.0);
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        if let Some(existing) = existing_product {
+            let mut active: prod_ent::ActiveModel = existing.into();
+            active.name = Set(name);
+            active.category_id = Set(category_id);
+            active.buy_price = Set(input.buy_price);
+            active.sell_price = Set(input.sell_price);
+            active.margin = Set(margin);
+            active.stock = Set(input.stock);
+            active.unit = Set(unit);
+            active.is_active = Set(true);
+            active.updated_at = Set(Some(now));
+
+            match active.update(&txn).await {
+                Ok(_) => updated += 1,
+                Err(e) => {
+                    skipped += 1;
+                    errors.push(format!("Baris {}: {}", row_num, e));
+                }
+            }
+        } else {
+            let new_product = prod_ent::ActiveModel {
+                id: NotSet,
+                barcode: Set(barcode),
+                sku: Set(None),
+                name: Set(name),
+                category_id: Set(category_id),
+                buy_price: Set(input.buy_price),
+                sell_price: Set(input.sell_price),
+                margin: Set(margin),
+                stock: Set(input.stock),
+                unit: Set(unit),
+                min_stock: Set(Some(0)),
+                is_active: Set(true),
+                created_at: Set(Some(now.clone())),
+                updated_at: Set(Some(now)),
+            };
+
+            match new_product.insert(&txn).await {
+                Ok(_) => imported += 1,
+                Err(e) => {
+                    skipped += 1;
+                    errors.push(format!("Baris {}: {}", row_num, e));
+                }
+            }
+        }
     }
 
+    txn.commit().await?;
+
+    Ok(BulkImportResult {
+        imported,
+        updated,
+        skipped,
+        errors,
+    })
+}
+
+#[tauri::command]
+pub fn save_template_file(content: String, filename: String) -> Result<(), AppError> {
+    let desktop = dirs::desktop_dir()
+        .ok_or_else(|| AppError::Internal("Tidak dapat menemukan folder Desktop".into()))?;
+    let path = desktop.join(&filename);
+    std::fs::write(&path, content)
+        .map_err(|e| AppError::Internal(format!("Gagal menyimpan file: {}", e)))?;
     Ok(())
 }

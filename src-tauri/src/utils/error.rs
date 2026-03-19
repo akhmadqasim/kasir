@@ -2,22 +2,22 @@ use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Database(#[from] sea_orm::DbErr),
 
-    #[error("Not found: {0}")]
+    #[error("{0}")]
     NotFound(String),
 
-    #[error("Validation error: {0}")]
+    #[error("{0}")]
     Validation(String),
 
-    #[error("Authentication error: {0}")]
+    #[error("{0}")]
     Auth(String),
 
-    #[error("Authorization error: {0}")]
+    #[error("{0}")]
     Forbidden(String),
 
-    #[error("Internal error: {0}")]
+    #[error("{0}")]
     Internal(String),
 }
 

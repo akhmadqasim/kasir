@@ -1,9 +1,9 @@
 mod commands;
 mod db;
+pub mod entity;
 mod printing;
 mod utils;
 
-use db::Database;
 use std::fs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,9 +18,10 @@ pub fn run() {
     fs::create_dir_all(&data_dir).expect("Failed to create data directory");
 
     let db_path = data_dir.join("kasir.db");
-    let database = Database::new(
-        db_path.to_str().expect("Invalid DB path")
-    ).expect("Failed to initialize database");
+    let database = tauri::async_runtime::block_on(
+        db::setup_database(db_path.to_str().expect("Invalid DB path")),
+    )
+    .expect("Failed to initialize database");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -37,6 +38,9 @@ pub fn run() {
             commands::products::create_product,
             commands::products::update_product,
             commands::products::delete_product,
+            commands::products::get_popular_products,
+            commands::products::bulk_create_products,
+            commands::products::save_template_file,
             commands::categories::list_categories,
             commands::categories::create_category,
             commands::categories::update_category,
