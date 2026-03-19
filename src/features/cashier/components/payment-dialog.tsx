@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -38,6 +38,8 @@ export function PaymentDialog({
 }: PaymentDialogProps) {
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [paymentAmount, setPaymentAmount] = useState("")
+  const [displayPayment, setDisplayPayment] = useState("")
+  const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
   const items = useCartStore((s) => s.items)
   const getTotal = useCartStore((s) => s.getTotal)
@@ -52,6 +54,41 @@ export function PaymentDialog({
   const canConfirm = items.length > 0 && isCashValid && !createTransaction.isPending
 
   const quickAmounts = getQuickAmounts(total)
+
+  // Auto-focus payment input when dialog opens
+  useEffect(() => {
+    if (open && paymentMethod === "cash") {
+      setTimeout(() => paymentInputRef.current?.focus(), 100)
+    }
+  }, [open, paymentMethod])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && canConfirm) {
+      e.preventDefault()
+      handleConfirm()
+    }
+  }
+
+  const formatNumber = (num: number): string => {
+    return new Intl.NumberFormat("id-ID").format(num)
+  }
+
+  const handlePaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "")
+    if (raw === "") {
+      setPaymentAmount("")
+      setDisplayPayment("")
+      return
+    }
+    const num = Number(raw)
+    setPaymentAmount(String(num))
+    setDisplayPayment(formatNumber(num))
+  }
+
+  const handleQuickAmount = (amount: number) => {
+    setPaymentAmount(String(amount))
+    setDisplayPayment(formatNumber(amount))
+  }
 
   const handleConfirm = () => {
     if (!user) return
@@ -75,6 +112,7 @@ export function PaymentDialog({
         onSuccess: (result) => {
           onSuccess(result)
           setPaymentAmount("")
+          setDisplayPayment("")
           setPaymentMethod("cash")
         },
         onError: () => {
@@ -87,6 +125,7 @@ export function PaymentDialog({
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       setPaymentAmount("")
+      setDisplayPayment("")
       setPaymentMethod("cash")
     }
     onOpenChange(isOpen)
@@ -129,13 +168,15 @@ export function PaymentDialog({
               <div>
                 <Label htmlFor="payment-amount">Jumlah Bayar</Label>
                 <Input
+                  ref={paymentInputRef}
                   id="payment-amount"
-                  type="number"
-                  className="mt-1 h-12 text-lg text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  type="text"
+                  inputMode="numeric"
+                  className="mt-1 !h-12 !text-lg !font-bold text-right tabular-nums"
                   placeholder="0"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  min={0}
+                  value={displayPayment}
+                  onChange={handlePaymentChange}
+                  onKeyDown={handleKeyDown}
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -144,7 +185,7 @@ export function PaymentDialog({
                     key={amount}
                     variant="outline"
                     size="sm"
-                    onClick={() => setPaymentAmount(String(amount))}
+                    onClick={() => handleQuickAmount(amount)}
                   >
                     {amount === total ? "Uang Pas" : formatRupiah(amount)}
                   </Button>
@@ -152,10 +193,10 @@ export function PaymentDialog({
               </div>
               {numericPayment > 0 && (
                 <div className="rounded-lg bg-muted p-3">
-                  <div className="flex justify-between">
-                    <span>Kembalian</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Kembalian</span>
                     <span
-                      className={`text-lg font-bold tabular-nums ${
+                      className={`text-base font-bold tabular-nums ${
                         changeAmount < 0 ? "text-destructive" : "text-green-600"
                       }`}
                     >
@@ -201,7 +242,7 @@ function getQuickAmounts(total: number): number[] {
   const amounts = new Set<number>()
   amounts.add(total) // Uang Pas
 
-  const roundUps = [1000, 5000, 10000, 50000, 100000]
+  const roundUps = [1000, 5000, 10000, 20000, 50000, 100000]
   for (const r of roundUps) {
     const rounded = Math.ceil(total / r) * r
     if (rounded > total) {

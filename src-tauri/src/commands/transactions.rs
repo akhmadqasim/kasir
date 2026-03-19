@@ -102,10 +102,11 @@ pub async fn create_transaction(
             })?;
 
         if product.stock < item_input.quantity {
-            return Err(AppError::Validation(format!(
-                "Stok tidak cukup untuk {} (tersedia: {}, diminta: {})",
+            // Allow selling even with insufficient stock - just log warning
+            eprintln!(
+                "Warning: Stok {} kurang (tersedia: {}, diminta: {})",
                 product.name, product.stock, item_input.quantity
-            )));
+            );
         }
 
         let subtotal = product.sell_price * item_input.quantity as f64;

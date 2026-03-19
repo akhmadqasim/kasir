@@ -1,4 +1,6 @@
-import { CheckCircle2 } from "lucide-react"
+import { CheckCircle2, Printer } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core"
+import { useEffect, useRef, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -8,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
+import { toast } from "sonner"
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Tunai",
@@ -27,17 +30,61 @@ export function TransactionSuccessDialog({
   result,
   onNewTransaction,
 }: TransactionSuccessDialogProps) {
-  if (!result) return null
+  const [isPrinting, setIsPrinting] = useState(false)
+  const autoPrintedRef = useRef<number | null>(null)
 
-  const { transaction } = result
-  const isCash = transaction.payment_method === "cash"
+  const transaction = result?.transaction
+  const isCash = transaction?.payment_method === "cash"
+
+  // Auto-print when dialog opens with a new transaction
+  useEffect(() => {
+    if (!open || !transaction) return
+    if (autoPrintedRef.current === transaction.id) return
+
+    const tryAutoPrint = async () => {
+      try {
+        const settings = await invoke<{
+          printer_id: string | null
+          auto_print: boolean | null
+        }>("get_printer_settings_cmd")
+
+        if (settings.auto_print && settings.printer_id) {
+          autoPrintedRef.current = transaction.id
+          setIsPrinting(true)
+          await invoke("print_receipt", { transactionId: transaction.id })
+          toast.success("Struk otomatis dicetak!")
+          setIsPrinting(false)
+        }
+      } catch {
+        setIsPrinting(false)
+      }
+    }
+    tryAutoPrint()
+  }, [open, transaction])
+
+  if (!result || !transaction) return null
+
+  const handlePrint = async () => {
+    setIsPrinting(true)
+    try {
+      await invoke("print_receipt", { transactionId: transaction.id })
+      toast.success("Struk berhasil dicetak!")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes("belum dikonfigurasi")) {
+        toast.error("Printer belum diatur. Silakan atur di menu Pengaturan.")
+      } else {
+        toast.error(`Gagal mencetak struk: ${message}`)
+      }
+    } finally {
+      setIsPrinting(false)
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
+    <Dialog open={open} onOpenChange={() => onNewTransaction()}>
       <DialogContent
         className="sm:max-w-sm"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <div className="flex flex-col items-center gap-4 pt-4">
           <CheckCircle2 className="h-16 w-16 text-green-500" />
@@ -71,15 +118,17 @@ export function TransactionSuccessDialog({
 
           {isCash && (
             <>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Jumlah Bayar</span>
-                <span className="font-medium tabular-nums">
+              <Separator />
+              <div className="text-center py-3">
+                <p className="text-sm text-muted-foreground mb-1">Jumlah Bayar</p>
+                <p className="text-5xl font-extrabold tabular-nums tracking-tight">
                   {formatRupiah(transaction.payment_amount)}
-                </span>
+                </p>
               </div>
-              <div className="flex justify-between">
+              <Separator />
+              <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Kembalian</span>
-                <span className="font-bold text-green-600 tabular-nums">
+                <span className="text-lg font-semibold text-green-600 tabular-nums">
                   {formatRupiah(transaction.change_amount)}
                 </span>
               </div>
@@ -88,8 +137,14 @@ export function TransactionSuccessDialog({
         </div>
 
         <DialogFooter className="flex gap-2 sm:flex-col">
-          <Button variant="outline" className="w-full" disabled>
-            Cetak Struk
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handlePrint}
+            disabled={isPrinting}
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            {isPrinting ? "Mencetak..." : "Cetak Struk"}
           </Button>
           <Button className="w-full" onClick={onNewTransaction}>
             Transaksi Baru
