@@ -15,6 +15,7 @@ pub enum AppError {
     Auth(String),
 
     #[error("{0}")]
+    #[allow(dead_code)]
     Forbidden(String),
 
     #[error("{0}")]

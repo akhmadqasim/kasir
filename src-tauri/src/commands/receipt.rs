@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::entity::{store_info, transaction_items, transactions, users};
-use crate::printing::receipt::{format_receipt, format_test_page, ReceiptData, ReceiptItem};
+use crate::printing::receipt::{
+    format_receipt_text, format_test_page_text, ReceiptData,
+    ReceiptItem, ReceiptTextLine,
+};
 use crate::utils::AppError;
 
 #[derive(Debug, Serialize)]
@@ -53,30 +56,16 @@ fn get_printer_settings(additional_info: &Option<String>) -> PrinterSettings {
         })
 }
 
-/// Send data to printer based on printer_id format
-/// USB printers: "USB:XXXX:XXXX" (vendor:product hex)
-/// Windows printers: anything else (printer name)
-fn send_to_printer(printer_id: &str, data: &[u8]) -> Result<(), String> {
-    if let Some(usb_ids) = printer_id.strip_prefix("USB:") {
-        let parts: Vec<&str> = usb_ids.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Format USB printer ID tidak valid".to_string());
-        }
-        let vendor_id =
-            u16::from_str_radix(parts[0], 16).map_err(|_| "Vendor ID tidak valid".to_string())?;
-        let product_id = u16::from_str_radix(parts[1], 16)
-            .map_err(|_| "Product ID tidak valid".to_string())?;
-
-        crate::printing::usb_printer::send_raw_data(vendor_id, product_id, data)
-    } else {
-        #[cfg(windows)]
-        {
-            crate::printing::windows_printer::send_raw_data(printer_id, data)
-        }
-        #[cfg(not(windows))]
-        {
-            Err("Windows printer tidak tersedia di platform ini".to_string())
-        }
+/// Send text lines to printer via GDI pipeline (reliable for USB thermal printers)
+fn send_to_printer_gdi(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        crate::printing::windows_printer::send_gdi_text(printer_id, lines)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (printer_id, lines);
+        Err("Printing hanya tersedia di Windows".to_string())
     }
 }
 
@@ -161,6 +150,11 @@ pub async fn print_receipt(
         })
         .collect();
 
+    eprintln!("[print_receipt] Transaction #{}, items count: {}", transaction_id, receipt_items.len());
+    for (i, item) in receipt_items.iter().enumerate() {
+        eprintln!("[print_receipt]   Item {}: {} x{} @{} = {}", i, item.name, item.quantity, item.price, item.subtotal);
+    }
+
     let receipt_data = ReceiptData {
         store_name: store.name,
         store_address: store.address,
@@ -176,9 +170,15 @@ pub async fn print_receipt(
         footer_text: settings.footer_text,
     };
 
-    let bytes = format_receipt(&receipt_data, paper_width);
+    let text_lines = format_receipt_text(&receipt_data, paper_width);
 
-    send_to_printer(&printer_id, &bytes).map_err(|e| AppError::Internal(e))?;
+    eprintln!(
+        "[print_receipt] Generated {} text lines for GDI printer '{}'",
+        text_lines.len(),
+        printer_id
+    );
+
+    send_to_printer_gdi(&printer_id, &text_lines).map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }
@@ -198,9 +198,9 @@ pub async fn test_print(db: State<'_, DatabaseConnection>) -> Result<(), AppErro
 
     let paper_width = settings.paper_width.unwrap_or(58);
 
-    let bytes = format_test_page(&store.name, paper_width);
+    let text_lines = format_test_page_text(&store.name, paper_width);
 
-    send_to_printer(&printer_id, &bytes).map_err(|e| AppError::Internal(e))?;
+    send_to_printer_gdi(&printer_id, &text_lines).map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }
@@ -260,6 +260,95 @@ pub struct PrinterSettingsResponse {
     pub paper_width: Option<u8>,
     pub auto_print: Option<bool>,
     pub footer_text: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReceiptDataResponse {
+    pub store_name: String,
+    pub store_address: Option<String>,
+    pub store_phone: Option<String>,
+    pub receipt_number: String,
+    pub date_time: String,
+    pub cashier_name: String,
+    pub items: Vec<ReceiptItemResponse>,
+    pub total_amount: f64,
+    pub payment_method: String,
+    pub payment_amount: f64,
+    pub change_amount: f64,
+    pub footer_text: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReceiptItemResponse {
+    pub name: String,
+    pub quantity: i32,
+    pub price: f64,
+    pub subtotal: f64,
+}
+
+#[tauri::command]
+pub async fn get_receipt_data(
+    db: State<'_, DatabaseConnection>,
+    transaction_id: i64,
+) -> Result<ReceiptDataResponse, AppError> {
+    let store = store_info::Entity::find_by_id(1_i64)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+
+    let settings = get_printer_settings(&store.additional_info);
+
+    let transaction = transactions::Entity::find_by_id(transaction_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    let items = transaction_items::Entity::find()
+        .filter(transaction_items::Column::TransactionId.eq(transaction_id))
+        .all(db.inner())
+        .await?;
+
+    let user = users::Entity::find_by_id(transaction.user_id)
+        .one(db.inner())
+        .await?;
+    let cashier_name = user
+        .map(|u| u.full_name)
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let date_time = transaction
+        .created_at
+        .as_ref()
+        .and_then(|dt| {
+            chrono::NaiveDateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|ndt| ndt.format("%d/%m/%Y %H:%M").to_string())
+        })
+        .unwrap_or_else(|| "N/A".to_string());
+
+    let receipt_items: Vec<ReceiptItemResponse> = items
+        .iter()
+        .map(|item| ReceiptItemResponse {
+            name: item.product_name.clone(),
+            quantity: item.quantity as i32,
+            price: item.product_price,
+            subtotal: item.subtotal,
+        })
+        .collect();
+
+    Ok(ReceiptDataResponse {
+        store_name: store.name,
+        store_address: store.address,
+        store_phone: store.phone,
+        receipt_number: transaction.receipt_number,
+        date_time,
+        cashier_name,
+        items: receipt_items,
+        total_amount: transaction.total_amount,
+        payment_method: transaction.payment_method,
+        payment_amount: transaction.payment_amount,
+        change_amount: transaction.change_amount.unwrap_or(0.0),
+        footer_text: settings.footer_text,
+    })
 }
 
 #[tauri::command]

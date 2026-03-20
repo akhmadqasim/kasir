@@ -1,5 +1,4 @@
-/// Receipt formatter: takes store info + transaction data and produces ESC/POS bytes
-use super::escpos::EscPosBuilder;
+/// Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
 
 /// All data needed to generate a receipt
 pub struct ReceiptData {
@@ -62,114 +61,130 @@ fn payment_method_label(method: &str) -> &str {
     }
 }
 
-/// Generate ESC/POS bytes for a receipt
-pub fn format_receipt(data: &ReceiptData, paper_width_mm: u8) -> Vec<u8> {
-    let mut p = EscPosBuilder::new(paper_width_mm);
+/// A single line of receipt text for GDI printing
+pub struct ReceiptTextLine {
+    pub text: String,
+    pub bold: bool,
+}
 
-    // === Header ===
-    p.align_center();
-    p.bold_on();
-    p.double_size_on();
-    p.line(&data.store_name);
-    p.double_size_off();
-    p.bold_off();
+/// Center text within given width using space padding (monospace)
+fn center_text(text: &str, width: usize) -> String {
+    let text_len = text.chars().count();
+    let pad = width.saturating_sub(text_len) / 2;
+    format!("{}{}", " ".repeat(pad), text)
+}
+
+/// Two-column text padded to given width (left-aligned left, right-aligned right)
+fn two_col_text(left: &str, right: &str, width: usize) -> String {
+    let left_len = left.chars().count();
+    let right_len = right.chars().count();
+    let spaces = width.saturating_sub(left_len + right_len).max(1);
+    format!("{}{}{}", left, " ".repeat(spaces), right)
+}
+
+/// Generate receipt as text lines for GDI printing
+pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
+    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let mut lines = Vec::new();
+
+    // Header
+    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine { text: center_text(&data.store_name, cpl), bold: true });
 
     if let Some(ref addr) = data.store_address {
         if !addr.is_empty() {
-            p.line(addr);
+            lines.push(ReceiptTextLine { text: center_text(addr, cpl), bold: false });
         }
     }
     if let Some(ref phone) = data.store_phone {
         if !phone.is_empty() {
-            p.line(&format!("Telp: {}", phone));
+            lines.push(ReceiptTextLine {
+                text: center_text(&format!("Telp: {}", phone), cpl),
+                bold: false,
+            });
         }
     }
 
-    p.separator('=');
+    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
 
-    // === Transaction info ===
-    p.align_left();
-    p.two_columns("No:", &data.receipt_number);
-    p.two_columns("Tanggal:", &data.date_time);
-    p.two_columns("Kasir:", &data.cashier_name);
-    p.separator('-');
+    // Transaction info
+    lines.push(ReceiptTextLine { text: two_col_text("No:", &data.receipt_number, cpl), bold: false });
+    lines.push(ReceiptTextLine { text: two_col_text("Tanggal:", &data.date_time, cpl), bold: false });
+    lines.push(ReceiptTextLine { text: two_col_text("Kasir:", &data.cashier_name, cpl), bold: false });
+    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
 
-    // === Items ===
+    // Items
     for item in &data.items {
         let price_str = format_rupiah(item.price);
-        let qty_price = format!("{} x {}", item.quantity, price_str);
-        p.left_text(&item.name);
-        p.two_columns(&qty_price, &format_rupiah(item.subtotal));
+        let subtotal_str = format_rupiah(item.subtotal);
+        let qty_price = format!("  {} x {}", item.quantity, price_str);
+        lines.push(ReceiptTextLine { text: item.name.clone(), bold: false });
+        lines.push(ReceiptTextLine { text: two_col_text(&qty_price, &subtotal_str, cpl), bold: false });
     }
 
-    p.separator('-');
+    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
 
-    // === Totals ===
-    p.bold_on();
-    p.two_columns("TOTAL", &format_rupiah(data.total_amount));
-    p.bold_off();
-
+    // Totals
+    lines.push(ReceiptTextLine {
+        text: two_col_text("TOTAL", &format_rupiah(data.total_amount), cpl),
+        bold: true,
+    });
     let method_label = payment_method_label(&data.payment_method);
-    p.two_columns(
-        &format!("Bayar ({})", method_label),
-        &format_rupiah(data.payment_amount),
-    );
-
+    lines.push(ReceiptTextLine {
+        text: two_col_text(&format!("Bayar ({})", method_label), &format_rupiah(data.payment_amount), cpl),
+        bold: false,
+    });
     if data.payment_method == "cash" && data.change_amount > 0.0 {
-        p.two_columns("Kembalian", &format_rupiah(data.change_amount));
+        lines.push(ReceiptTextLine {
+            text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
+            bold: false,
+        });
     }
 
-    p.separator('=');
+    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
 
-    // === Footer ===
-    p.align_center();
+    // Footer
     if let Some(ref footer) = data.footer_text {
-        p.line(footer);
+        for line in footer.lines() {
+            lines.push(ReceiptTextLine { text: center_text(line, cpl), bold: false });
+        }
     } else {
-        p.line("Terima kasih!");
-        p.line("Barang yang sudah dibeli");
-        p.line("tidak dapat dikembalikan");
+        lines.push(ReceiptTextLine { text: center_text("Terima kasih!", cpl), bold: false });
+        lines.push(ReceiptTextLine { text: center_text("Barang yang sudah dibeli", cpl), bold: false });
+        lines.push(ReceiptTextLine { text: center_text("tidak dapat dikembalikan", cpl), bold: false });
     }
 
-    p.feed(3);
-    p.cut();
+    // Feed lines
+    for _ in 0..6 {
+        lines.push(ReceiptTextLine { text: String::new(), bold: false });
+    }
 
-    p.build()
+    lines
 }
 
-/// Generate a test print page
-pub fn format_test_page(store_name: &str, paper_width_mm: u8) -> Vec<u8> {
-    let mut p = EscPosBuilder::new(paper_width_mm);
+/// Generate test page as text lines for GDI printing
+pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
+    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let mut lines = Vec::new();
 
-    p.align_center();
-    p.bold_on();
-    p.double_size_on();
-    p.line("TEST PRINT");
-    p.double_size_off();
-    p.bold_off();
-    p.separator('=');
-    p.line(store_name);
-    p.line(&format!("Lebar: {}mm", paper_width_mm));
-    p.line(&format!("{} karakter/baris", p.chars_per_line()));
-    p.separator('-');
+    lines.push(ReceiptTextLine { text: center_text("TEST PRINT", cpl), bold: true });
+    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine { text: center_text(store_name, cpl), bold: false });
+    lines.push(ReceiptTextLine { text: center_text(&format!("Lebar: {}mm", paper_width_mm), cpl), bold: false });
+    lines.push(ReceiptTextLine { text: center_text(&format!("{} karakter/baris", cpl), cpl), bold: false });
+    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine { text: "Normal text".to_string(), bold: false });
+    lines.push(ReceiptTextLine { text: "Bold text".to_string(), bold: true });
+    lines.push(ReceiptTextLine { text: two_col_text("Kiri", "Kanan", cpl), bold: false });
+    lines.push(ReceiptTextLine { text: two_col_text("Item panjang sekali", "100.000", cpl), bold: false });
+    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine { text: center_text("Printer OK!", cpl), bold: false });
 
-    p.align_left();
-    p.line("Normal text");
-    p.bold_on();
-    p.line("Bold text");
-    p.bold_off();
+    for _ in 0..6 {
+        lines.push(ReceiptTextLine { text: String::new(), bold: false });
+    }
 
-    p.align_left();
-    p.two_columns("Kiri", "Kanan");
-    p.two_columns("Item panjang sekali", "100.000");
-
-    p.separator('=');
-    p.align_center();
-    p.line("Printer OK!");
-    p.feed(3);
-    p.cut();
-
-    p.build()
+    lines
 }
 
 #[cfg(test)]
@@ -186,7 +201,22 @@ mod tests {
     }
 
     #[test]
-    fn test_format_receipt() {
+    fn test_center_text() {
+        let centered = center_text("Hello", 32);
+        assert!(centered.starts_with("             "));
+        assert!(centered.contains("Hello"));
+    }
+
+    #[test]
+    fn test_two_col_text() {
+        let line = two_col_text("TOTAL", "100.000", 32);
+        assert_eq!(line.len(), 32);
+        assert!(line.starts_with("TOTAL"));
+        assert!(line.ends_with("100.000"));
+    }
+
+    #[test]
+    fn test_format_receipt_text() {
         let data = ReceiptData {
             store_name: "Toko Makmur".to_string(),
             store_address: Some("Jl. Raya No. 1".to_string()),
@@ -215,11 +245,13 @@ mod tests {
             footer_text: None,
         };
 
-        let bytes = format_receipt(&data, 58);
-        assert!(!bytes.is_empty());
-        let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("Toko Makmur"));
-        assert!(text.contains("TRX-20250118-0001"));
-        assert!(text.contains("Beras 5kg"));
+        let lines = format_receipt_text(&data, 58);
+        assert!(!lines.is_empty());
+
+        let all_text: String = lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
+        assert!(all_text.contains("Toko Makmur"));
+        assert!(all_text.contains("TRX-20250118-0001"));
+        assert!(all_text.contains("Beras 5kg"));
+        assert!(all_text.contains("Terima kasih!"));
     }
 }

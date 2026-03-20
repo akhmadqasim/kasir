@@ -54,6 +54,7 @@ export function TransactionSuccessDialog({
           await invoke("print_receipt", { transactionId: transaction.id })
           toast.success("Struk otomatis dicetak!")
           setIsPrinting(false)
+          setTimeout(() => onNewTransaction(), 1500)
         }
       } catch {
         setIsPrinting(false)
