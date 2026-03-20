@@ -64,6 +64,10 @@ const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> =
   partial_refund: "secondary",
 }
 
+const STATUS_CLASSNAMES: Record<string, string> = {
+  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
+}
+
 const STATUS_LABELS: Record<string, string> = {
   completed: id.transactions.completed,
   refunded: id.transactions.refunded,
@@ -142,10 +146,10 @@ export function TransactionsPage() {
         </div>
 
         <Select value={paymentMethod} onValueChange={(v) => { setPaymentMethod(v === "all" ? "" : v); setPage(1) }}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full max-w-48">
             <SelectValue placeholder={id.transactions.allMethods} />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper">
             <SelectItem value="all">{id.transactions.allMethods}</SelectItem>
             <SelectItem value="cash">{id.payment.cash}</SelectItem>
             <SelectItem value="qris">{id.payment.qris}</SelectItem>
@@ -155,10 +159,10 @@ export function TransactionsPage() {
         </Select>
 
         <Select value={status} onValueChange={(v) => { setStatus(v === "all" ? "" : v); setPage(1) }}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full max-w-48">
             <SelectValue placeholder={id.transactions.allStatus} />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper">
             <SelectItem value="all">{id.transactions.allStatus}</SelectItem>
             <SelectItem value="completed">{id.transactions.completed}</SelectItem>
             <SelectItem value="refunded">{id.transactions.refunded}</SelectItem>
@@ -178,25 +182,26 @@ export function TransactionsPage() {
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
-                className="w-[280px] justify-start text-left font-normal"
+                data-empty={!dateRange?.from}
+                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <CalendarIcon />
                 {dateRange?.from ? (
                   dateRange.to ? (
                     <>
                       {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" — "}
+                      {" - "}
                       {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
                     </>
                   ) : (
                     format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
                   )
                 ) : (
-                  <span className="text-muted-foreground">Pilih tanggal</span>
+                  <span>Pilih tanggal</span>
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
+            <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="range"
                 defaultMonth={dateRange?.from}
@@ -216,12 +221,12 @@ export function TransactionsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>{id.transactions.receiptNumber}</TableHead>
-              <TableHead>{id.transactions.date}</TableHead>
               <TableHead>{id.transactions.cashier}</TableHead>
+              <TableHead>{id.transactions.date}</TableHead>
               <TableHead className="text-center">{id.transactions.items}</TableHead>
-              <TableHead className="text-right">{id.transactions.totalAmount}</TableHead>
               <TableHead>{id.transactions.paymentMethod}</TableHead>
               <TableHead>{id.transactions.status}</TableHead>
+              <TableHead className="text-right">{id.transactions.totalAmount}</TableHead>
               <TableHead className="text-right w-24" />
             </TableRow>
           </TableHeader>
@@ -252,21 +257,24 @@ export function TransactionsPage() {
               data.data.map((txn) => (
                 <TableRow key={txn.id} className="cursor-pointer" onClick={() => setDetailTxn(txn)}>
                   <TableCell className="font-mono text-sm">{txn.receipt_number}</TableCell>
-                  <TableCell className="text-sm">{formatDate(txn.created_at)}</TableCell>
                   <TableCell>{txn.cashier_name}</TableCell>
+                  <TableCell className="text-sm">{formatDate(txn.created_at)}</TableCell>
                   <TableCell className="text-center">{txn.item_count}</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {formatRupiah(txn.total_amount)}
-                  </TableCell>
                   <TableCell>
                     <Badge variant="outline">
                       {PAYMENT_LABELS[txn.payment_method] || txn.payment_method}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_VARIANTS[txn.status] || "secondary"}>
+                    <Badge
+                      variant={STATUS_VARIANTS[txn.status] || "secondary"}
+                      className={STATUS_CLASSNAMES[txn.status]}
+                    >
                       {STATUS_LABELS[txn.status] || txn.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {formatRupiah(txn.total_amount)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">

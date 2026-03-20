@@ -42,6 +42,10 @@ const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> =
   partial_refund: "secondary",
 }
 
+const STATUS_CLASSNAMES: Record<string, string> = {
+  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
+}
+
 const STATUS_LABELS: Record<string, string> = {
   completed: id.transactions.completed,
   refunded: id.transactions.refunded,
@@ -100,7 +104,10 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               </div>
               <div>
                 <p className="text-muted-foreground">{id.transactions.status}</p>
-                <Badge variant={STATUS_VARIANTS[detail.transaction.status] || "secondary"}>
+                <Badge
+                  variant={STATUS_VARIANTS[detail.transaction.status] || "secondary"}
+                  className={STATUS_CLASSNAMES[detail.transaction.status]}
+                >
                   {STATUS_LABELS[detail.transaction.status] || detail.transaction.status}
                 </Badge>
               </div>
