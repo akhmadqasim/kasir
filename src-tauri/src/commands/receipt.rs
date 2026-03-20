@@ -71,28 +71,31 @@ fn send_to_printer_gdi(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<()
 
 #[tauri::command]
 pub async fn list_printers() -> Result<Vec<PrinterInfoItem>, AppError> {
-    let mut all_printers = Vec::new();
+    tokio::task::spawn_blocking(|| {
+        let mut all_printers = Vec::new();
 
-    // List Windows printers only (USB Direct not supported on Windows)
-    #[cfg(windows)]
-    {
-        if let Ok(win_printers) = crate::printing::windows_printer::list_printers() {
-            for p in win_printers {
-                all_printers.push(PrinterInfoItem {
-                    id: p.name.clone(),
-                    name: if p.is_default {
-                        format!("{} (Default)", p.name)
-                    } else {
-                        p.name
-                    },
-                    printer_type: "windows".to_string(),
-                    is_default: p.is_default,
-                });
+        #[cfg(windows)]
+        {
+            if let Ok(win_printers) = crate::printing::windows_printer::list_printers() {
+                for p in win_printers {
+                    all_printers.push(PrinterInfoItem {
+                        id: p.name.clone(),
+                        name: if p.is_default {
+                            format!("{} (Default)", p.name)
+                        } else {
+                            p.name
+                        },
+                        printer_type: "windows".to_string(),
+                        is_default: p.is_default,
+                    });
+                }
             }
         }
-    }
 
-    Ok(all_printers)
+        all_printers
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("List printers error: {}", e)))
 }
 
 #[tauri::command]
@@ -178,7 +181,12 @@ pub async fn print_receipt(
         printer_id
     );
 
-    send_to_printer_gdi(&printer_id, &text_lines).map_err(|e| AppError::Internal(e))?;
+    tokio::task::spawn_blocking(move || {
+        send_to_printer_gdi(&printer_id, &text_lines)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
+    .map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }
@@ -200,7 +208,12 @@ pub async fn test_print(db: State<'_, DatabaseConnection>) -> Result<(), AppErro
 
     let text_lines = format_test_page_text(&store.name, paper_width);
 
-    send_to_printer_gdi(&printer_id, &text_lines).map_err(|e| AppError::Internal(e))?;
+    tokio::task::spawn_blocking(move || {
+        send_to_printer_gdi(&printer_id, &text_lines)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
+    .map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }

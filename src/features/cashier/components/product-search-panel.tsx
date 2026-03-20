@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Search, Pin, TrendingUp } from "lucide-react"
+import { Search, Pin, Trash2, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
 import { Kbd } from "@/components/ui/kbd"
@@ -50,7 +50,11 @@ interface ShortcutProduct {
 export function ProductSearchPanel() {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [holdingPinId, setHoldingPinId] = useState<number | null>(null)
+  const [holdProgress, setHoldProgress] = useState(0)
   const commandInputRef = useRef<HTMLDivElement>(null)
+  const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const holdStartRef = useRef<number>(0)
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
 
@@ -93,8 +97,7 @@ export function ProductSearchPanel() {
     }
   }, [queryClient])
 
-  const handleTogglePin = useCallback(async (e: React.MouseEvent, productId: number) => {
-    e.stopPropagation()
+  const handleTogglePin = useCallback(async (productId: number) => {
     try {
       const pinned = await invoke<boolean>("toggle_product_pin", { productId })
       toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
@@ -103,6 +106,37 @@ export function ProductSearchPanel() {
       toast.error("Gagal mengubah pin")
     }
   }, [queryClient])
+
+  const HOLD_DURATION = 500
+
+  const startHoldUnpin = useCallback((e: React.PointerEvent, productId: number) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setHoldingPinId(productId)
+    setHoldProgress(0)
+    holdStartRef.current = Date.now()
+    holdTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - holdStartRef.current
+      const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100)
+      setHoldProgress(pct)
+      if (elapsed >= HOLD_DURATION) {
+        clearInterval(holdTimerRef.current!)
+        holdTimerRef.current = null
+        setHoldingPinId(null)
+        setHoldProgress(0)
+        handleTogglePin(productId)
+      }
+    }, 16)
+  }, [handleTogglePin])
+
+  const cancelHoldUnpin = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current)
+      holdTimerRef.current = null
+    }
+    setHoldingPinId(null)
+    setHoldProgress(0)
+  }, [])
 
   const addToCart = useCallback((product: Product | ShortcutProduct, isManualSearch: boolean) => {
     addItem(product)
@@ -117,9 +151,11 @@ export function ProductSearchPanel() {
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key !== "Enter" || !searchQuery.trim()) return
 
+    const query = searchQuery.trim()
+
     // Try barcode lookup first
     try {
-      const product = await getProductByBarcode(searchQuery.trim())
+      const product = await getProductByBarcode(query)
       if (product) {
         e.preventDefault()
         addToCart(product, false)
@@ -139,7 +175,14 @@ export function ProductSearchPanel() {
       setSearchQuery("")
       setDebouncedQuery("")
       focusInput()
+      return
     }
+
+    // Nothing found
+    toast.error(`Produk "${query}" tidak ditemukan`)
+    setSearchQuery("")
+    setDebouncedQuery("")
+    focusInput()
   }
 
   const handleProductSelect = (product: Product) => {
@@ -222,32 +265,61 @@ export function ProductSearchPanel() {
                       Produk Favorit
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                      {shortcutProducts.map((product) => (
-                        <Button
-                          key={product.id}
-                          variant="outline"
-                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
-                          onClick={() => handleShortcutSelect(product)}
-                        >
-                          {product.is_pinned && (
-                            <Pin className="absolute right-1.5 top-1.5 h-3 w-3 fill-current text-primary" />
-                          )}
-                          <span className="w-full truncate text-sm font-medium">
-                            {product.name}
-                          </span>
-                          <span className="text-xs tabular-nums text-muted-foreground">
-                            {formatRupiah(product.sell_price)}
-                          </span>
-                          <button
-                            type="button"
-                            className="absolute bottom-1 right-1 hidden rounded p-0.5 hover:bg-muted group-hover:block"
-                            onClick={(e) => handleTogglePin(e, product.id)}
-                            title={product.is_pinned ? "Hapus pin" : "Pin produk"}
+                      {shortcutProducts.map((product) => {
+                        const isHolding = holdingPinId === product.id
+                        return (
+                          <Button
+                            key={product.id}
+                            variant="outline"
+                            className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors"
+                            style={isHolding ? {
+                              borderColor: `color-mix(in srgb, var(--destructive) ${holdProgress}%, var(--border))`,
+                              backgroundColor: `color-mix(in srgb, var(--destructive) ${holdProgress * 0.15}%, transparent)`,
+                              boxShadow: `0 0 0 1px color-mix(in srgb, var(--destructive) ${holdProgress * 0.5}%, transparent)`,
+                            } : undefined}
+                            onClick={() => !isHolding && handleShortcutSelect(product)}
                           >
-                            <Pin className={`h-3 w-3 ${product.is_pinned ? "fill-current text-primary" : "text-muted-foreground"}`} />
-                          </button>
-                        </Button>
-                      ))}
+                            <span className="w-full truncate text-sm font-medium">
+                              {product.name}
+                            </span>
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {formatRupiah(product.sell_price)}
+                            </span>
+                            {product.is_pinned ? (
+                              <div
+                                role="button"
+                                className="group/pin absolute bottom-1 right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-destructive/10"
+                                onPointerDown={(e) => startHoldUnpin(e, product.id)}
+                                onPointerUp={cancelHoldUnpin}
+                                onPointerLeave={cancelHoldUnpin}
+                                onClick={(e) => e.stopPropagation()}
+                                title="Tahan untuk hapus pin"
+                              >
+                                {isHolding ? (
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                ) : (
+                                  <>
+                                    <Pin className="h-3 w-3 fill-current text-primary opacity-40 group-hover/pin:hidden" />
+                                    <Trash2 className="hidden h-3 w-3 text-destructive group-hover/pin:block" />
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <div
+                                role="button"
+                                className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-muted group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleTogglePin(product.id)
+                                }}
+                                title="Pin produk"
+                              >
+                                <Pin className="h-3 w-3 text-muted-foreground" />
+                              </div>
+                            )}
+                          </Button>
+                        )
+                      })}
                     </div>
                   </div>
                 ) : (
