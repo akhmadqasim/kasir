@@ -1,20 +1,36 @@
+import { lazy, Suspense } from "react"
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
-import { OnboardingPage } from "@/features/onboarding/components/onboarding-page"
-import { LoginPage } from "@/features/auth/components/login-page"
-import { ProductsPage } from "@/features/products"
-import { CashierPage } from "@/features/cashier"
-import { SettingsPage } from "@/features/settings"
+import { Loader2 } from "lucide-react"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
+
+const OnboardingPage = lazy(() => import("@/features/onboarding/components/onboarding-page").then(m => ({ default: m.OnboardingPage })))
+const LoginPage = lazy(() => import("@/features/auth/components/login-page").then(m => ({ default: m.LoginPage })))
+const CashierPage = lazy(() => import("@/features/cashier").then(m => ({ default: m.CashierPage })))
+const ProductsPage = lazy(() => import("@/features/products").then(m => ({ default: m.ProductsPage })))
+const TransactionsPage = lazy(() => import("@/features/transactions").then(m => ({ default: m.TransactionsPage })))
+const SettingsPage = lazy(() => import("@/features/settings").then(m => ({ default: m.SettingsPage })))
+
+function PageLoader() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
+
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>
+}
 
 const router = createHashRouter([
   {
     path: "/onboarding",
-    element: <OnboardingPage />,
+    element: <LazyPage><OnboardingPage /></LazyPage>,
   },
   {
     path: "/login",
-    element: <LoginPage />,
+    element: <LazyPage><LoginPage /></LazyPage>,
   },
   {
     path: "/",
@@ -29,20 +45,15 @@ const router = createHashRouter([
           },
           {
             path: "cashier",
-            element: <CashierPage />,
+            element: <LazyPage><CashierPage /></LazyPage>,
           },
           {
             path: "products",
-            element: <ProductsPage />,
+            element: <LazyPage><ProductsPage /></LazyPage>,
           },
           {
             path: "transactions",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Riwayat Transaksi</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <LazyPage><TransactionsPage /></LazyPage>,
           },
           {
             path: "stock",
@@ -64,7 +75,7 @@ const router = createHashRouter([
           },
           {
             path: "settings",
-            element: <SettingsPage />,
+            element: <LazyPage><SettingsPage /></LazyPage>,
           },
           {
             path: "users",

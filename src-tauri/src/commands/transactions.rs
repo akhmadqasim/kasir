@@ -1,11 +1,12 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    DbBackend, EntityTrait, QueryFilter, Set, Statement, TransactionTrait,
+    DbBackend, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::entity::{products, transaction_items, transactions};
+use crate::entity::{products, transaction_items, transactions, users};
 use crate::utils::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -202,4 +203,160 @@ pub async fn get_next_receipt_number(
     db: State<'_, DatabaseConnection>,
 ) -> Result<String, AppError> {
     generate_receipt_number(db.inner()).await
+}
+
+// --- Transaction History Commands ---
+
+#[derive(Debug, Deserialize)]
+pub struct ListTransactionsInput {
+    pub page: Option<u64>,
+    pub per_page: Option<u64>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub payment_method: Option<String>,
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionListItem {
+    pub id: i64,
+    pub receipt_number: String,
+    pub user_id: i64,
+    pub cashier_name: String,
+    pub total_amount: f64,
+    pub payment_method: String,
+    pub payment_amount: f64,
+    pub change_amount: f64,
+    pub status: String,
+    pub item_count: i64,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaginatedTransactions {
+    pub data: Vec<TransactionListItem>,
+    pub total: u64,
+    pub page: u64,
+    pub per_page: u64,
+    pub total_pages: u64,
+}
+
+#[tauri::command]
+pub async fn list_transactions(
+    db: State<'_, DatabaseConnection>,
+    input: ListTransactionsInput,
+) -> Result<PaginatedTransactions, AppError> {
+    let page = input.page.unwrap_or(1).max(1);
+    let per_page = input.per_page.unwrap_or(50).min(100);
+
+    let mut query = transactions::Entity::find()
+        .order_by(transactions::Column::CreatedAt, Order::Desc);
+
+    if let Some(ref date_from) = input.date_from {
+        query = query.filter(transactions::Column::CreatedAt.gte(format!("{} 00:00:00", date_from)));
+    }
+    if let Some(ref date_to) = input.date_to {
+        query = query.filter(transactions::Column::CreatedAt.lte(format!("{} 23:59:59", date_to)));
+    }
+    if let Some(ref method) = input.payment_method {
+        if !method.is_empty() {
+            query = query.filter(transactions::Column::PaymentMethod.eq(method.as_str()));
+        }
+    }
+    if let Some(ref status) = input.status {
+        if !status.is_empty() {
+            query = query.filter(transactions::Column::Status.eq(status.as_str()));
+        }
+    }
+    if let Some(ref search) = input.search {
+        if !search.is_empty() {
+            query = query.filter(transactions::Column::ReceiptNumber.contains(search));
+        }
+    }
+
+    let total = query.clone().count(db.inner()).await?;
+    let total_pages = (total as f64 / per_page as f64).ceil() as u64;
+
+    let txns = query
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all(db.inner())
+        .await?;
+
+    let mut data = Vec::with_capacity(txns.len());
+
+    for txn in txns {
+        let item_count = transaction_items::Entity::find()
+            .filter(transaction_items::Column::TransactionId.eq(txn.id))
+            .count(db.inner())
+            .await? as i64;
+
+        let cashier = users::Entity::find_by_id(txn.user_id)
+            .one(db.inner())
+            .await?;
+        let cashier_name = cashier
+            .map(|u| u.full_name)
+            .unwrap_or_else(|| "Unknown".into());
+
+        data.push(TransactionListItem {
+            id: txn.id,
+            receipt_number: txn.receipt_number,
+            user_id: txn.user_id,
+            cashier_name,
+            total_amount: txn.total_amount,
+            payment_method: txn.payment_method,
+            payment_amount: txn.payment_amount,
+            change_amount: txn.change_amount.unwrap_or(0.0),
+            status: txn.status,
+            item_count,
+            notes: txn.notes,
+            created_at: txn.created_at,
+        });
+    }
+
+    Ok(PaginatedTransactions {
+        data,
+        total,
+        page,
+        per_page,
+        total_pages,
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionDetail {
+    pub transaction: transactions::Model,
+    pub items: Vec<transaction_items::Model>,
+    pub cashier_name: String,
+}
+
+#[tauri::command]
+pub async fn get_transaction_detail(
+    db: State<'_, DatabaseConnection>,
+    transaction_id: i64,
+) -> Result<TransactionDetail, AppError> {
+    let txn = transactions::Entity::find_by_id(transaction_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    let items = transaction_items::Entity::find()
+        .filter(transaction_items::Column::TransactionId.eq(transaction_id))
+        .all(db.inner())
+        .await?;
+
+    let cashier = users::Entity::find_by_id(txn.user_id)
+        .one(db.inner())
+        .await?;
+    let cashier_name = cashier
+        .map(|u| u.full_name)
+        .unwrap_or_else(|| "Unknown".into());
+
+    Ok(TransactionDetail {
+        transaction: txn,
+        items,
+        cashier_name,
+    })
 }

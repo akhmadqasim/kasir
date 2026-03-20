@@ -49,6 +49,8 @@ pub fn run() {
             commands::categories::delete_category,
             commands::transactions::create_transaction,
             commands::transactions::get_next_receipt_number,
+            commands::transactions::list_transactions,
+            commands::transactions::get_transaction_detail,
             commands::receipt::list_printers,
             commands::receipt::print_receipt,
             commands::receipt::test_print,
