@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useCartStore } from "../hooks/use-cart-store"
 import { CartPanel } from "./cart-panel"
 import { ProductSearchPanel } from "./product-search-panel"
@@ -12,23 +12,38 @@ export function CashierPage() {
     null
   )
   const clear = useCartStore((s) => s.clear)
+  const hasItems = useCartStore((s) => s.items.length > 0)
 
-  const handlePaymentSuccess = (result: TransactionResult) => {
+  const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)
     setSuccessResult(result)
-  }
+  }, [])
 
-  const handleNewTransaction = () => {
+  const handleNewTransaction = useCallback(() => {
     clear()
     setSuccessResult(null)
-  }
+  }, [clear])
+
+  const openPayment = useCallback(() => setPaymentOpen(true), [])
+
+  // F4 shortcut to open payment dialog
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "F4" && hasItems && !paymentOpen && !successResult) {
+        e.preventDefault()
+        setPaymentOpen(true)
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [hasItems, paymentOpen, successResult])
 
   return (
     <>
       <div className="grid h-full grid-cols-10 gap-4">
         {/* Left: Cart (4/10 = 40%) */}
         <div className="col-span-4 flex flex-col overflow-hidden rounded-xl border bg-card">
-          <CartPanel onPay={() => setPaymentOpen(true)} />
+          <CartPanel onPay={openPayment} />
         </div>
 
         {/* Right: Product Search (6/10 = 60%) */}

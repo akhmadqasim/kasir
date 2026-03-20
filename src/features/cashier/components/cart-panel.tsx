@@ -61,7 +61,7 @@ export function CartPanel({ onPay }: CartPanelProps) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <Table>
             <TableHeader>
               <TableRow>
@@ -100,7 +100,7 @@ export function CartPanel({ onPay }: CartPanelProps) {
           disabled={items.length === 0}
           onClick={onPay}
         >
-          Bayar
+          Bayar (F4)
         </Button>
       </div>
     </div>
