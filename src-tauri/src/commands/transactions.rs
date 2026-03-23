@@ -42,21 +42,21 @@ const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "ewallet", "transfer"];
 
 async fn generate_receipt_number<C: ConnectionTrait>(db: &C) -> Result<String, AppError> {
     let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let date_pattern = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let prefix = format!("TRX-{}-", today);
 
     let result = db
         .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT COUNT(*) as cnt FROM transactions WHERE DATE(created_at) = $1",
-            vec![date_pattern.into()],
+            "SELECT MAX(CAST(SUBSTR(receipt_number, LENGTH($1) + 1) AS INTEGER)) as max_num FROM transactions WHERE receipt_number LIKE $2",
+            vec![prefix.clone().into(), format!("{}%", prefix).into()],
         ))
         .await?;
 
-    let count: i64 = result
-        .map(|r| r.try_get::<i64>("", "cnt").unwrap_or(0))
+    let max_num: i64 = result
+        .map(|r| r.try_get::<i64>("", "max_num").unwrap_or(0))
         .unwrap_or(0);
 
-    Ok(format!("TRX-{}-{:04}", today, count + 1))
+    Ok(format!("{}{:04}", prefix, max_num + 1))
 }
 
 #[tauri::command]
@@ -176,21 +176,17 @@ pub async fn create_transaction(
         let item = new_item.insert(&txn).await?;
         items.push(item);
 
-        // Deduct stock
-        let product = products::Entity::find_by_id(resolved.product_id)
-            .one(&txn)
-            .await?
-            .ok_or_else(|| {
-                AppError::Internal("Product not found during stock update".into())
-            })?;
-
-        let new_stock = product.stock - resolved.quantity;
-        let mut active_product: products::ActiveModel = product.into();
-        active_product.stock = Set(new_stock);
-        active_product.updated_at = Set(Some(
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        ));
-        active_product.update(&txn).await?;
+        // Atomically deduct stock
+        txn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3",
+            vec![
+                (resolved.quantity as i64).into(),
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string().into(),
+                resolved.product_id.into(),
+            ],
+        ))
+        .await?;
     }
 
     txn.commit().await?;
@@ -254,11 +250,22 @@ pub async fn list_transactions(
     let mut query = transactions::Entity::find()
         .order_by(transactions::Column::CreatedAt, Order::Desc);
 
+    // Convert local date boundaries to UTC for filtering
+    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+
     if let Some(ref date_from) = input.date_from {
-        query = query.filter(transactions::Column::CreatedAt.gte(format!("{} 00:00:00", date_from)));
+        let local_start = format!("{} 00:00:00", date_from);
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
+            let utc_start = ndt - chrono::Duration::seconds(offset_secs);
+            query = query.filter(transactions::Column::CreatedAt.gte(utc_start.format("%Y-%m-%d %H:%M:%S").to_string()));
+        }
     }
     if let Some(ref date_to) = input.date_to {
-        query = query.filter(transactions::Column::CreatedAt.lte(format!("{} 23:59:59", date_to)));
+        let local_end = format!("{} 23:59:59", date_to);
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
+            let utc_end = ndt - chrono::Duration::seconds(offset_secs);
+            query = query.filter(transactions::Column::CreatedAt.lte(utc_end.format("%Y-%m-%d %H:%M:%S").to_string()));
+        }
     }
     if let Some(ref method) = input.payment_method {
         if !method.is_empty() {

@@ -9,6 +9,7 @@ import {
   SettingsIcon,
   UsersIcon,
   StoreIcon,
+  RotateCcwIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -41,6 +42,11 @@ const navMain = [
     title: id.nav.transactions,
     url: "/transactions",
     icon: <HistoryIcon />,
+  },
+  {
+    title: id.nav.refunds,
+    url: "/refunds",
+    icon: <RotateCcwIcon />,
   },
   {
     title: id.nav.stock,

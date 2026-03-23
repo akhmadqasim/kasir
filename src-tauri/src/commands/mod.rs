@@ -3,5 +3,6 @@ pub mod categories;
 pub mod onboarding;
 pub mod products;
 pub mod receipt;
+pub mod refunds;
 pub mod settings;
 pub mod transactions;

@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from "react"
-import { Eye, Printer, Search, X, CalendarIcon } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Eye, Printer, RotateCcw, Search, X, CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale"
 import { type DateRange } from "react-day-picker"
@@ -47,7 +48,7 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—"
-  const date = new Date(dateStr.replace(" ", "T"))
+  const date = new Date(dateStr.replace(" ", "T") + "Z")
   return dateFormatter.format(date)
 }
 
@@ -79,6 +80,7 @@ function toDateStr(d: Date): string {
 }
 
 export function TransactionsPage() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 300)
@@ -102,7 +104,7 @@ export function TransactionsPage() {
     },
   }), [page, debouncedSearch, paymentMethod, status, dateRange])
 
-  const { data, isLoading, error } = useTauriQuery<PaginatedTransactions>(
+  const { data, isLoading, error, refetch } = useTauriQuery<PaginatedTransactions>(
     "list_transactions",
     queryArgs
   )
@@ -287,6 +289,17 @@ export function TransactionsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
+                      {txn.status !== "refunded" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/refund/${txn.id}`) }}
+                          title={id.refund.title}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -333,6 +346,7 @@ export function TransactionsPage() {
       <TransactionDetailDialog
         transaction={detailTxn}
         onClose={() => setDetailTxn(null)}
+        onRefresh={refetch}
       />
     </div>
   )

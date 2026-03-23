@@ -21,10 +21,17 @@ const pageLabelMap: Record<string, string> = {
   "/cashier": id.nav.cashier,
   "/products": id.nav.products,
   "/transactions": id.nav.transactions,
+  "/refunds": id.nav.refunds,
   "/stock": id.nav.stock,
   "/reports": id.nav.reports,
   "/settings": id.nav.settings,
   "/users": id.nav.users,
+}
+
+function getPageLabel(pathname: string): string {
+  if (pageLabelMap[pathname]) return pageLabelMap[pathname]
+  if (pathname.startsWith("/refund/")) return id.refund.title
+  return id.app.name
 }
 
 export type SidebarMode = "full" | "icon" | "hidden"
@@ -107,7 +114,7 @@ export function AppLayout() {
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbPage>
-                    {pageLabelMap[location.pathname] ?? id.app.name}
+                    {getPageLabel(location.pathname)}
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>

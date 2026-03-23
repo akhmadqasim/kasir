@@ -1,4 +1,5 @@
-import { Printer } from "lucide-react"
+import { Printer, RotateCcw } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
@@ -26,7 +27,7 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—"
-  return dateFormatter.format(new Date(dateStr.replace(" ", "T")))
+  return dateFormatter.format(new Date(dateStr.replace(" ", "T") + "Z"))
 }
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -55,10 +56,13 @@ const STATUS_LABELS: Record<string, string> = {
 interface TransactionDetailDialogProps {
   transaction: TransactionListItem | null
   onClose: () => void
+  onRefresh?: () => void
 }
 
-export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
-  const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
+export function TransactionDetailDialog({ transaction, onClose, onRefresh }: TransactionDetailDialogProps) {
+  const navigate = useNavigate()
+
+  const { data: detail, isLoading, refetch } = useTauriQuery<TransactionDetail>(
     "get_transaction_detail",
     { transactionId: transaction?.id },
     { enabled: !!transaction }
@@ -159,7 +163,20 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               )}
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {detail.transaction.status !== "refunded" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onClose()
+                    navigate(`/refund/${detail.transaction.id}`)
+                  }}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {id.refund.title}
+                </Button>
+              )}
               <Button size="sm" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" />
                 {id.transactions.printReceipt}

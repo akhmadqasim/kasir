@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ export function PaymentDialog({
   onOpenChange,
   onSuccess,
 }: PaymentDialogProps) {
+  const queryClient = useQueryClient()
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [paymentAmount, setPaymentAmount] = useState("")
   const [displayPayment, setDisplayPayment] = useState("")
@@ -110,13 +112,15 @@ export function PaymentDialog({
       },
       {
         onSuccess: (result) => {
+          queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+          queryClient.invalidateQueries({ queryKey: ["search_products"] })
           onSuccess(result)
           setPaymentAmount("")
           setDisplayPayment("")
           setPaymentMethod("cash")
         },
-        onError: () => {
-          toast.error("Gagal memproses transaksi")
+        onError: (err) => {
+          toast.error(`Gagal memproses transaksi: ${err.message}`)
         },
       }
     )

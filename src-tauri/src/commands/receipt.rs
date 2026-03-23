@@ -12,6 +12,18 @@ use crate::printing::receipt::{
 };
 use crate::utils::AppError;
 
+fn utc_to_local_formatted(utc_str: &str) -> String {
+    chrono::NaiveDateTime::parse_from_str(utc_str, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|ndt| {
+            let utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc);
+            utc.with_timezone(&chrono::Local)
+                .format("%d/%m/%Y %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "N/A".to_string())
+}
+
 #[derive(Debug, Serialize)]
 pub struct PrinterInfoItem {
     pub id: String,
@@ -136,11 +148,7 @@ pub async fn print_receipt(
     let date_time = transaction
         .created_at
         .as_ref()
-        .and_then(|dt| {
-            chrono::NaiveDateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S")
-                .ok()
-                .map(|ndt| ndt.format("%d/%m/%Y %H:%M").to_string())
-        })
+        .map(|dt| utc_to_local_formatted(dt))
         .unwrap_or_else(|| "N/A".to_string());
 
     let receipt_items: Vec<ReceiptItem> = items
@@ -331,11 +339,7 @@ pub async fn get_receipt_data(
     let date_time = transaction
         .created_at
         .as_ref()
-        .and_then(|dt| {
-            chrono::NaiveDateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S")
-                .ok()
-                .map(|ndt| ndt.format("%d/%m/%Y %H:%M").to_string())
-        })
+        .map(|dt| utc_to_local_formatted(dt))
         .unwrap_or_else(|| "N/A".to_string());
 
     let receipt_items: Vec<ReceiptItemResponse> = items
