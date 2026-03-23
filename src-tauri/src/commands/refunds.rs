@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::entity::{
-    exchange_items, products, refund_items, refunds, stock_writeoffs, transaction_items,
-    transactions,
+    exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
+    transaction_items, transactions,
 };
+use crate::commands::settings::parse_app_settings;
 use crate::utils::AppError;
 
 const REFUND_MAX_DAYS: i64 = 7;
@@ -370,6 +371,13 @@ pub async fn create_refund(
     let mut total_exchange_amount: f64 = 0.0;
 
     if let Some(ref exchange_inputs) = input.exchange_items {
+        // Read allow_negative_stock setting for exchange stock check
+        let allow_negative_stock = store_info::Entity::find_by_id(1_i64)
+            .one(&txn)
+            .await?
+            .map(|s| parse_app_settings(&s.additional_info).sales.allow_negative_stock)
+            .unwrap_or(true);
+
         for ei_input in exchange_inputs {
             if ei_input.quantity <= 0 {
                 return Err(AppError::Validation(
@@ -391,6 +399,13 @@ pub async fn create_refund(
                 return Err(AppError::Validation(format!(
                     "Produk '{}' tidak aktif",
                     product.name
+                )));
+            }
+
+            if !allow_negative_stock && product.stock < ei_input.quantity {
+                return Err(AppError::Validation(format!(
+                    "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
+                    product.name, product.stock, ei_input.quantity
                 )));
             }
 

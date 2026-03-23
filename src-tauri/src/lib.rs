@@ -25,12 +25,20 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(database)
         .invoke_handler(tauri::generate_handler![
             commands::auth::login,
             commands::auth::get_current_user,
             commands::auth::list_users,
             commands::settings::get_store_info,
+            commands::settings::update_store_info,
+            commands::settings::get_app_settings,
+            commands::settings::update_app_settings,
+            commands::settings::change_user_pin,
+            commands::settings::export_database,
+            commands::settings::import_database,
+            commands::settings::get_database_info,
             commands::onboarding::check_onboarding_status,
             commands::onboarding::complete_onboarding,
             commands::products::search_products,

@@ -6,8 +6,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::entity::{products, transaction_items, transactions, users};
+use crate::entity::{products, store_info, transaction_items, transactions, users};
 use crate::utils::AppError;
+use crate::commands::settings::parse_app_settings;
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionItemInput {
@@ -81,6 +82,13 @@ pub async fn create_transaction(
 
     let receipt_number = generate_receipt_number(&txn).await?;
 
+    // Read allow_negative_stock setting
+    let allow_negative_stock = store_info::Entity::find_by_id(1_i64)
+        .one(&txn)
+        .await?
+        .map(|s| parse_app_settings(&s.additional_info).sales.allow_negative_stock)
+        .unwrap_or(true);
+
     // Resolve and validate all items
     let mut resolved_items: Vec<ResolvedItem> = Vec::with_capacity(input.items.len());
 
@@ -103,11 +111,12 @@ pub async fn create_transaction(
             })?;
 
         if product.stock < item_input.quantity {
-            // Allow selling even with insufficient stock - just log warning
-            eprintln!(
-                "Warning: Stok {} kurang (tersedia: {}, diminta: {})",
-                product.name, product.stock, item_input.quantity
-            );
+            if !allow_negative_stock {
+                return Err(AppError::Validation(format!(
+                    "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
+                    product.name, product.stock, item_input.quantity
+                )));
+            }
         }
 
         let subtotal = product.sell_price * item_input.quantity as f64;

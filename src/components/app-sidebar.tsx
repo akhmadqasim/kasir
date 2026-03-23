@@ -58,14 +58,14 @@ const navMain = [
     url: "/reports",
     icon: <BarChart3Icon />,
   },
-]
-
-const navAdmin = [
   {
     title: id.nav.settings,
     url: "/settings",
     icon: <SettingsIcon />,
   },
+]
+
+const navAdmin = [
   {
     title: id.nav.users,
     url: "/users",
