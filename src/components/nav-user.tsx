@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Avatar,
@@ -17,9 +18,10 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react"
+import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { UserProfileDialog } from "@/features/users/components/user-profile-dialog"
 
 function getInitials(name: string): string {
   return name
@@ -35,6 +37,7 @@ export function NavUser() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
+  const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -42,6 +45,7 @@ export function NavUser() {
   }
 
   return (
+    <>
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
@@ -82,6 +86,10 @@ export function NavUser() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+              <UserIcon />
+              {id.profile.title}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout}>
               <LogOutIcon />
               {id.auth.logout}
@@ -90,5 +98,8 @@ export function NavUser() {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
+
+    <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+    </>
   )
 }

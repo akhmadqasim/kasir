@@ -12,6 +12,7 @@ const TransactionsPage = lazy(() => import("@/features/transactions").then(m => 
 const RefundsPage = lazy(() => import("@/features/refunds").then(m => ({ default: m.RefundsPage })))
 const CreateRefundPage = lazy(() => import("@/features/refunds").then(m => ({ default: m.CreateRefundPage })))
 const SettingsPage = lazy(() => import("@/features/settings").then(m => ({ default: m.SettingsPage })))
+const UsersPage = lazy(() => import("@/features/users").then(m => ({ default: m.UsersPage })))
 
 function PageLoader() {
   return (
@@ -89,12 +90,7 @@ const router = createHashRouter([
           },
           {
             path: "users",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Manajemen User</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <LazyPage><UsersPage /></LazyPage>,
           },
         ],
       },
