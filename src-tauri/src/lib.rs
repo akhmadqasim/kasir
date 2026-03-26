@@ -71,6 +71,13 @@ pub fn run() {
             commands::refunds::create_refund,
             commands::refunds::get_refund_detail,
             commands::refunds::list_refunds,
+            commands::dashboard::get_dashboard_summary,
+            commands::dashboard::get_daily_revenue,
+            commands::dashboard::get_payment_method_stats,
+            commands::dashboard::get_top_products,
+            commands::dashboard::get_low_stock_products,
+            commands::dashboard::get_recent_transactions,
+            commands::dashboard::get_weekly_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

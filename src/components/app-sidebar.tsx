@@ -10,6 +10,7 @@ import {
   UsersIcon,
   StoreIcon,
   RotateCcwIcon,
+  LayoutDashboardIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -32,6 +33,11 @@ const navMain = [
     title: id.nav.cashier,
     url: "/cashier",
     icon: <ShoppingCartIcon />,
+  },
+  {
+    title: id.dashboard.title,
+    url: "/dashboard",
+    icon: <LayoutDashboardIcon />,
   },
   {
     title: id.nav.products,

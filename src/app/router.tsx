@@ -13,6 +13,7 @@ const RefundsPage = lazy(() => import("@/features/refunds").then(m => ({ default
 const CreateRefundPage = lazy(() => import("@/features/refunds").then(m => ({ default: m.CreateRefundPage })))
 const SettingsPage = lazy(() => import("@/features/settings").then(m => ({ default: m.SettingsPage })))
 const UsersPage = lazy(() => import("@/features/users").then(m => ({ default: m.UsersPage })))
+const DashboardPage = lazy(() => import("@/features/dashboard").then(m => ({ default: m.DashboardPage })))
 
 function PageLoader() {
   return (
@@ -49,6 +50,10 @@ const router = createHashRouter([
           {
             path: "cashier",
             element: <LazyPage><CashierPage /></LazyPage>,
+          },
+          {
+            path: "dashboard",
+            element: <LazyPage><DashboardPage /></LazyPage>,
           },
           {
             path: "products",
