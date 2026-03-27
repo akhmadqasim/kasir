@@ -21,9 +21,18 @@ export interface SecuritySettings {
   session_timeout_minutes: number
 }
 
+export interface PpobSettings {
+  enabled: boolean
+  phone_number: string
+  password: string
+  device_id: string
+  pin: string
+}
+
 export interface AppSettings {
   sales: SalesSettings
   security: SecuritySettings
+  ppob: PpobSettings
 }
 
 export interface StoreInfo {

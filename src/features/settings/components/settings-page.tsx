@@ -11,11 +11,13 @@ import {
   ShoppingCart,
   Printer,
   Database,
+  Zap,
 } from "lucide-react"
 import { StoreInfoTab } from "./store-info-tab"
 import { SalesSettingsTab } from "./sales-settings-tab"
 import { PrinterSettingsTab } from "./printer-settings-tab"
 import { DataTab } from "./data-tab"
+import { PpobSettingsTab } from "./ppob-settings-tab"
 
 export function SettingsPage() {
   const user = useAuthStore((s) => s.user)
@@ -46,6 +48,12 @@ export function SettingsPage() {
               {id.settings.tabData}
             </TabsTrigger>
           )}
+          {isAdmin && (
+            <TabsTrigger value="ppob">
+              <Zap className="h-4 w-4 mr-2" />
+              {id.settings.tabPpob}
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="store">
           <StoreInfoTab isAdmin={isAdmin} />
@@ -61,6 +69,11 @@ export function SettingsPage() {
         {isAdmin && (
           <TabsContent value="data">
             <DataTab />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="ppob">
+            <PpobSettingsTab />
           </TabsContent>
         )}
       </Tabs>

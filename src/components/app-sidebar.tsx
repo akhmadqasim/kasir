@@ -11,6 +11,7 @@ import {
   StoreIcon,
   RotateCcwIcon,
   LayoutDashboardIcon,
+  SmartphoneIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -63,6 +64,11 @@ const navMain = [
     title: id.nav.reports,
     url: "/reports",
     icon: <BarChart3Icon />,
+  },
+  {
+    title: id.nav.ppob,
+    url: "/ppob",
+    icon: <SmartphoneIcon />,
   },
   {
     title: id.nav.settings,
