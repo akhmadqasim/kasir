@@ -39,16 +39,21 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
   completed: "default",
+  pending_ppob: "secondary",
+  ppob_failed: "destructive",
   refunded: "destructive",
   partial_refund: "secondary",
 }
 
 const STATUS_CLASSNAMES: Record<string, string> = {
   completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
+  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
 }
 
 const STATUS_LABELS: Record<string, string> = {
   completed: id.transactions.completed,
+  pending_ppob: id.transactions.pendingPpob,
+  ppob_failed: id.transactions.ppobFailed,
   refunded: id.transactions.refunded,
   partial_refund: id.transactions.partialRefund,
 }
@@ -56,17 +61,19 @@ const STATUS_LABELS: Record<string, string> = {
 interface TransactionDetailDialogProps {
   transaction: TransactionListItem | null
   onClose: () => void
-  onRefresh?: () => void
 }
 
-export function TransactionDetailDialog({ transaction, onClose, onRefresh }: TransactionDetailDialogProps) {
+export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
   const navigate = useNavigate()
 
-  const { data: detail, isLoading, refetch } = useTauriQuery<TransactionDetail>(
+  const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
     "get_transaction_detail",
     { transactionId: transaction?.id },
     { enabled: !!transaction }
   )
+  const canPrint = detail
+    ? !detail.has_ppob || detail.transaction.status === "completed"
+    : false
 
   const handlePrint = async () => {
     if (!transaction) return
@@ -161,10 +168,21 @@ export function TransactionDetailDialog({ transaction, onClose, onRefresh }: Tra
                   <p>{detail.transaction.notes}</p>
                 </div>
               )}
+              {detail.ppob_message && (
+                <div className="pt-1">
+                  <p className="text-muted-foreground">Status PPOB</p>
+                  <p>{detail.ppob_message}</p>
+                  {detail.ppob_serial_number && (
+                    <p className="font-mono text-xs text-muted-foreground">
+                      SN: {detail.ppob_serial_number}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2">
-              {detail.transaction.status !== "refunded" && (
+              {!detail.has_ppob && detail.transaction.status !== "refunded" && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -177,7 +195,7 @@ export function TransactionDetailDialog({ transaction, onClose, onRefresh }: Tra
                   {id.refund.title}
                 </Button>
               )}
-              <Button size="sm" onClick={handlePrint}>
+              <Button size="sm" onClick={handlePrint} disabled={!canPrint}>
                 <Printer className="mr-2 h-4 w-4" />
                 {id.transactions.printReceipt}
               </Button>

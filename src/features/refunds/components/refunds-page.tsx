@@ -31,7 +31,7 @@ import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import { RefundDetailDialog } from "./refund-detail-dialog"
-import type { ListRefundsResult, RefundListItem } from "../types"
+import type { ListRefundsResult } from "../types"
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   day: "2-digit",

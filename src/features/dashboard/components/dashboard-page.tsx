@@ -357,10 +357,6 @@ function ChartPaymentDonut() {
     }))
   }, [paymentStats])
 
-  const totalCount = useMemo(() => {
-    return paymentData.reduce((sum, item) => sum + item.count, 0)
-  }, [paymentData])
-
   const paymentTotal = useMemo(() => {
     return paymentData.reduce((sum, item) => sum + item.total, 0)
   }, [paymentData])

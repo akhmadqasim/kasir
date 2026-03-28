@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core"
 import { useTauriMutation } from "@/hooks/use-tauri-command"
 import type { Product } from "@/features/products/types"
-import type { CreateTransactionInput, TransactionResult } from "../types"
+import type { CheckoutTransactionInput, TransactionResult } from "../types"
 
-export function useCreateTransaction() {
+export function useCheckoutTransaction() {
   return useTauriMutation<
     TransactionResult,
-    { input: CreateTransactionInput }
-  >("create_transaction")
+    { input: CheckoutTransactionInput }
+  >("checkout_transaction")
 }
 
 export async function getProductByBarcode(

@@ -88,7 +88,7 @@ pub async fn get_dashboard_summary(
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as cnt \
              FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded'"
+             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
                 .to_owned(),
         ))
         .await?;
@@ -126,7 +126,7 @@ pub async fn get_dashboard_summary(
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0) as revenue \
              FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') AND status != 'refunded'"
+             WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
                 .to_owned(),
         ))
         .await?;
@@ -174,7 +174,7 @@ pub async fn get_dashboard_summary(
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              JOIN products p ON ti.product_id = p.id \
-             WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status != 'refunded'"
+             WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
                 .to_owned(),
         ))
         .await?;
@@ -216,7 +216,7 @@ pub async fn get_daily_revenue(
          COALESCE(SUM(total_amount), 0) as revenue, \
          COUNT(*) as transactions \
          FROM transactions \
-         WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-{} days') AND status != 'refunded' \
+         WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-{} days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
          GROUP BY date(created_at, 'localtime') \
          ORDER BY d ASC",
         days
@@ -262,7 +262,7 @@ pub async fn get_payment_method_stats(
             DbBackend::Sqlite,
             "SELECT payment_method, COUNT(*) as cnt, COALESCE(SUM(total_amount), 0) as total \
              FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded' \
+             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
              GROUP BY payment_method"
                 .to_owned(),
         ))
@@ -294,7 +294,9 @@ pub async fn get_top_products(
          SUM(ti.subtotal) as total_revenue \
          FROM transaction_items ti \
          JOIN transactions t ON ti.transaction_id = t.id \
-         WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') AND t.status != 'refunded' \
+         WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') \
+           AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+           AND ti.product_id IS NOT NULL \
          GROUP BY ti.product_id, ti.product_name \
          ORDER BY total_qty DESC \
          LIMIT {}",
@@ -397,7 +399,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) \
              FROM transactions \
-             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND status != 'refunded'"
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
                 .to_owned(),
         ))
         .await?;
@@ -417,7 +419,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              JOIN products p ON ti.product_id = p.id \
-             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status != 'refunded'"
+             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
                 .to_owned(),
         ))
         .await?;
@@ -434,7 +436,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
                SELECT COUNT(*) as item_count \
                FROM transaction_items ti \
                JOIN transactions t ON ti.transaction_id = t.id \
-               WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status != 'refunded' \
+               WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
                GROUP BY ti.transaction_id \
              )"
                 .to_owned(),

@@ -1,4 +1,5 @@
 mod auth;
+pub mod executor;
 mod models;
 mod parsers;
 
@@ -9,3 +10,4 @@ pub mod menu;
 pub mod payment;
 
 pub use client::MitraClient;
+pub use models::PaymentResult;

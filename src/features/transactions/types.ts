@@ -11,6 +11,10 @@ export interface TransactionListItem {
   item_count: number
   notes: string | null
   created_at: string | null
+  has_ppob: boolean
+  ppob_status: string | null
+  ppob_message: string | null
+  ppob_serial_number: string | null
 }
 
 export interface PaginatedTransactions {
@@ -24,11 +28,21 @@ export interface PaginatedTransactions {
 export interface TransactionItem {
   id: number
   transaction_id: number
-  product_id: number
+  product_id: number | null
   product_name: string
   product_price: number
+  buy_price: number | null
   quantity: number
   subtotal: number
+  service_type: string | null
+  service_ref: string | null
+  ppob_product_id: number | null
+  ppob_product_code: string | null
+  ppob_inquiry_id: string | null
+  ppob_payment_code: string | null
+  ppob_status: string | null
+  ppob_message: string | null
+  ppob_serial_number: string | null
   created_at: string | null
 }
 
@@ -49,6 +63,10 @@ export interface TransactionDetail {
   transaction: Transaction
   items: TransactionItem[]
   cashier_name: string
+  has_ppob: boolean
+  ppob_status: string | null
+  ppob_message: string | null
+  ppob_serial_number: string | null
 }
 
 export interface ListTransactionsInput {

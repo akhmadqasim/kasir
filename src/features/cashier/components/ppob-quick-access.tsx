@@ -38,9 +38,9 @@ import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import type { AppSettings } from "@/features/settings/types"
 import { useCartStore } from "../hooks/use-cart-store"
-import { formatRupiah } from "../utils"
+import { formatRupiah, getAddItemValidationError } from "../utils"
 
-type ServiceType = "pulsa" | "data" | "pln" | "pdam" | "bpjs" | "emoney"
+export type ServiceType = "pulsa" | "data" | "pln" | "pdam" | "bpjs" | "emoney"
 
 const SERVICES: { type: ServiceType; label: string; icon: typeof Smartphone; color: string }[] = [
   { type: "pulsa", label: "Pulsa", icon: Smartphone, color: "text-blue-500" },
@@ -76,11 +76,30 @@ function extractNominal(name: string): number | null {
 
 const DEFAULT_MARKUP: PpobMarkupConfig = { type: "fixed", value: 0 }
 
-export function PpobQuickAccess() {
-  const [selectedService, setSelectedService] = useState<ServiceType | null>(null)
+interface PpobQuickAccessProps {
+  initialService?: ServiceType
+  onBack?: () => void
+  onItemAdded?: () => void
+  showSaldoBar?: boolean
+}
+
+export function PpobQuickAccess({
+  initialService,
+  onBack,
+  onItemAdded,
+  showSaldoBar = true,
+}: PpobQuickAccessProps = {}) {
+  const [selectedService, setSelectedService] = useState<ServiceType | null>(
+    initialService ?? null
+  )
   const [markup, setMarkup] = useState<PpobMarkup | null>(null)
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({})
+  const items = useCartStore((s) => s.items)
   const addPpobItem = useCartStore((s) => s.addPpobItem)
+
+  useEffect(() => {
+    setSelectedService(initialService ?? null)
+  }, [initialService])
 
   useEffect(() => {
     invoke<AppSettings>("get_app_settings")
@@ -106,8 +125,17 @@ export function PpobQuickAccess() {
     service_type: string
     service_ref: string
     buy_price?: number
+    ppob_product_id?: number
     ppob_product_code?: string
+    ppob_inquiry_id?: string
+    ppob_payment_code?: string
   }) => {
+    const validationError = getAddItemValidationError(items, "ppob")
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
+
     const buyPrice = item.buy_price ?? item.price
 
     // Priority: 1. Nominal-based custom price (pulsa), 2. Markup config, 3. Raw price
@@ -124,17 +152,35 @@ export function PpobQuickAccess() {
       ...item,
       buy_price: buyPrice,
       sell_price: sellPrice,
+      ppob_product_id: item.ppob_product_id,
       ppob_product_code: item.ppob_product_code,
+      ppob_inquiry_id: item.ppob_inquiry_id,
+      ppob_payment_code: item.ppob_payment_code,
     })
     toast.success(`${item.name} ditambahkan ke keranjang`)
-    setSelectedService(null)
+    if (onItemAdded) {
+      onItemAdded()
+      return
+    }
+    setSelectedService(initialService ?? null)
   }
 
   if (selectedService) {
     return (
       <div className="p-4">
         <div className="mb-4 flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedService(null)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              if (initialService || onBack) {
+                onBack?.()
+                return
+              }
+              setSelectedService(null)
+            }}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex items-center gap-2">
@@ -162,7 +208,7 @@ export function PpobQuickAccess() {
 
   return (
     <div className="p-4 space-y-3">
-      <SaldoBar />
+      {showSaldoBar && <SaldoBar />}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
         {SERVICES.map(({ type, label, icon: Icon, color }) => (
           <Button
@@ -227,7 +273,15 @@ function PulsaInput({
   onAddToCart,
   productType,
 }: {
-  onAddToCart: (item: { name: string; price: number; service_type: string; service_ref: string; buy_price?: number; ppob_product_code?: string }) => void
+  onAddToCart: (item: {
+    name: string
+    price: number
+    service_type: string
+    service_ref: string
+    buy_price?: number
+    ppob_product_id?: number
+    ppob_product_code?: string
+  }) => void
   productType: "pulsa" | "data"
 }) {
   const [phoneNumber, setPhoneNumber] = useState("")
@@ -250,7 +304,8 @@ function PulsaInput({
       service_type: productType,
       service_ref: phoneNumber,
       buy_price: selected.vendorPrice,
-      ppob_product_code: selected.id,
+      ppob_product_id: selected.id,
+      ppob_product_code: selected.plu,
     })
   }
 
@@ -334,7 +389,15 @@ function PulsaInput({
 function PlnInput({
   onAddToCart,
 }: {
-  onAddToCart: (item: { name: string; price: number; service_type: string; service_ref: string; buy_price?: number }) => void
+  onAddToCart: (item: {
+    name: string
+    price: number
+    service_type: string
+    service_ref: string
+    buy_price?: number
+    ppob_inquiry_id?: string
+    ppob_payment_code?: string
+  }) => void
 }) {
   const [customerId, setCustomerId] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<number | null>(null)
@@ -362,6 +425,8 @@ function PlnInput({
       service_type: "pln",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
+      ppob_inquiry_id: inquiryResult.inquiryId,
+      ppob_payment_code: selectedDenom !== null ? denoms?.find((d) => d.id === selectedDenom)?.denom : undefined,
     })
   }
 
@@ -434,7 +499,16 @@ function PlnInput({
 function PdamInput({
   onAddToCart,
 }: {
-  onAddToCart: (item: { name: string; price: number; service_type: string; service_ref: string; buy_price?: number }) => void
+  onAddToCart: (item: {
+    name: string
+    price: number
+    service_type: string
+    service_ref: string
+    buy_price?: number
+    ppob_product_id?: number
+    ppob_inquiry_id?: string
+    ppob_payment_code?: string
+  }) => void
 }) {
   const [customerId, setCustomerId] = useState("")
   const [selectedPdam, setSelectedPdam] = useState("")
@@ -463,6 +537,9 @@ function PdamInput({
       service_type: "pdam",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
+      ppob_product_id: pdamProducts?.find(p => p.plu === selectedPdam)?.id,
+      ppob_inquiry_id: inquiryResult.inquiryId,
+      ppob_payment_code: selectedPdam,
     })
   }
 
@@ -526,7 +603,14 @@ function PdamInput({
 function BpjsInput({
   onAddToCart,
 }: {
-  onAddToCart: (item: { name: string; price: number; service_type: string; service_ref: string; buy_price?: number }) => void
+  onAddToCart: (item: {
+    name: string
+    price: number
+    service_type: string
+    service_ref: string
+    buy_price?: number
+    ppob_inquiry_id?: string
+  }) => void
 }) {
   const [customerId, setCustomerId] = useState("")
   const bpjsInquiry = useBpjsInquiry()
@@ -551,6 +635,7 @@ function BpjsInput({
       service_type: "bpjs",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
+      ppob_inquiry_id: inquiryResult.inquiryId,
     })
   }
 
@@ -597,7 +682,15 @@ function BpjsInput({
 function EmoneyInput({
   onAddToCart,
 }: {
-  onAddToCart: (item: { name: string; price: number; service_type: string; service_ref: string; buy_price?: number }) => void
+  onAddToCart: (item: {
+    name: string
+    price: number
+    service_type: string
+    service_ref: string
+    buy_price?: number
+    ppob_inquiry_id?: string
+    ppob_product_code?: string
+  }) => void
 }) {
   const [phoneNumber, setPhoneNumber] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<{ id: number; denom: string } | null>(null)
@@ -624,6 +717,8 @@ function EmoneyInput({
       service_type: "emoney",
       service_ref: phoneNumber,
       buy_price: inquiryResult.amount,
+      ppob_inquiry_id: inquiryResult.inquiryId,
+      ppob_product_code: selectedDenom.denom,
     })
   }
 

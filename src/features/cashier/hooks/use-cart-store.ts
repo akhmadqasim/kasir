@@ -17,7 +17,10 @@ interface CartStore {
     service_ref: string
     buy_price?: number
     sell_price?: number
+    ppob_product_id?: number
     ppob_product_code?: string
+    ppob_inquiry_id?: string
+    ppob_payment_code?: string
   }) => void
   removeItem: (cartId: string) => void
   updateQuantity: (cartId: string, qty: number) => void
@@ -81,7 +84,10 @@ export const useCartStore = create<CartStore>((set, get) => ({
           service_ref: item.service_ref,
           buy_price: item.buy_price ?? item.price,
           sell_price: sellPrice,
+          ppob_product_id: item.ppob_product_id,
           ppob_product_code: item.ppob_product_code,
+          ppob_inquiry_id: item.ppob_inquiry_id,
+          ppob_payment_code: item.ppob_payment_code,
         },
       ],
     })

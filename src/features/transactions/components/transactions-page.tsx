@@ -61,16 +61,21 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
   completed: "default",
+  pending_ppob: "secondary",
+  ppob_failed: "destructive",
   refunded: "destructive",
   partial_refund: "secondary",
 }
 
 const STATUS_CLASSNAMES: Record<string, string> = {
   completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
+  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
 }
 
 const STATUS_LABELS: Record<string, string> = {
   completed: id.transactions.completed,
+  pending_ppob: id.transactions.pendingPpob,
+  ppob_failed: id.transactions.ppobFailed,
   refunded: id.transactions.refunded,
   partial_refund: id.transactions.partialRefund,
 }
@@ -104,7 +109,7 @@ export function TransactionsPage() {
     },
   }), [page, debouncedSearch, paymentMethod, status, dateRange])
 
-  const { data, isLoading, error, refetch } = useTauriQuery<PaginatedTransactions>(
+  const { data, isLoading, error } = useTauriQuery<PaginatedTransactions>(
     "list_transactions",
     queryArgs
   )
@@ -167,6 +172,8 @@ export function TransactionsPage() {
           <SelectContent position="popper">
             <SelectItem value="all">{id.transactions.allStatus}</SelectItem>
             <SelectItem value="completed">{id.transactions.completed}</SelectItem>
+            <SelectItem value="pending_ppob">{id.transactions.pendingPpob}</SelectItem>
+            <SelectItem value="ppob_failed">{id.transactions.ppobFailed}</SelectItem>
             <SelectItem value="refunded">{id.transactions.refunded}</SelectItem>
             <SelectItem value="partial_refund">{id.transactions.partialRefund}</SelectItem>
           </SelectContent>
@@ -258,7 +265,16 @@ export function TransactionsPage() {
             ) : (
               data.data.map((txn) => (
                 <TableRow key={txn.id} className="cursor-pointer" onClick={() => setDetailTxn(txn)}>
-                  <TableCell className="font-mono text-sm">{txn.receipt_number}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    <div className="space-y-1">
+                      <p>{txn.receipt_number}</p>
+                      {txn.ppob_message && (
+                        <p className="max-w-48 truncate text-xs text-muted-foreground">
+                          {txn.ppob_message}
+                        </p>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{txn.cashier_name}</TableCell>
                   <TableCell className="text-sm">{formatDate(txn.created_at)}</TableCell>
                   <TableCell className="text-center">{txn.item_count}</TableCell>
@@ -289,7 +305,7 @@ export function TransactionsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {txn.status !== "refunded" && (
+                      {!txn.has_ppob && txn.status !== "refunded" && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -304,6 +320,7 @@ export function TransactionsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
+                        disabled={txn.has_ppob && txn.status !== "completed"}
                         onClick={(e) => { e.stopPropagation(); handlePrint(txn.id) }}
                         title={id.transactions.printReceipt}
                       >
@@ -346,7 +363,6 @@ export function TransactionsPage() {
       <TransactionDetailDialog
         transaction={detailTxn}
         onClose={() => setDetailTxn(null)}
-        onRefresh={refetch}
       />
     </div>
   )

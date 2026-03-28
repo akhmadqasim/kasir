@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { id } from "@/i18n/id"
-import type { AppSettingsWithPpob, PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types"
+import type { AppSettings, PpobMarkup, PpobMarkupConfig } from "../types"
 import { PpobCustomPrices } from "./ppob-custom-prices"
 
 const DEFAULT_MARKUP_CONFIG: PpobMarkupConfig = { type: "fixed", value: 0 }
@@ -59,9 +59,9 @@ export function PpobSettingsTab() {
   const [markup, setMarkup] = useState<PpobMarkup>(DEFAULT_MARKUP)
   const [initialized, setInitialized] = useState(false)
 
-  const settingsQuery = useQuery<AppSettingsWithPpob>({
+  const settingsQuery = useQuery<AppSettings>({
     queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettingsWithPpob>("get_app_settings"),
+    queryFn: () => invoke<AppSettings>("get_app_settings"),
   })
 
   if (settingsQuery.data && !initialized) {
@@ -90,6 +90,10 @@ export function PpobSettingsTab() {
           },
           security: currentSettings?.security ?? {
             session_timeout_minutes: 30,
+          },
+          backup: currentSettings?.backup ?? {
+            interval_hours: 3,
+            retention_days: 90,
           },
           ppob: {
             enabled,

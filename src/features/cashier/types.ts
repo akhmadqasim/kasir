@@ -11,7 +11,10 @@ export interface CartItem {
   service_ref?: string
   buy_price?: number
   sell_price?: number
+  ppob_product_id?: number
   ppob_product_code?: string
+  ppob_inquiry_id?: string
+  ppob_payment_code?: string
 }
 
 export interface TransactionItemInput {
@@ -22,9 +25,13 @@ export interface TransactionItemInput {
   buy_price?: number
   service_type?: string
   service_ref?: string
+  ppob_product_id?: number
+  ppob_product_code?: string
+  ppob_inquiry_id?: string
+  ppob_payment_code?: string
 }
 
-export interface CreateTransactionInput {
+export interface CheckoutTransactionInput {
   user_id: number
   items: TransactionItemInput[]
   payment_method: string
@@ -56,7 +63,14 @@ export interface TransactionItem {
   subtotal: number
   service_type: string | null
   service_ref: string | null
-  created_at: string
+  ppob_product_id: number | null
+  ppob_product_code: string | null
+  ppob_inquiry_id: string | null
+  ppob_payment_code: string | null
+  ppob_status: string | null
+  ppob_message: string | null
+  ppob_serial_number: string | null
+  created_at: string | null
 }
 
 export interface TransactionResult {

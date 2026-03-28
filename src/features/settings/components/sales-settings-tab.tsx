@@ -47,6 +47,26 @@ export function SalesSettingsTab() {
       const currentSecurity = settingsQuery.data?.security ?? {
         session_timeout_minutes: 30,
       }
+      const currentPpob = settingsQuery.data?.ppob ?? {
+        enabled: false,
+        phone_number: "",
+        password: "",
+        device_id: "",
+        pin: "",
+        markup: {
+          pulsa: { type: "fixed", value: 0 },
+          data: { type: "fixed", value: 0 },
+          pln: { type: "fixed", value: 0 },
+          pdam: { type: "fixed", value: 0 },
+          bpjs: { type: "fixed", value: 0 },
+          emoney: { type: "fixed", value: 0 },
+          custom_prices: {},
+        },
+      }
+      const currentBackup = settingsQuery.data?.backup ?? {
+        interval_hours: 3,
+        retention_days: 90,
+      }
       return invoke("update_app_settings", {
         settings: {
           sales: {
@@ -54,6 +74,8 @@ export function SalesSettingsTab() {
             default_payment_method: defaultPaymentMethod,
           },
           security: currentSecurity,
+          ppob: currentPpob,
+          backup: currentBackup,
         },
       })
     },

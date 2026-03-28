@@ -29,7 +29,7 @@ import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
-import { formatRupiah } from "../utils"
+import { formatRupiah, getAddItemValidationError } from "../utils"
 import { PpobQuickAccess } from "./ppob-quick-access"
 
 interface ShortcutProduct {
@@ -59,6 +59,7 @@ export function ProductSearchPanel() {
   const commandInputRef = useRef<HTMLDivElement>(null)
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const holdStartRef = useRef<number>(0)
+  const items = useCartStore((s) => s.items)
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
 
@@ -143,6 +144,12 @@ export function ProductSearchPanel() {
   }, [])
 
   const addToCart = useCallback((product: Product | ShortcutProduct, isManualSearch: boolean) => {
+    const validationError = getAddItemValidationError(items, "product")
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
+
     addItem(product)
     if (product.stock <= 0) {
       toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
@@ -150,7 +157,7 @@ export function ProductSearchPanel() {
     if (isManualSearch) {
       trackSelection(product.id)
     }
-  }, [addItem, trackSelection])
+  }, [addItem, items, trackSelection])
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key !== "Enter" || !searchQuery.trim()) return

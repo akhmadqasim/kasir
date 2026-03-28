@@ -134,6 +134,13 @@ pub async fn print_receipt(
         .all(db.inner())
         .await?;
 
+    let has_ppob = items.iter().any(|item| item.service_type.is_some());
+    if has_ppob && transaction.status != "completed" {
+        return Err(AppError::Validation(
+            "Struk PPOB hanya bisa dicetak setelah fulfillment berhasil".into(),
+        ));
+    }
+
     let user = users::Entity::find_by_id(transaction.user_id)
         .one(db.inner())
         .await?;
@@ -328,6 +335,13 @@ pub async fn get_receipt_data(
         .filter(transaction_items::Column::TransactionId.eq(transaction_id))
         .all(db.inner())
         .await?;
+
+    let has_ppob = items.iter().any(|item| item.service_type.is_some());
+    if has_ppob && transaction.status != "completed" {
+        return Err(AppError::Validation(
+            "Struk PPOB hanya tersedia setelah fulfillment berhasil".into(),
+        ));
+    }
 
     let user = users::Entity::find_by_id(transaction.user_id)
         .one(db.inner())

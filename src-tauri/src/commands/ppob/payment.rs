@@ -1,15 +1,11 @@
-use sea_orm::{DatabaseConnection, EntityTrait};
-use serde_json::json;
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use super::auth::get_mitra_client;
 use super::client::MitraClient;
+use super::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use super::models::{PaymentResult, PpobReceiptData};
-use super::parsers::{extract_f64, extract_optional_string};
-use crate::commands::settings::parse_app_settings;
-use crate::entity::store_info;
 use crate::utils::AppError;
 
 #[tauri::command]
@@ -22,61 +18,19 @@ pub async fn ppob_confirm_payment(
     product_code: Option<String>,
     payment_code: Option<String>,
 ) -> Result<PaymentResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let settings = store_info::Entity::find_by_id(1_i64)
-        .one(db.inner())
-        .await?
-        .map(|store| parse_app_settings(&store.additional_info))
-        .unwrap_or_default();
-
-    let client = mitra.lock().await;
-
-    let endpoint = match service_type.as_str() {
-        "pulsa" => "pulsa/payment",
-        "data" => "pulsa/payment",
-        "pln" => "pln/payment",
-        "pdam" => "pdam/payment",
-        "bpjs" => "bpjs/payment",
-        "pp" => "pp/payment",
-        "transfer" => "transfer-uang/payment",
-        "emoney" => "emoney/payment",
-        _ => {
-            return Err(AppError::Validation(format!(
-                "Service type tidak valid: {}",
-                service_type
-            )))
-        }
-    };
-
-    let mut body = json!({ "inquiry_id": inquiry_id });
-    if !settings.ppob.pin.is_empty() {
-        body["pin"] = json!(settings.ppob.pin);
-    }
-    if let Some(cid) = &customer_id {
-        body["customer_id"] = json!(cid);
-    }
-    if let Some(pc) = &product_code {
-        body["product_code"] = json!(pc);
-    }
-    if let Some(pyc) = &payment_code {
-        body["payment_code"] = json!(pyc);
-    }
-
-    let result = client.post(endpoint, body).await?;
-
-    Ok(PaymentResult {
-        success: true,
-        service_type: service_type.clone(),
-        customer_id: customer_id.unwrap_or_default(),
-        amount: extract_f64(&result, &["amount", "total_amount"]),
-        admin_fee: extract_f64(&result, &["admin_fee", "admin"]),
-        total: extract_f64(&result, &["total", "total_payment"]),
-        product_name: extract_optional_string(&result, &["product_name"]),
-        customer_name: extract_optional_string(&result, &["customer_name", "nama_pelanggan"]),
-        serial_number: extract_optional_string(&result, &["serial_number", "token", "sn"]),
-        receipt_data: result,
-    })
+    execute_fulfillment_request(
+        db.inner(),
+        mitra.inner(),
+        &PpobFulfillmentRequest {
+            service_type,
+            customer_id,
+            inquiry_id: Some(inquiry_id),
+            product_id: None,
+            product_code,
+            payment_code,
+        },
+    )
+    .await
 }
 
 #[tauri::command]

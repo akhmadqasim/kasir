@@ -1,4 +1,4 @@
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::DatabaseConnection;
 use serde_json::json;
 use std::sync::Arc;
 use tauri::State;
@@ -6,10 +6,9 @@ use tokio::sync::Mutex;
 
 use super::auth::get_mitra_client;
 use super::client::MitraClient;
+use super::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use super::models::{InquiryResult, PaymentResult};
 use super::parsers::{extract_f64, extract_optional_string, extract_string};
-use crate::commands::settings::parse_app_settings;
-use crate::entity::store_info;
 use crate::utils::AppError;
 
 #[tauri::command]
@@ -245,41 +244,17 @@ pub async fn ppob_pulsa_purchase(
     product_id: i64,
     product_type: String,
 ) -> Result<PaymentResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let settings = store_info::Entity::find_by_id(1_i64)
-        .one(db.inner())
-        .await?
-        .map(|store| parse_app_settings(&store.additional_info))
-        .unwrap_or_default();
-
-    let client = mitra.lock().await;
-
-    let mut body = json!({
-        "phone_number": phone_number,
-        "product_code": product_code,
-        "product_id": product_id,
-        "type": product_type,
-    });
-    if !settings.ppob.pin.is_empty() {
-        body["pin"] = json!(settings.ppob.pin);
-    }
-
-    let result = client.post("pulsa/v2/topup", body).await?;
-
-    // Response wraps transaction data under "history_payment" key
-    let hp = &result["history_payment"];
-
-    Ok(PaymentResult {
-        success: true,
-        service_type: product_type.clone(),
-        customer_id: phone_number.clone(),
-        amount: extract_f64(hp, &["amount"]),
-        admin_fee: 0.0,
-        total: extract_f64(hp, &["amount"]),
-        product_name: extract_optional_string(hp, &["plu_desc", "description"]),
-        customer_name: None,
-        serial_number: extract_optional_string(hp, &["no_ref", "token_number"]),
-        receipt_data: result,
-    })
+    execute_fulfillment_request(
+        db.inner(),
+        mitra.inner(),
+        &PpobFulfillmentRequest {
+            service_type: product_type,
+            customer_id: Some(phone_number),
+            inquiry_id: None,
+            product_id: Some(product_id),
+            product_code: Some(product_code),
+            payment_code: None,
+        },
+    )
+    .await
 }

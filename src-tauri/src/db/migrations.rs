@@ -19,6 +19,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "005_mitra_tokens",
         include_str!("../../migrations/005_mitra_tokens.sql"),
     ),
+    (
+        "006_ppob_checkout",
+        include_str!("../../migrations/006_ppob_checkout.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

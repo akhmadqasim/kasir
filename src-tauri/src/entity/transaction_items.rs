@@ -15,6 +15,13 @@ pub struct Model {
     pub subtotal: f64,
     pub service_type: Option<String>,
     pub service_ref: Option<String>,
+    pub ppob_product_id: Option<i64>,
+    pub ppob_product_code: Option<String>,
+    pub ppob_inquiry_id: Option<String>,
+    pub ppob_payment_code: Option<String>,
+    pub ppob_status: Option<String>,
+    pub ppob_message: Option<String>,
+    pub ppob_serial_number: Option<String>,
     pub created_at: Option<String>,
 }
 

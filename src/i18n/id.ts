@@ -147,6 +147,8 @@ export const id = {
     allMethods: "Semua Metode",
     allStatus: "Semua Status",
     completed: "Selesai",
+    pendingPpob: "Menunggu PPOB",
+    ppobFailed: "PPOB Gagal",
     refunded: "Refund",
     partialRefund: "Refund Sebagian",
     detail: "Detail Transaksi",

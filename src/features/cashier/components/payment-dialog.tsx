@@ -15,8 +15,8 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCartStore } from "../hooks/use-cart-store"
-import { useCreateTransaction } from "../hooks/use-cashier"
-import { formatRupiah } from "../utils"
+import { useCheckoutTransaction } from "../hooks/use-cashier"
+import { formatRupiah, getCartValidationError } from "../utils"
 import type { TransactionResult } from "../types"
 
 interface PaymentDialogProps {
@@ -45,15 +45,20 @@ export function PaymentDialog({
   const user = useAuthStore((s) => s.user)
   const items = useCartStore((s) => s.items)
   const getTotal = useCartStore((s) => s.getTotal)
-  const createTransaction = useCreateTransaction()
+  const checkoutTransaction = useCheckoutTransaction()
 
   const total = getTotal()
   const numericPayment = Number(paymentAmount) || 0
   const changeAmount = paymentMethod === "cash" ? numericPayment - total : 0
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
+  const cartValidationError = getCartValidationError(items)
 
   const isCashValid = paymentMethod !== "cash" || numericPayment >= total
-  const canConfirm = items.length > 0 && isCashValid && !createTransaction.isPending
+  const canConfirm =
+    items.length > 0 &&
+    !cartValidationError &&
+    isCashValid &&
+    !checkoutTransaction.isPending
 
   const quickAmounts = getQuickAmounts(total)
 
@@ -98,7 +103,7 @@ export function PaymentDialog({
     const finalPaymentAmount =
       paymentMethod === "cash" ? numericPayment : total
 
-    createTransaction.mutate(
+    checkoutTransaction.mutate(
       {
         input: {
           user_id: user.id,
@@ -110,6 +115,10 @@ export function PaymentDialog({
             buy_price: item.buy_price,
             service_type: item.service_type,
             service_ref: item.service_ref,
+            ppob_product_id: item.ppob_product_id,
+            ppob_product_code: item.ppob_product_code,
+            ppob_inquiry_id: item.ppob_inquiry_id,
+            ppob_payment_code: item.ppob_payment_code,
           })),
           payment_method: paymentMethod,
           payment_amount: finalPaymentAmount,
@@ -159,6 +168,9 @@ export function PaymentDialog({
               {formatRupiah(total)}
             </span>
           </div>
+          {cartValidationError && (
+            <p className="mt-3 text-sm text-destructive">{cartValidationError}</p>
+          )}
         </div>
 
         {/* Payment Method */}
@@ -237,7 +249,7 @@ export function PaymentDialog({
             disabled={!canConfirm}
             onClick={handleConfirm}
           >
-            {createTransaction.isPending
+            {checkoutTransaction.isPending
               ? "Memproses..."
               : "Proses Pembayaran"}
           </Button>
