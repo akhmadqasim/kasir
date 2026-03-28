@@ -74,7 +74,7 @@ export function CartPanel({ onPay }: CartPanelProps) {
             <TableBody>
               {items.map((item) => (
                 <CartItemRow
-                  key={item.product_id}
+                  key={item.cart_id}
                   item={item}
                   onUpdateQuantity={updateQuantity}
                   onRemove={removeItem}

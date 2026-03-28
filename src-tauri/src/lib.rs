@@ -5,6 +5,8 @@ mod printing;
 mod utils;
 
 use std::fs;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,15 +20,23 @@ pub fn run() {
     fs::create_dir_all(&data_dir).expect("Failed to create data directory");
 
     let db_path = data_dir.join("kasir.db");
-    let database = tauri::async_runtime::block_on(
-        db::setup_database(db_path.to_str().expect("Invalid DB path")),
-    )
+    let database = tauri::async_runtime::block_on(db::setup_database(
+        db_path.to_str().expect("Invalid DB path"),
+    ))
     .expect("Failed to initialize database");
+
+    let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            #[cfg(debug_assertions)]
+            _app.handle().plugin(tauri_plugin_mcp_bridge::init())?;
+            Ok(())
+        })
         .manage(database)
+        .manage(mitra_client)
         .invoke_handler(tauri::generate_handler![
             commands::auth::login,
             commands::auth::get_current_user,
@@ -78,6 +88,30 @@ pub fn run() {
             commands::dashboard::get_low_stock_products,
             commands::dashboard::get_recent_transactions,
             commands::dashboard::get_weekly_stats,
+            commands::ppob::menu::ppob_login,
+            commands::ppob::menu::ppob_get_saldo,
+            commands::ppob::menu::ppob_get_menu,
+            commands::ppob::menu::ppob_get_providers,
+            commands::ppob::menu::ppob_get_pulsa_details,
+            commands::ppob::menu::ppob_get_pulsa_price_list,
+            commands::ppob::menu::ppob_get_data_price_list,
+            commands::ppob::menu::ppob_get_pln_denom,
+            commands::ppob::menu::ppob_get_pdam_products,
+            commands::ppob::menu::ppob_get_emoney_denom,
+            commands::ppob::menu::ppob_get_pp_sub_menu,
+            commands::ppob::menu::ppob_get_transfer_channels,
+            commands::ppob::menu::ppob_get_voucher_groups,
+            commands::ppob::inquiry::ppob_pln_inquiry,
+            commands::ppob::inquiry::ppob_pdam_inquiry,
+            commands::ppob::inquiry::ppob_bpjs_inquiry,
+            commands::ppob::inquiry::ppob_pp_inquiry,
+            commands::ppob::inquiry::ppob_transfer_inquiry,
+            commands::ppob::inquiry::ppob_emoney_inquiry,
+            commands::ppob::inquiry::ppob_pulsa_purchase,
+            commands::ppob::payment::ppob_confirm_payment,
+            commands::ppob::payment::ppob_get_receipt_data,
+            commands::ppob::history::ppob_get_history,
+            commands::ppob::history::ppob_get_history_detail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

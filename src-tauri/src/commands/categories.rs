@@ -72,10 +72,7 @@ pub async fn update_category(
 }
 
 #[tauri::command]
-pub async fn delete_category(
-    db: State<'_, DatabaseConnection>,
-    id: i64,
-) -> Result<(), AppError> {
+pub async fn delete_category(db: State<'_, DatabaseConnection>, id: i64) -> Result<(), AppError> {
     let count = products::Entity::find()
         .filter(products::Column::CategoryId.eq(id))
         .filter(products::Column::IsActive.eq(true))

@@ -130,8 +130,7 @@ pub async fn search_products(
         _ => products::Column::Name,
     };
 
-    let query = products::Entity::find()
-        .filter(build_search_condition(&params));
+    let query = products::Entity::find().filter(build_search_condition(&params));
 
     let query = if params.sort_order.as_deref() == Some("desc") {
         query.order_by_desc(sort_col)
@@ -250,10 +249,7 @@ pub async fn update_product(
 }
 
 #[tauri::command]
-pub async fn delete_product(
-    db: State<'_, DatabaseConnection>,
-    id: i64,
-) -> Result<(), AppError> {
+pub async fn delete_product(db: State<'_, DatabaseConnection>, id: i64) -> Result<(), AppError> {
     let existing = products::Entity::find_by_id(id)
         .filter(products::Column::IsActive.eq(true))
         .one(db.inner())

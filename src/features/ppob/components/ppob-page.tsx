@@ -10,14 +10,23 @@ import {
   Ticket,
   Wifi,
   RefreshCw,
+  History,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { id } from "@/i18n/id"
-import { usePpobSaldo } from "../hooks/use-ppob"
+import { usePpobSaldo } from "../hooks"
 import { PulsaFlow } from "./pulsa-flow"
+import { DataFlow } from "./data-flow"
 import { PlnFlow } from "./pln-flow"
+import { PdamFlow } from "./pdam-flow"
+import { BpjsFlow } from "./bpjs-flow"
+import { PpFlow } from "./pp-flow"
+import { TransferFlow } from "./transfer-flow"
+import { EmoneyFlow } from "./emoney-flow"
+import { VoucherFlow } from "./voucher-flow"
+import { PpobHistory } from "./history"
 
 const services = [
   { key: "pulsa", icon: Smartphone, label: id.ppob.pulsa, path: "pulsa", color: "text-blue-500" },
@@ -36,7 +45,7 @@ function SaldoCard() {
 
   if (error) {
     return (
-      <Card className="mb-6">
+      <Card>
         <CardContent className="flex items-center justify-between py-4">
           <div>
             <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
@@ -49,7 +58,7 @@ function SaldoCard() {
   }
 
   return (
-    <Card className="mb-6">
+    <Card>
       <CardContent className="flex items-center justify-between py-4">
         <div>
           <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
@@ -78,39 +87,38 @@ function ServiceGrid() {
   const navigate = useNavigate()
 
   return (
-    <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {services.map((svc) => (
-        <Card
+        <button
           key={svc.key}
-          className="cursor-pointer transition-colors hover:bg-accent"
+          className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => navigate(svc.path)}
         >
-          <CardContent className="flex flex-col items-center gap-2 py-6">
-            <svc.icon className={`h-8 w-8 ${svc.color}`} />
-            <span className="text-sm font-medium text-center">{svc.label}</span>
-          </CardContent>
-        </Card>
+          <svc.icon className={`h-7 w-7 ${svc.color}`} />
+          <span className="text-sm font-medium text-center">{svc.label}</span>
+        </button>
       ))}
     </div>
   )
 }
 
 function PpobHome() {
-  return (
-    <div className="p-8 max-w-4xl">
-      <h1 className="text-2xl font-bold mb-6">{id.ppob.title}</h1>
-      <SaldoCard />
-      <h2 className="text-lg font-semibold mb-4">{id.ppob.selectService}</h2>
-      <ServiceGrid />
-    </div>
-  )
-}
+  const navigate = useNavigate()
 
-function ComingSoon({ title }: { title: string }) {
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold">{title}</h1>
-      <p className="text-muted-foreground mt-2">Coming soon...</p>
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight">{id.ppob.title}</h1>
+        <Button variant="outline" size="sm" onClick={() => navigate("history")}>
+          <History className="mr-2 h-4 w-4" />
+          {id.ppob.history}
+        </Button>
+      </div>
+      <SaldoCard />
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">{id.ppob.selectService}</h2>
+        <ServiceGrid />
+      </div>
     </div>
   )
 }
@@ -120,14 +128,15 @@ export function PpobPage() {
     <Routes>
       <Route index element={<PpobHome />} />
       <Route path="pulsa" element={<PulsaFlow />} />
-      <Route path="data" element={<ComingSoon title={id.ppob.dataPacket} />} />
+      <Route path="data" element={<DataFlow />} />
       <Route path="pln" element={<PlnFlow />} />
-      <Route path="pdam" element={<ComingSoon title={id.ppob.pdam} />} />
-      <Route path="bpjs" element={<ComingSoon title={id.ppob.bpjs} />} />
-      <Route path="pp" element={<ComingSoon title={id.ppob.pp} />} />
-      <Route path="transfer" element={<ComingSoon title={id.ppob.transfer} />} />
-      <Route path="emoney" element={<ComingSoon title={id.ppob.emoney} />} />
-      <Route path="voucher" element={<ComingSoon title={id.ppob.voucher} />} />
+      <Route path="pdam" element={<PdamFlow />} />
+      <Route path="bpjs" element={<BpjsFlow />} />
+      <Route path="pp" element={<PpFlow />} />
+      <Route path="transfer" element={<TransferFlow />} />
+      <Route path="emoney" element={<EmoneyFlow />} />
+      <Route path="voucher" element={<VoucherFlow />} />
+      <Route path="history" element={<PpobHistory />} />
     </Routes>
   )
 }

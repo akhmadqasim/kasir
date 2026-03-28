@@ -6,14 +6,19 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::commands::settings::parse_app_settings;
 use crate::entity::{products, store_info, transaction_items, transactions, users};
 use crate::utils::AppError;
-use crate::commands::settings::parse_app_settings;
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionItemInput {
-    pub product_id: i64,
+    pub product_id: Option<i64>,
     pub quantity: i64,
+    pub product_name: Option<String>,
+    pub product_price: Option<f64>,
+    pub buy_price: Option<f64>,
+    pub service_type: Option<String>,
+    pub service_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,11 +37,14 @@ pub struct TransactionResult {
 }
 
 struct ResolvedItem {
-    product_id: i64,
+    product_id: Option<i64>,
     product_name: String,
     sell_price: f64,
+    buy_price: Option<f64>,
     quantity: i64,
     subtotal: f64,
+    service_type: Option<String>,
+    service_ref: Option<String>,
 }
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "ewallet", "transfer"];
@@ -86,7 +94,11 @@ pub async fn create_transaction(
     let allow_negative_stock = store_info::Entity::find_by_id(1_i64)
         .one(&txn)
         .await?
-        .map(|s| parse_app_settings(&s.additional_info).sales.allow_negative_stock)
+        .map(|s| {
+            parse_app_settings(&s.additional_info)
+                .sales
+                .allow_negative_stock
+        })
         .unwrap_or(true);
 
     // Resolve and validate all items
@@ -99,35 +111,62 @@ pub async fn create_transaction(
             ));
         }
 
-        let product = products::Entity::find_by_id(item_input.product_id)
-            .filter(products::Column::IsActive.eq(true))
-            .one(&txn)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "Produk dengan ID {} tidak ditemukan atau tidak aktif",
-                    item_input.product_id
-                ))
-            })?;
+        if let Some(product_id) = item_input.product_id {
+            // Physical product — lookup from DB
+            let product = products::Entity::find_by_id(product_id)
+                .filter(products::Column::IsActive.eq(true))
+                .one(&txn)
+                .await?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "Produk dengan ID {} tidak ditemukan atau tidak aktif",
+                        product_id
+                    ))
+                })?;
 
-        if product.stock < item_input.quantity {
-            if !allow_negative_stock {
-                return Err(AppError::Validation(format!(
-                    "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
-                    product.name, product.stock, item_input.quantity
-                )));
+            if product.stock < item_input.quantity {
+                if !allow_negative_stock {
+                    return Err(AppError::Validation(format!(
+                        "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
+                        product.name, product.stock, item_input.quantity
+                    )));
+                }
             }
+
+            let subtotal = product.sell_price * item_input.quantity as f64;
+
+            resolved_items.push(ResolvedItem {
+                product_id: Some(product.id),
+                product_name: product.name,
+                sell_price: product.sell_price,
+                buy_price: Some(product.buy_price),
+                quantity: item_input.quantity,
+                subtotal,
+                service_type: None,
+                service_ref: None,
+            });
+        } else {
+            // PPOB item — use provided name/price
+            let name = item_input
+                .product_name
+                .clone()
+                .ok_or_else(|| AppError::Validation("Nama produk PPOB harus diisi".into()))?;
+            let price = item_input
+                .product_price
+                .ok_or_else(|| AppError::Validation("Harga produk PPOB harus diisi".into()))?;
+            let subtotal = price * item_input.quantity as f64;
+
+            resolved_items.push(ResolvedItem {
+                product_id: None,
+                product_name: name,
+                sell_price: price,
+                buy_price: item_input.buy_price,
+                quantity: item_input.quantity,
+                subtotal,
+                service_type: item_input.service_type.clone(),
+                service_ref: item_input.service_ref.clone(),
+            });
         }
-
-        let subtotal = product.sell_price * item_input.quantity as f64;
-
-        resolved_items.push(ResolvedItem {
-            product_id: product.id,
-            product_name: product.name,
-            sell_price: product.sell_price,
-            quantity: item_input.quantity,
-            subtotal,
-        });
     }
 
     let total_amount: f64 = resolved_items.iter().map(|i| i.subtotal).sum();
@@ -177,25 +216,33 @@ pub async fn create_transaction(
             product_id: Set(resolved.product_id),
             product_name: Set(resolved.product_name.clone()),
             product_price: Set(resolved.sell_price),
+            buy_price: Set(resolved.buy_price),
             quantity: Set(resolved.quantity),
             subtotal: Set(resolved.subtotal),
+            service_type: Set(resolved.service_type.clone()),
+            service_ref: Set(resolved.service_ref.clone()),
             created_at: Set(Some(now.clone())),
         };
 
         let item = new_item.insert(&txn).await?;
         items.push(item);
 
-        // Atomically deduct stock
-        txn.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3",
-            vec![
-                (resolved.quantity as i64).into(),
-                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string().into(),
-                resolved.product_id.into(),
-            ],
-        ))
-        .await?;
+        // Only deduct stock for physical products
+        if let Some(pid) = resolved.product_id {
+            txn.execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3",
+                vec![
+                    (resolved.quantity as i64).into(),
+                    chrono::Utc::now()
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string()
+                        .into(),
+                    pid.into(),
+                ],
+            ))
+            .await?;
+        }
     }
 
     txn.commit().await?;
@@ -256,8 +303,8 @@ pub async fn list_transactions(
     let page = input.page.unwrap_or(1).max(1);
     let per_page = input.per_page.unwrap_or(50).min(100);
 
-    let mut query = transactions::Entity::find()
-        .order_by(transactions::Column::CreatedAt, Order::Desc);
+    let mut query =
+        transactions::Entity::find().order_by(transactions::Column::CreatedAt, Order::Desc);
 
     // Convert local date boundaries to UTC for filtering
     let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
@@ -266,14 +313,20 @@ pub async fn list_transactions(
         let local_start = format!("{} 00:00:00", date_from);
         if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
             let utc_start = ndt - chrono::Duration::seconds(offset_secs);
-            query = query.filter(transactions::Column::CreatedAt.gte(utc_start.format("%Y-%m-%d %H:%M:%S").to_string()));
+            query = query.filter(
+                transactions::Column::CreatedAt
+                    .gte(utc_start.format("%Y-%m-%d %H:%M:%S").to_string()),
+            );
         }
     }
     if let Some(ref date_to) = input.date_to {
         let local_end = format!("{} 23:59:59", date_to);
         if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
             let utc_end = ndt - chrono::Duration::seconds(offset_secs);
-            query = query.filter(transactions::Column::CreatedAt.lte(utc_end.format("%Y-%m-%d %H:%M:%S").to_string()));
+            query = query.filter(
+                transactions::Column::CreatedAt
+                    .lte(utc_end.format("%Y-%m-%d %H:%M:%S").to_string()),
+            );
         }
     }
     if let Some(ref method) = input.payment_method {

@@ -1,14 +1,10 @@
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::entity::{store_info, transaction_items, transactions, users};
 use crate::printing::receipt::{
-    format_receipt_text, format_test_page_text, ReceiptData,
-    ReceiptItem, ReceiptTextLine,
+    format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
 };
 use crate::utils::AppError;
 
@@ -161,9 +157,16 @@ pub async fn print_receipt(
         })
         .collect();
 
-    eprintln!("[print_receipt] Transaction #{}, items count: {}", transaction_id, receipt_items.len());
+    eprintln!(
+        "[print_receipt] Transaction #{}, items count: {}",
+        transaction_id,
+        receipt_items.len()
+    );
     for (i, item) in receipt_items.iter().enumerate() {
-        eprintln!("[print_receipt]   Item {}: {} x{} @{} = {}", i, item.name, item.quantity, item.price, item.subtotal);
+        eprintln!(
+            "[print_receipt]   Item {}: {} x{} @{} = {}",
+            i, item.name, item.quantity, item.price, item.subtotal
+        );
     }
 
     let receipt_data = ReceiptData {
@@ -189,12 +192,10 @@ pub async fn print_receipt(
         printer_id
     );
 
-    tokio::task::spawn_blocking(move || {
-        send_to_printer_gdi(&printer_id, &text_lines)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-    .map_err(|e| AppError::Internal(e))?;
+    tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
+        .await
+        .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
+        .map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }
@@ -216,12 +217,10 @@ pub async fn test_print(db: State<'_, DatabaseConnection>) -> Result<(), AppErro
 
     let text_lines = format_test_page_text(&store.name, paper_width);
 
-    tokio::task::spawn_blocking(move || {
-        send_to_printer_gdi(&printer_id, &text_lines)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-    .map_err(|e| AppError::Internal(e))?;
+    tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
+        .await
+        .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
+        .map_err(|e| AppError::Internal(e))?;
 
     Ok(())
 }
@@ -264,9 +263,10 @@ pub async fn update_printer_settings(
     }
 
     let mut active: store_info::ActiveModel = store.into();
-    active.additional_info = Set(Some(serde_json::to_string(&info).map_err(|e| {
-        AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
-    })?));
+    active.additional_info =
+        Set(Some(serde_json::to_string(&info).map_err(|e| {
+            AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
+        })?));
     active.updated_at = Set(Some(
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     ));

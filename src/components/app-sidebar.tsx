@@ -11,7 +11,7 @@ import {
   StoreIcon,
   RotateCcwIcon,
   LayoutDashboardIcon,
-  SmartphoneIcon,
+  Building2Icon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -68,7 +68,7 @@ const navMain = [
   {
     title: id.nav.ppob,
     url: "/ppob",
-    icon: <SmartphoneIcon />,
+    icon: <Building2Icon />,
   },
   {
     title: id.nav.settings,

@@ -7,11 +7,14 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub transaction_id: i64,
-    pub product_id: i64,
+    pub product_id: Option<i64>,
     pub product_name: String,
     pub product_price: f64,
+    pub buy_price: Option<f64>,
     pub quantity: i64,
     pub subtotal: f64,
+    pub service_type: Option<String>,
+    pub service_ref: Option<String>,
     pub created_at: Option<String>,
 }
 

@@ -1,10 +1,3 @@
-export interface PpobSaldoResponse {
-  saldo: number
-  username: string
-  storeName: string
-  flagMember: string
-}
-
 export interface PpobMenuGroup {
   id: number
   group: string
@@ -95,23 +88,4 @@ export interface VoucherGroup {
   id: number
   group: string
   icon: string | null
-}
-
-export interface PpobSettings {
-  enabled: boolean
-  phone_number: string
-  password: string
-  device_id: string
-  pin: string
-}
-
-export interface AppSettingsWithPpob {
-  sales: {
-    allow_negative_stock: boolean
-    default_payment_method: string
-  }
-  security: {
-    session_timeout_minutes: number
-  }
-  ppob: PpobSettings
 }

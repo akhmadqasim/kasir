@@ -2,6 +2,7 @@ pub mod auth;
 pub mod categories;
 pub mod dashboard;
 pub mod onboarding;
+pub mod ppob;
 pub mod products;
 pub mod receipt;
 pub mod refunds;

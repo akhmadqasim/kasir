@@ -1,15 +1,27 @@
 export interface CartItem {
-  product_id: number
+  cart_id: string
+  product_id?: number
   product_name: string
   product_price: number
   quantity: number
   stock: number
   unit: string
+  is_ppob?: boolean
+  service_type?: string
+  service_ref?: string
+  buy_price?: number
+  sell_price?: number
+  ppob_product_code?: string
 }
 
 export interface TransactionItemInput {
-  product_id: number
+  product_id?: number
   quantity: number
+  product_name?: string
+  product_price?: number
+  buy_price?: number
+  service_type?: string
+  service_ref?: string
 }
 
 export interface CreateTransactionInput {
@@ -36,11 +48,14 @@ export interface Transaction {
 export interface TransactionItem {
   id: number
   transaction_id: number
-  product_id: number
+  product_id: number | null
   product_name: string
   product_price: number
+  buy_price: number | null
   quantity: number
   subtotal: number
+  service_type: string | null
+  service_ref: string | null
   created_at: string
 }
 

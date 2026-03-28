@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Search, Pin, Trash2, TrendingUp } from "lucide-react"
+import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
+import { cn } from "@/lib/utils"
 import { Kbd } from "@/components/ui/kbd"
 import {
   Command,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Empty,
   EmptyDescription,
@@ -20,6 +22,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useQueryClient } from "@tanstack/react-query"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
@@ -27,6 +30,7 @@ import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
 import { formatRupiah } from "../utils"
+import { PpobQuickAccess } from "./ppob-quick-access"
 
 interface ShortcutProduct {
   id: number
@@ -153,7 +157,6 @@ export function ProductSearchPanel() {
 
     const query = searchQuery.trim()
 
-    // Try barcode lookup first
     try {
       const product = await getProductByBarcode(query)
       if (product) {
@@ -168,7 +171,6 @@ export function ProductSearchPanel() {
       // Not a barcode, continue with search results
     }
 
-    // If search results exist, select the first one
     if (searchResults?.data && searchResults.data.length > 0) {
       e.preventDefault()
       addToCart(searchResults.data[0], true)
@@ -178,7 +180,6 @@ export function ProductSearchPanel() {
       return
     }
 
-    // Nothing found
     toast.error(`Produk "${query}" tidak ditemukan`)
     setSearchQuery("")
     setDebouncedQuery("")
@@ -201,126 +202,136 @@ export function ProductSearchPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Command className="rounded-none border-none" shouldFilter={false}>
-          <div className="relative" ref={commandInputRef}>
-            <CommandInput
-              placeholder="Scan barcode atau cari produk..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              onKeyDown={handleKeyDown}
-              className="h-12 text-base"
-            />
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-              <Kbd>Enter</Kbd>
-            </div>
+      {/* Search Bar */}
+      <Command className={cn("rounded-none border-none border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")} shouldFilter={false}>
+        <div className="relative" ref={commandInputRef}>
+          <CommandInput
+            placeholder="Scan barcode atau cari produk..."
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            onKeyDown={handleKeyDown}
+            className="h-12 text-base"
+          />
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+            <Kbd>Enter</Kbd>
           </div>
+        </div>
+
+        {/* Search Results */}
+        {showSearchResults && (
           <CommandList className="max-h-none flex-1">
-            {showSearchResults ? (
-              searchResults?.data && searchResults.data.length > 0 ? (
-                <CommandGroup>
-                  {searchResults.data.map((product) => (
-                    <CommandItem
-                      key={product.id}
-                      value={String(product.id)}
-                      onSelect={() => handleProductSelect(product)}
-                      className="flex items-center gap-3 py-2.5"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">
-                          {product.name}
+            {searchResults?.data && searchResults.data.length > 0 ? (
+              <CommandGroup>
+                {searchResults.data.map((product) => (
+                  <CommandItem
+                    key={product.id}
+                    value={String(product.id)}
+                    onSelect={() => handleProductSelect(product)}
+                    className="flex items-center gap-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{product.name}</p>
+                      {product.barcode && (
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {product.barcode}
                         </p>
-                        {product.barcode && (
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {product.barcode}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            product.stock <= 0 ? "destructive" : "secondary"
-                          }
-                          className="text-xs"
-                        >
-                          {product.stock} {product.unit}
-                        </Badge>
-                        <span className="min-w-[80px] text-right font-semibold tabular-nums">
-                          {formatRupiah(product.sell_price)}
-                        </span>
-                      </div>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ) : (
-                <CommandEmpty>Produk tidak ditemukan</CommandEmpty>
-              )
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={product.stock <= 0 ? "destructive" : "secondary"}
+                        className="text-xs"
+                      >
+                        {product.stock} {product.unit}
+                      </Badge>
+                      <span className="min-w-[80px] text-right font-semibold tabular-nums">
+                        {formatRupiah(product.sell_price)}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
             ) : (
-              /* Shortcut Products */
+              <CommandEmpty>Produk tidak ditemukan</CommandEmpty>
+            )}
+          </CommandList>
+        )}
+      </Command>
+
+      {/* Tabs: Produk Favorit / PPOB — only when not searching */}
+      {!showSearchResults && (
+        <Tabs defaultValue="produk" className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="mx-4 mt-2 w-auto self-start">
+            <TabsTrigger value="produk" className="gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Produk Favorit
+            </TabsTrigger>
+            <TabsTrigger value="ppob" className="gap-1.5">
+              <Smartphone className="h-3.5 w-3.5" />
+              PPOB
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="produk" className="mt-0 min-h-0 flex-1">
+            <ScrollArea className="h-full">
               <div className="p-4">
                 {shortcutProducts && shortcutProducts.length > 0 ? (
-                  <div>
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <TrendingUp className="h-4 w-4" />
-                      Produk Favorit
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                      {shortcutProducts.map((product) => {
-                        const isHolding = holdingPinId === product.id
-                        return (
-                          <Button
-                            key={product.id}
-                            variant="outline"
-                            className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors"
-                            style={isHolding ? {
-                              borderColor: `color-mix(in srgb, var(--destructive) ${holdProgress}%, var(--border))`,
-                              backgroundColor: `color-mix(in srgb, var(--destructive) ${holdProgress * 0.15}%, transparent)`,
-                              boxShadow: `0 0 0 1px color-mix(in srgb, var(--destructive) ${holdProgress * 0.5}%, transparent)`,
-                            } : undefined}
-                            onClick={() => !isHolding && handleShortcutSelect(product)}
-                          >
-                            <span className="w-full truncate text-sm font-medium">
-                              {product.name}
-                            </span>
-                            <span className="text-xs tabular-nums text-muted-foreground">
-                              {formatRupiah(product.sell_price)}
-                            </span>
-                            {product.is_pinned ? (
-                              <div
-                                role="button"
-                                className="group/pin absolute bottom-1 right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-destructive/10"
-                                onPointerDown={(e) => startHoldUnpin(e, product.id)}
-                                onPointerUp={cancelHoldUnpin}
-                                onPointerLeave={cancelHoldUnpin}
-                                onClick={(e) => e.stopPropagation()}
-                                title="Tahan untuk hapus pin"
-                              >
-                                {isHolding ? (
-                                  <Trash2 className="h-3 w-3 text-destructive" />
-                                ) : (
-                                  <>
-                                    <Pin className="h-3 w-3 fill-current text-primary opacity-40 group-hover/pin:hidden" />
-                                    <Trash2 className="hidden h-3 w-3 text-destructive group-hover/pin:block" />
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <div
-                                role="button"
-                                className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-muted group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleTogglePin(product.id)
-                                }}
-                                title="Pin produk"
-                              >
-                                <Pin className="h-3 w-3 text-muted-foreground" />
-                              </div>
-                            )}
-                          </Button>
-                        )
-                      })}
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                    {shortcutProducts.map((product) => {
+                      const isHolding = holdingPinId === product.id
+                      return (
+                        <Button
+                          key={product.id}
+                          variant="outline"
+                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors"
+                          style={isHolding ? {
+                            borderColor: `color-mix(in srgb, var(--destructive) ${holdProgress}%, var(--border))`,
+                            backgroundColor: `color-mix(in srgb, var(--destructive) ${holdProgress * 0.15}%, transparent)`,
+                            boxShadow: `0 0 0 1px color-mix(in srgb, var(--destructive) ${holdProgress * 0.5}%, transparent)`,
+                          } : undefined}
+                          onClick={() => !isHolding && handleShortcutSelect(product)}
+                        >
+                          <span className="w-full truncate text-sm font-medium">
+                            {product.name}
+                          </span>
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {formatRupiah(product.sell_price)}
+                          </span>
+                          {product.is_pinned ? (
+                            <div
+                              role="button"
+                              className="group/pin absolute bottom-1 right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-destructive/10"
+                              onPointerDown={(e) => startHoldUnpin(e, product.id)}
+                              onPointerUp={cancelHoldUnpin}
+                              onPointerLeave={cancelHoldUnpin}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Tahan untuk hapus pin"
+                            >
+                              {isHolding ? (
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              ) : (
+                                <>
+                                  <Pin className="h-3 w-3 fill-current text-primary opacity-40 group-hover/pin:hidden" />
+                                  <Trash2 className="hidden h-3 w-3 text-destructive group-hover/pin:block" />
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              role="button"
+                              className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-muted group-hover:opacity-100"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleTogglePin(product.id)
+                              }}
+                              title="Pin produk"
+                            >
+                              <Pin className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          )}
+                        </Button>
+                      )
+                    })}
                   </div>
                 ) : (
                   <Empty className="border-none">
@@ -336,10 +347,16 @@ export function ProductSearchPanel() {
                   </Empty>
                 )}
               </div>
-            )}
-          </CommandList>
-        </Command>
-      </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="ppob" className="mt-0 min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <PpobQuickAccess />
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   )
 }

@@ -88,12 +88,21 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
     let mut lines = Vec::new();
 
     // Header
-    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
-    lines.push(ReceiptTextLine { text: center_text(&data.store_name, cpl), bold: true });
+    lines.push(ReceiptTextLine {
+        text: "=".repeat(cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: center_text(&data.store_name, cpl),
+        bold: true,
+    });
 
     if let Some(ref addr) = data.store_address {
         if !addr.is_empty() {
-            lines.push(ReceiptTextLine { text: center_text(addr, cpl), bold: false });
+            lines.push(ReceiptTextLine {
+                text: center_text(addr, cpl),
+                bold: false,
+            });
         }
     }
     if let Some(ref phone) = data.store_phone {
@@ -105,24 +114,48 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         }
     }
 
-    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine {
+        text: "=".repeat(cpl),
+        bold: false,
+    });
 
     // Transaction info
-    lines.push(ReceiptTextLine { text: two_col_text("No:", &data.receipt_number, cpl), bold: false });
-    lines.push(ReceiptTextLine { text: two_col_text("Tanggal:", &data.date_time, cpl), bold: false });
-    lines.push(ReceiptTextLine { text: two_col_text("Kasir:", &data.cashier_name, cpl), bold: false });
-    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine {
+        text: two_col_text("No:", &data.receipt_number, cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: two_col_text("Tanggal:", &data.date_time, cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: two_col_text("Kasir:", &data.cashier_name, cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: "-".repeat(cpl),
+        bold: false,
+    });
 
     // Items
     for item in &data.items {
         let price_str = format_rupiah(item.price);
         let subtotal_str = format_rupiah(item.subtotal);
         let qty_price = format!("  {} x {}", item.quantity, price_str);
-        lines.push(ReceiptTextLine { text: item.name.clone(), bold: false });
-        lines.push(ReceiptTextLine { text: two_col_text(&qty_price, &subtotal_str, cpl), bold: false });
+        lines.push(ReceiptTextLine {
+            text: item.name.clone(),
+            bold: false,
+        });
+        lines.push(ReceiptTextLine {
+            text: two_col_text(&qty_price, &subtotal_str, cpl),
+            bold: false,
+        });
     }
 
-    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine {
+        text: "-".repeat(cpl),
+        bold: false,
+    });
 
     // Totals
     lines.push(ReceiptTextLine {
@@ -131,7 +164,11 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
     });
     let method_label = payment_method_label(&data.payment_method);
     lines.push(ReceiptTextLine {
-        text: two_col_text(&format!("Bayar ({})", method_label), &format_rupiah(data.payment_amount), cpl),
+        text: two_col_text(
+            &format!("Bayar ({})", method_label),
+            &format_rupiah(data.payment_amount),
+            cpl,
+        ),
         bold: false,
     });
     if data.payment_method == "cash" && data.change_amount > 0.0 {
@@ -141,22 +178,40 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         });
     }
 
-    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
+    lines.push(ReceiptTextLine {
+        text: "=".repeat(cpl),
+        bold: false,
+    });
 
     // Footer
     if let Some(ref footer) = data.footer_text {
         for line in footer.lines() {
-            lines.push(ReceiptTextLine { text: center_text(line, cpl), bold: false });
+            lines.push(ReceiptTextLine {
+                text: center_text(line, cpl),
+                bold: false,
+            });
         }
     } else {
-        lines.push(ReceiptTextLine { text: center_text("Terima kasih!", cpl), bold: false });
-        lines.push(ReceiptTextLine { text: center_text("Barang yang sudah dibeli", cpl), bold: false });
-        lines.push(ReceiptTextLine { text: center_text("tidak dapat dikembalikan", cpl), bold: false });
+        lines.push(ReceiptTextLine {
+            text: center_text("Terima kasih!", cpl),
+            bold: false,
+        });
+        lines.push(ReceiptTextLine {
+            text: center_text("Barang yang sudah dibeli", cpl),
+            bold: false,
+        });
+        lines.push(ReceiptTextLine {
+            text: center_text("tidak dapat dikembalikan", cpl),
+            bold: false,
+        });
     }
 
     // Feed lines
     for _ in 0..6 {
-        lines.push(ReceiptTextLine { text: String::new(), bold: false });
+        lines.push(ReceiptTextLine {
+            text: String::new(),
+            bold: false,
+        });
     }
 
     lines
@@ -167,21 +222,60 @@ pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<Receip
     let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
     let mut lines = Vec::new();
 
-    lines.push(ReceiptTextLine { text: center_text("TEST PRINT", cpl), bold: true });
-    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
-    lines.push(ReceiptTextLine { text: center_text(store_name, cpl), bold: false });
-    lines.push(ReceiptTextLine { text: center_text(&format!("Lebar: {}mm", paper_width_mm), cpl), bold: false });
-    lines.push(ReceiptTextLine { text: center_text(&format!("{} karakter/baris", cpl), cpl), bold: false });
-    lines.push(ReceiptTextLine { text: "-".repeat(cpl), bold: false });
-    lines.push(ReceiptTextLine { text: "Normal text".to_string(), bold: false });
-    lines.push(ReceiptTextLine { text: "Bold text".to_string(), bold: true });
-    lines.push(ReceiptTextLine { text: two_col_text("Kiri", "Kanan", cpl), bold: false });
-    lines.push(ReceiptTextLine { text: two_col_text("Item panjang sekali", "100.000", cpl), bold: false });
-    lines.push(ReceiptTextLine { text: "=".repeat(cpl), bold: false });
-    lines.push(ReceiptTextLine { text: center_text("Printer OK!", cpl), bold: false });
+    lines.push(ReceiptTextLine {
+        text: center_text("TEST PRINT", cpl),
+        bold: true,
+    });
+    lines.push(ReceiptTextLine {
+        text: "=".repeat(cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: center_text(store_name, cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: center_text(&format!("Lebar: {}mm", paper_width_mm), cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: center_text(&format!("{} karakter/baris", cpl), cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: "-".repeat(cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: "Normal text".to_string(),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: "Bold text".to_string(),
+        bold: true,
+    });
+    lines.push(ReceiptTextLine {
+        text: two_col_text("Kiri", "Kanan", cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: two_col_text("Item panjang sekali", "100.000", cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: "=".repeat(cpl),
+        bold: false,
+    });
+    lines.push(ReceiptTextLine {
+        text: center_text("Printer OK!", cpl),
+        bold: false,
+    });
 
     for _ in 0..6 {
-        lines.push(ReceiptTextLine { text: String::new(), bold: false });
+        lines.push(ReceiptTextLine {
+            text: String::new(),
+            bold: false,
+        });
     }
 
     lines
@@ -248,7 +342,11 @@ mod tests {
         let lines = format_receipt_text(&data, 58);
         assert!(!lines.is_empty());
 
-        let all_text: String = lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
+        let all_text: String = lines
+            .iter()
+            .map(|l| l.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(all_text.contains("Toko Makmur"));
         assert!(all_text.contains("TRX-20250118-0001"));
         assert!(all_text.contains("Beras 5kg"));

@@ -48,9 +48,7 @@ pub async fn get_current_user(
 }
 
 #[tauri::command]
-pub async fn list_users(
-    db: State<'_, DatabaseConnection>,
-) -> Result<Vec<users::Model>, AppError> {
+pub async fn list_users(db: State<'_, DatabaseConnection>) -> Result<Vec<users::Model>, AppError> {
     let users = users::Entity::find()
         .order_by_asc(users::Column::FullName)
         .all(db.inner())
@@ -118,9 +116,7 @@ pub async fn create_user(
         .await?;
 
     if existing.is_some() {
-        return Err(AppError::Validation(
-            "Username sudah digunakan".into(),
-        ));
+        return Err(AppError::Validation("Username sudah digunakan".into()));
     }
 
     let pin_hash = bcrypt::hash(&input.pin, bcrypt::DEFAULT_COST)
@@ -176,9 +172,7 @@ pub async fn update_user(
             .one(db.inner())
             .await?;
         if existing.is_some() {
-            return Err(AppError::Validation(
-                "Username sudah digunakan".into(),
-            ));
+            return Err(AppError::Validation("Username sudah digunakan".into()));
         }
         active.username = Set(username);
     }

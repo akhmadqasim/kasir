@@ -240,10 +240,7 @@ pub async fn get_daily_revenue(
     for i in (0..days).rev() {
         let date = today - chrono::Duration::days(i);
         let date_str = date.format("%Y-%m-%d").to_string();
-        let (revenue, transactions) = revenue_map
-            .get(&date_str)
-            .copied()
-            .unwrap_or((0.0, 0));
+        let (revenue, transactions) = revenue_map.get(&date_str).copied().unwrap_or((0.0, 0));
         result.push(DailyRevenue {
             date: date_str,
             revenue,
@@ -392,9 +389,7 @@ pub async fn get_recent_transactions(
 }
 
 #[tauri::command]
-pub async fn get_weekly_stats(
-    db: State<'_, DatabaseConnection>,
-) -> Result<WeeklyStats, AppError> {
+pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<WeeklyStats, AppError> {
     let db = db.inner();
 
     let sales_row = db

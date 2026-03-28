@@ -1,9 +1,13 @@
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::State;
+use tokio::sync::Mutex;
 
 use crate::entity::{store_info, users};
 use crate::utils::AppError;
+
+use super::ppob::client::MitraClient;
 
 // --- App Settings structs ---
 
@@ -36,9 +40,82 @@ impl Default for SecuritySettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PpobMarkupConfig {
+    #[serde(rename = "type")]
+    pub markup_type: String, // "fixed" or "percentage"
+    pub value: f64,
+}
+
+impl Default for PpobMarkupConfig {
+    fn default() -> Self {
+        Self {
+            markup_type: "fixed".to_string(),
+            value: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PpobMarkup {
+    #[serde(default)]
+    pub pulsa: PpobMarkupConfig,
+    #[serde(default)]
+    pub data: PpobMarkupConfig,
+    #[serde(default)]
+    pub pln: PpobMarkupConfig,
+    #[serde(default)]
+    pub pdam: PpobMarkupConfig,
+    #[serde(default)]
+    pub bpjs: PpobMarkupConfig,
+    #[serde(default)]
+    pub emoney: PpobMarkupConfig,
+    #[serde(default)]
+    pub custom_prices: std::collections::HashMap<String, f64>,
+}
+
+impl Default for PpobMarkup {
+    fn default() -> Self {
+        Self {
+            pulsa: PpobMarkupConfig::default(),
+            data: PpobMarkupConfig::default(),
+            pln: PpobMarkupConfig::default(),
+            pdam: PpobMarkupConfig::default(),
+            bpjs: PpobMarkupConfig::default(),
+            emoney: PpobMarkupConfig::default(),
+            custom_prices: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PpobSettings {
+    pub enabled: bool,
+    pub phone_number: String,
+    pub password: String,
+    pub device_id: String,
+    pub pin: String,
+    #[serde(default)]
+    pub markup: PpobMarkup,
+}
+
+impl Default for PpobSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            phone_number: String::new(),
+            password: String::new(),
+            device_id: String::new(),
+            pin: String::new(),
+            markup: PpobMarkup::default(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub sales: SalesSettings,
     pub security: SecuritySettings,
+    pub ppob: PpobSettings,
 }
 
 impl Default for AppSettings {
@@ -46,6 +123,7 @@ impl Default for AppSettings {
         Self {
             sales: SalesSettings::default(),
             security: SecuritySettings::default(),
+            ppob: PpobSettings::default(),
         }
     }
 }
@@ -85,7 +163,16 @@ pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
         .and_then(|v| serde_json::from_value::<SecuritySettings>(v.clone()).ok())
         .unwrap_or_default();
 
-    AppSettings { sales, security }
+    let ppob = json
+        .get("ppob")
+        .and_then(|v| serde_json::from_value::<PpobSettings>(v.clone()).ok())
+        .unwrap_or_default();
+
+    AppSettings {
+        sales,
+        security,
+        ppob,
+    }
 }
 
 // --- Commands ---
@@ -127,9 +214,7 @@ pub async fn update_store_info(
 }
 
 #[tauri::command]
-pub async fn get_app_settings(
-    db: State<'_, DatabaseConnection>,
-) -> Result<AppSettings, AppError> {
+pub async fn get_app_settings(db: State<'_, DatabaseConnection>) -> Result<AppSettings, AppError> {
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db.inner())
         .await?;
@@ -144,6 +229,7 @@ pub async fn get_app_settings(
 #[tauri::command]
 pub async fn update_app_settings(
     db: State<'_, DatabaseConnection>,
+    mitra: State<'_, Arc<Mutex<MitraClient>>>,
     settings: AppSettings,
 ) -> Result<(), AppError> {
     let store = store_info::Entity::find_by_id(1_i64)
@@ -162,15 +248,24 @@ pub async fn update_app_settings(
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
     info["security"] = serde_json::to_value(&settings.security)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
+    info["ppob"] = serde_json::to_value(&settings.ppob)
+        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
 
     let mut active: store_info::ActiveModel = store.into();
-    active.additional_info = Set(Some(serde_json::to_string(&info).map_err(|e| {
-        AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
-    })?));
+    active.additional_info =
+        Set(Some(serde_json::to_string(&info).map_err(|e| {
+            AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
+        })?));
     active.updated_at = Set(Some(
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     ));
     active.update(db.inner()).await?;
+
+    // Clear Mitra token so next request uses updated credentials
+    {
+        let mut client = mitra.lock().await;
+        client.clear_auth();
+    }
 
     Ok(())
 }
@@ -224,9 +319,8 @@ pub async fn export_database(export_path: String) -> Result<u64, AppError> {
         return Err(AppError::NotFound("File database tidak ditemukan".into()));
     }
 
-    std::fs::copy(&db_path, &export_path).map_err(|e| {
-        AppError::Internal(format!("Gagal mengekspor database: {}", e))
-    })
+    std::fs::copy(&db_path, &export_path)
+        .map_err(|e| AppError::Internal(format!("Gagal mengekspor database: {}", e)))
 }
 
 #[tauri::command]
@@ -239,9 +333,8 @@ pub async fn import_database(import_path: String) -> Result<String, AppError> {
 
     let db_path = get_db_path();
 
-    std::fs::copy(import, &db_path).map_err(|e| {
-        AppError::Internal(format!("Gagal mengimpor database: {}", e))
-    })?;
+    std::fs::copy(import, &db_path)
+        .map_err(|e| AppError::Internal(format!("Gagal mengimpor database: {}", e)))?;
 
     Ok("Database berhasil diimpor. Silakan restart aplikasi.".into())
 }
@@ -254,9 +347,8 @@ pub async fn get_database_info() -> Result<DatabaseInfo, AppError> {
         return Err(AppError::NotFound("File database tidak ditemukan".into()));
     }
 
-    let metadata = std::fs::metadata(&db_path).map_err(|e| {
-        AppError::Internal(format!("Gagal membaca info database: {}", e))
-    })?;
+    let metadata = std::fs::metadata(&db_path)
+        .map_err(|e| AppError::Internal(format!("Gagal membaca info database: {}", e)))?;
 
     Ok(DatabaseInfo {
         size_bytes: metadata.len(),

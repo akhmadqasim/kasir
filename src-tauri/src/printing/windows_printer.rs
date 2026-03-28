@@ -5,8 +5,7 @@ use std::os::windows::ffi::OsStrExt;
 
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Printing::{
-    EnumPrintersW, GetDefaultPrinterW,
-    PRINTER_ENUM_LOCAL, PRINTER_INFO_2W,
+    EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_LOCAL, PRINTER_INFO_2W,
 };
 
 /// Printer information returned to frontend
@@ -30,14 +29,7 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         let mut count: u32 = 0;
 
         // First call to get required buffer size
-        let _ = EnumPrintersW(
-            flags,
-            None,
-            2,
-            None,
-            &mut bytes_needed,
-            &mut count,
-        );
+        let _ = EnumPrintersW(flags, None, 2, None, &mut bytes_needed, &mut count);
 
         if bytes_needed == 0 {
             return Ok(vec![]);
@@ -58,10 +50,8 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
             return Err("Gagal menampilkan daftar printer".to_string());
         }
 
-        let printers = std::slice::from_raw_parts(
-            buffer.as_ptr() as *const PRINTER_INFO_2W,
-            count as usize,
-        );
+        let printers =
+            std::slice::from_raw_parts(buffer.as_ptr() as *const PRINTER_INFO_2W, count as usize);
 
         let default_printer = get_default_printer();
 
@@ -111,8 +101,8 @@ pub fn send_gdi_text(
 ) -> Result<(), String> {
     use windows::Win32::Graphics::Gdi::{
         CreateDCW, CreateFontW, DeleteDC, DeleteObject, GetDeviceCaps, GetTextMetricsW,
-        SelectObject, TextOutW, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_QUALITY,
-        FIXED_PITCH, FW_BOLD, FW_NORMAL, LOGPIXELSY, OUT_DEFAULT_PRECIS, TEXTMETRICW,
+        SelectObject, TextOutW, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_QUALITY, FIXED_PITCH,
+        FW_BOLD, FW_NORMAL, LOGPIXELSY, OUT_DEFAULT_PRECIS, TEXTMETRICW,
     };
 
     unsafe {
@@ -139,18 +129,36 @@ pub fn send_gdi_text(
 
         let font_name_wide = to_wide("Consolas");
         let normal_font = CreateFontW(
-            font_height, 0, 0, 0,
-            FW_NORMAL.0 as i32, 0, 0, 0,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY, FIXED_PITCH.0 as u32,
+            font_height,
+            0,
+            0,
+            0,
+            FW_NORMAL.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY,
+            FIXED_PITCH.0 as u32,
             PCWSTR(font_name_wide.as_ptr()),
         );
 
         let bold_font = CreateFontW(
-            font_height, 0, 0, 0,
-            FW_BOLD.0 as i32, 0, 0, 0,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY, FIXED_PITCH.0 as u32,
+            font_height,
+            0,
+            0,
+            0,
+            FW_BOLD.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY,
+            FIXED_PITCH.0 as u32,
             PCWSTR(font_name_wide.as_ptr()),
         );
 
@@ -225,10 +233,7 @@ fn get_default_printer() -> Option<String> {
         }
 
         let mut buffer = vec![0u16; size as usize];
-        let result = GetDefaultPrinterW(
-            Some(windows::core::PWSTR(buffer.as_mut_ptr())),
-            &mut size,
-        );
+        let result = GetDefaultPrinterW(Some(windows::core::PWSTR(buffer.as_mut_ptr())), &mut size);
 
         if result.as_bool() {
             // Remove trailing null

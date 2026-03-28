@@ -1,15 +1,24 @@
 import { useState } from "react"
-import { Minus, Plus, Trash2 } from "lucide-react"
+import { Minus, Plus, Smartphone, Zap, Droplet, ShieldCheck, Wallet, Wifi, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TableCell, TableRow } from "@/components/ui/table"
 import type { CartItem } from "../types"
 import { formatRupiah } from "../utils"
 
+const PPOB_ICONS: Record<string, React.ElementType> = {
+  pulsa: Smartphone,
+  data: Wifi,
+  pln: Zap,
+  pdam: Droplet,
+  bpjs: ShieldCheck,
+  emoney: Wallet,
+}
+
 interface CartItemRowProps {
   item: CartItem
-  onUpdateQuantity: (productId: number, qty: number) => void
-  onRemove: (productId: number) => void
+  onUpdateQuantity: (cartId: string, qty: number) => void
+  onRemove: (cartId: string) => void
 }
 
 export function CartItemRow({
@@ -24,7 +33,7 @@ export function CartItemRow({
   const handleQtyBlur = () => {
     const parsed = parseInt(qtyInput, 10)
     if (!isNaN(parsed) && parsed >= 1) {
-      onUpdateQuantity(item.product_id, parsed)
+      onUpdateQuantity(item.cart_id, parsed)
     }
     setEditingQty(false)
   }
@@ -37,59 +46,85 @@ export function CartItemRow({
     }
   }
 
+  const truncatePpobName= (name: string) => {
+    const parts = name.split(" - ")
+    if (parts.length > 1) {
+      return parts.slice(1).join(" - ").substring(0, 40)
+    }
+    return name.substring(0, 40)
+  }
+
   return (
     <TableRow>
       <TableCell className="whitespace-normal">
         <div className="min-w-0">
-          <p className="font-medium leading-snug">{item.product_name}</p>
-          <p className="text-xs text-muted-foreground">
-            {formatRupiah(item.product_price)} / {item.unit}
+          <p className="font-medium leading-snug">
+            {item.is_ppob ? truncatePpobName(item.product_name) : item.product_name}
           </p>
+          {item.is_ppob ? (
+            <div className="flex items-center gap-1 mt-0.5">
+              {(() => {
+                const Icon = PPOB_ICONS[item.service_type ?? ""] ?? Smartphone
+                return <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+              })()}
+              <p className="text-xs text-muted-foreground">
+                {item.service_ref}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {formatRupiah(item.product_price)} / {item.unit}
+            </p>
+          )}
         </div>
       </TableCell>
       <TableCell>
-        <div className="flex items-center justify-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onUpdateQuantity(item.product_id, item.quantity - 1)}
-            disabled={item.quantity <= 1}
-          >
-            <Minus className="h-3 w-3" />
-          </Button>
-          {editingQty ? (
-            <Input
-              type="number"
-              min="1"
-              value={qtyInput}
-              onChange={(e) => setQtyInput(e.target.value)}
-              onBlur={handleQtyBlur}
-              onKeyDown={handleQtyKeyDown}
-              className="h-7 w-10 px-1 text-center text-sm tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              autoFocus
-            />
-          ) : (
-            <button
-              type="button"
-              className="w-8 cursor-text text-center font-medium tabular-nums hover:underline"
-              onClick={() => {
-                setQtyInput(String(item.quantity))
-                setEditingQty(true)
-              }}
+        {item.is_ppob ? (
+          <div className="text-center font-medium tabular-nums">1</div>
+        ) : (
+          <div className="flex items-center justify-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onUpdateQuantity(item.cart_id, item.quantity - 1)}
+              disabled={item.quantity <= 1}
             >
-              {item.quantity}
-            </button>
-          )}
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onUpdateQuantity(item.product_id, item.quantity + 1)}
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
+              <Minus className="h-3 w-3" />
+            </Button>
+            {editingQty ? (
+              <Input
+                type="number"
+                min="1"
+                value={qtyInput}
+                onChange={(e) => setQtyInput(e.target.value)}
+                onBlur={handleQtyBlur}
+                onKeyDown={handleQtyKeyDown}
+                className="h-7 w-10 px-1 text-center text-sm tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                className="w-8 cursor-text text-center font-medium tabular-nums hover:underline"
+                onClick={() => {
+                  setQtyInput(String(item.quantity))
+                  setEditingQty(true)
+                }}
+              >
+                {item.quantity}
+              </button>
+            )}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onUpdateQuantity(item.cart_id, item.quantity + 1)}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </TableCell>
       <TableCell className="text-right font-semibold tabular-nums">
         {formatRupiah(subtotal)}
@@ -99,7 +134,7 @@ export function CartItemRow({
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onClick={() => onRemove(item.product_id)}
+          onClick={() => onRemove(item.cart_id)}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>

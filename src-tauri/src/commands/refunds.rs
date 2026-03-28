@@ -5,11 +5,11 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::commands::settings::parse_app_settings;
 use crate::entity::{
     exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
     transaction_items, transactions,
 };
-use crate::commands::settings::parse_app_settings;
 use crate::utils::AppError;
 
 const REFUND_MAX_DAYS: i64 = 7;
@@ -375,7 +375,11 @@ pub async fn create_refund(
         let allow_negative_stock = store_info::Entity::find_by_id(1_i64)
             .one(&txn)
             .await?
-            .map(|s| parse_app_settings(&s.additional_info).sales.allow_negative_stock)
+            .map(|s| {
+                parse_app_settings(&s.additional_info)
+                    .sales
+                    .allow_negative_stock
+            })
             .unwrap_or(true);
 
         for ei_input in exchange_inputs {
@@ -527,9 +531,7 @@ pub async fn get_refund_detail(
     let transaction = transactions::Entity::find_by_id(refund.transaction_id)
         .one(db.inner())
         .await?;
-    let transaction_receipt = transaction
-        .map(|t| t.receipt_number)
-        .unwrap_or_default();
+    let transaction_receipt = transaction.map(|t| t.receipt_number).unwrap_or_default();
 
     // Get cashier name
     let user = crate::entity::users::Entity::find_by_id(refund.user_id)
@@ -588,9 +590,7 @@ pub async fn list_refunds(
 
     if let Some(ref date_from) = input.date_from {
         let local_start = format!("{} 00:00:00", date_from);
-        if let Ok(ndt) =
-            chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S")
-        {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
             let utc_start = ndt - chrono::Duration::seconds(offset_secs);
             conditions.push_str(" AND r.created_at >= ?");
             params.push(utc_start.format("%Y-%m-%d %H:%M:%S").to_string().into());
@@ -599,9 +599,7 @@ pub async fn list_refunds(
 
     if let Some(ref date_to) = input.date_to {
         let local_end = format!("{} 23:59:59", date_to);
-        if let Ok(ndt) =
-            chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S")
-        {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
             let utc_end = ndt - chrono::Duration::seconds(offset_secs);
             conditions.push_str(" AND r.created_at <= ?");
             params.push(utc_end.format("%Y-%m-%d %H:%M:%S").to_string().into());
@@ -669,24 +667,16 @@ pub async fn list_refunds(
             refund_number: row
                 .try_get::<String>("", "refund_number")
                 .unwrap_or_default(),
-            refund_type: row
-                .try_get::<String>("", "refund_type")
-                .unwrap_or_default(),
+            refund_type: row.try_get::<String>("", "refund_type").unwrap_or_default(),
             transaction_receipt: row
                 .try_get::<String>("", "receipt_number")
                 .unwrap_or_default(),
-            cashier_name: row
-                .try_get::<String>("", "full_name")
-                .unwrap_or_default(),
-            total_refund_amount: row
-                .try_get::<f64>("", "total_refund_amount")
-                .unwrap_or(0.0),
+            cashier_name: row.try_get::<String>("", "full_name").unwrap_or_default(),
+            total_refund_amount: row.try_get::<f64>("", "total_refund_amount").unwrap_or(0.0),
             total_exchange_amount: row
                 .try_get::<f64>("", "total_exchange_amount")
                 .unwrap_or(0.0),
-            difference_amount: row
-                .try_get::<f64>("", "difference_amount")
-                .unwrap_or(0.0),
+            difference_amount: row.try_get::<f64>("", "difference_amount").unwrap_or(0.0),
             created_at: row.try_get::<String>("", "created_at").ok(),
         });
     }

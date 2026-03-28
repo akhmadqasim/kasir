@@ -1,10 +1,9 @@
-import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
+import { useTauriQuery } from "@/hooks/use-tauri-command"
 import type {
-  PpobSaldoResponse,
   PpobMenuGroup,
   PulsaProvider,
-  PulsaProduct,
   PulsaDetailsResponse,
+  PulsaProduct,
   PlnDenom,
   PdamProduct,
   EmoneyDenom,
@@ -12,17 +11,6 @@ import type {
   TransferChannelGroup,
   VoucherGroup,
 } from "../types"
-
-export function usePpobSaldo() {
-  return useTauriQuery<PpobSaldoResponse>("ppob_get_saldo", undefined, {
-    refetchInterval: 60000,
-    retry: false,
-  })
-}
-
-export function usePpobLogin() {
-  return useTauriMutation<PpobSaldoResponse>("ppob_login")
-}
 
 export function usePpobMenu() {
   return useTauriQuery<PpobMenuGroup[]>("ppob_get_menu", undefined, {

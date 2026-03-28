@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS mitra_tokens (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  phone_number TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  device_id TEXT NOT NULL,
+  logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

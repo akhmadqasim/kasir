@@ -103,8 +103,13 @@ export function PaymentDialog({
         input: {
           user_id: user.id,
           items: items.map((item) => ({
-            product_id: item.product_id,
+            product_id: item.is_ppob ? undefined : item.product_id,
             quantity: item.quantity,
+            product_name: item.is_ppob ? item.product_name : undefined,
+            product_price: item.is_ppob ? item.product_price : undefined,
+            buy_price: item.buy_price,
+            service_type: item.service_type,
+            service_ref: item.service_ref,
           })),
           payment_method: paymentMethod,
           payment_amount: finalPaymentAmount,

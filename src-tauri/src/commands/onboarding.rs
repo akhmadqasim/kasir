@@ -30,9 +30,7 @@ pub struct CompleteOnboardingInput {
 }
 
 #[tauri::command]
-pub async fn check_onboarding_status(
-    db: State<'_, DatabaseConnection>,
-) -> Result<bool, AppError> {
+pub async fn check_onboarding_status(db: State<'_, DatabaseConnection>) -> Result<bool, AppError> {
     let count = store_info::Entity::find().count(db.inner()).await?;
     Ok(count == 0)
 }
