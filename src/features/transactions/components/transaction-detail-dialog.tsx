@@ -1,7 +1,9 @@
-import { Printer, RotateCcw } from "lucide-react"
+import { Loader2, Printer, RefreshCcw, RotateCcw } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
+import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -58,6 +60,12 @@ const STATUS_LABELS: Record<string, string> = {
   partial_refund: id.transactions.partialRefund,
 }
 
+const PPOB_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pending: { label: "Menunggu", className: "bg-amber-50 text-amber-700" },
+  success: { label: "Berhasil", className: "bg-green-50 text-green-700" },
+  failed: { label: "Gagal", className: "bg-red-50 text-red-700" },
+}
+
 interface TransactionDetailDialogProps {
   transaction: TransactionListItem | null
   onClose: () => void
@@ -65,15 +73,17 @@ interface TransactionDetailDialogProps {
 
 export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
     "get_transaction_detail",
     { transactionId: transaction?.id },
     { enabled: !!transaction }
   )
-  const canPrint = detail
-    ? !detail.has_ppob || detail.transaction.status === "completed"
-    : false
+
+  const ppobItem = detail?.items.find((item) => item.service_type)
+  const ppobCanRetry = ppobItem?.ppob_status === "failed" || ppobItem?.ppob_status === "pending"
 
   const handlePrint = async () => {
     if (!transaction) return
@@ -82,6 +92,21 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
       toast.success("Struk dicetak")
     } catch (e) {
       toast.error(`Gagal cetak: ${e}`)
+    }
+  }
+
+  const handleRetryPpob = async () => {
+    if (!ppobItem) return
+    setIsRetrying(true)
+    try {
+      await invoke("retry_ppob_fulfillment", { itemId: ppobItem.id })
+      toast.success("PPOB sedang diproses ulang di latar belakang")
+      queryClient.invalidateQueries({ queryKey: ["get_transaction_detail"] })
+      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+    } catch (e) {
+      toast.error(`Gagal retry: ${e}`)
+    } finally {
+      setIsRetrying(false)
     }
   }
 
@@ -129,15 +154,24 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             <div>
               <h4 className="mb-2 text-sm font-medium">{id.transactions.itemList}</h4>
               <div className="space-y-1">
-                {detail.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between text-sm">
-                    <div className="min-w-0 flex-1">
-                      <span>{item.product_name}</span>
-                      <span className="ml-2 text-muted-foreground">× {item.quantity}</span>
+                {detail.items.map((item) => {
+                  const ppobStatus = item.ppob_status ? PPOB_STATUS_CONFIG[item.ppob_status] : null
+                  return (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <div className="min-w-0 flex-1">
+                        <span>{item.product_name}</span>
+                        <span className="ml-2 text-muted-foreground">× {item.quantity}</span>
+                        {ppobStatus && (
+                          <Badge variant="outline" className={`ml-2 text-xs ${ppobStatus.className}`}>
+                            {item.ppob_status === "pending" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                            {ppobStatus.label}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="tabular-nums">{formatRupiah(item.subtotal)}</span>
                     </div>
-                    <span className="tabular-nums">{formatRupiah(item.subtotal)}</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
@@ -168,13 +202,13 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   <p>{detail.transaction.notes}</p>
                 </div>
               )}
-              {detail.ppob_message && (
-                <div className="pt-1">
+              {ppobItem && (
+                <div className="pt-1 space-y-1">
                   <p className="text-muted-foreground">Status PPOB</p>
-                  <p>{detail.ppob_message}</p>
-                  {detail.ppob_serial_number && (
+                  {ppobItem.ppob_message && <p>{ppobItem.ppob_message}</p>}
+                  {ppobItem.ppob_serial_number && (
                     <p className="font-mono text-xs text-muted-foreground">
-                      SN: {detail.ppob_serial_number}
+                      SN: {ppobItem.ppob_serial_number}
                     </p>
                   )}
                 </div>
@@ -182,6 +216,21 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             </div>
 
             <div className="flex justify-end gap-2">
+              {ppobCanRetry && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRetryPpob}
+                  disabled={isRetrying}
+                >
+                  {isRetrying ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                  )}
+                  Retry PPOB
+                </Button>
+              )}
               {!detail.has_ppob && detail.transaction.status !== "refunded" && (
                 <Button
                   size="sm"
@@ -195,7 +244,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   {id.refund.title}
                 </Button>
               )}
-              <Button size="sm" onClick={handlePrint} disabled={!canPrint}>
+              <Button size="sm" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" />
                 {id.transactions.printReceipt}
               </Button>

@@ -17,8 +17,6 @@ use crate::utils::AppError;
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "ewallet", "transfer"];
 const STATUS_COMPLETED: &str = "completed";
-const STATUS_PENDING_PPOB: &str = "pending_ppob";
-const STATUS_PPOB_FAILED: &str = "ppob_failed";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionItemInput {
@@ -103,18 +101,14 @@ fn validate_cart_composition(items: &[TransactionItemInput]) -> Result<bool, App
         ));
     }
 
-    let ppob_count = items.iter().filter(|item| item.service_type.is_some()).count();
-    let physical_count = items.len().saturating_sub(ppob_count);
+    let ppob_count = items
+        .iter()
+        .filter(|item| item.service_type.is_some())
+        .count();
 
     if ppob_count > 1 {
         return Err(AppError::Validation(
             "Checkout PPOB hanya mendukung 1 item PPOB per transaksi".into(),
-        ));
-    }
-
-    if ppob_count > 0 && physical_count > 0 {
-        return Err(AppError::Validation(
-            "Item PPOB tidak boleh dicampur dengan barang biasa dalam satu transaksi".into(),
         ));
     }
 
@@ -385,11 +379,9 @@ fn build_ppob_success_message(payment_result: &PaymentResult) -> String {
     "Fulfillment PPOB berhasil".to_string()
 }
 
-async fn update_ppob_checkout_status(
+async fn update_ppob_item_status(
     db: &DatabaseConnection,
-    transaction_id: i64,
     item_id: i64,
-    transaction_status: &str,
     ppob_status: &str,
     ppob_message: Option<String>,
     ppob_serial_number: Option<String>,
@@ -404,15 +396,6 @@ async fn update_ppob_checkout_status(
     active_item.ppob_message = Set(ppob_message);
     active_item.ppob_serial_number = Set(ppob_serial_number);
     active_item.update(db).await?;
-
-    let transaction = transactions::Entity::find_by_id(transaction_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
-
-    let mut active_transaction: transactions::ActiveModel = transaction.into();
-    active_transaction.status = Set(transaction_status.to_string());
-    active_transaction.update(db).await?;
 
     Ok(())
 }
@@ -437,39 +420,31 @@ where
     let allow_negative_stock = load_allow_negative_stock(db).await?;
     let resolved_items = resolve_items(db, &input.items, allow_negative_stock).await?;
 
+    // Always create transaction as completed and deduct physical stock
+    let txn = db.begin().await?;
+    let result =
+        persist_transaction(&txn, &input, &resolved_items, STATUS_COMPLETED, true).await?;
+    txn.commit().await?;
+
     if !has_ppob {
-        let txn = db.begin().await?;
-        let result =
-            persist_transaction(&txn, &input, &resolved_items, STATUS_COMPLETED, true).await?;
-        txn.commit().await?;
         return Ok(result);
     }
 
-    let pending_txn = db.begin().await?;
-    let pending_result = persist_transaction(
-        &pending_txn,
-        &input,
-        &resolved_items,
-        STATUS_PENDING_PPOB,
-        false,
-    )
-    .await?;
-    pending_txn.commit().await?;
-
-    let ppob_item = pending_result
+    // For PPOB items, build the fulfillment request but don't await it here.
+    // The caller (checkout_transaction) will spawn this as a background task.
+    let ppob_item = result
         .items
         .iter()
         .find(|item| item.service_type.is_some())
         .ok_or_else(|| AppError::Validation("Item PPOB tidak ditemukan".into()))?;
     let request = build_ppob_request(ppob_item)?;
+    let ppob_item_id = ppob_item.id;
 
     match fulfill_ppob(request).await {
         Ok(payment_result) => {
-            update_ppob_checkout_status(
+            update_ppob_item_status(
                 db,
-                pending_result.transaction.id,
-                ppob_item.id,
-                STATUS_COMPLETED,
+                ppob_item_id,
                 "success",
                 Some(build_ppob_success_message(&payment_result)),
                 payment_result.serial_number.clone(),
@@ -477,11 +452,9 @@ where
             .await?;
         }
         Err(error) => {
-            update_ppob_checkout_status(
+            update_ppob_item_status(
                 db,
-                pending_result.transaction.id,
-                ppob_item.id,
-                STATUS_PPOB_FAILED,
+                ppob_item_id,
                 "failed",
                 Some(error.to_string()),
                 None,
@@ -490,7 +463,7 @@ where
         }
     }
 
-    fetch_transaction_result(db, pending_result.transaction.id).await
+    fetch_transaction_result(db, result.transaction.id).await
 }
 
 #[tauri::command]
@@ -501,14 +474,62 @@ pub async fn checkout_transaction(
 ) -> Result<TransactionResult, AppError> {
     let conn = db.inner().clone();
     let mitra = mitra.inner().clone();
-    let checkout_conn = conn.clone();
 
-    checkout_transaction_with_executor(&checkout_conn, input, move |request| {
-        let conn = conn.clone();
-        let mitra = mitra.clone();
-        async move { execute_fulfillment_request(&conn, &mitra, &request).await }
-    })
-    .await
+    if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
+        return Err(AppError::Validation(format!(
+            "Metode pembayaran tidak valid: {}",
+            input.payment_method
+        )));
+    }
+
+    let has_ppob = validate_cart_composition(&input.items)?;
+    let allow_negative_stock = load_allow_negative_stock(&conn).await?;
+    let resolved_items = resolve_items(&conn, &input.items, allow_negative_stock).await?;
+
+    // Always create as completed and deduct physical stock immediately
+    let txn = conn.begin().await?;
+    let result =
+        persist_transaction(&txn, &input, &resolved_items, STATUS_COMPLETED, true).await?;
+    txn.commit().await?;
+
+    if has_ppob {
+        let ppob_item = result
+            .items
+            .iter()
+            .find(|item| item.service_type.is_some())
+            .ok_or_else(|| AppError::Validation("Item PPOB tidak ditemukan".into()))?;
+        let request = build_ppob_request(ppob_item)?;
+        let ppob_item_id = ppob_item.id;
+        let bg_conn = conn.clone();
+
+        // Fire-and-forget: PPOB fulfillment runs in background
+        tokio::spawn(async move {
+            match execute_fulfillment_request(&bg_conn, &mitra, &request).await {
+                Ok(payment_result) => {
+                    let _ = update_ppob_item_status(
+                        &bg_conn,
+                        ppob_item_id,
+                        "success",
+                        Some(build_ppob_success_message(&payment_result)),
+                        payment_result.serial_number.clone(),
+                    )
+                    .await;
+                }
+                Err(error) => {
+                    let _ = update_ppob_item_status(
+                        &bg_conn,
+                        ppob_item_id,
+                        "failed",
+                        Some(error.to_string()),
+                        None,
+                    )
+                    .await;
+                }
+            }
+        });
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -516,12 +537,6 @@ pub async fn create_transaction(
     db: State<'_, DatabaseConnection>,
     input: CheckoutTransactionInput,
 ) -> Result<TransactionResult, AppError> {
-    if validate_cart_composition(&input.items)? {
-        return Err(AppError::Validation(
-            "Gunakan checkout_transaction untuk transaksi PPOB".into(),
-        ));
-    }
-
     let conn = db.inner().clone();
     checkout_transaction_with_executor(&conn, input, |_request| async {
         Err(AppError::Validation(
@@ -529,6 +544,64 @@ pub async fn create_transaction(
         ))
     })
     .await
+}
+
+#[tauri::command]
+pub async fn retry_ppob_fulfillment(
+    db: State<'_, DatabaseConnection>,
+    mitra: State<'_, Arc<Mutex<MitraClient>>>,
+    item_id: i64,
+) -> Result<String, AppError> {
+    let conn = db.inner().clone();
+    let mitra = mitra.inner().clone();
+
+    let item = transaction_items::Entity::find_by_id(item_id)
+        .one(&conn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Item transaksi tidak ditemukan".into()))?;
+
+    let ppob_status = item
+        .ppob_status
+        .as_deref()
+        .unwrap_or("");
+    if ppob_status != "failed" && ppob_status != "pending" {
+        return Err(AppError::Validation(
+            "Hanya item PPOB yang gagal atau pending yang bisa di-retry".into(),
+        ));
+    }
+
+    let request = build_ppob_request(&item)?;
+
+    // Reset to pending before retrying
+    update_ppob_item_status(&conn, item_id, "pending", Some("Sedang di-retry...".into()), None).await?;
+
+    let bg_conn = conn.clone();
+    tokio::spawn(async move {
+        match execute_fulfillment_request(&bg_conn, &mitra, &request).await {
+            Ok(payment_result) => {
+                let _ = update_ppob_item_status(
+                    &bg_conn,
+                    item_id,
+                    "success",
+                    Some(build_ppob_success_message(&payment_result)),
+                    payment_result.serial_number.clone(),
+                )
+                .await;
+            }
+            Err(error) => {
+                let _ = update_ppob_item_status(
+                    &bg_conn,
+                    item_id,
+                    "failed",
+                    Some(error.to_string()),
+                    None,
+                )
+                .await;
+            }
+        }
+    });
+
+    Ok("PPOB fulfillment sedang diproses ulang".into())
 }
 
 #[tauri::command]
@@ -946,7 +1019,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ppob_checkout_failure_keeps_transaction_and_marks_failed() {
+    async fn ppob_checkout_failure_keeps_transaction_completed_marks_item_failed() {
         let conn = setup_test_db().await;
 
         let result = checkout_transaction_with_executor(
@@ -973,9 +1046,11 @@ mod tests {
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
         .await
-        .expect("ppob checkout should return failed transaction result");
+        .expect("ppob checkout should return transaction result even on PPOB failure");
 
-        assert_eq!(result.transaction.status, STATUS_PPOB_FAILED);
+        // Transaction stays completed (payment received)
+        assert_eq!(result.transaction.status, STATUS_COMPLETED);
+        // But item is marked as failed
         assert_eq!(result.items[0].ppob_status.as_deref(), Some("failed"));
         assert!(
             result.items[0]
@@ -986,11 +1061,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mixed_cart_is_rejected_before_transaction_is_created() {
+    async fn mixed_cart_succeeds_with_stock_deduction_and_ppob_fulfillment() {
         let conn = setup_test_db().await;
         let product = insert_product(&conn, "Gula", 18_000.0, 5).await;
 
-        let error = checkout_transaction_with_executor(
+        let result = checkout_transaction_with_executor(
             &conn,
             CheckoutTransactionInput {
                 user_id: 1,
@@ -1026,12 +1101,42 @@ mod tests {
                 payment_amount: 28_000.0,
                 notes: None,
             },
-            |_request| async { unreachable!("executor should not be called") },
+            |request| async move {
+                assert_eq!(request.service_type, "pulsa");
+                Ok(PaymentResult {
+                    success: true,
+                    receipt_data: serde_json::json!({}),
+                    service_type: "pulsa".to_string(),
+                    customer_id: request.customer_id.unwrap_or_default(),
+                    amount: 10_000.0,
+                    admin_fee: 0.0,
+                    total: 10_000.0,
+                    product_name: Some("Pulsa".to_string()),
+                    customer_name: None,
+                    serial_number: Some("SN-MIX-1".to_string()),
+                })
+            },
         )
         .await
-        .expect_err("mixed cart must fail");
+        .expect("mixed cart checkout success");
 
-        assert!(error.to_string().contains("tidak boleh dicampur"));
+        assert_eq!(result.transaction.status, STATUS_COMPLETED);
+        assert_eq!(result.items.len(), 2);
+
+        // Physical item: no ppob_status, stock deducted
+        let physical_item = result.items.iter().find(|i| i.service_type.is_none()).unwrap();
+        assert!(physical_item.ppob_status.is_none());
+        let updated_product = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("exists");
+        assert_eq!(updated_product.stock, 4);
+
+        // PPOB item: ppob_status = success
+        let ppob_item = result.items.iter().find(|i| i.service_type.is_some()).unwrap();
+        assert_eq!(ppob_item.ppob_status.as_deref(), Some("success"));
+        assert_eq!(ppob_item.ppob_serial_number.as_deref(), Some("SN-MIX-1"));
     }
 
     #[tokio::test]

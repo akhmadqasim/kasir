@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Printer } from "lucide-react"
+import { CheckCircle2, Loader2, Printer } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
 import { useEffect, useRef, useState } from "react"
 import {
@@ -36,8 +36,7 @@ export function TransactionSuccessDialog({
   const transaction = result?.transaction
   const isCash = transaction?.payment_method === "cash"
   const ppobItem = result?.items.find((item) => item.service_type)
-  const isPpobFailed = transaction?.status === "ppob_failed"
-  const canPrint = transaction?.status === "completed"
+  const hasPpob = !!ppobItem
 
   // Auto-print when dialog opens with a new transaction
   useEffect(() => {
@@ -51,7 +50,7 @@ export function TransactionSuccessDialog({
           auto_print: boolean | null
         }>("get_printer_settings_cmd")
 
-        if (settings.auto_print && settings.printer_id && canPrint) {
+        if (settings.auto_print && settings.printer_id) {
           autoPrintedRef.current = transaction.id
           setIsPrinting(true)
           await invoke("print_receipt", { transactionId: transaction.id })
@@ -64,12 +63,11 @@ export function TransactionSuccessDialog({
       }
     }
     tryAutoPrint()
-  }, [canPrint, onNewTransaction, open, transaction])
+  }, [onNewTransaction, open, transaction])
 
   if (!result || !transaction) return null
 
   const handlePrint = async () => {
-    if (!canPrint) return
     setIsPrinting(true)
     try {
       await invoke("print_receipt", { transactionId: transaction.id })
@@ -92,14 +90,8 @@ export function TransactionSuccessDialog({
         className="sm:max-w-sm"
       >
         <div className="flex flex-col items-center gap-4 pt-4">
-          {isPpobFailed ? (
-            <AlertTriangle className="h-16 w-16 text-amber-500" />
-          ) : (
-            <CheckCircle2 className="h-16 w-16 text-green-500" />
-          )}
-          <h2 className="text-xl font-bold">
-            {isPpobFailed ? "Pembayaran Berhasil, PPOB Gagal Diproses" : "Transaksi Berhasil!"}
-          </h2>
+          <CheckCircle2 className="h-16 w-16 text-green-500" />
+          <h2 className="text-xl font-bold">Transaksi Berhasil!</h2>
         </div>
 
         <div className="space-y-3 rounded-lg bg-muted p-4">
@@ -145,14 +137,12 @@ export function TransactionSuccessDialog({
               </div>
             </>
           )}
-          {isPpobFailed && (
+          {hasPpob && (
             <>
               <Separator />
-              <div className="space-y-1 text-sm">
-                <p className="font-medium text-amber-700">Fulfillment PPOB gagal</p>
-                {ppobItem?.ppob_message && (
-                  <p className="text-muted-foreground">{ppobItem.ppob_message}</p>
-                )}
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
               </div>
             </>
           )}
@@ -163,16 +153,10 @@ export function TransactionSuccessDialog({
             variant="outline"
             className="w-full"
             onClick={handlePrint}
-            disabled={isPrinting || !canPrint}
+            disabled={isPrinting}
           >
             <Printer className="mr-2 h-4 w-4" />
-            {isPrinting
-              ? "Mencetak..."
-              : canPrint
-                ? "Cetak Struk"
-                : isPpobFailed
-                  ? "Cetak Tidak Tersedia"
-                  : "Menunggu Fulfillment PPOB"}
+            {isPrinting ? "Mencetak..." : "Cetak Struk"}
           </Button>
           <Button className="w-full" onClick={onNewTransaction}>
             Transaksi Baru

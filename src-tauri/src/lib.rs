@@ -77,6 +77,7 @@ pub fn run() {
             commands::categories::delete_category,
             commands::transactions::checkout_transaction,
             commands::transactions::create_transaction,
+            commands::transactions::retry_ppob_fulfillment,
             commands::transactions::get_next_receipt_number,
             commands::transactions::list_transactions,
             commands::transactions::get_transaction_detail,
