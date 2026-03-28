@@ -23,6 +23,7 @@ export interface TransactionItemInput {
   product_name?: string
   product_price?: number
   buy_price?: number
+  item_discount?: number
   service_type?: string
   service_ref?: string
   ppob_product_id?: number
@@ -37,6 +38,7 @@ export interface CheckoutTransactionInput {
   payment_method: string
   payment_amount: number
   notes?: string
+  transaction_discount?: number
 }
 
 export interface Transaction {
@@ -44,6 +46,8 @@ export interface Transaction {
   receipt_number: string
   user_id: number
   total_amount: number
+  subtotal_amount: number
+  discount_amount: number
   payment_method: string
   payment_amount: number
   change_amount: number
@@ -61,6 +65,7 @@ export interface TransactionItem {
   buy_price: number | null
   quantity: number
   subtotal: number
+  item_discount: number
   service_type: string | null
   service_ref: string | null
   ppob_product_id: number | null

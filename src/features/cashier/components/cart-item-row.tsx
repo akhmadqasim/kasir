@@ -19,12 +19,16 @@ interface CartItemRowProps {
   item: CartItem
   onUpdateQuantity: (cartId: string, qty: number) => void
   onRemove: (cartId: string) => void
+  onEdit: (item: CartItem) => void
+  hasDiscount?: boolean
 }
 
 export function CartItemRow({
   item,
   onUpdateQuantity,
   onRemove,
+  onEdit,
+  hasDiscount,
 }: CartItemRowProps) {
   const [editingQty, setEditingQty] = useState(false)
   const [qtyInput, setQtyInput] = useState("")
@@ -55,7 +59,10 @@ export function CartItemRow({
   }
 
   return (
-    <TableRow>
+    <TableRow
+      className="cursor-pointer hover:bg-muted/50"
+      onClick={() => onEdit(item)}
+    >
       <TableCell className="whitespace-normal">
         <div className="min-w-0">
           <p className="font-medium leading-snug">
@@ -76,13 +83,16 @@ export function CartItemRow({
               {formatRupiah(item.product_price)} / {item.unit}
             </p>
           )}
+          {hasDiscount && (
+            <p className="text-xs text-destructive font-medium">Diskon aktif</p>
+          )}
         </div>
       </TableCell>
       <TableCell>
         {item.is_ppob ? (
           <div className="text-center font-medium tabular-nums">1</div>
         ) : (
-          <div className="flex items-center justify-center gap-1">
+          <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Button
               variant="outline"
               size="icon"
@@ -134,7 +144,10 @@ export function CartItemRow({
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onClick={() => onRemove(item.cart_id)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(item.cart_id)
+          }}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>

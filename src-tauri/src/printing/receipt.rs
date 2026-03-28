@@ -9,6 +9,8 @@ pub struct ReceiptData {
     pub date_time: String,
     pub cashier_name: String,
     pub items: Vec<ReceiptItem>,
+    pub subtotal_amount: f64,
+    pub discount_amount: f64,
     pub total_amount: f64,
     pub payment_method: String,
     pub payment_amount: f64,
@@ -158,6 +160,16 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
     });
 
     // Totals
+    if data.discount_amount > 0.0 {
+        lines.push(ReceiptTextLine {
+            text: two_col_text("Subtotal", &format_rupiah(data.subtotal_amount), cpl),
+            bold: false,
+        });
+        lines.push(ReceiptTextLine {
+            text: two_col_text("Diskon", &format!("-{}", format_rupiah(data.discount_amount)), cpl),
+            bold: false,
+        });
+    }
     lines.push(ReceiptTextLine {
         text: two_col_text("TOTAL", &format_rupiah(data.total_amount), cpl),
         bold: true,
@@ -333,6 +345,8 @@ mod tests {
                 },
             ],
             total_amount: 101000.0,
+            subtotal_amount: 101000.0,
+            discount_amount: 0.0,
             payment_method: "cash".to_string(),
             payment_amount: 110000.0,
             change_amount: 9000.0,

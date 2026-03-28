@@ -13,6 +13,7 @@ pub struct Model {
     pub buy_price: Option<f64>,
     pub quantity: i64,
     pub subtotal: f64,
+    pub item_discount: f64,
     pub service_type: Option<String>,
     pub service_ref: Option<String>,
     pub ppob_product_id: Option<i64>,

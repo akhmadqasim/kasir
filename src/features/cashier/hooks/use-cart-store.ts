@@ -10,10 +10,17 @@ export interface HeldCart {
   heldAt: number
 }
 
+export interface DiscountEntry {
+  type: "fixed" | "percentage"
+  value: number
+}
+
 interface CartStore {
   items: CartItem[]
   ppobCounter: number
   heldCarts: HeldCart[]
+  itemDiscounts: Record<string, DiscountEntry>
+  transactionDiscount: DiscountEntry | null
   addItem: (product: {
     id: number
     name: string
@@ -36,8 +43,16 @@ interface CartStore {
   removeItem: (cartId: string) => void
   updateQuantity: (cartId: string, qty: number) => void
   updatePrice: (cartId: string, price: number) => void
-  clear: () => void
+  setItemDiscount: (cartId: string, discount: DiscountEntry | null) => void
+  setTransactionDiscount: (discount: DiscountEntry | null) => void
+  clearDiscounts: () => void
+  getItemDiscountAmount: (cartId: string) => number
+  getItemDiscountsTotal: () => number
+  getTransactionDiscountAmount: () => number
+  getTotalDiscount: () => number
+  getSubtotal: () => number
   getTotal: () => number
+  clear: () => void
   holdCart: (label?: string) => void
   recallCart: (holdId: string) => void
   removeHeldCart: (holdId: string) => void
@@ -49,6 +64,8 @@ export const useCartStore = create<CartStore>()(
       items: [],
       ppobCounter: 0,
       heldCarts: [],
+      itemDiscounts: {},
+      transactionDiscount: null,
 
       addItem: (product) => {
         const { items } = get()
@@ -111,7 +128,12 @@ export const useCartStore = create<CartStore>()(
       },
 
       removeItem: (cartId) => {
-        set({ items: get().items.filter((item) => item.cart_id !== cartId) })
+        const { itemDiscounts } = get()
+        const { [cartId]: _, ...restDiscounts } = itemDiscounts
+        set({
+          items: get().items.filter((item) => item.cart_id !== cartId),
+          itemDiscounts: restDiscounts,
+        })
       },
 
       updateQuantity: (cartId, qty) => {
@@ -143,14 +165,85 @@ export const useCartStore = create<CartStore>()(
         })
       },
 
-      clear: () => set({ items: [] }),
+      setItemDiscount: (cartId, discount) => {
+        const { itemDiscounts } = get()
+        if (!discount || discount.value <= 0) {
+          const { [cartId]: _, ...rest } = itemDiscounts
+          set({ itemDiscounts: rest })
+        } else {
+          set({ itemDiscounts: { ...itemDiscounts, [cartId]: discount } })
+        }
+      },
 
-      getTotal: () => {
+      setTransactionDiscount: (discount) => {
+        set({
+          transactionDiscount:
+            discount && discount.value > 0 ? discount : null,
+        })
+      },
+
+      clearDiscounts: () => {
+        set({ itemDiscounts: {}, transactionDiscount: null })
+      },
+
+      getItemDiscountAmount: (cartId) => {
+        const { items, itemDiscounts } = get()
+        const item = items.find((i) => i.cart_id === cartId)
+        const disc = itemDiscounts[cartId]
+        if (!item || !disc) return 0
+        const lineTotal = item.product_price * item.quantity
+        if (disc.type === "percentage") {
+          return Math.round(lineTotal * disc.value / 100)
+        }
+        return Math.min(disc.value, lineTotal)
+      },
+
+      getItemDiscountsTotal: () => {
+        const { items, itemDiscounts } = get()
+        let total = 0
+        for (const item of items) {
+          const disc = itemDiscounts[item.cart_id]
+          if (!disc) continue
+          const lineTotal = item.product_price * item.quantity
+          if (disc.type === "percentage") {
+            total += Math.round(lineTotal * disc.value / 100)
+          } else {
+            total += Math.min(disc.value, lineTotal)
+          }
+        }
+        return total
+      },
+
+      getTransactionDiscountAmount: () => {
+        const { transactionDiscount } = get()
+        if (!transactionDiscount) return 0
+        const subtotal = get().getSubtotal()
+        const itemDiscTotal = get().getItemDiscountsTotal()
+        const afterItemDisc = subtotal - itemDiscTotal
+        if (transactionDiscount.type === "percentage") {
+          return Math.round(afterItemDisc * transactionDiscount.value / 100)
+        }
+        return Math.min(transactionDiscount.value, afterItemDisc)
+      },
+
+      getTotalDiscount: () => {
+        return get().getItemDiscountsTotal() + get().getTransactionDiscountAmount()
+      },
+
+      getSubtotal: () => {
         return get().items.reduce(
           (sum, item) => sum + item.product_price * item.quantity,
           0
         )
       },
+
+      getTotal: () => {
+        const subtotal = get().getSubtotal()
+        const totalDiscount = get().getTotalDiscount()
+        return Math.max(0, subtotal - totalDiscount)
+      },
+
+      clear: () => set({ items: [], itemDiscounts: {}, transactionDiscount: null }),
 
       holdCart: (label?: string) => {
         const { items, heldCarts } = get()
@@ -223,6 +316,8 @@ export const useCartStore = create<CartStore>()(
         items: state.items,
         ppobCounter: state.ppobCounter,
         heldCarts: state.heldCarts,
+        itemDiscounts: state.itemDiscounts,
+        transactionDiscount: state.transactionDiscount,
       }),
     }
   )

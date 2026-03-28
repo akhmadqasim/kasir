@@ -178,6 +178,18 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             <Separator />
 
             <div className="space-y-1 text-sm">
+              {detail.transaction.discount_amount > 0 && (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">{formatRupiah(detail.transaction.subtotal_amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-destructive">
+                    <span>Diskon</span>
+                    <span className="tabular-nums">-{formatRupiah(detail.transaction.discount_amount)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between font-semibold">
                 <span>{id.transactions.totalAmount}</span>
                 <span className="tabular-nums">{formatRupiah(detail.transaction.total_amount)}</span>

@@ -25,6 +25,7 @@ pub struct TransactionItemInput {
     pub product_name: Option<String>,
     pub product_price: Option<f64>,
     pub buy_price: Option<f64>,
+    pub item_discount: Option<f64>,
     pub service_type: Option<String>,
     pub service_ref: Option<String>,
     pub ppob_product_id: Option<i64>,
@@ -40,6 +41,7 @@ pub struct CheckoutTransactionInput {
     pub payment_method: String,
     pub payment_amount: f64,
     pub notes: Option<String>,
+    pub transaction_discount: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +57,7 @@ struct ResolvedItem {
     buy_price: Option<f64>,
     quantity: i64,
     subtotal: f64,
+    item_discount: f64,
     service_type: Option<String>,
     service_ref: Option<String>,
     ppob_product_id: Option<i64>,
@@ -184,6 +187,7 @@ async fn resolve_items<C: ConnectionTrait>(
                 buy_price: item_input.buy_price,
                 quantity: item_input.quantity,
                 subtotal: product_price * item_input.quantity as f64,
+                item_discount: item_input.item_discount.unwrap_or(0.0),
                 service_type: Some(service_type),
                 service_ref: Some(service_ref),
                 ppob_product_id: item_input.ppob_product_id,
@@ -223,6 +227,7 @@ async fn resolve_items<C: ConnectionTrait>(
             buy_price: Some(product.buy_price),
             quantity: item_input.quantity,
             subtotal: product.sell_price * item_input.quantity as f64,
+            item_discount: item_input.item_discount.unwrap_or(0.0),
             service_type: None,
             service_ref: None,
             ppob_product_id: None,
@@ -268,7 +273,11 @@ async fn persist_transaction<C: ConnectionTrait>(
     status: &str,
     deduct_physical_stock: bool,
 ) -> Result<TransactionResult, AppError> {
-    let total_amount: f64 = resolved_items.iter().map(|item| item.subtotal).sum();
+    let subtotal_amount: f64 = resolved_items.iter().map(|item| item.subtotal).sum();
+    let item_discounts_total: f64 = resolved_items.iter().map(|item| item.item_discount).sum();
+    let transaction_discount = input.transaction_discount.unwrap_or(0.0);
+    let discount_amount = item_discounts_total + transaction_discount;
+    let total_amount = (subtotal_amount - discount_amount).max(0.0);
     let (payment_amount, change_amount) = calculate_payment_amount(
         &input.payment_method,
         input.payment_amount,
@@ -282,6 +291,8 @@ async fn persist_transaction<C: ConnectionTrait>(
         receipt_number: Set(receipt_number),
         user_id: Set(input.user_id),
         total_amount: Set(total_amount),
+        subtotal_amount: Set(subtotal_amount),
+        discount_amount: Set(discount_amount),
         payment_method: Set(input.payment_method.clone()),
         payment_amount: Set(payment_amount),
         change_amount: Set(Some(change_amount)),
@@ -304,6 +315,7 @@ async fn persist_transaction<C: ConnectionTrait>(
             buy_price: Set(item.buy_price),
             quantity: Set(item.quantity),
             subtotal: Set(item.subtotal),
+            item_discount: Set(item.item_discount),
             service_type: Set(item.service_type.clone()),
             service_ref: Set(item.service_ref.clone()),
             ppob_product_id: Set(item.ppob_product_id),
@@ -629,6 +641,8 @@ pub struct TransactionListItem {
     pub user_id: i64,
     pub cashier_name: String,
     pub total_amount: f64,
+    pub subtotal_amount: f64,
+    pub discount_amount: f64,
     pub payment_method: String,
     pub payment_amount: f64,
     pub change_amount: f64,
@@ -754,6 +768,8 @@ pub async fn list_transactions(
             user_id: txn.user_id,
             cashier_name,
             total_amount: txn.total_amount,
+            subtotal_amount: txn.subtotal_amount,
+            discount_amount: txn.discount_amount,
             payment_method: txn.payment_method,
             payment_amount: txn.payment_amount,
             change_amount: txn.change_amount.unwrap_or(0.0),
@@ -948,10 +964,12 @@ mod tests {
                     ppob_product_code: None,
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
+                        item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
                 payment_amount: 30_000.0,
                 notes: None,
+                transaction_discount: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -989,10 +1007,12 @@ mod tests {
                     ppob_product_code: Some("TS10".to_string()),
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
+                        item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
                 payment_amount: 12_000.0,
                 notes: None,
+                transaction_discount: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1038,10 +1058,12 @@ mod tests {
                     ppob_product_code: None,
                     ppob_inquiry_id: Some("INQ-1".to_string()),
                     ppob_payment_code: Some("20000".to_string()),
+                    item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
                 payment_amount: 21_000.0,
                 notes: None,
+                transaction_discount: None,
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1082,6 +1104,7 @@ mod tests {
                         ppob_product_code: None,
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        item_discount: None,
                     },
                     TransactionItemInput {
                         product_id: None,
@@ -1095,11 +1118,13 @@ mod tests {
                         ppob_product_code: Some("P1".to_string()),
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        item_discount: None,
                     },
                 ],
                 payment_method: "cash".to_string(),
                 payment_amount: 28_000.0,
                 notes: None,
+                transaction_discount: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1160,6 +1185,7 @@ mod tests {
                         ppob_product_code: Some("P1".to_string()),
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        item_discount: None,
                     },
                     TransactionItemInput {
                         product_id: None,
@@ -1173,11 +1199,13 @@ mod tests {
                         ppob_product_code: None,
                         ppob_inquiry_id: Some("INQ-2".to_string()),
                         ppob_payment_code: Some("20000".to_string()),
+                        item_discount: None,
                     },
                 ],
                 payment_method: "cash".to_string(),
                 payment_amount: 33_000.0,
                 notes: None,
+                transaction_discount: None,
             },
             |_request| async { unreachable!("executor should not be called") },
         )

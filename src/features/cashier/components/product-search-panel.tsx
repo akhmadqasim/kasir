@@ -217,7 +217,7 @@ export function ProductSearchPanel() {
             value={searchQuery}
             onValueChange={setSearchQuery}
             onKeyDown={handleKeyDown}
-            className="h-12 text-base"
+            className="h-14 text-lg"
           />
           <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
             <Kbd>Enter</Kbd>

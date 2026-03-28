@@ -10,6 +10,8 @@ pub struct Model {
     pub receipt_number: String,
     pub user_id: i64,
     pub total_amount: f64,
+    pub subtotal_amount: f64,
+    pub discount_amount: f64,
     pub payment_method: String,
     pub payment_amount: f64,
     pub change_amount: Option<f64>,

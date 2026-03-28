@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { PauseCircle, PlayCircle, ShoppingCart, Trash2 } from "lucide-react"
+import { PauseCircle, Percent, PlayCircle, ShoppingCart, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -30,7 +30,10 @@ import {
 } from "@/components/ui/empty"
 import { useCartStore } from "../hooks/use-cart-store"
 import { CartItemRow } from "./cart-item-row"
+import { CartItemEditDialog } from "./cart-item-edit-dialog"
+import { DiscountDialog } from "./discount-dialog"
 import { formatRupiah } from "../utils"
+import type { CartItem } from "../types"
 
 interface CartPanelProps {
   onPay: () => void
@@ -47,6 +50,8 @@ export function CartPanel({ onPay }: CartPanelProps) {
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
   const getTotal = useCartStore((s) => s.getTotal)
+  const getSubtotal = useCartStore((s) => s.getSubtotal)
+  const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
   const heldCarts = useCartStore((s) => s.heldCarts)
   const holdCart = useCartStore((s) => s.holdCart)
   const recallCart = useCartStore((s) => s.recallCart)
@@ -54,9 +59,12 @@ export function CartPanel({ onPay }: CartPanelProps) {
 
   const [holdDialogOpen, setHoldDialogOpen] = useState(false)
   const [recallDialogOpen, setRecallDialogOpen] = useState(false)
+  const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
+  const [editItem, setEditItem] = useState<CartItem | null>(null)
   const [holdLabel, setHoldLabel] = useState("")
   const [selectedIdx, setSelectedIdx] = useState(0)
   const selectedRowRef = useRef<HTMLTableRowElement>(null)
+  const itemDiscounts = useCartStore((s) => s.itemDiscounts)
 
   // Scroll selected row into view when navigating with keyboard
   useEffect(() => {
@@ -66,6 +74,8 @@ export function CartPanel({ onPay }: CartPanelProps) {
   }, [selectedIdx, recallDialogOpen])
 
   const total = getTotal()
+  const subtotal = getSubtotal()
+  const totalDiscount = getTotalDiscount()
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
   const handleHold = () => {
@@ -86,15 +96,19 @@ export function CartPanel({ onPay }: CartPanelProps) {
     toast.success("Transaksi dilanjutkan")
   }
 
-  // F3 = open hold dialog, F9 = open recall dialog
+  // F2 = discount, F3 = open hold dialog, F9 = open recall dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "F3" && items.length > 0 && !holdDialogOpen && !recallDialogOpen) {
+      if (e.key === "F2" && items.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
+        e.preventDefault()
+        setDiscountDialogOpen(true)
+      }
+      if (e.key === "F3" && items.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
         e.preventDefault()
         setHoldLabel("")
         setHoldDialogOpen(true)
       }
-      if (e.key === "F9" && heldCarts.length > 0 && !holdDialogOpen && !recallDialogOpen) {
+      if (e.key === "F9" && heldCarts.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
         e.preventDefault()
         setSelectedIdx(0)
         setRecallDialogOpen(true)
@@ -102,7 +116,7 @@ export function CartPanel({ onPay }: CartPanelProps) {
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items.length, heldCarts.length, holdDialogOpen, recallDialogOpen])
+  }, [items.length, heldCarts.length, holdDialogOpen, recallDialogOpen, discountDialogOpen, editItem])
 
   return (
     <div className="flex h-full flex-col">
@@ -166,6 +180,8 @@ export function CartPanel({ onPay }: CartPanelProps) {
                   item={item}
                   onUpdateQuantity={updateQuantity}
                   onRemove={removeItem}
+                  onEdit={(it) => setEditItem(it)}
+                  hasDiscount={!!itemDiscounts[item.cart_id]}
                 />
               ))}
             </TableBody>
@@ -176,11 +192,25 @@ export function CartPanel({ onPay }: CartPanelProps) {
       {/* Footer */}
       <Separator />
       <div className="bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-xl font-semibold">Total</span>
-          <span className="text-3xl font-bold tabular-nums">
-            {formatRupiah(total)}
-          </span>
+        <div className="mb-3 space-y-1">
+          {totalDiscount > 0 && (
+            <>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums">{formatRupiah(subtotal)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm text-destructive">
+                <span>Diskon</span>
+                <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
+              </div>
+            </>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-xl font-semibold">Total</span>
+            <span className="text-3xl font-bold tabular-nums">
+              {formatRupiah(total)}
+            </span>
+          </div>
         </div>
         <Button
           className="h-12 w-full text-lg font-semibold"
@@ -191,6 +221,20 @@ export function CartPanel({ onPay }: CartPanelProps) {
           Bayar (F4)
         </Button>
         <div className="mt-2 flex gap-2">
+          <Button
+            variant="outline"
+            className="h-10 flex-1"
+            disabled={items.length === 0}
+            onClick={() => setDiscountDialogOpen(true)}
+          >
+            <Percent className="mr-1 h-4 w-4" />
+            Diskon (F2)
+            {totalDiscount > 0 && (
+              <Badge variant="destructive" className="ml-1.5">
+                -{formatRupiah(totalDiscount)}
+              </Badge>
+            )}
+          </Button>
           <Button
             variant="outline"
             className="h-10 flex-1"
@@ -334,6 +378,19 @@ export function CartPanel({ onPay }: CartPanelProps) {
           </ScrollArea>
         </DialogContent>
       </Dialog>
+
+      {/* Discount Dialog */}
+      <DiscountDialog
+        open={discountDialogOpen}
+        onOpenChange={setDiscountDialogOpen}
+      />
+
+      {/* Cart Item Edit Dialog */}
+      <CartItemEditDialog
+        open={!!editItem}
+        onOpenChange={(open) => { if (!open) setEditItem(null) }}
+        item={editItem}
+      />
     </div>
   )
 }

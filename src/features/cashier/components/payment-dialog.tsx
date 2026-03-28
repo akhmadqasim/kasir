@@ -45,9 +45,15 @@ export function PaymentDialog({
   const user = useAuthStore((s) => s.user)
   const items = useCartStore((s) => s.items)
   const getTotal = useCartStore((s) => s.getTotal)
+  const getSubtotal = useCartStore((s) => s.getSubtotal)
+  const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
+  const getItemDiscountAmount = useCartStore((s) => s.getItemDiscountAmount)
+  const getTransactionDiscountAmount = useCartStore((s) => s.getTransactionDiscountAmount)
   const checkoutTransaction = useCheckoutTransaction()
 
   const total = getTotal()
+  const subtotal = getSubtotal()
+  const totalDiscount = getTotalDiscount()
   const numericPayment = Number(paymentAmount) || 0
   const changeAmount = paymentMethod === "cash" ? numericPayment - total : 0
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
@@ -113,6 +119,7 @@ export function PaymentDialog({
             product_name: item.is_ppob ? item.product_name : undefined,
             product_price: item.is_ppob ? item.product_price : undefined,
             buy_price: item.buy_price,
+            item_discount: getItemDiscountAmount(item.cart_id) || undefined,
             service_type: item.service_type,
             service_ref: item.service_ref,
             ppob_product_id: item.ppob_product_id,
@@ -122,6 +129,7 @@ export function PaymentDialog({
           })),
           payment_method: paymentMethod,
           payment_amount: finalPaymentAmount,
+          transaction_discount: getTransactionDiscountAmount() || undefined,
         },
       },
       {
@@ -162,6 +170,19 @@ export function PaymentDialog({
             <span>{itemCount} item</span>
           </div>
           <Separator className="my-2" />
+          {totalDiscount > 0 ? (
+            <>
+              <div className="flex justify-between text-sm">
+                <span>Subtotal</span>
+                <span className="tabular-nums">{formatRupiah(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-destructive">
+                <span>Diskon</span>
+                <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
+              </div>
+              <Separator className="my-2" />
+            </>
+          ) : null}
           <div className="flex justify-between">
             <span className="font-medium">Total</span>
             <span className="text-xl font-bold tabular-nums">
