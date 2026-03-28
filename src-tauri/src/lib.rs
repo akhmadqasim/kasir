@@ -125,6 +125,16 @@ pub fn run() {
             commands::backup::list_backups,
             commands::backup::restore_backup,
             commands::backup::delete_backup,
+            commands::reports::report_sales_daily,
+            commands::reports::report_sales_monthly,
+            commands::reports::report_sales_period,
+            commands::reports::report_sales_receipt,
+            commands::reports::report_payment_methods,
+            commands::reports::report_product_sales,
+            commands::reports::report_popular_products,
+            commands::reports::report_returns,
+            commands::reports::report_current_stock,
+            commands::reports::report_losses,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

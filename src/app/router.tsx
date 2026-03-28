@@ -14,6 +14,17 @@ const CreateRefundPage = lazy(() => import("@/features/refunds").then(m => ({ de
 const SettingsPage = lazy(() => import("@/features/settings").then(m => ({ default: m.SettingsPage })))
 const UsersPage = lazy(() => import("@/features/users").then(m => ({ default: m.UsersPage })))
 const DashboardPage = lazy(() => import("@/features/dashboard").then(m => ({ default: m.DashboardPage })))
+const ReportsPage = lazy(() => import("@/features/reports").then(m => ({ default: m.ReportsPage })))
+const SalesDailyPage = lazy(() => import("@/features/reports/components/sales-daily-page").then(m => ({ default: m.SalesDailyPage })))
+const SalesMonthlyPage = lazy(() => import("@/features/reports/components/sales-monthly-page").then(m => ({ default: m.SalesMonthlyPage })))
+const SalesPeriodPage = lazy(() => import("@/features/reports/components/sales-period-page").then(m => ({ default: m.SalesPeriodPage })))
+const SalesReceiptPage = lazy(() => import("@/features/reports/components/sales-receipt-page").then(m => ({ default: m.SalesReceiptPage })))
+const PaymentMethodsPage = lazy(() => import("@/features/reports/components/payment-methods-page").then(m => ({ default: m.PaymentMethodsPage })))
+const ProductSalesPage = lazy(() => import("@/features/reports/components/product-sales-page").then(m => ({ default: m.ProductSalesPage })))
+const PopularProductsPage = lazy(() => import("@/features/reports/components/popular-products-page").then(m => ({ default: m.PopularProductsPage })))
+const ReturnsPage = lazy(() => import("@/features/reports/components/returns-page").then(m => ({ default: m.ReturnsPage })))
+const CurrentStockPage = lazy(() => import("@/features/reports/components/current-stock-page").then(m => ({ default: m.CurrentStockPage })))
+const LossesPage = lazy(() => import("@/features/reports/components/losses-page").then(m => ({ default: m.LossesPage })))
 const PpobPage = lazy(() => import("@/features/ppob").then(m => ({ default: m.PpobPage })))
 
 function PageLoader() {
@@ -87,12 +98,19 @@ const router = createHashRouter([
           },
           {
             path: "reports",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Laporan</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <LazyPage><ReportsPage /></LazyPage>,
+            children: [
+              { path: "sales-daily", element: <LazyPage><SalesDailyPage /></LazyPage> },
+              { path: "sales-monthly", element: <LazyPage><SalesMonthlyPage /></LazyPage> },
+              { path: "sales-period", element: <LazyPage><SalesPeriodPage /></LazyPage> },
+              { path: "sales-receipt", element: <LazyPage><SalesReceiptPage /></LazyPage> },
+              { path: "payment-methods", element: <LazyPage><PaymentMethodsPage /></LazyPage> },
+              { path: "product-sales", element: <LazyPage><ProductSalesPage /></LazyPage> },
+              { path: "popular-products", element: <LazyPage><PopularProductsPage /></LazyPage> },
+              { path: "returns", element: <LazyPage><ReturnsPage /></LazyPage> },
+              { path: "current-stock", element: <LazyPage><CurrentStockPage /></LazyPage> },
+              { path: "losses", element: <LazyPage><LossesPage /></LazyPage> },
+            ],
           },
           {
             path: "settings",

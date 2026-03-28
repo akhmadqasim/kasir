@@ -1,2 +1,2 @@
 // Reports module
-export {}
+export { ReportsPage } from "./components/reports-page"

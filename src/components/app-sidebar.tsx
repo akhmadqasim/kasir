@@ -64,6 +64,18 @@ const navMain = [
     title: id.nav.reports,
     url: "/reports",
     icon: <BarChart3Icon />,
+    items: [
+      { group: "Penjualan", title: "Per Hari", url: "/reports/sales-daily" },
+      { group: "Penjualan", title: "Per Bulan", url: "/reports/sales-monthly" },
+      { group: "Penjualan", title: "Per Periode", url: "/reports/sales-period" },
+      { group: "Penjualan", title: "Per Struk", url: "/reports/sales-receipt" },
+      { group: "Penjualan", title: "Jenis Pembayaran", url: "/reports/payment-methods" },
+      { group: "Produk", title: "Penjualan Produk", url: "/reports/product-sales" },
+      { group: "Produk", title: "Produk Populer", url: "/reports/popular-products" },
+      { group: "Produk", title: "Retur Produk", url: "/reports/returns" },
+      { group: "Stok", title: "Stok Saat Ini", url: "/reports/current-stock" },
+      { group: "Stok", title: "Laporan Kerugian", url: "/reports/losses" },
+    ],
   },
   {
     title: id.nav.ppob,
