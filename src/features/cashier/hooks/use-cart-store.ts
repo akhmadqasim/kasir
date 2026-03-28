@@ -2,9 +2,18 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { CartItem } from "../types"
 
+export interface HeldCart {
+  id: string
+  label: string
+  items: CartItem[]
+  total: number
+  heldAt: number
+}
+
 interface CartStore {
   items: CartItem[]
   ppobCounter: number
+  heldCarts: HeldCart[]
   addItem: (product: {
     id: number
     name: string
@@ -29,6 +38,9 @@ interface CartStore {
   updatePrice: (cartId: string, price: number) => void
   clear: () => void
   getTotal: () => number
+  holdCart: (label?: string) => void
+  recallCart: (holdId: string) => void
+  removeHeldCart: (holdId: string) => void
 }
 
 export const useCartStore = create<CartStore>()(
@@ -36,6 +48,7 @@ export const useCartStore = create<CartStore>()(
     (set, get) => ({
       items: [],
       ppobCounter: 0,
+      heldCarts: [],
 
       addItem: (product) => {
         const { items } = get()
@@ -138,12 +151,78 @@ export const useCartStore = create<CartStore>()(
           0
         )
       },
+
+      holdCart: (label?: string) => {
+        const { items, heldCarts } = get()
+        if (items.length === 0) return
+
+        const total = items.reduce(
+          (sum, item) => sum + item.product_price * item.quantity,
+          0
+        )
+        const holdId = `hold-${Date.now()}`
+        const autoLabel = label?.trim() || `Pelanggan ${heldCarts.length + 1}`
+
+        set({
+          heldCarts: [
+            ...heldCarts,
+            {
+              id: holdId,
+              label: autoLabel,
+              items: [...items],
+              total,
+              heldAt: Date.now(),
+            },
+          ],
+          items: [],
+        })
+      },
+
+      recallCart: (holdId: string) => {
+        const { heldCarts, items } = get()
+        const held = heldCarts.find((c) => c.id === holdId)
+        if (!held) return
+
+        // If current cart has items, hold them first
+        if (items.length > 0) {
+          const total = items.reduce(
+            (sum, item) => sum + item.product_price * item.quantity,
+            0
+          )
+          const swapId = `hold-${Date.now()}`
+          set({
+            heldCarts: [
+              ...heldCarts.filter((c) => c.id !== holdId),
+              {
+                id: swapId,
+                label: `Keranjang Aktif`,
+                items: [...items],
+                total,
+                heldAt: Date.now(),
+              },
+            ],
+            items: held.items,
+          })
+        } else {
+          set({
+            heldCarts: heldCarts.filter((c) => c.id !== holdId),
+            items: held.items,
+          })
+        }
+      },
+
+      removeHeldCart: (holdId: string) => {
+        set({
+          heldCarts: get().heldCarts.filter((c) => c.id !== holdId),
+        })
+      },
     }),
     {
       name: "kasir-cart",
       partialize: (state) => ({
         items: state.items,
         ppobCounter: state.ppobCounter,
+        heldCarts: state.heldCarts,
       }),
     }
   )

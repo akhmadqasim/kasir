@@ -13,6 +13,7 @@ export function CashierPage() {
   )
   const clear = useCartStore((s) => s.clear)
   const hasItems = useCartStore((s) => s.items.length > 0)
+  const holdCart = useCartStore((s) => s.holdCart)
 
   const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)
@@ -26,17 +27,21 @@ export function CashierPage() {
 
   const openPayment = useCallback(() => setPaymentOpen(true), [])
 
-  // F4 shortcut to open payment dialog
+  // F4 shortcut to open payment dialog, F8 to hold cart
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "F4" && hasItems && !paymentOpen && !successResult) {
         e.preventDefault()
         setPaymentOpen(true)
       }
+      if (e.key === "F8" && hasItems && !paymentOpen && !successResult) {
+        e.preventDefault()
+        holdCart()
+      }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [hasItems, paymentOpen, successResult])
+  }, [hasItems, paymentOpen, successResult, holdCart])
 
   return (
     <>
