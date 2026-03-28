@@ -26,6 +26,8 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 tauri-plugin-dialog = "2.6.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+flate2 = "1.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.10"
 
 [target.'cfg(windows)'.dependencies]

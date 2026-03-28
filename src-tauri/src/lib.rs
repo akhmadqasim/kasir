@@ -27,16 +27,23 @@ pub fn run() {
 
     let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
 
+    let backup_scheduler = Arc::new(Mutex::new(commands::backup::BackupScheduler::new()));
+
+    let backup_scheduler_clone = backup_scheduler.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
+        .setup(move |_app| {
             #[cfg(debug_assertions)]
             _app.handle().plugin(tauri_plugin_mcp_bridge::init())?;
+
+            // Start backup scheduler inside setup where tokio runtime is available
+            commands::backup::start_backup_scheduler(backup_scheduler_clone);
             Ok(())
         })
         .manage(database)
         .manage(mitra_client)
+        .manage(backup_scheduler)
         .invoke_handler(tauri::generate_handler![
             commands::auth::login,
             commands::auth::get_current_user,
@@ -112,6 +119,11 @@ pub fn run() {
             commands::ppob::payment::ppob_get_receipt_data,
             commands::ppob::history::ppob_get_history,
             commands::ppob::history::ppob_get_history_detail,
+            commands::backup::create_backup,
+            commands::backup::get_backup_status,
+            commands::backup::list_backups,
+            commands::backup::restore_backup,
+            commands::backup::delete_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

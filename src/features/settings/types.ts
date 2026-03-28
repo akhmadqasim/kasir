@@ -45,10 +45,16 @@ export interface PpobSettings {
   markup: PpobMarkup
 }
 
+export interface BackupSettings {
+  interval_hours: number
+  retention_days: number
+}
+
 export interface AppSettings {
   sales: SalesSettings
   security: SecuritySettings
   ppob: PpobSettings
+  backup: BackupSettings
 }
 
 export interface StoreInfo {

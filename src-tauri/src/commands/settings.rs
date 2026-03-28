@@ -111,11 +111,14 @@ impl Default for PpobSettings {
     }
 }
 
+use super::backup::BackupSettings;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub sales: SalesSettings,
     pub security: SecuritySettings,
     pub ppob: PpobSettings,
+    pub backup: BackupSettings,
 }
 
 impl Default for AppSettings {
@@ -124,6 +127,7 @@ impl Default for AppSettings {
             sales: SalesSettings::default(),
             security: SecuritySettings::default(),
             ppob: PpobSettings::default(),
+            backup: BackupSettings::default(),
         }
     }
 }
@@ -168,10 +172,16 @@ pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
         .and_then(|v| serde_json::from_value::<PpobSettings>(v.clone()).ok())
         .unwrap_or_default();
 
+    let backup = json
+        .get("backup")
+        .and_then(|v| serde_json::from_value::<BackupSettings>(v.clone()).ok())
+        .unwrap_or_default();
+
     AppSettings {
         sales,
         security,
         ppob,
+        backup,
     }
 }
 
@@ -249,6 +259,8 @@ pub async fn update_app_settings(
     info["security"] = serde_json::to_value(&settings.security)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
     info["ppob"] = serde_json::to_value(&settings.ppob)
+        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
+    info["backup"] = serde_json::to_value(&settings.backup)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
 
     let mut active: store_info::ActiveModel = store.into();

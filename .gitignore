@@ -48,3 +48,4 @@ src-tauri/WixTools/
 # Temp
 tmp/
 temp/
+data/backups/
