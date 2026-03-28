@@ -42,6 +42,7 @@ pub struct CheckoutTransactionInput {
     pub payment_amount: f64,
     pub notes: Option<String>,
     pub transaction_discount: Option<f64>,
+    pub shift_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -298,6 +299,7 @@ async fn persist_transaction<C: ConnectionTrait>(
         change_amount: Set(Some(change_amount)),
         status: Set(status.to_string()),
         notes: Set(input.notes.clone()),
+        shift_id: Set(input.shift_id),
         created_at: Set(Some(now.clone())),
     };
 
@@ -970,6 +972,7 @@ mod tests {
                 payment_amount: 30_000.0,
                 notes: None,
                 transaction_discount: None,
+                shift_id: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1013,6 +1016,7 @@ mod tests {
                 payment_amount: 12_000.0,
                 notes: None,
                 transaction_discount: None,
+                shift_id: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1064,6 +1068,7 @@ mod tests {
                 payment_amount: 21_000.0,
                 notes: None,
                 transaction_discount: None,
+                shift_id: None,
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1125,6 +1130,7 @@ mod tests {
                 payment_amount: 28_000.0,
                 notes: None,
                 transaction_discount: None,
+                shift_id: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1206,6 +1212,7 @@ mod tests {
                 payment_amount: 33_000.0,
                 notes: None,
                 transaction_discount: None,
+                shift_id: None,
             },
             |_request| async { unreachable!("executor should not be called") },
         )

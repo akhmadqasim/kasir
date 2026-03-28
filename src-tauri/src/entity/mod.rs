@@ -1,9 +1,11 @@
+pub mod cash_flows;
 pub mod categories;
 pub mod exchange_items;
 pub mod product_shortcuts;
 pub mod products;
 pub mod refund_items;
 pub mod refunds;
+pub mod shifts;
 pub mod stock_writeoffs;
 pub mod store_info;
 pub mod transaction_items;

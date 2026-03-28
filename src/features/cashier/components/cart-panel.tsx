@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react"
-import { PauseCircle, Percent, PlayCircle, ShoppingCart, Trash2 } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import {
+  ArrowDownUp,
+  DoorClosed,
+  PauseCircle,
+  Percent,
+  PlayCircle,
+  ShoppingCart,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -29,14 +38,17 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { useCartStore } from "../hooks/use-cart-store"
+import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { CartItemRow } from "./cart-item-row"
 import { CartItemEditDialog } from "./cart-item-edit-dialog"
 import { DiscountDialog } from "./discount-dialog"
+import { CashFlowDialog } from "@/features/shift/components/cash-flow-dialog"
 import { formatRupiah } from "../utils"
 import type { CartItem } from "../types"
 
 interface CartPanelProps {
   onPay: () => void
+  disabled?: boolean
 }
 
 function formatHeldDate(timestamp: number): string {
@@ -45,7 +57,8 @@ function formatHeldDate(timestamp: number): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export function CartPanel({ onPay }: CartPanelProps) {
+export function CartPanel({ onPay, disabled }: CartPanelProps) {
+  const navigate = useNavigate()
   const items = useCartStore((s) => s.items)
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
@@ -60,11 +73,13 @@ export function CartPanel({ onPay }: CartPanelProps) {
   const [holdDialogOpen, setHoldDialogOpen] = useState(false)
   const [recallDialogOpen, setRecallDialogOpen] = useState(false)
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
+  const [cashFlowOpen, setCashFlowOpen] = useState(false)
   const [editItem, setEditItem] = useState<CartItem | null>(null)
   const [holdLabel, setHoldLabel] = useState("")
   const [selectedIdx, setSelectedIdx] = useState(0)
   const selectedRowRef = useRef<HTMLTableRowElement>(null)
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
+  const activeShift = useShiftStore((s) => s.activeShift)
 
   // Scroll selected row into view when navigating with keyboard
   useEffect(() => {
@@ -96,27 +111,37 @@ export function CartPanel({ onPay }: CartPanelProps) {
     toast.success("Transaksi dilanjutkan")
   }
 
-  // F2 = discount, F3 = open hold dialog, F9 = open recall dialog
+  // F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = cash flow
+  const anyDialogOpen = holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "F2" && items.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
+      if (anyDialogOpen) return
+      if (e.key === "F2" && items.length > 0) {
         e.preventDefault()
         setDiscountDialogOpen(true)
       }
-      if (e.key === "F3" && items.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
+      if (e.key === "F3" && items.length > 0) {
         e.preventDefault()
         setHoldLabel("")
         setHoldDialogOpen(true)
       }
-      if (e.key === "F9" && heldCarts.length > 0 && !holdDialogOpen && !recallDialogOpen && !discountDialogOpen && !editItem) {
+      if (e.key === "F6" && activeShift) {
+        e.preventDefault()
+        navigate("/close-shift")
+      }
+      if (e.key === "F9" && heldCarts.length > 0) {
         e.preventDefault()
         setSelectedIdx(0)
         setRecallDialogOpen(true)
       }
+      if (e.key === "F10" && activeShift) {
+        e.preventDefault()
+        setCashFlowOpen(true)
+      }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items.length, heldCarts.length, holdDialogOpen, recallDialogOpen, discountDialogOpen, editItem])
+  }, [items.length, heldCarts.length, anyDialogOpen, activeShift])
 
   return (
     <div className="flex h-full flex-col">
@@ -128,23 +153,24 @@ export function CartPanel({ onPay }: CartPanelProps) {
           <Badge variant="secondary">{itemCount} item</Badge>
         )}
         <div className="flex-1" />
-        {heldCarts.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="relative"
-            onClick={() => { setSelectedIdx(0); setRecallDialogOpen(true) }}
-          >
-            <PlayCircle className="mr-1 h-4 w-4" />
-            Tersimpan (F9)
+        <Button
+          variant="outline"
+          size="sm"
+          className="relative"
+          onClick={() => { setSelectedIdx(0); setRecallDialogOpen(true) }}
+          disabled={heldCarts.length === 0}
+        >
+          <PlayCircle className="mr-1 h-4 w-4" />
+          Tersimpan (F9)
+          {heldCarts.length > 0 && (
             <Badge
               variant="destructive"
               className="absolute -right-2 -top-2 h-5 w-5 p-0 text-xs flex items-center justify-center"
             >
               {heldCarts.length}
             </Badge>
-          </Button>
-        )}
+          )}
+        </Button>
       </div>
 
       <Separator />
@@ -215,35 +241,55 @@ export function CartPanel({ onPay }: CartPanelProps) {
         <Button
           className="h-12 w-full text-lg font-semibold"
           size="lg"
-          disabled={items.length === 0}
+          disabled={items.length === 0 || disabled}
           onClick={onPay}
         >
           Bayar (F4)
         </Button>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex gap-1.5">
           <Button
             variant="outline"
-            className="h-10 flex-1"
+            className="h-9 flex-1 px-2 text-xs"
             disabled={items.length === 0}
             onClick={() => setDiscountDialogOpen(true)}
           >
-            <Percent className="mr-1 h-4 w-4" />
-            Diskon (F2)
+            <Percent className="mr-1 h-3.5 w-3.5" />
+            Diskon F2
             {totalDiscount > 0 && (
-              <Badge variant="destructive" className="ml-1.5">
+              <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0">
                 -{formatRupiah(totalDiscount)}
               </Badge>
             )}
           </Button>
           <Button
             variant="outline"
-            className="h-10 flex-1"
+            className="h-9 flex-1 px-2 text-xs"
             disabled={items.length === 0}
             onClick={handleHold}
           >
-            <PauseCircle className="mr-1 h-4 w-4" />
-            Simpan (F3)
+            <PauseCircle className="mr-1 h-3.5 w-3.5" />
+            Simpan F3
           </Button>
+          {activeShift && (
+            <>
+              <Button
+                variant="outline"
+                className="h-9 flex-1 px-2 text-xs"
+                onClick={() => setCashFlowOpen(true)}
+              >
+                <ArrowDownUp className="mr-1 h-3.5 w-3.5" />
+                Uang F10
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 flex-1 px-2 text-xs text-destructive hover:text-destructive"
+                onClick={() => navigate("/close-shift")}
+              >
+                <DoorClosed className="mr-1 h-3.5 w-3.5" />
+                Tutup F6
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -390,6 +436,12 @@ export function CartPanel({ onPay }: CartPanelProps) {
         open={!!editItem}
         onOpenChange={(open) => { if (!open) setEditItem(null) }}
         item={editItem}
+      />
+
+      {/* Cash Flow Dialog */}
+      <CashFlowDialog
+        open={cashFlowOpen}
+        onOpenChange={setCashFlowOpen}
       />
     </div>
   )

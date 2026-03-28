@@ -17,6 +17,7 @@ pub struct Model {
     pub change_amount: Option<f64>,
     pub status: String,
     pub notes: Option<String>,
+    pub shift_id: Option<i64>,
     pub created_at: Option<String>,
 }
 

@@ -12,6 +12,8 @@ import {
   RotateCcwIcon,
   LayoutDashboardIcon,
   Building2Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -25,20 +27,21 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
 const navMain = [
   {
-    title: id.nav.cashier,
-    url: "/cashier",
-    icon: <ShoppingCartIcon />,
-  },
-  {
     title: id.dashboard.title,
     url: "/dashboard",
     icon: <LayoutDashboardIcon />,
+  },
+  {
+    title: id.nav.cashier,
+    url: "/cashier",
+    icon: <ShoppingCartIcon />,
   },
   {
     title: id.nav.products,
@@ -100,6 +103,15 @@ const navAdmin = [
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
+  const { toggleSidebar, open, hoverExpanded, pinSidebar } = useSidebar()
+
+  const handleToggleClick = () => {
+    if (hoverExpanded) {
+      pinSidebar()
+    } else {
+      toggleSidebar()
+    }
+  }
 
   return (
     <Sidebar variant="inset" {...props}>
@@ -107,7 +119,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <NavLink to="/cashier">
+              <NavLink to="/dashboard">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                   <StoreIcon className="size-4" />
                 </div>
@@ -117,6 +129,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </div>
               </NavLink>
             </SidebarMenuButton>
+            {open && (
+              <button
+                onClick={handleToggleClick}
+                className="absolute right-2 top-3 flex size-7 items-center justify-center rounded-md text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+                title={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
+              >
+                {hoverExpanded ? <PanelLeftOpenIcon className="size-4" /> : <PanelLeftCloseIcon className="size-4" />}
+              </button>
+            )}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>

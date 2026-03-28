@@ -36,6 +36,9 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  hoverExpanded: boolean
+  setHoverExpanded: (v: boolean) => void
+  pinSidebar: () => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -89,6 +92,14 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
 
+  // Hover-expand tracking
+  const [hoverExpanded, setHoverExpanded] = React.useState(false)
+
+  const pinSidebar = React.useCallback(() => {
+    setHoverExpanded(false)
+    setOpen(true)
+  }, [setOpen])
+
   // Keyboard shortcut removed — handled by AppLayout for 3-mode cycling
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
@@ -104,8 +115,11 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      hoverExpanded,
+      setHoverExpanded,
+      pinSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, hoverExpanded, setHoverExpanded, pinSidebar]
   )
 
   return (
@@ -144,7 +158,8 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const { isMobile, state, openMobile, setOpenMobile, open, setOpen, hoverExpanded, setHoverExpanded } = useSidebar()
+  const hoverTimeoutRef = React.useRef<ReturnType<typeof setTimeout>>(null)
 
   if (collapsible === "none") {
     return (
@@ -195,6 +210,21 @@ function Sidebar({
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
+      onMouseEnter={() => {
+        if (!open && collapsible === "icon") {
+          hoverTimeoutRef.current = setTimeout(() => {
+            setHoverExpanded(true)
+            setOpen(true)
+          }, 200)
+        }
+      }}
+      onMouseLeave={() => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+        if (hoverExpanded) {
+          setHoverExpanded(false)
+          setOpen(false)
+        }
+      }}
     >
       {/* This is what handles the sidebar gap on desktop */}
       <div

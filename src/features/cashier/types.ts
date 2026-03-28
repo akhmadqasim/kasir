@@ -39,6 +39,7 @@ export interface CheckoutTransactionInput {
   payment_amount: number
   notes?: string
   transaction_discount?: number
+  shift_id?: number
 }
 
 export interface Transaction {

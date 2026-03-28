@@ -136,6 +136,12 @@ pub fn run() {
             commands::reports::report_returns,
             commands::reports::report_current_stock,
             commands::reports::report_losses,
+            commands::shifts::open_shift,
+            commands::shifts::get_active_shift,
+            commands::shifts::close_shift,
+            commands::shifts::get_shift_summary,
+            commands::shifts::create_cash_flow,
+            commands::shifts::list_cash_flows,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

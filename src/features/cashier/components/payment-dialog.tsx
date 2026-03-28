@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "../hooks/use-cart-store"
 import { useCheckoutTransaction } from "../hooks/use-cashier"
 import { formatRupiah, getCartValidationError } from "../utils"
@@ -43,6 +44,7 @@ export function PaymentDialog({
   const [displayPayment, setDisplayPayment] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
+  const activeShift = useShiftStore((s) => s.activeShift)
   const items = useCartStore((s) => s.items)
   const getTotal = useCartStore((s) => s.getTotal)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
@@ -130,6 +132,7 @@ export function PaymentDialog({
           payment_method: paymentMethod,
           payment_amount: finalPaymentAmount,
           transaction_discount: getTransactionDiscountAmount() || undefined,
+          shift_id: activeShift?.id,
         },
       },
       {

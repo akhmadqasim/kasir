@@ -9,4 +9,5 @@ pub mod receipt;
 pub mod refunds;
 pub mod reports;
 pub mod settings;
+pub mod shifts;
 pub mod transactions;

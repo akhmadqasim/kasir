@@ -21,6 +21,7 @@ import {
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { UserProfileDialog } from "@/features/users/components/user-profile-dialog"
 
 function getInitials(name: string): string {
@@ -41,6 +42,7 @@ export function NavUser() {
 
   const handleLogout = () => {
     logout()
+    useShiftStore.getState().clearShift()
     navigate("/login")
   }
 
