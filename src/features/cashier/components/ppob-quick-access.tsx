@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -81,6 +80,7 @@ interface PpobQuickAccessProps {
   onBack?: () => void
   onItemAdded?: () => void
   showSaldoBar?: boolean
+  wideLayout?: boolean
 }
 
 export function PpobQuickAccess({
@@ -88,6 +88,7 @@ export function PpobQuickAccess({
   onBack,
   onItemAdded,
   showSaldoBar = true,
+  wideLayout = false,
 }: PpobQuickAccessProps = {}) {
   const [selectedService, setSelectedService] = useState<ServiceType | null>(
     initialService ?? null
@@ -116,7 +117,7 @@ export function PpobQuickAccess({
 
   const getMarkupConfig = (serviceType: string): PpobMarkupConfig => {
     if (!markup) return DEFAULT_MARKUP
-    return (markup as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_MARKUP
+    return (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_MARKUP
   }
 
   const handleAddToCart = (item: {
@@ -196,12 +197,12 @@ export function PpobQuickAccess({
           </div>
         </div>
 
-        {selectedService === "pulsa" && <PulsaInput onAddToCart={handleAddToCart} productType="pulsa" />}
-        {selectedService === "data" && <PulsaInput onAddToCart={handleAddToCart} productType="data" />}
-        {selectedService === "pln" && <PlnInput onAddToCart={handleAddToCart} />}
-        {selectedService === "pdam" && <PdamInput onAddToCart={handleAddToCart} />}
-        {selectedService === "bpjs" && <BpjsInput onAddToCart={handleAddToCart} />}
-        {selectedService === "emoney" && <EmoneyInput onAddToCart={handleAddToCart} />}
+        {selectedService === "pulsa" && <PulsaInput onAddToCart={handleAddToCart} productType="pulsa" wideLayout={wideLayout} />}
+        {selectedService === "data" && <PulsaInput onAddToCart={handleAddToCart} productType="data" wideLayout={wideLayout} />}
+        {selectedService === "pln" && <PlnInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
+        {selectedService === "pdam" && <PdamInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
+        {selectedService === "bpjs" && <BpjsInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
+        {selectedService === "emoney" && <EmoneyInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
       </div>
     )
   }
@@ -272,6 +273,7 @@ function SaldoBar() {
 function PulsaInput({
   onAddToCart,
   productType,
+  wideLayout = false,
 }: {
   onAddToCart: (item: {
     name: string
@@ -283,6 +285,7 @@ function PulsaInput({
     ppob_product_code?: string
   }) => void
   productType: "pulsa" | "data"
+  wideLayout?: boolean
 }) {
   const [phoneNumber, setPhoneNumber] = useState("")
   const [selected, setSelected] = useState<PulsaDetailProduct | null>(null)
@@ -309,32 +312,42 @@ function PulsaInput({
     })
   }
 
-  return (
+  const confirmItems = selected ? [
+    { label: "Layanan", value: productType === "pulsa" ? "Pulsa" : "Paket Data" },
+    { label: "Provider", value: data?.provider ?? "-" },
+    { label: "Nomor HP", value: phoneNumber, mono: true },
+    { label: "Produk", value: selected.description.replace(/\n/g, " ") },
+    { label: "Harga Jual", value: formatRupiah(selected.lastPrice ?? selected.basePrice), bold: true },
+    { label: "Margin", value: `+${formatRupiah((selected.lastPrice ?? selected.basePrice) - selected.vendorPrice)}`, green: true },
+  ] : null
+
+  const inputSection = (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Nomor HP</Label>
-        <Input
-          type="tel"
-          placeholder="08xxxxxxxxxx"
-          value={phoneNumber}
-          onChange={(e) => {
-            setPhoneNumber(e.target.value.replace(/\D/g, ""))
-            setSelected(null)
-          }}
-          className="font-mono"
-          autoFocus
-        />
+        <div className="relative">
+          <Input
+            type="tel"
+            placeholder="08xxxxxxxxxx"
+            value={phoneNumber}
+            onChange={(e) => {
+              setPhoneNumber(e.target.value.replace(/\D/g, ""))
+              setSelected(null)
+            }}
+            className="font-mono pr-24 !text-xl h-12 tracking-wider"
+            autoFocus
+          />
+          {data && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {data.image && <img src={data.image} alt={data.provider} className="h-5" />}
+              <span className="text-xs font-medium text-muted-foreground">{data.provider}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {data && (
-        <div className="flex items-center gap-2">
-          {data.image && <img src={data.image} alt={data.provider} className="h-6" />}
-          <Badge variant="secondary">{data.provider}</Badge>
-        </div>
-      )}
-
       {isLoading && phoneNumber.length >= 10 && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid gap-2 ${wideLayout ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
       )}
@@ -344,7 +357,7 @@ function PulsaInput({
       )}
 
       {filteredProducts.length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid gap-2 ${wideLayout ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           {filteredProducts.map((product) => {
             const isSelected = selected?.id === product.id
             const sellPrice = product.lastPrice ?? product.basePrice
@@ -365,29 +378,42 @@ function PulsaInput({
         </div>
       )}
 
-      {selected && (
+      {!wideLayout && confirmItems && (
         <>
           <Separator />
-          <ConfirmSection
-            items={[
-              { label: "Layanan", value: productType === "pulsa" ? "Pulsa" : "Paket Data" },
-              { label: "Provider", value: data?.provider ?? "-" },
-              { label: "Nomor HP", value: phoneNumber, mono: true },
-              { label: "Produk", value: selected.description.replace(/\n/g, " ") },
-              { label: "Harga Jual", value: formatRupiah(selected.lastPrice ?? selected.basePrice), bold: true },
-              { label: "Margin", value: `+${formatRupiah((selected.lastPrice ?? selected.basePrice) - selected.vendorPrice)}`, green: true },
-            ]}
-            onConfirm={handleConfirm}
-          />
+          <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
         </>
       )}
     </div>
   )
+
+  if (wideLayout) {
+    return (
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-8">{inputSection}</div>
+        <div className="col-span-4">
+          <div className="sticky top-6">
+            {confirmItems ? (
+              <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                <Smartphone className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">Pilih produk untuk melihat detail</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return inputSection
 }
 
 // --- PLN Input ---
 function PlnInput({
   onAddToCart,
+  wideLayout = false,
 }: {
   onAddToCart: (item: {
     name: string
@@ -398,6 +424,7 @@ function PlnInput({
     ppob_inquiry_id?: string
     ppob_payment_code?: string
   }) => void
+  wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<number | null>(null)
@@ -430,7 +457,17 @@ function PlnInput({
     })
   }
 
-  return (
+  const confirmItems = inquiryResult ? [
+    { label: "Layanan", value: "PLN Token" },
+    { label: "ID Pelanggan", value: customerId, mono: true },
+    { label: "Nama", value: inquiryResult.customerName ?? "-" },
+    { label: "Produk", value: inquiryResult.productName ?? "-" },
+    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+  ] : null
+
+  const inputSection = (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>ID Pelanggan / No. Meter</Label>
@@ -438,13 +475,13 @@ function PlnInput({
           placeholder="Masukkan ID pelanggan"
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono"
+          className="font-mono !text-xl h-12 tracking-wider"
           autoFocus
         />
       </div>
 
       {denomsLoading && (
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
       )}
@@ -452,7 +489,7 @@ function PlnInput({
       {denoms && denoms.length > 0 && (
         <div className="space-y-2">
           <Label>Nominal</Label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
             {denoms.map((d) => (
               <Button
                 key={d.id}
@@ -474,30 +511,42 @@ function PlnInput({
         </Button>
       )}
 
-      {inquiryResult && (
+      {!wideLayout && confirmItems && (
         <>
           <Separator />
-          <ConfirmSection
-            items={[
-              { label: "Layanan", value: "PLN Token" },
-              { label: "ID Pelanggan", value: customerId, mono: true },
-              { label: "Nama", value: inquiryResult.customerName ?? "-" },
-              { label: "Produk", value: inquiryResult.productName ?? "-" },
-              { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-              { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-              { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
-            ]}
-            onConfirm={handleConfirm}
-          />
+          <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
         </>
       )}
     </div>
   )
+
+  if (wideLayout) {
+    return (
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-8">{inputSection}</div>
+        <div className="col-span-4">
+          <div className="sticky top-6">
+            {confirmItems ? (
+              <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                <Zap className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">Cek tagihan untuk melihat detail</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return inputSection
 }
 
 // --- PDAM Input ---
 function PdamInput({
   onAddToCart,
+  wideLayout = false,
 }: {
   onAddToCart: (item: {
     name: string
@@ -509,6 +558,7 @@ function PdamInput({
     ppob_inquiry_id?: string
     ppob_payment_code?: string
   }) => void
+  wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
   const [selectedPdam, setSelectedPdam] = useState("")
@@ -543,7 +593,16 @@ function PdamInput({
     })
   }
 
-  return (
+  const confirmItems = inquiryResult ? [
+    { label: "Layanan", value: "PDAM" },
+    { label: "ID Pelanggan", value: customerId, mono: true },
+    { label: "Nama", value: inquiryResult.customerName ?? "-" },
+    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+  ] : null
+
+  const inputSection = (
     <div className="space-y-4">
       {pdamLoading ? (
         <Skeleton className="h-10 w-full" />
@@ -569,7 +628,7 @@ function PdamInput({
           placeholder="Masukkan ID pelanggan"
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono"
+          className="font-mono !text-xl h-12 tracking-wider"
         />
       </div>
 
@@ -579,29 +638,42 @@ function PdamInput({
         </Button>
       )}
 
-      {inquiryResult && (
+      {!wideLayout && confirmItems && (
         <>
           <Separator />
-          <ConfirmSection
-            items={[
-              { label: "Layanan", value: "PDAM" },
-              { label: "ID Pelanggan", value: customerId, mono: true },
-              { label: "Nama", value: inquiryResult.customerName ?? "-" },
-              { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-              { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-              { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
-            ]}
-            onConfirm={handleConfirm}
-          />
+          <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
         </>
       )}
     </div>
   )
+
+  if (wideLayout) {
+    return (
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-8">{inputSection}</div>
+        <div className="col-span-4">
+          <div className="sticky top-6">
+            {confirmItems ? (
+              <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                <Droplets className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">Cek tagihan untuk melihat detail</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return inputSection
 }
 
 // --- BPJS Input ---
 function BpjsInput({
   onAddToCart,
+  wideLayout = false,
 }: {
   onAddToCart: (item: {
     name: string
@@ -611,6 +683,7 @@ function BpjsInput({
     buy_price?: number
     ppob_inquiry_id?: string
   }) => void
+  wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
   const bpjsInquiry = useBpjsInquiry()
@@ -639,7 +712,16 @@ function BpjsInput({
     })
   }
 
-  return (
+  const confirmItems = inquiryResult ? [
+    { label: "Layanan", value: "BPJS Kesehatan" },
+    { label: "No. BPJS", value: customerId, mono: true },
+    { label: "Nama", value: inquiryResult.customerName ?? "-" },
+    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+  ] : null
+
+  const inputSection = (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Nomor BPJS</Label>
@@ -647,7 +729,7 @@ function BpjsInput({
           placeholder="Masukkan nomor BPJS"
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono"
+          className="font-mono !text-xl h-12 tracking-wider"
           autoFocus
         />
       </div>
@@ -658,29 +740,42 @@ function BpjsInput({
         </Button>
       )}
 
-      {inquiryResult && (
+      {!wideLayout && confirmItems && (
         <>
           <Separator />
-          <ConfirmSection
-            items={[
-              { label: "Layanan", value: "BPJS Kesehatan" },
-              { label: "No. BPJS", value: customerId, mono: true },
-              { label: "Nama", value: inquiryResult.customerName ?? "-" },
-              { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-              { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-              { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
-            ]}
-            onConfirm={handleConfirm}
-          />
+          <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
         </>
       )}
     </div>
   )
+
+  if (wideLayout) {
+    return (
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-8">{inputSection}</div>
+        <div className="col-span-4">
+          <div className="sticky top-6">
+            {confirmItems ? (
+              <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                <HeartPulse className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">Cek tagihan untuk melihat detail</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return inputSection
 }
 
 // --- E-Money Input ---
 function EmoneyInput({
   onAddToCart,
+  wideLayout = false,
 }: {
   onAddToCart: (item: {
     name: string
@@ -691,6 +786,7 @@ function EmoneyInput({
     ppob_inquiry_id?: string
     ppob_product_code?: string
   }) => void
+  wideLayout?: boolean
 }) {
   const [phoneNumber, setPhoneNumber] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<{ id: number; denom: string } | null>(null)
@@ -722,7 +818,14 @@ function EmoneyInput({
     })
   }
 
-  return (
+  const confirmItems = inquiryResult ? [
+    { label: "Layanan", value: "E-Money" },
+    { label: "Nomor", value: phoneNumber, mono: true },
+    { label: "Nominal", value: selectedDenom?.denom ?? "-" },
+    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+  ] : null
+
+  const inputSection = (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Nomor HP / ID</Label>
@@ -730,7 +833,7 @@ function EmoneyInput({
           placeholder="Masukkan nomor"
           value={phoneNumber}
           onChange={(e) => { setPhoneNumber(e.target.value.replace(/\D/g, "")); setSelectedDenom(null); setInquiryResult(null) }}
-          className="font-mono"
+          className="font-mono !text-xl h-12 tracking-wider"
           autoFocus
         />
       </div>
@@ -762,22 +865,36 @@ function EmoneyInput({
         </Button>
       )}
 
-      {inquiryResult && (
+      {!wideLayout && confirmItems && (
         <>
           <Separator />
-          <ConfirmSection
-            items={[
-              { label: "Layanan", value: "E-Money" },
-              { label: "Nomor", value: phoneNumber, mono: true },
-              { label: "Nominal", value: selectedDenom?.denom ?? "-" },
-              { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
-            ]}
-            onConfirm={handleConfirm}
-          />
+          <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
         </>
       )}
     </div>
   )
+
+  if (wideLayout) {
+    return (
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-8">{inputSection}</div>
+        <div className="col-span-4">
+          <div className="sticky top-6">
+            {confirmItems ? (
+              <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                <Wallet className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">Cek nominal untuk melihat detail</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return inputSection
 }
 
 // --- Shared Confirm Section ---

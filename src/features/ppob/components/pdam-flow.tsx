@@ -11,6 +11,7 @@ export function PdamFlow() {
         onBack={() => navigate("/ppob")}
         onItemAdded={() => navigate("/cashier")}
         showSaldoBar={false}
+        wideLayout
       />
     </div>
   )
