@@ -1,8 +1,10 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 import type { CartItem } from "../types"
 
 interface CartStore {
   items: CartItem[]
+  ppobCounter: number
   addItem: (product: {
     id: number
     name: string
@@ -29,110 +31,120 @@ interface CartStore {
   getTotal: () => number
 }
 
-let ppobCounter = 0
+export const useCartStore = create<CartStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      ppobCounter: 0,
 
-export const useCartStore = create<CartStore>((set, get) => ({
-  items: [],
+      addItem: (product) => {
+        const { items } = get()
+        const existing = items.find(
+          (item) => !item.is_ppob && item.product_id === product.id
+        )
 
-  addItem: (product) => {
-    const { items } = get()
-    const existing = items.find(
-      (item) => !item.is_ppob && item.product_id === product.id
-    )
+        if (existing) {
+          set({
+            items: items.map((item) =>
+              item.cart_id === existing.cart_id
+                ? { ...item, quantity: item.quantity + 1 }
+                : item
+            ),
+          })
+        } else {
+          set({
+            items: [
+              ...items,
+              {
+                cart_id: `product-${product.id}`,
+                product_id: product.id,
+                product_name: product.name,
+                product_price: product.sell_price,
+                quantity: 1,
+                stock: product.stock,
+                unit: product.unit,
+              },
+            ],
+          })
+        }
+      },
 
-    if (existing) {
-      set({
-        items: items.map((item) =>
-          item.cart_id === existing.cart_id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        ),
-      })
-    } else {
-      set({
-        items: [
-          ...items,
-          {
-            cart_id: `product-${product.id}`,
-            product_id: product.id,
-            product_name: product.name,
-            product_price: product.sell_price,
-            quantity: 1,
-            stock: product.stock,
-            unit: product.unit,
-          },
-        ],
-      })
+      addPpobItem: (item) => {
+        const counter = get().ppobCounter + 1
+        const sellPrice = item.sell_price ?? item.price
+        set({
+          ppobCounter: counter,
+          items: [
+            ...get().items,
+            {
+              cart_id: `ppob-${counter}-${Date.now()}`,
+              product_name: item.name,
+              product_price: sellPrice,
+              quantity: 1,
+              stock: 0,
+              unit: "pcs",
+              is_ppob: true,
+              service_type: item.service_type,
+              service_ref: item.service_ref,
+              buy_price: item.buy_price ?? item.price,
+              sell_price: sellPrice,
+              ppob_product_id: item.ppob_product_id,
+              ppob_product_code: item.ppob_product_code,
+              ppob_inquiry_id: item.ppob_inquiry_id,
+              ppob_payment_code: item.ppob_payment_code,
+            },
+          ],
+        })
+      },
+
+      removeItem: (cartId) => {
+        set({ items: get().items.filter((item) => item.cart_id !== cartId) })
+      },
+
+      updateQuantity: (cartId, qty) => {
+        const { items } = get()
+        const item = items.find((i) => i.cart_id === cartId)
+        if (!item) return
+        if (item.is_ppob) return
+
+        const validQty = Math.max(1, qty)
+        set({
+          items: items.map((i) =>
+            i.cart_id === cartId ? { ...i, quantity: validQty } : i
+          ),
+        })
+      },
+
+      updatePrice: (cartId, price) => {
+        const { items } = get()
+        const item = items.find((i) => i.cart_id === cartId)
+        if (!item || !item.is_ppob) return
+
+        const validPrice = Math.max(0, price)
+        set({
+          items: items.map((i) =>
+            i.cart_id === cartId
+              ? { ...i, product_price: validPrice, sell_price: validPrice }
+              : i
+          ),
+        })
+      },
+
+      clear: () => set({ items: [] }),
+
+      getTotal: () => {
+        return get().items.reduce(
+          (sum, item) => sum + item.product_price * item.quantity,
+          0
+        )
+      },
+    }),
+    {
+      name: "kasir-cart",
+      partialize: (state) => ({
+        items: state.items,
+        ppobCounter: state.ppobCounter,
+      }),
     }
-  },
-
-  addPpobItem: (item) => {
-    ppobCounter++
-    const sellPrice = item.sell_price ?? item.price
-    set({
-      items: [
-        ...get().items,
-        {
-          cart_id: `ppob-${ppobCounter}-${Date.now()}`,
-          product_name: item.name,
-          product_price: sellPrice,
-          quantity: 1,
-          stock: 0,
-          unit: "pcs",
-          is_ppob: true,
-          service_type: item.service_type,
-          service_ref: item.service_ref,
-          buy_price: item.buy_price ?? item.price,
-          sell_price: sellPrice,
-          ppob_product_id: item.ppob_product_id,
-          ppob_product_code: item.ppob_product_code,
-          ppob_inquiry_id: item.ppob_inquiry_id,
-          ppob_payment_code: item.ppob_payment_code,
-        },
-      ],
-    })
-  },
-
-  removeItem: (cartId) => {
-    set({ items: get().items.filter((item) => item.cart_id !== cartId) })
-  },
-
-  updateQuantity: (cartId, qty) => {
-    const { items } = get()
-    const item = items.find((i) => i.cart_id === cartId)
-    if (!item) return
-    // PPOB items always qty=1
-    if (item.is_ppob) return
-
-    const validQty = Math.max(1, qty)
-    set({
-      items: items.map((i) =>
-        i.cart_id === cartId ? { ...i, quantity: validQty } : i
-      ),
-    })
-  },
-
-  updatePrice: (cartId, price) => {
-    const { items } = get()
-    const item = items.find((i) => i.cart_id === cartId)
-    if (!item || !item.is_ppob) return
-
-    const validPrice = Math.max(0, price)
-    set({
-      items: items.map((i) =>
-        i.cart_id === cartId
-          ? { ...i, product_price: validPrice, sell_price: validPrice }
-          : i
-      ),
-    })
-  },
-
-  clear: () => set({ items: [] }),
-
-  getTotal: () => {
-    return get().items.reduce(
-      (sum, item) => sum + item.product_price * item.quantity,
-      0
-    )
-  },
-}))
+  )
+)
