@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { PauseCircle, PlayCircle, ShoppingCart, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -55,6 +56,14 @@ export function CartPanel({ onPay }: CartPanelProps) {
   const [recallDialogOpen, setRecallDialogOpen] = useState(false)
   const [holdLabel, setHoldLabel] = useState("")
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const selectedRowRef = useRef<HTMLTableRowElement>(null)
+
+  // Scroll selected row into view when navigating with keyboard
+  useEffect(() => {
+    if (recallDialogOpen) {
+      selectedRowRef.current?.scrollIntoView({ block: "nearest" })
+    }
+  }, [selectedIdx, recallDialogOpen])
 
   const total = getTotal()
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
@@ -274,7 +283,7 @@ export function CartPanel({ onPay }: CartPanelProps) {
               </TableHeader>
               <TableBody>
                 {heldCarts.map((held, idx) => (
-                  <TableRow key={held.id} className={`align-top ${idx === selectedIdx ? "bg-accent" : ""}`}>
+                  <TableRow key={held.id} ref={idx === selectedIdx ? selectedRowRef : undefined} className={cn("align-top", idx === selectedIdx && "bg-muted")}>
                     <TableCell className="text-center font-semibold">
                       {idx + 1}
                     </TableCell>
