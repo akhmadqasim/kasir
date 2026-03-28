@@ -106,7 +106,7 @@ impl MitraClient {
                 }
                 Ok(false)
             }
-            Err(e) => {
+            Err(_) => {
                 Ok(false)
             }
         }

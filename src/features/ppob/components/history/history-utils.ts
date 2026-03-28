@@ -42,9 +42,32 @@ const FALLBACK_SERVICE: ServiceInfo = {
 }
 
 export function detectServiceType(item: HistoryPaymentItem): ServiceInfo {
-  const raw = (item.serviceType ?? item.productName ?? "").toLowerCase()
+  const desc = (item.description ?? "").toLowerCase()
+  const productName = (item.productName ?? "").toLowerCase()
+  const serviceType = (item.serviceType ?? "").toLowerCase()
+  const combined = `${desc} ${productName} ${serviceType}`
+
+  // PLN detection (highest priority — unique keywords)
+  if (combined.includes("pln") || combined.includes("token listrik") || combined.includes("listrik"))
+    return SERVICE_MAP.pln!
+
+  // PDAM, BPJS, transfer, emoney — check before pulsa/data ambiguity
+  if (combined.includes("pdam")) return SERVICE_MAP.pdam!
+  if (combined.includes("bpjs")) return SERVICE_MAP.bpjs!
+  if (combined.includes("transfer")) return SERVICE_MAP.transfer!
+  if (combined.includes("e-money") || combined.includes("emoney")) return SERVICE_MAP["e-money"]!
+  if (combined.includes("voucher")) return SERVICE_MAP.voucher!
+  if (combined.includes("payment point") || combined.includes("payment_point")) return SERVICE_MAP.pp!
+
+  // Pulsa vs Data: check description for data-specific keywords
+  const isDataPacket = /\b(data|paket data|internet|\d+\s*gb|\d+\s*mb)\b/.test(desc)
+  if (serviceType === "data" || serviceType === "pulsa") {
+    return isDataPacket ? SERVICE_MAP.data! : SERVICE_MAP.pulsa!
+  }
+
+  // Fallback: try matching any key in combined text
   for (const [key, info] of Object.entries(SERVICE_MAP)) {
-    if (raw.includes(key.replace("_", " ")) || raw.includes(key)) return info
+    if (combined.includes(key.replace("_", " ")) || combined.includes(key)) return info
   }
   return FALLBACK_SERVICE
 }
@@ -130,15 +153,21 @@ export const STATUS_FILTER_OPTIONS = [
 
 export function matchesProductFilter(item: HistoryPaymentItem, filter: string): boolean {
   if (filter === "all") return true
-  const raw = (item.serviceType ?? item.productName ?? "").toLowerCase()
-  const aliases: Record<string, string[]> = {
-    pulsa: ["pulsa"],
-    pln: ["pln"],
-    pdam: ["pdam"],
-    bpjs: ["bpjs"],
-    pp: ["pp", "payment_point", "payment point"],
-    emoney: ["emoney", "e-money"],
-    transfer: ["transfer"],
+
+  // Use the same smart detection
+  const detected = detectServiceType(item)
+
+  const filterToLabel: Record<string, string> = {
+    pulsa: "PULSA",
+    data: "PAKET DATA",
+    pln: "PLN",
+    pdam: "PDAM",
+    bpjs: "BPJS",
+    pp: "PAYMENT POINT",
+    emoney: "E-MONEY",
+    transfer: "TRANSFER",
+    voucher: "VOUCHER",
   }
-  return (aliases[filter] ?? []).some((kw) => raw.includes(kw))
+
+  return detected.label === (filterToLabel[filter] ?? "")
 }
