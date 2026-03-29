@@ -31,6 +31,7 @@ pub async fn require_role(
 }
 
 /// Verify user exists and is active (any role).
+#[allow(dead_code)]
 pub async fn require_auth(
     db: &DatabaseConnection,
     user_id: i64,
