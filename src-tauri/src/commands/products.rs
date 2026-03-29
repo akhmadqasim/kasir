@@ -167,13 +167,12 @@ pub async fn get_product_by_barcode(
     Ok(product)
 }
 
-#[tauri::command]
-pub async fn create_product(
-    db: State<'_, DatabaseConnection>,
+async fn create_product_internal(
+    db: &DatabaseConnection,
     caller_id: i64,
     input: CreateProductInput,
 ) -> Result<products::Model, AppError> {
-    require_role(db.inner(), caller_id, "admin").await?;
+    require_role(db, caller_id, "admin").await?;
 
     let name = input.name.trim().to_string();
     if name.is_empty() {
@@ -216,8 +215,17 @@ pub async fn create_product(
         updated_at: Set(Some(now)),
     };
 
-    let product = new_product.insert(db.inner()).await?;
+    let product = new_product.insert(db).await?;
     Ok(product)
+}
+
+#[tauri::command]
+pub async fn create_product(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
+    input: CreateProductInput,
+) -> Result<products::Model, AppError> {
+    create_product_internal(db.inner(), caller_id, input).await
 }
 
 #[tauri::command]
@@ -275,13 +283,16 @@ pub async fn update_product(
     Ok(product)
 }
 
-#[tauri::command]
-pub async fn delete_product(db: State<'_, DatabaseConnection>, caller_id: i64, id: i64) -> Result<(), AppError> {
-    require_role(db.inner(), caller_id, "admin").await?;
+async fn delete_product_internal(
+    db: &DatabaseConnection,
+    caller_id: i64,
+    id: i64,
+) -> Result<(), AppError> {
+    require_role(db, caller_id, "admin").await?;
 
     let existing = products::Entity::find_by_id(id)
         .filter(products::Column::IsActive.eq(true))
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan".to_string()))?;
 
@@ -290,9 +301,14 @@ pub async fn delete_product(db: State<'_, DatabaseConnection>, caller_id: i64, i
     active.updated_at = Set(Some(
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     ));
-    active.update(db.inner()).await?;
+    active.update(db).await?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_product(db: State<'_, DatabaseConnection>, caller_id: i64, id: i64) -> Result<(), AppError> {
+    delete_product_internal(db.inner(), caller_id, id).await
 }
 
 #[derive(Debug, Serialize)]
@@ -570,4 +586,266 @@ pub fn save_template_file(content: String, filename: String) -> Result<(), AppEr
     std::fs::write(&path, content)
         .map_err(|e| AppError::Internal(format!("Gagal menyimpan file: {}", e)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+    use crate::entity::{store_info, users};
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn test_db_path() -> PathBuf {
+        std::env::temp_dir().join(format!("kasir-test-{}.db", Uuid::new_v4()))
+    }
+
+    fn now_ts() -> String {
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+
+    async fn setup_test_db() -> DatabaseConnection {
+        let db_path = test_db_path();
+        let conn = db::setup_database(db_path.to_string_lossy().as_ref())
+            .await
+            .expect("db setup");
+
+        store_info::ActiveModel {
+            id: Set(1),
+            name: Set("Toko Test".to_string()),
+            address: Set(None),
+            phone: Set(None),
+            email: Set(None),
+            logo_path: Set(None),
+            additional_info: Set(None),
+            created_at: Set(Some(now_ts())),
+            updated_at: Set(Some(now_ts())),
+        }
+        .insert(&conn)
+        .await
+        .expect("store insert");
+
+        // Admin user (id=1)
+        users::ActiveModel {
+            id: NotSet,
+            username: Set("admin".to_string()),
+            pin_hash: Set("hash".to_string()),
+            full_name: Set("Admin Test".to_string()),
+            role: Set("admin".to_string()),
+            is_active: Set(true),
+            created_at: Set(Some(now_ts())),
+            updated_at: Set(Some(now_ts())),
+        }
+        .insert(&conn)
+        .await
+        .expect("admin user insert");
+
+        conn
+    }
+
+    fn make_valid_input() -> CreateProductInput {
+        CreateProductInput {
+            barcode: Some("1234567890123".to_string()),
+            sku: Some("SKU-001".to_string()),
+            name: "Beras 5kg".to_string(),
+            category_id: None,
+            buy_price: 50_000.0,
+            sell_price: 65_000.0,
+            margin: None,
+            stock: 100,
+            unit: "pcs".to_string(),
+            min_stock: Some(10),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_success() {
+        let conn = setup_test_db().await;
+        let input = make_valid_input();
+
+        let product = create_product_internal(&conn, 1, input)
+            .await
+            .expect("create should succeed");
+
+        assert_eq!(product.name, "Beras 5kg");
+        assert_eq!(product.sell_price, 65_000.0);
+        assert_eq!(product.buy_price, 50_000.0);
+        assert_eq!(product.stock, 100);
+        assert!(product.is_active);
+        assert_eq!(product.barcode, Some("1234567890123".to_string()));
+        assert_eq!(product.sku, Some("SKU-001".to_string()));
+        assert_eq!(product.unit, "pcs");
+        assert_eq!(product.min_stock, Some(10));
+    }
+
+    #[tokio::test]
+    async fn test_create_product_empty_name_fails() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.name = "   ".to_string();
+
+        let result = create_product_internal(&conn, 1, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Validation(msg) => assert!(msg.contains("kosong")),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_zero_sell_price_fails() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.sell_price = 0.0;
+
+        let result = create_product_internal(&conn, 1, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Validation(msg) => assert!(msg.contains("Harga jual")),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_negative_sell_price_fails() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.sell_price = -100.0;
+
+        let result = create_product_internal(&conn, 1, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Validation(msg) => assert!(msg.contains("Harga jual")),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_negative_buy_price_fails() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.buy_price = -1.0;
+
+        let result = create_product_internal(&conn, 1, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Validation(msg) => assert!(msg.contains("negatif")),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_negative_stock_fails() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.stock = -5;
+
+        let result = create_product_internal(&conn, 1, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Validation(msg) => assert!(msg.contains("Stok")),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_product_trims_name() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.name = "  Gula Pasir 1kg  ".to_string();
+        input.barcode = None;
+        input.sku = None;
+
+        let product = create_product_internal(&conn, 1, input)
+            .await
+            .expect("create should succeed");
+
+        assert_eq!(product.name, "Gula Pasir 1kg");
+    }
+
+    #[tokio::test]
+    async fn test_create_product_kasir_rejected() {
+        let conn = setup_test_db().await;
+
+        // Add kasir user (id=2)
+        users::ActiveModel {
+            id: NotSet,
+            username: Set("kasir1".to_string()),
+            pin_hash: Set("hash".to_string()),
+            full_name: Set("Kasir".to_string()),
+            role: Set("kasir".to_string()),
+            is_active: Set(true),
+            created_at: Set(Some(now_ts())),
+            updated_at: Set(Some(now_ts())),
+        }
+        .insert(&conn)
+        .await
+        .expect("kasir user insert");
+
+        let input = make_valid_input();
+        let result = create_product_internal(&conn, 2, input).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Forbidden(_) => {} // expected — kasir cannot create products
+            other => panic!("Expected Forbidden error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_product_soft_deletes() {
+        let conn = setup_test_db().await;
+        let input = make_valid_input();
+
+        let product = create_product_internal(&conn, 1, input)
+            .await
+            .expect("create should succeed");
+        assert!(product.is_active);
+
+        delete_product_internal(&conn, 1, product.id)
+            .await
+            .expect("delete should succeed");
+
+        // Product still exists in DB but is_active = false
+        let deleted = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("product should still exist in DB");
+
+        assert!(!deleted.is_active);
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_product_fails() {
+        let conn = setup_test_db().await;
+
+        let result = delete_product_internal(&conn, 1, 999).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::NotFound(_) => {} // expected
+            other => panic!("Expected NotFound error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_already_deleted_product_fails() {
+        let conn = setup_test_db().await;
+        let input = make_valid_input();
+
+        let product = create_product_internal(&conn, 1, input)
+            .await
+            .expect("create should succeed");
+
+        delete_product_internal(&conn, 1, product.id)
+            .await
+            .expect("first delete should succeed");
+
+        // Second delete should fail — product is already inactive
+        let result = delete_product_internal(&conn, 1, product.id).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::NotFound(_) => {} // expected — already soft-deleted
+            other => panic!("Expected NotFound error, got: {:?}", other),
+        }
+    }
 }
