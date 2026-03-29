@@ -26,6 +26,7 @@ const ReturnsPage = lazy(() => import("@/features/reports/components/returns-pag
 const CurrentStockPage = lazy(() => import("@/features/reports/components/current-stock-page").then(m => ({ default: m.CurrentStockPage })))
 const LossesPage = lazy(() => import("@/features/reports/components/losses-page").then(m => ({ default: m.LossesPage })))
 const PpobPage = lazy(() => import("@/features/ppob").then(m => ({ default: m.PpobPage })))
+const StockWriteoffPage = lazy(() => import("@/features/stock").then(m => ({ default: m.StockWriteoffPage })))
 const CloseShiftPage = lazy(() => import("@/features/shift/components/close-shift-page").then(m => ({ default: m.CloseShiftPage })))
 
 function PageLoader() {
@@ -94,12 +95,7 @@ const router = createHashRouter([
           },
           {
             path: "stock",
-            element: (
-              <div className="p-8">
-                <h1 className="text-2xl font-bold">Stok Write-off</h1>
-                <p className="text-muted-foreground">Coming soon...</p>
-              </div>
-            ),
+            element: <LazyPage><StockWriteoffPage /></LazyPage>,
           },
           {
             path: "reports",

@@ -147,6 +147,12 @@ pub fn run() {
             commands::shifts::get_shift_summary,
             commands::shifts::create_cash_flow,
             commands::shifts::list_cash_flows,
+            commands::stock::list_stock_writeoffs,
+            commands::stock::create_stock_writeoff,
+            commands::stock::approve_stock_writeoff,
+            commands::stock::reject_stock_writeoff,
+            commands::stock::delete_stock_writeoff,
+            commands::stock::get_stock_writeoff_detail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

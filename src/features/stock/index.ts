@@ -1,2 +1,1 @@
-// Stock module
-export {}
+export { StockWriteoffPage } from "./components/stock-writeoff-page"
