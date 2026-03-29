@@ -79,7 +79,8 @@ export function AppLayout() {
       document.removeEventListener("click", handler)
       document.removeEventListener("keypress", handler)
     }
-  }, [updateActivity])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Auto-collapse sidebar on small windows
   useEffect(() => {

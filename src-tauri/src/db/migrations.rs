@@ -31,6 +31,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "008_shifts",
         include_str!("../../migrations/008_shifts.sql"),
     ),
+    (
+        "009_performance_indexes",
+        include_str!("../../migrations/009_performance_indexes.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

@@ -49,6 +49,7 @@ interface CartStore {
   getItemDiscountAmount: (cartId: string) => number
   getItemDiscountsTotal: () => number
   getTransactionDiscountAmount: () => number
+  getCartTotals: () => { subtotal: number; totalDiscount: number; total: number }
   getTotalDiscount: () => number
   getSubtotal: () => number
   getTotal: () => number
@@ -226,21 +227,42 @@ export const useCartStore = create<CartStore>()(
         return Math.min(transactionDiscount.value, afterItemDisc)
       },
 
+      getCartTotals: () => {
+        const { items, itemDiscounts, transactionDiscount } = get()
+        let subtotal = 0
+        let itemDiscTotal = 0
+        for (const item of items) {
+          const lineTotal = item.product_price * item.quantity
+          subtotal += lineTotal
+          const disc = itemDiscounts[item.cart_id]
+          if (disc) {
+            if (disc.type === "percentage") {
+              itemDiscTotal += Math.round(lineTotal * disc.value / 100)
+            } else {
+              itemDiscTotal += Math.min(disc.value, lineTotal)
+            }
+          }
+        }
+        const afterItemDisc = subtotal - itemDiscTotal
+        const txnDiscAmount = transactionDiscount
+          ? (transactionDiscount.type === "percentage"
+              ? Math.round(afterItemDisc * transactionDiscount.value / 100)
+              : Math.min(transactionDiscount.value, afterItemDisc))
+          : 0
+        const totalDiscount = itemDiscTotal + txnDiscAmount
+        return { subtotal, totalDiscount, total: Math.max(0, subtotal - totalDiscount) }
+      },
+
       getTotalDiscount: () => {
-        return get().getItemDiscountsTotal() + get().getTransactionDiscountAmount()
+        return get().getCartTotals().totalDiscount
       },
 
       getSubtotal: () => {
-        return get().items.reduce(
-          (sum, item) => sum + item.product_price * item.quantity,
-          0
-        )
+        return get().getCartTotals().subtotal
       },
 
       getTotal: () => {
-        const subtotal = get().getSubtotal()
-        const totalDiscount = get().getTotalDiscount()
-        return Math.max(0, subtotal - totalDiscount)
+        return get().getCartTotals().total
       },
 
       clear: () => set({ items: [], itemDiscounts: {}, transactionDiscount: null }),

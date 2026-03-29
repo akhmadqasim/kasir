@@ -83,106 +83,64 @@ pub async fn get_dashboard_summary(
 ) -> Result<DashboardSummary, AppError> {
     let db = db.inner();
 
-    // Today's revenue and transaction count
-    let today_sales = db
+    let row = db
         .query_one(Statement::from_string(
             DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as cnt \
-             FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
+            "WITH today_sales AS ( \
+               SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as cnt \
+               FROM transactions \
+               WHERE date(created_at, 'localtime') = date('now', 'localtime') \
+               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+             ), \
+             today_refunds AS ( \
+               SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
+               FROM refunds \
+               WHERE date(created_at, 'localtime') = date('now', 'localtime') \
+             ), \
+             yesterday AS ( \
+               SELECT COALESCE(SUM(total_amount), 0) as revenue \
+               FROM transactions \
+               WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') \
+               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+             ), \
+             product_counts AS ( \
+               SELECT \
+                 COUNT(*) as total, \
+                 SUM(CASE WHEN min_stock IS NOT NULL AND min_stock > 0 AND stock <= COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as low_stock \
+               FROM products WHERE is_active = 1 \
+             ), \
+             today_profit AS ( \
+               SELECT COALESCE(SUM(ti.subtotal - (p.buy_price * ti.quantity)), 0) as profit \
+               FROM transaction_items ti \
+               JOIN transactions t ON ti.transaction_id = t.id \
+               JOIN products p ON ti.product_id = p.id \
+               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
+               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+             ) \
+             SELECT \
+               ts.revenue, ts.cnt, \
+               tr.cnt, tr.amt, \
+               y.revenue, \
+               pc.total, pc.low_stock, \
+               tp.profit \
+             FROM today_sales ts, today_refunds tr, yesterday y, product_counts pc, today_profit tp"
                 .to_owned(),
         ))
         .await?;
 
-    let (today_revenue, today_transactions) = match &today_sales {
-        Some(row) => (
-            row.try_get_by_index::<f64>(0).unwrap_or(0.0),
-            row.try_get_by_index::<i64>(1).unwrap_or(0),
+    let (today_revenue, today_transactions, today_refunds, today_refund_amount,
+         yesterday_revenue, total_products, low_stock_count, today_gross_profit) = match &row {
+        Some(r) => (
+            r.try_get_by_index::<f64>(0).unwrap_or(0.0),
+            r.try_get_by_index::<i64>(1).unwrap_or(0),
+            r.try_get_by_index::<i64>(2).unwrap_or(0),
+            r.try_get_by_index::<f64>(3).unwrap_or(0.0),
+            r.try_get_by_index::<f64>(4).unwrap_or(0.0),
+            r.try_get_by_index::<i64>(5).unwrap_or(0),
+            r.try_get_by_index::<i64>(6).unwrap_or(0),
+            r.try_get_by_index::<f64>(7).unwrap_or(0.0),
         ),
-        None => (0.0, 0),
-    };
-
-    // Today's refunds
-    let today_refund_row = db
-        .query_one(Statement::from_string(
-            DbBackend::Sqlite,
-            "SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
-             FROM refunds \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime')"
-                .to_owned(),
-        ))
-        .await?;
-
-    let (today_refunds, today_refund_amount) = match &today_refund_row {
-        Some(row) => (
-            row.try_get_by_index::<i64>(0).unwrap_or(0),
-            row.try_get_by_index::<f64>(1).unwrap_or(0.0),
-        ),
-        None => (0, 0.0),
-    };
-
-    // Yesterday's revenue
-    let yesterday_row = db
-        .query_one(Statement::from_string(
-            DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(total_amount), 0) as revenue \
-             FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
-                .to_owned(),
-        ))
-        .await?;
-
-    let yesterday_revenue = match &yesterday_row {
-        Some(row) => row.try_get_by_index::<f64>(0).unwrap_or(0.0),
-        None => 0.0,
-    };
-
-    // Total active products
-    let products_row = db
-        .query_one(Statement::from_string(
-            DbBackend::Sqlite,
-            "SELECT COUNT(*) FROM products WHERE is_active = 1".to_owned(),
-        ))
-        .await?;
-
-    let total_products = match &products_row {
-        Some(row) => row.try_get_by_index::<i64>(0).unwrap_or(0),
-        None => 0,
-    };
-
-    // Low stock count
-    let low_stock_row = db
-        .query_one(Statement::from_string(
-            DbBackend::Sqlite,
-            "SELECT COUNT(*) FROM products \
-             WHERE is_active = 1 \
-             AND min_stock IS NOT NULL AND min_stock > 0 \
-             AND stock <= COALESCE(min_stock, 0)"
-                .to_owned(),
-        ))
-        .await?;
-
-    let low_stock_count = match &low_stock_row {
-        Some(row) => row.try_get_by_index::<i64>(0).unwrap_or(0),
-        None => 0,
-    };
-
-    // Today's gross profit (revenue - cost)
-    let profit_row = db
-        .query_one(Statement::from_string(
-            DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(ti.subtotal - (p.buy_price * ti.quantity)), 0) \
-             FROM transaction_items ti \
-             JOIN transactions t ON ti.transaction_id = t.id \
-             JOIN products p ON ti.product_id = p.id \
-             WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
-                .to_owned(),
-        ))
-        .await?;
-
-    let today_gross_profit = match &profit_row {
-        Some(row) => row.try_get_by_index::<f64>(0).unwrap_or(0.0),
-        None => 0.0,
+        None => (0.0, 0, 0, 0.0, 0.0, 0, 0, 0.0),
     };
 
     let today_avg_per_transaction = if today_transactions > 0 {
@@ -366,10 +324,12 @@ pub async fn get_recent_transactions(
             DbBackend::Sqlite,
             "SELECT t.id, t.receipt_number, t.total_amount, t.payment_method, \
              t.status, u.full_name as cashier_name, t.created_at, \
-             COALESCE((SELECT SUM(ti.quantity) FROM transaction_items ti WHERE ti.transaction_id = t.id), 0) as total_items \
+             COALESCE(SUM(ti.quantity), 0) as total_items \
              FROM transactions t \
              JOIN users u ON t.user_id = u.id \
+             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
              WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
+             GROUP BY t.id \
              ORDER BY t.created_at DESC \
              LIMIT 10"
                 .to_owned(),
