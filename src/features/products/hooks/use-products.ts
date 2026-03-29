@@ -21,7 +21,7 @@ export function useSearchProducts(params: SearchProductsParams) {
 export function useCreateProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Product, { input: CreateProductInput }>("create_product", {
+  return useTauriMutation<Product, { input: CreateProductInput; callerId: number }>("create_product", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["search_products"] })
       toast.success(id.products.createSuccess)
@@ -35,7 +35,7 @@ export function useCreateProduct() {
 export function useUpdateProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Product, { input: UpdateProductInput }>("update_product", {
+  return useTauriMutation<Product, { input: UpdateProductInput; callerId: number }>("update_product", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["search_products"] })
       toast.success(id.products.updateSuccess)
@@ -49,7 +49,7 @@ export function useUpdateProduct() {
 export function useDeleteProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<null, { id: number }>("delete_product", {
+  return useTauriMutation<null, { id: number; callerId: number }>("delete_product", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["search_products"] })
       toast.success(id.products.deleteSuccess)

@@ -6,8 +6,40 @@ use tokio::sync::Mutex;
 
 use crate::entity::{store_info, users};
 use crate::utils::AppError;
+use crate::utils::require_role;
 
 use super::ppob::client::MitraClient;
+
+// Simple obfuscation for sensitive fields stored in DB
+// Prevents plaintext credential exposure in database files
+const OBFUSCATION_KEY: &[u8] = b"kasir-pos-2025-secure";
+
+fn obfuscate(input: &str) -> String {
+    if input.is_empty() {
+        return String::new();
+    }
+    let bytes: Vec<u8> = input
+        .bytes()
+        .enumerate()
+        .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
+        .collect();
+    format!("OBF:{}", bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+}
+
+fn deobfuscate(input: &str) -> String {
+    if let Some(hex) = input.strip_prefix("OBF:") {
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .filter_map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+            .enumerate()
+            .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
+            .collect();
+        String::from_utf8(bytes).unwrap_or_else(|_| input.to_string())
+    } else {
+        // Not obfuscated (legacy data) — return as-is
+        input.to_string()
+    }
+}
 
 // --- App Settings structs ---
 
@@ -170,6 +202,12 @@ pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
     let ppob = json
         .get("ppob")
         .and_then(|v| serde_json::from_value::<PpobSettings>(v.clone()).ok())
+        .map(|mut p| {
+            // Deobfuscate sensitive fields when reading from DB
+            p.password = deobfuscate(&p.password);
+            p.pin = deobfuscate(&p.pin);
+            p
+        })
         .unwrap_or_default();
 
     let backup = json
@@ -200,11 +238,14 @@ pub async fn get_store_info(
 #[tauri::command]
 pub async fn update_store_info(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     name: String,
     address: Option<String>,
     phone: Option<String>,
     email: Option<String>,
 ) -> Result<store_info::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db.inner())
         .await?
@@ -239,9 +280,12 @@ pub async fn get_app_settings(db: State<'_, DatabaseConnection>) -> Result<AppSe
 #[tauri::command]
 pub async fn update_app_settings(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     settings: AppSettings,
 ) -> Result<(), AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db.inner())
         .await?
@@ -253,12 +297,17 @@ pub async fn update_app_settings(
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(serde_json::json!({}));
 
+    // Obfuscate sensitive PPOB credentials before storing
+    let mut ppob_to_store = settings.ppob.clone();
+    ppob_to_store.password = obfuscate(&ppob_to_store.password);
+    ppob_to_store.pin = obfuscate(&ppob_to_store.pin);
+
     // Merge sales and security keys, preserving existing printer keys
     info["sales"] = serde_json::to_value(&settings.sales)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
     info["security"] = serde_json::to_value(&settings.security)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
-    info["ppob"] = serde_json::to_value(&settings.ppob)
+    info["ppob"] = serde_json::to_value(&ppob_to_store)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
     info["backup"] = serde_json::to_value(&settings.backup)
         .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
@@ -324,7 +373,9 @@ pub async fn change_user_pin(
 }
 
 #[tauri::command]
-pub async fn export_database(export_path: String) -> Result<u64, AppError> {
+pub async fn export_database(db: State<'_, DatabaseConnection>, caller_id: i64, export_path: String) -> Result<u64, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let db_path = get_db_path();
 
     if !db_path.exists() {
@@ -336,7 +387,9 @@ pub async fn export_database(export_path: String) -> Result<u64, AppError> {
 }
 
 #[tauri::command]
-pub async fn import_database(import_path: String) -> Result<String, AppError> {
+pub async fn import_database(db: State<'_, DatabaseConnection>, caller_id: i64, import_path: String) -> Result<String, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let import = std::path::Path::new(&import_path);
 
     if !import.exists() {

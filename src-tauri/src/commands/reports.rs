@@ -408,32 +408,28 @@ pub async fn report_popular_products(
     limit: i32,
 ) -> Result<Vec<PopularProductRow>, AppError> {
     let db = db.inner();
-
-    let sql = format!(
-        "SELECT
-            ROW_NUMBER() OVER (ORDER BY SUM(ti.quantity) DESC) as rank,
-            ti.product_id,
-            ti.product_name,
-            c.name as category_name,
-            SUM(ti.quantity) as qty_sold,
-            SUM(ti.subtotal) as total_revenue
-        FROM transaction_items ti
-        JOIN transactions t ON t.id = ti.transaction_id
-        LEFT JOIN products p ON p.id = ti.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
-        AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
-        GROUP BY ti.product_id
-        ORDER BY qty_sold DESC
-        LIMIT {}",
-        limit
-    );
+    let limit = limit.max(1).min(500);
 
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            &sql,
-            vec![start_date.into(), end_date.into()],
+            "SELECT
+                ROW_NUMBER() OVER (ORDER BY SUM(ti.quantity) DESC) as rank,
+                ti.product_id,
+                ti.product_name,
+                c.name as category_name,
+                SUM(ti.quantity) as qty_sold,
+                SUM(ti.subtotal) as total_revenue
+            FROM transaction_items ti
+            JOIN transactions t ON t.id = ti.transaction_id
+            LEFT JOIN products p ON p.id = ti.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
+            AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+            GROUP BY ti.product_id
+            ORDER BY qty_sold DESC
+            LIMIT $3",
+            vec![start_date.into(), end_date.into(), limit.into()],
         ))
         .await?;
 
@@ -504,8 +500,10 @@ pub async fn report_current_stock(
 
     let low_stock_clause = if filter == "low" {
         "AND p.stock <= p.min_stock AND p.min_stock > 0"
-    } else {
+    } else if filter == "all" || filter.is_empty() {
         ""
+    } else {
+        "" // Ignore unknown filters
     };
 
     let sql = format!(

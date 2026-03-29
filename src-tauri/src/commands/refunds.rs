@@ -355,8 +355,8 @@ pub async fn create_refund(
                     "Auto write-off dari refund {}",
                     refund.refund_number
                 ))),
-                approved_by: Set(Some(input.user_id)),
-                status: Set("approved".to_string()),
+                approved_by: Set(None),
+                status: Set("pending".to_string()),
                 refund_id: Set(Some(refund.id)),
                 created_at: Set(Some(now.clone())),
             };

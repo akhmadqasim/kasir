@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware"
 import { useEffect, useState } from "react"
 import type { User } from "../types"
 
-const SIX_MONTHS_MS = 6 * 30 * 24 * 60 * 60 * 1000
+const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000 // 8 hours
 
 interface AuthState {
   user: User | null
@@ -24,7 +24,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ user: null, lastActivity: 0 }),
       isAuthenticated: () => get().user !== null,
       updateActivity: () => set({ lastActivity: Date.now() }),
-      checkTimeout: (timeoutMs = SIX_MONTHS_MS) => {
+      checkTimeout: (timeoutMs = SESSION_TIMEOUT_MS) => {
         const elapsed = Date.now() - get().lastActivity
         if (elapsed > timeoutMs) {
           set({ user: null, lastActivity: 0 })

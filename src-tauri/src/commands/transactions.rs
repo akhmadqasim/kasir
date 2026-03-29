@@ -874,9 +874,9 @@ mod tests {
                     "ppob": {
                         "enabled": true,
                         "phone_number": "08123456789",
-                        "password": "secret",
+                        "password": "TEST_ONLY_NOT_REAL",
                         "device_id": "device-test",
-                        "pin": "123456",
+                        "pin": "000000",
                         "markup": {
                             "pulsa": { "type": "fixed", "value": 0 },
                             "data": { "type": "fixed", "value": 0 },

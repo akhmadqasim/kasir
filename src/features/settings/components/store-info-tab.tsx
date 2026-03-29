@@ -14,10 +14,12 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { StoreInfo } from "../types"
 
 export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
 
   const [name, setName] = useState("")
   const [address, setAddress] = useState("")
@@ -46,6 +48,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
         address: address || null,
         phone: phone || null,
         email: email || null,
+        callerId: user!.id,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-info"] })

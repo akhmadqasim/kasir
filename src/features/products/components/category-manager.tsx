@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import {
   useCategories,
   useCreateCategory,
@@ -38,6 +39,7 @@ interface CategoryManagerProps {
 }
 
 export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
+  const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createCategory = useCreateCategory()
   const updateCategory = useUpdateCategory()
@@ -51,7 +53,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
   const handleCreate = () => {
     if (!newName.trim()) return
     createCategory.mutate(
-      { name: newName.trim() },
+      { name: newName.trim(), callerId: user!.id },
       { onSuccess: () => setNewName("") }
     )
   }
@@ -64,7 +66,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
   const handleSaveEdit = () => {
     if (!editingCategory || !editName.trim()) return
     updateCategory.mutate(
-      { id: editingCategory.id, name: editName.trim() },
+      { id: editingCategory.id, name: editName.trim(), callerId: user!.id },
       { onSuccess: () => setEditingCategory(null) }
     )
   }
@@ -72,7 +74,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
   const handleDelete = () => {
     if (!deleteTarget) return
     deleteCategory.mutate(
-      { id: deleteTarget.id },
+      { id: deleteTarget.id, callerId: user!.id },
       { onSettled: () => setDeleteTarget(null) }
     )
   }

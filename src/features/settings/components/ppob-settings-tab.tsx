@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { AppSettings, PpobMarkup, PpobMarkupConfig } from "../types"
 import { PpobCustomPrices } from "./ppob-custom-prices"
 
@@ -51,6 +52,7 @@ const MARKUP_SERVICES: { key: MarkupServiceKey; label: string }[] = [
 
 export function PpobSettingsTab() {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
   const [enabled, setEnabled] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState("")
   const [password, setPassword] = useState("")
@@ -104,6 +106,7 @@ export function PpobSettingsTab() {
             markup,
           },
         },
+        callerId: user!.id,
       })
     },
     onSuccess: () => {

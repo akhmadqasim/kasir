@@ -11,7 +11,7 @@ export function useCategories() {
 export function useCreateCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Category, { name: string; description?: string }>(
+  return useTauriMutation<Category, { name: string; description?: string; callerId: number }>(
     "create_category",
     {
       onSuccess: () => {
@@ -28,7 +28,7 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Category, { id: number; name: string; description?: string }>(
+  return useTauriMutation<Category, { id: number; name: string; description?: string; callerId: number }>(
     "update_category",
     {
       onSuccess: () => {
@@ -45,7 +45,7 @@ export function useUpdateCategory() {
 export function useDeleteCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<null, { id: number }>("delete_category", {
+  return useTauriMutation<null, { id: number; callerId: number }>("delete_category", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["list_categories"] })
       toast.success(id.products.categorySuccess)

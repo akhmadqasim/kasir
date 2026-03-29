@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import type { Product, CreateProductInput, UpdateProductInput } from "../types"
@@ -39,6 +40,7 @@ interface ProductFormDialogProps {
 
 export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDialogProps) {
   const isEditing = !!product
+  const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createProduct = useCreateProduct()
   const updateProduct = useUpdateProduct()
@@ -141,12 +143,12 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     if (isEditing && product) {
       const updateInput: UpdateProductInput = { ...input, id: product.id }
       updateProduct.mutate(
-        { input: updateInput },
+        { input: updateInput, callerId: user!.id },
         { onSuccess: () => onOpenChange(false) }
       )
     } else {
       createProduct.mutate(
-        { input },
+        { input, callerId: user!.id },
         { onSuccess: () => onOpenChange(false) }
       )
     }

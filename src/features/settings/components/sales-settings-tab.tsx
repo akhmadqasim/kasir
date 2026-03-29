@@ -21,10 +21,12 @@ import {
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { AppSettings } from "../types"
 
 export function SalesSettingsTab() {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
 
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState("cash")
@@ -77,6 +79,7 @@ export function SalesSettingsTab() {
           ppob: currentPpob,
           backup: currentBackup,
         },
+        callerId: user!.id,
       })
     },
     onSuccess: () => {

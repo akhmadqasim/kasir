@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useDeleteProduct } from "../hooks/use-products"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useQueryClient } from "@tanstack/react-query"
@@ -94,6 +95,7 @@ export function ProductTable({
   onSortChange,
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
+  const user = useAuthStore((s) => s.user)
   const deleteProduct = useDeleteProduct()
   const queryClient = useQueryClient()
 
@@ -120,7 +122,7 @@ export function ProductTable({
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteProduct.mutate({ id: deleteTarget.id }, {
+    deleteProduct.mutate({ id: deleteTarget.id, callerId: user!.id }, {
       onSettled: () => setDeleteTarget(null),
     })
   }

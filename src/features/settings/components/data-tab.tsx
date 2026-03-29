@@ -52,6 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { AppSettings, DatabaseInfo } from "../types"
 
 interface BackupInfo {
@@ -116,6 +117,7 @@ function BackupSettingsInline({
   retentionDays: number
 }) {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
 
   const settingsQuery = useQuery<AppSettings>({
     queryKey: ["app-settings"],
@@ -124,7 +126,7 @@ function BackupSettingsInline({
 
   const updateMutation = useMutation({
     mutationFn: (settings: AppSettings) =>
-      invoke("update_app_settings", { settings }),
+      invoke("update_app_settings", { settings, callerId: user!.id }),
     onSuccess: () => {
       toast.success("Pengaturan backup berhasil disimpan. Perubahan berlaku setelah restart.")
       queryClient.invalidateQueries({ queryKey: ["app-settings"] })
@@ -197,6 +199,7 @@ export function DataTab() {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
 
   const dbInfoQuery = useQuery<DatabaseInfo>({
     queryKey: ["database-info"],
@@ -214,7 +217,7 @@ export function DataTab() {
   })
 
   const createBackupMutation = useMutation({
-    mutationFn: () => invoke<BackupInfo>("create_backup"),
+    mutationFn: () => invoke<BackupInfo>("create_backup", { callerId: user!.id }),
     onSuccess: (info) => {
       toast.success(`Backup berhasil: ${info.filename} (${formatFileSize(info.size_bytes)})`)
       queryClient.invalidateQueries({ queryKey: ["backup-status"] })
@@ -224,7 +227,7 @@ export function DataTab() {
   })
 
   const deleteBackupMutation = useMutation({
-    mutationFn: (filename: string) => invoke("delete_backup", { filename }),
+    mutationFn: (filename: string) => invoke("delete_backup", { filename, callerId: user!.id }),
     onSuccess: () => {
       toast.success("Backup berhasil dihapus")
       queryClient.invalidateQueries({ queryKey: ["backup-status"] })
@@ -234,7 +237,7 @@ export function DataTab() {
   })
 
   const restoreBackupMutation = useMutation({
-    mutationFn: (filename: string) => invoke<string>("restore_backup", { filename }),
+    mutationFn: (filename: string) => invoke<string>("restore_backup", { filename, callerId: user!.id }),
     onSuccess: (message) => toast.success(message),
     onError: (error) => toast.error(String(error)),
   })
@@ -251,7 +254,7 @@ export function DataTab() {
         setIsExporting(false)
         return
       }
-      await invoke<number>("export_database", { exportPath: selected })
+      await invoke<number>("export_database", { exportPath: selected, callerId: user!.id })
       toast.success(id.settings.exportSuccess)
     } catch {
       if (!exportPath.trim()) {
@@ -260,7 +263,7 @@ export function DataTab() {
         return
       }
       try {
-        await invoke<number>("export_database", { exportPath: exportPath.trim() })
+        await invoke<number>("export_database", { exportPath: exportPath.trim(), callerId: user!.id })
         toast.success(id.settings.exportSuccess)
       } catch (error) {
         toast.error(String(error))
@@ -282,7 +285,7 @@ export function DataTab() {
         return
       }
       const filePath = selected
-      await invoke<string>("import_database", { importPath: filePath })
+      await invoke<string>("import_database", { importPath: filePath, callerId: user!.id })
       toast.success(id.settings.importSuccess)
     } catch {
       if (!importPath.trim()) {
@@ -291,7 +294,7 @@ export function DataTab() {
         return
       }
       try {
-        await invoke<string>("import_database", { importPath: importPath.trim() })
+        await invoke<string>("import_database", { importPath: importPath.trim(), callerId: user!.id })
         toast.success(id.settings.importSuccess)
       } catch (error) {
         toast.error(String(error))

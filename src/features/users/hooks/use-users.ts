@@ -5,14 +5,14 @@ import { id } from "@/i18n/id"
 import type { User } from "@/features/auth/types"
 import type { CreateUserInput, UpdateUserInput, ToggleUserActiveInput } from "../types"
 
-export function useUsers() {
-  return useTauriQuery<User[]>("list_users")
+export function useUsers(callerId: number) {
+  return useTauriQuery<User[]>("list_users", { callerId })
 }
 
 export function useCreateUser() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<User, { input: CreateUserInput }>("create_user", {
+  return useTauriMutation<User, { input: CreateUserInput; callerId: number }>("create_user", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["list_users"] })
       toast.success(id.users.createSuccess)
@@ -26,7 +26,7 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<User, { input: UpdateUserInput }>("update_user", {
+  return useTauriMutation<User, { input: UpdateUserInput; callerId: number }>("update_user", {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["list_users"] })
       toast.success(id.users.updateSuccess)

@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::entity::{categories, products};
 use crate::utils::AppError;
+use crate::utils::require_role;
 
 #[tauri::command]
 pub async fn list_categories(
@@ -21,9 +22,12 @@ pub async fn list_categories(
 #[tauri::command]
 pub async fn create_category(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     name: String,
     description: Option<String>,
 ) -> Result<categories::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Validation(
@@ -47,10 +51,13 @@ pub async fn create_category(
 #[tauri::command]
 pub async fn update_category(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     id: i64,
     name: String,
     description: Option<String>,
 ) -> Result<categories::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Validation(
@@ -72,7 +79,9 @@ pub async fn update_category(
 }
 
 #[tauri::command]
-pub async fn delete_category(db: State<'_, DatabaseConnection>, id: i64) -> Result<(), AppError> {
+pub async fn delete_category(db: State<'_, DatabaseConnection>, caller_id: i64, id: i64) -> Result<(), AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let count = products::Entity::find()
         .filter(products::Column::CategoryId.eq(id))
         .filter(products::Column::IsActive.eq(true))

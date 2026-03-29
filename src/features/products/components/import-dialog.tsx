@@ -30,6 +30,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useTauriMutation } from "@/hooks/use-tauri-command"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useQueryClient } from "@tanstack/react-query"
 import type { BulkProductInput, BulkImportResult } from "../types"
 
@@ -122,8 +123,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [columnMap, setColumnMap] = useState<Record<number, TargetFieldKey>>({})
   const [result, setResult] = useState<BulkImportResult | null>(null)
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
 
-  const importMutation = useTauriMutation<BulkImportResult, { products: BulkProductInput[] }>(
+  const importMutation = useTauriMutation<BulkImportResult, { products: BulkProductInput[]; callerId: number }>(
     "bulk_create_products"
   )
 
@@ -256,7 +258,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     }
 
     try {
-      const res = await importMutation.mutateAsync({ products })
+      const res = await importMutation.mutateAsync({ products, callerId: user!.id })
       setResult(res)
       setStep("result")
       queryClient.invalidateQueries({ queryKey: ["search_products"] })

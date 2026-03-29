@@ -9,7 +9,10 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
+use sea_orm::DatabaseConnection;
+
 use crate::utils::AppError;
+use crate::utils::require_role;
 
 const DEFAULT_INTERVAL_HOURS: u64 = 3;
 const DEFAULT_RETENTION_DAYS: i64 = 90;
@@ -252,8 +255,12 @@ pub fn start_backup_scheduler(scheduler: Arc<Mutex<BackupScheduler>>) {
 
 #[tauri::command]
 pub async fn create_backup(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     scheduler: State<'_, Arc<Mutex<BackupScheduler>>>,
 ) -> Result<BackupInfo, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let info = run_backup(read_backup_settings_from_db().retention_days)?;
     let mut s = scheduler.lock().await;
     s.last_backup = Some(info.clone());
@@ -332,7 +339,9 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, AppError> {
 }
 
 #[tauri::command]
-pub async fn restore_backup(filename: String) -> Result<String, AppError> {
+pub async fn restore_backup(db: State<'_, DatabaseConnection>, caller_id: i64, filename: String) -> Result<String, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let backup_dir = get_backup_dir();
     let backup_path = backup_dir.join(&filename);
 
@@ -359,7 +368,9 @@ pub async fn restore_backup(filename: String) -> Result<String, AppError> {
 }
 
 #[tauri::command]
-pub async fn delete_backup(filename: String) -> Result<(), AppError> {
+pub async fn delete_backup(db: State<'_, DatabaseConnection>, caller_id: i64, filename: String) -> Result<(), AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let backup_dir = get_backup_dir();
     let backup_path = backup_dir.join(&filename);
 

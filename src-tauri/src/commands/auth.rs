@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::entity::users;
 use crate::utils::AppError;
+use crate::utils::require_role;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginInput {
@@ -48,7 +49,9 @@ pub async fn get_current_user(
 }
 
 #[tauri::command]
-pub async fn list_users(db: State<'_, DatabaseConnection>) -> Result<Vec<users::Model>, AppError> {
+pub async fn list_users(db: State<'_, DatabaseConnection>, caller_id: i64) -> Result<Vec<users::Model>, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let users = users::Entity::find()
         .order_by_asc(users::Column::FullName)
         .all(db.inner())
@@ -92,8 +95,11 @@ fn validate_role(role: &str) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn create_user(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     input: CreateUserInput,
 ) -> Result<users::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let username = input.username.trim().to_string();
     if username.is_empty() {
         return Err(AppError::Validation("Username tidak boleh kosong".into()));
@@ -151,8 +157,11 @@ pub struct UpdateUserInput {
 #[tauri::command]
 pub async fn update_user(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     input: UpdateUserInput,
 ) -> Result<users::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let user = users::Entity::find_by_id(input.user_id)
         .one(db.inner())
         .await?
@@ -211,6 +220,8 @@ pub async fn toggle_user_active(
     is_active: bool,
     current_user_id: i64,
 ) -> Result<users::Model, AppError> {
+    require_role(db.inner(), current_user_id, "admin").await?;
+
     if user_id == current_user_id && !is_active {
         return Err(AppError::Validation(
             "Tidak dapat menonaktifkan akun sendiri".into(),

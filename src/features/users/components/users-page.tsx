@@ -29,7 +29,7 @@ import type { User } from "@/features/auth/types"
 
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { data: users, isLoading } = useUsers()
+  const { data: users, isLoading } = useUsers(currentUser!.id)
   const toggleActive = useToggleUserActive()
 
   const [search, setSearch] = useState("")

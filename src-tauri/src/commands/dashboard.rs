@@ -1,5 +1,5 @@
 use chrono::Local;
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 use serde::Serialize;
 use tauri::State;
 
@@ -168,21 +168,21 @@ pub async fn get_daily_revenue(
     days: Option<i64>,
 ) -> Result<Vec<DailyRevenue>, AppError> {
     let db = db.inner();
-    let days = days.unwrap_or(7);
+    let days = days.unwrap_or(7).max(1).min(365);
 
-    let sql = format!(
-        "SELECT date(created_at, 'localtime') as d, \
-         COALESCE(SUM(total_amount), 0) as revenue, \
-         COUNT(*) as transactions \
-         FROM transactions \
-         WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-{} days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
-         GROUP BY date(created_at, 'localtime') \
-         ORDER BY d ASC",
-        days
-    );
-
+    let days_param = format!("-{} days", days);
     let rows = db
-        .query_all(Statement::from_string(DbBackend::Sqlite, sql))
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT date(created_at, 'localtime') as d, \
+             COALESCE(SUM(total_amount), 0) as revenue, \
+             COUNT(*) as transactions \
+             FROM transactions \
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', $1) AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+             GROUP BY date(created_at, 'localtime') \
+             ORDER BY d ASC",
+            vec![Value::String(Some(Box::new(days_param)))],
+        ))
         .await?;
 
     let mut revenue_map = std::collections::HashMap::new();
@@ -245,25 +245,24 @@ pub async fn get_top_products(
     limit: Option<i64>,
 ) -> Result<Vec<TopProduct>, AppError> {
     let db = db.inner();
-    let limit = limit.unwrap_or(10);
-
-    let sql = format!(
-        "SELECT ti.product_id, ti.product_name, \
-         SUM(ti.quantity) as total_qty, \
-         SUM(ti.subtotal) as total_revenue \
-         FROM transaction_items ti \
-         JOIN transactions t ON ti.transaction_id = t.id \
-         WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') \
-           AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
-           AND ti.product_id IS NOT NULL \
-         GROUP BY ti.product_id, ti.product_name \
-         ORDER BY total_qty DESC \
-         LIMIT {}",
-        limit
-    );
+    let limit = limit.unwrap_or(10).max(1).min(100);
 
     let rows = db
-        .query_all(Statement::from_string(DbBackend::Sqlite, sql))
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT ti.product_id, ti.product_name, \
+             SUM(ti.quantity) as total_qty, \
+             SUM(ti.subtotal) as total_revenue \
+             FROM transaction_items ti \
+             JOIN transactions t ON ti.transaction_id = t.id \
+             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') \
+               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               AND ti.product_id IS NOT NULL \
+             GROUP BY ti.product_id, ti.product_name \
+             ORDER BY total_qty DESC \
+             LIMIT $1",
+            vec![Value::BigInt(Some(limit))],
+        ))
         .await?;
 
     let result = rows

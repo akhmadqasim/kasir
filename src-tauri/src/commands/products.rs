@@ -8,6 +8,7 @@ use tauri::State;
 
 use crate::entity::{product_shortcuts, products};
 use crate::utils::AppError;
+use crate::utils::require_role;
 
 #[derive(Debug, Deserialize)]
 pub struct ProductSearchParams {
@@ -169,8 +170,11 @@ pub async fn get_product_by_barcode(
 #[tauri::command]
 pub async fn create_product(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     input: CreateProductInput,
 ) -> Result<products::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Validation(
@@ -180,6 +184,16 @@ pub async fn create_product(
     if input.sell_price <= 0.0 {
         return Err(AppError::Validation(
             "Harga jual harus lebih dari 0".to_string(),
+        ));
+    }
+    if input.buy_price < 0.0 {
+        return Err(AppError::Validation(
+            "Harga beli tidak boleh negatif".to_string(),
+        ));
+    }
+    if input.stock < 0 {
+        return Err(AppError::Validation(
+            "Stok tidak boleh negatif".to_string(),
         ));
     }
 
@@ -209,8 +223,11 @@ pub async fn create_product(
 #[tauri::command]
 pub async fn update_product(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     input: UpdateProductInput,
 ) -> Result<products::Model, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Validation(
@@ -220,6 +237,16 @@ pub async fn update_product(
     if input.sell_price <= 0.0 {
         return Err(AppError::Validation(
             "Harga jual harus lebih dari 0".to_string(),
+        ));
+    }
+    if input.buy_price < 0.0 {
+        return Err(AppError::Validation(
+            "Harga beli tidak boleh negatif".to_string(),
+        ));
+    }
+    if input.stock < 0 {
+        return Err(AppError::Validation(
+            "Stok tidak boleh negatif".to_string(),
         ));
     }
 
@@ -249,7 +276,9 @@ pub async fn update_product(
 }
 
 #[tauri::command]
-pub async fn delete_product(db: State<'_, DatabaseConnection>, id: i64) -> Result<(), AppError> {
+pub async fn delete_product(db: State<'_, DatabaseConnection>, caller_id: i64, id: i64) -> Result<(), AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     let existing = products::Entity::find_by_id(id)
         .filter(products::Column::IsActive.eq(true))
         .one(db.inner())
@@ -388,8 +417,11 @@ pub async fn toggle_product_pin(
 #[tauri::command]
 pub async fn bulk_create_products(
     db: State<'_, DatabaseConnection>,
+    caller_id: i64,
     products: Vec<BulkProductInput>,
 ) -> Result<BulkImportResult, AppError> {
+    require_role(db.inner(), caller_id, "admin").await?;
+
     use crate::entity::categories as cat_ent;
     use crate::entity::products as prod_ent;
 

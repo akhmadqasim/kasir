@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
 import type { User } from "@/features/auth/types"
 
@@ -29,6 +30,7 @@ interface UserFormDialogProps {
 
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
   const isEdit = !!user
+  const currentUser = useAuthStore((s) => s.user)
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
 
@@ -92,6 +94,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
             role,
             ...(pin ? { newPin: pin } : {}),
           },
+          callerId: currentUser!.id,
         },
         { onSuccess: () => onOpenChange(false) }
       )
@@ -104,6 +107,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
             role,
             pin,
           },
+          callerId: currentUser!.id,
         },
         { onSuccess: () => onOpenChange(false) }
       )
