@@ -53,4 +53,5 @@ export interface RecentTransaction {
   status: string
   cashierName: string
   createdAt: string
+  totalItems: number
 }

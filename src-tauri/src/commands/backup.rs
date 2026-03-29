@@ -216,13 +216,16 @@ pub fn start_backup_scheduler(scheduler: Arc<Mutex<BackupScheduler>>) {
             s.settings = settings;
         }
 
-        // Initial backup on startup
-        match run_backup(retention_days) {
-            Ok(info) => {
-                let mut s = scheduler.lock().await;
-                s.last_backup = Some(info);
+        // Initial backup on startup (skip if today's backup already exists)
+        let backup_dir = get_backup_dir();
+        if !has_todays_backup(&backup_dir) {
+            match run_backup(retention_days) {
+                Ok(info) => {
+                    let mut s = scheduler.lock().await;
+                    s.last_backup = Some(info);
+                }
+                Err(_) => {}
             }
-            Err(_) => {}
         }
 
         // Run at configured interval

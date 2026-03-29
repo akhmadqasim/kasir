@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Tooltip,
   TooltipContent,
@@ -18,9 +20,12 @@ import {
   ArrowUpCircle,
   Banknote,
   CreditCard,
+  LogOut,
   Loader2,
+  Printer,
   Receipt,
   ShoppingBag,
+  Store,
   User,
   Wallet,
 } from "lucide-react"
@@ -60,14 +65,24 @@ export function CloseShiftPage() {
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
+  const [closedSummary, setClosedSummary] = useState<ShiftSummary | null>(null)
+  const [storeName, setStoreName] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
   const activeShift = useShiftStore((s) => s.activeShift)
   const clearShift = useShiftStore((s) => s.clearShift)
 
   useEffect(() => {
+    invoke<{ name: string } | null>("get_store_info")
+      .then((info) => { if (info) setStoreName(info.name) })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     if (!activeShift) {
-      navigate("/cashier", { replace: true })
+      if (!closedSummary) {
+        navigate("/cashier", { replace: true })
+      }
       return
     }
     invoke<ShiftSummary>("get_shift_summary", { shiftId: activeShift.id })
@@ -80,7 +95,7 @@ export function CloseShiftPage() {
         setIsLoading(false)
         toast.error("Gagal memuat ringkasan shift")
       })
-  }, [activeShift, navigate])
+  }, [activeShift, closedSummary, navigate])
 
   const formatNumber = (num: number): string =>
     new Intl.NumberFormat("id-ID").format(num)
@@ -101,7 +116,7 @@ export function CloseShiftPage() {
     if (!activeShift) return
     setIsSubmitting(true)
     try {
-      await invoke<ShiftSummary>("close_shift", {
+      const result = await invoke<ShiftSummary>("close_shift", {
         input: {
           shiftId: activeShift.id,
           closingCash: closingCash ? Number(closingCash) : undefined,
@@ -110,7 +125,7 @@ export function CloseShiftPage() {
       })
       clearShift()
       toast.success("Shift ditutup")
-      navigate("/dashboard", { replace: true })
+      setClosedSummary(result)
     } catch (err) {
       toast.error(`Gagal menutup shift: ${err}`)
     } finally {
@@ -139,6 +154,20 @@ export function CloseShiftPage() {
           Kembali
         </Button>
       </div>
+    )
+  }
+
+  if (closedSummary) {
+    return (
+      <ShiftCloseReport
+        summary={closedSummary}
+        storeName={storeName}
+        onBack={() => navigate("/dashboard", { replace: true })}
+        onLogout={() => {
+          useAuthStore.getState().logout()
+          navigate("/login", { replace: true })
+        }}
+      />
     )
   }
 
@@ -360,5 +389,236 @@ export function CloseShiftPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+/* ---------- Shift Close Report ---------- */
+
+interface ShiftCloseReportProps {
+  summary: ShiftSummary
+  storeName: string
+  onBack: () => void
+  onLogout: () => void
+}
+
+function ShiftCloseReport({ summary, storeName, onBack, onLogout }: ShiftCloseReportProps) {
+  const { shift, totalSales, totalTransactions, paymentBreakdown, cashFlows, cashIn, cashOut, expectedCash } = summary
+  const closingCash = shift.closingCash ?? 0
+  const hasClosingCash = shift.closingCash !== null
+  const cashDifference = hasClosingCash ? closingCash - expectedCash : null
+
+  const handlePrint = () => {
+    window.print()
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="mx-auto max-w-2xl space-y-6 py-6 print:max-w-none print:py-2">
+        {/* Report Header */}
+        <div className="text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 print:hidden">
+            <Store className="h-6 w-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold">Laporan Tutup Kasir</h1>
+          {storeName && <p className="mt-1 text-muted-foreground">{storeName}</p>}
+        </div>
+
+        {/* Shift Info */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <User className="h-4 w-4" />
+              Ringkasan
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="space-y-1">
+                <p className="text-muted-foreground">Kasir</p>
+                <p className="font-medium">{shift.userName}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-muted-foreground">Modal Awal</p>
+                <p className="font-medium tabular-nums">{formatRp(shift.openingCash)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-muted-foreground">Dibuka</p>
+                <p className="font-medium">{formatTime(shift.openedAt)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-muted-foreground">Ditutup</p>
+                <p className="font-medium">{shift.closedAt ? formatTime(shift.closedAt) : "-"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sales Summary */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShoppingBag className="h-4 w-4" />
+              Penjualan
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Transaksi</span>
+                <span className="font-medium tabular-nums">{totalTransactions}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Penjualan</span>
+                <span className="font-medium tabular-nums">{formatRp(totalSales)}</span>
+              </div>
+              <Separator />
+              <div className="flex justify-between text-base font-semibold">
+                <span>TOTAL</span>
+                <span className="tabular-nums">{formatRp(totalSales)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Payment Breakdown */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CreditCard className="h-4 w-4" />
+              Jenis Pembayaran
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {paymentBreakdown.length > 0 ? (
+              <div className="space-y-2 text-sm">
+                {paymentBreakdown.map((pb) => (
+                  <div key={pb.method} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{paymentLabel(pb.method)}</span>
+                      <Badge variant="secondary" className="text-xs">{pb.count}x</Badge>
+                    </div>
+                    <span className="font-medium tabular-nums">{formatRp(pb.total)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Tidak ada transaksi</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Cash Flows */}
+        {cashFlows.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Banknote className="h-4 w-4" />
+                Uang Masuk / Keluar
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2 text-sm">
+                {cashFlows.map((cf) => (
+                  <div key={cf.id} className="flex items-center gap-2">
+                    {cf.flowType === "in" ? (
+                      <ArrowDownCircle className="h-4 w-4 shrink-0 text-green-600" />
+                    ) : (
+                      <ArrowUpCircle className="h-4 w-4 shrink-0 text-red-500" />
+                    )}
+                    <span className="min-w-0 truncate text-muted-foreground">{cf.description}</span>
+                    <span className={`ml-auto shrink-0 font-medium tabular-nums ${cf.flowType === "in" ? "text-green-600" : "text-red-500"}`}>
+                      {cf.flowType === "in" ? "+" : "-"}{formatRp(cf.amount)}
+                    </span>
+                  </div>
+                ))}
+                <Separator />
+                <div className="flex justify-between font-medium">
+                  <span>Total</span>
+                  <span className={`tabular-nums ${(cashIn - cashOut) >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {(cashIn - cashOut) >= 0 ? "+" : ""}{formatRp(cashIn - cashOut)}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Cash Reconciliation */}
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="h-4 w-4" />
+              Setoran Uang Tunai
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2 text-sm">
+              {hasClosingCash && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Inputan Kasir</span>
+                  <span className="font-medium tabular-nums">{formatRp(closingCash)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Dari Aplikasi</span>
+                <span className="font-medium tabular-nums">{formatRp(expectedCash)}</span>
+              </div>
+              {cashDifference !== null && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Selisih</span>
+                    <Badge
+                      variant={
+                        Math.abs(cashDifference) < 1
+                          ? "secondary"
+                          : cashDifference < 0
+                            ? "destructive"
+                            : "default"
+                      }
+                      className="tabular-nums"
+                    >
+                      {cashDifference >= 0 ? "+" : ""}{formatRp(cashDifference)}
+                    </Badge>
+                  </div>
+                </>
+              )}
+            </div>
+            {!hasClosingCash && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                * Saldo aktual tidak diisi saat tutup kasir
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {shift.notes && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Catatan</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-sm text-muted-foreground">{shift.notes}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex gap-3 print:hidden">
+          <Button variant="outline" className="h-12 flex-1" onClick={onBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Kembali
+          </Button>
+          <Button variant="outline" className="h-12 flex-1" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Cetak Laporan
+          </Button>
+          <Button variant="destructive" className="h-12 flex-1" onClick={onLogout}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Keluar
+          </Button>
+        </div>
+      </div>
+    </ScrollArea>
   )
 }

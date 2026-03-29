@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState } from "react"
 import {
   Card,
   CardAction,
@@ -25,29 +25,26 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group"
-import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   XAxis,
-  Pie,
-  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
 } from "recharts"
 import {
   TrendingUpIcon,
   TrendingDownIcon,
   AlertTriangleIcon,
 } from "lucide-react"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { id as t } from "@/i18n/id"
 import {
   useDashboardSummary,
@@ -76,6 +73,12 @@ function formatNumber(value: number): string {
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr)
   return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatDateTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) +
+    " " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
 }
 
 // --- Chart Configs ---
@@ -200,12 +203,6 @@ function SectionCards() {
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
             {formatCurrency(summary?.todayAvgPerTransaction ?? 0)}
           </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TrendingUpIcon />
-              {t.dashboard.perTransaction}
-            </Badge>
-          </CardAction>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
@@ -222,81 +219,90 @@ function SectionCards() {
 }
 
 function ChartRevenueInteractive() {
-  const isMobile = useIsMobile()
   const [timeRange, setTimeRange] = useState("7d")
 
-  useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d")
-    }
-  }, [isMobile])
-
-  const days = timeRange === "30d" ? 30 : 7
+  const daysMap: Record<string, number> = {
+    "7d": 7,
+    "1m": 30,
+    "3m": 90,
+    "6m": 180,
+    "1y": 365,
+  }
+  const days = daysMap[timeRange] ?? 7
   const { data: dailyRevenue } = useDailyRevenue(days)
 
+  const timeRangeOptions = [
+    { value: "1y", label: t.dashboard.last1Year },
+    { value: "6m", label: t.dashboard.last6Months },
+    { value: "3m", label: t.dashboard.last3Months },
+    { value: "1m", label: t.dashboard.last1Month },
+    { value: "7d", label: t.dashboard.last1Week },
+  ]
+
+  const totalRevenue = useMemo(() => {
+    if (!dailyRevenue) return 0
+    return dailyRevenue.reduce((acc, curr) => acc + curr.revenue, 0)
+  }, [dailyRevenue])
+
+  const totalTransactions = useMemo(() => {
+    if (!dailyRevenue) return 0
+    return dailyRevenue.reduce((acc, curr) => acc + curr.transactions, 0)
+  }, [dailyRevenue])
+
   return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardTitle>{t.dashboard.revenueChart}</CardTitle>
-        <CardDescription>
-          <span className="hidden @[540px]/card:block">
+    <Card className="py-4 sm:py-0">
+      <CardHeader className="flex flex-col items-stretch border-b p-0! sm:flex-row">
+        <div className="flex flex-1 flex-col justify-center gap-1 px-6 pb-3 sm:pb-0">
+          <CardTitle>{t.dashboard.revenueChart}</CardTitle>
+          <CardDescription>
             {t.dashboard.revenueChartDescription}
-          </span>
-          <span className="@[540px]/card:hidden">
-            {t.dashboard.last7Days}
-          </span>
-        </CardDescription>
-        <CardAction>
-          <ToggleGroup
-            type="single"
-            value={timeRange}
-            onValueChange={setTimeRange}
-            variant="outline"
-            className="hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex"
-          >
-            <ToggleGroupItem value="30d">{t.dashboard.last30Days}</ToggleGroupItem>
-            <ToggleGroupItem value="7d">{t.dashboard.last7Days}</ToggleGroupItem>
-          </ToggleGroup>
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger
-              className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
-              size="sm"
-              aria-label="Select a value"
-            >
-              <SelectValue placeholder={t.dashboard.last7Days} />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="30d" className="rounded-lg">
-                {t.dashboard.last30Days}
-              </SelectItem>
-              <SelectItem value="7d" className="rounded-lg">
-                {t.dashboard.last7Days}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </CardAction>
+          </CardDescription>
+        </div>
+        <div className="flex">
+          <div className="flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
+            <span className="text-xs text-muted-foreground">
+              {t.dashboard.revenue}
+            </span>
+            <span className="text-lg leading-none font-bold sm:text-3xl">
+              {formatCurrency(totalRevenue)}
+            </span>
+          </div>
+          <div className="flex flex-1 flex-col justify-center gap-1 border-t border-l px-6 py-4 sm:border-t-0 sm:px-8 sm:py-6">
+            <span className="text-xs text-muted-foreground">
+              {t.dashboard.transactions}
+            </span>
+            <span className="text-lg leading-none font-bold sm:text-3xl">
+              {totalTransactions.toLocaleString("id-ID")}
+            </span>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+      <CardContent className="flex flex-col gap-4 px-2 pt-4 sm:px-6 sm:pt-6">
+        <Select value={timeRange} onValueChange={setTimeRange}>
+          <SelectTrigger
+            className="w-[160px] rounded-lg sm:ml-auto"
+            aria-label="Select a value"
+          >
+            <SelectValue placeholder={t.dashboard.last1Week} />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl" position="popper" sideOffset={4}>
+            {timeRangeOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value} className="rounded-lg">
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {dailyRevenue && dailyRevenue.length > 0 ? (
           <ChartContainer
             config={revenueChartConfig}
             className="aspect-auto h-[250px] w-full"
           >
-            <AreaChart data={dailyRevenue}>
-              <defs>
-                <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor="var(--color-revenue)"
-                    stopOpacity={1.0}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-revenue)"
-                    stopOpacity={0.1}
-                  />
-                </linearGradient>
-              </defs>
+            <LineChart
+              accessibilityLayer
+              data={dailyRevenue}
+              margin={{ left: 12, right: 12 }}
+            >
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="date"
@@ -313,26 +319,28 @@ function ChartRevenueInteractive() {
                 }}
               />
               <ChartTooltip
-                cursor={false}
                 content={
                   <ChartTooltipContent
+                    className="w-[180px]"
+                    nameKey="revenue"
                     labelFormatter={(value) => {
                       return new Date(value + "T00:00:00").toLocaleDateString("id-ID", {
                         month: "short",
                         day: "numeric",
+                        year: "numeric",
                       })
                     }}
-                    indicator="dot"
                   />
                 }
               />
-              <Area
+              <Line
                 dataKey="revenue"
-                type="natural"
-                fill="url(#fillRevenue)"
+                type="monotone"
                 stroke="var(--color-revenue)"
+                strokeWidth={2}
+                dot={false}
               />
-            </AreaChart>
+            </LineChart>
           </ChartContainer>
         ) : (
           <div className="flex h-[250px] items-center justify-center text-muted-foreground">
@@ -344,30 +352,28 @@ function ChartRevenueInteractive() {
   )
 }
 
-function ChartPaymentDonut() {
+function ChartPaymentRadar() {
   const { data: paymentStats } = usePaymentMethodStats()
 
-  const paymentData = useMemo(() => {
+  const radarData = useMemo(() => {
     if (!paymentStats) return []
-    return paymentStats.map((s) => ({
-      method: s.method,
-      total: s.total,
-      count: s.count,
-      fill: `var(--color-${s.method})`,
-    }))
+    return paymentStats.map((s) => {
+      const config = paymentChartConfig[s.method as keyof typeof paymentChartConfig]
+      return {
+        method: config?.label ?? s.method,
+        total: s.total,
+        count: s.count,
+      }
+    })
   }, [paymentStats])
 
-  const paymentTotal = useMemo(() => {
-    return paymentData.reduce((sum, item) => sum + item.total, 0)
-  }, [paymentData])
-
   const topPaymentMethod = useMemo(() => {
-    if (!paymentData.length) return null
-    const top = paymentData.reduce((a, b) => (a.total > b.total ? a : b))
-    const config = paymentChartConfig[top.method as keyof typeof paymentChartConfig]
+    if (!radarData.length) return null
+    const paymentTotal = radarData.reduce((sum, item) => sum + item.total, 0)
+    const top = radarData.reduce((a, b) => (a.total > b.total ? a : b))
     const pct = paymentTotal > 0 ? ((top.total / paymentTotal) * 100).toFixed(0) : "0"
-    return { label: config?.label ?? top.method, pct }
-  }, [paymentData, paymentTotal])
+    return { label: top.method, pct }
+  }, [radarData])
 
   return (
     <Card className="flex flex-col">
@@ -376,24 +382,31 @@ function ChartPaymentDonut() {
         <CardDescription>{t.dashboard.todayBreakdown}</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
-        {paymentData.length > 0 ? (
+        {radarData.length > 0 ? (
           <ChartContainer
             config={paymentChartConfig}
             className="mx-auto aspect-square max-h-[250px]"
           >
-            <PieChart>
+            <RadarChart data={radarData} outerRadius="70%">
               <ChartTooltip
                 cursor={false}
-                content={<ChartTooltipContent hideLabel />}
+                content={<ChartTooltipContent />}
               />
-              <Pie
-                data={paymentData}
+              <PolarAngleAxis
+                dataKey="method"
+                tick={{ fontSize: 12 }}
+              />
+              <PolarGrid />
+              <Radar
                 dataKey="total"
-                nameKey="method"
-                innerRadius={60}
-                strokeWidth={5}
+                fill="var(--chart-1)"
+                fillOpacity={0.6}
+                dot={{
+                  r: 4,
+                  fillOpacity: 1,
+                }}
               />
-            </PieChart>
+            </RadarChart>
           </ChartContainer>
         ) : (
           <div className="flex h-[250px] items-center justify-center text-muted-foreground">
@@ -534,39 +547,34 @@ function RecentTransactionsTable() {
         <CardTitle>{t.dashboard.recentTransactions}</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead>{t.dashboard.receipt}</TableHead>
-              <TableHead className="text-right">{t.dashboard.amount}</TableHead>
               <TableHead>{t.dashboard.cashier}</TableHead>
-              <TableHead className="text-right">{t.dashboard.time}</TableHead>
+              <TableHead>Metode</TableHead>
+              <TableHead>Tanggal</TableHead>
+              <TableHead className="text-center">Item</TableHead>
+              <TableHead className="text-right">{t.dashboard.amount}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {recentTx && recentTx.length > 0 ? (
               recentTx.map((tx) => (
                 <TableRow key={tx.id}>
-                  <TableCell className="font-medium">
-                    {tx.receiptNumber}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(tx.totalAmount)}
-                  </TableCell>
+                  <TableCell className="font-medium">{tx.receiptNumber}</TableCell>
+                  <TableCell>{tx.cashierName}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {tx.cashierName}
-                      <Badge variant="outline">{tx.paymentMethod}</Badge>
-                    </div>
+                    <Badge variant="outline">{t.payment[tx.paymentMethod as keyof typeof t.payment] ?? tx.paymentMethod}</Badge>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {formatTime(tx.createdAt)}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(tx.createdAt)}</TableCell>
+                  <TableCell className="text-center">{tx.totalItems}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrency(tx.totalAmount)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   {t.dashboard.noData}
                 </TableCell>
               </TableRow>
@@ -588,7 +596,7 @@ export function DashboardPage() {
         <ChartRevenueInteractive />
       </div>
       <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-3 lg:px-6">
-        <ChartPaymentDonut />
+        <ChartPaymentRadar />
         <TopProductsTable />
         <LowStockTable />
       </div>

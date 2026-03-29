@@ -30,13 +30,18 @@ pub fn run() {
     let backup_scheduler = Arc::new(Mutex::new(commands::backup::BackupScheduler::new()));
 
     let backup_scheduler_clone = backup_scheduler.clone();
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
-        .setup(move |_app| {
-            #[cfg(debug_assertions)]
-            _app.handle().plugin(tauri_plugin_mcp_bridge::init())?;
+        .plugin(tauri_plugin_dialog::init());
 
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
+        .setup(move |_app| {
             // Start backup scheduler inside setup where tokio runtime is available
             commands::backup::start_backup_scheduler(backup_scheduler_clone);
             Ok(())

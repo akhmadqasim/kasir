@@ -193,7 +193,7 @@ export function RefundDialog({ transactionId, onClose, onSuccess }: RefundDialog
         reason: reason || undefined,
         items: selectedItems.map((item) => ({
           transaction_item_id: item.id,
-          product_id: item.product_id,
+          product_id: item.product_id!,
           quantity: itemStates[item.id].quantity,
           condition: itemStates[item.id].condition,
         })),

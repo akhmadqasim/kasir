@@ -74,6 +74,7 @@ pub struct RecentTransaction {
     pub status: String,
     pub cashier_name: String,
     pub created_at: String,
+    pub total_items: i64,
 }
 
 #[tauri::command]
@@ -364,7 +365,8 @@ pub async fn get_recent_transactions(
         .query_all(Statement::from_string(
             DbBackend::Sqlite,
             "SELECT t.id, t.receipt_number, t.total_amount, t.payment_method, \
-             t.status, u.full_name as cashier_name, t.created_at \
+             t.status, u.full_name as cashier_name, t.created_at, \
+             COALESCE((SELECT SUM(ti.quantity) FROM transaction_items ti WHERE ti.transaction_id = t.id), 0) as total_items \
              FROM transactions t \
              JOIN users u ON t.user_id = u.id \
              WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
@@ -384,6 +386,7 @@ pub async fn get_recent_transactions(
             status: row.try_get_by_index(4).unwrap_or_default(),
             cashier_name: row.try_get_by_index(5).unwrap_or_default(),
             created_at: row.try_get_by_index(6).unwrap_or_default(),
+            total_items: row.try_get_by_index(7).unwrap_or(0),
         })
         .collect();
 

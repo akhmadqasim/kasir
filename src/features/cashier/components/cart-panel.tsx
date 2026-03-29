@@ -238,58 +238,60 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
             </span>
           </div>
         </div>
-        <Button
-          className="h-12 w-full text-lg font-semibold"
-          size="lg"
-          disabled={items.length === 0 || disabled}
-          onClick={onPay}
-        >
-          Bayar (F4)
-        </Button>
-        <div className="mt-2 flex gap-1.5">
-          <Button
-            variant="outline"
-            className="h-9 flex-1 px-2 text-xs"
-            disabled={items.length === 0}
-            onClick={() => setDiscountDialogOpen(true)}
-          >
-            <Percent className="mr-1 h-3.5 w-3.5" />
-            Diskon F2
-            {totalDiscount > 0 && (
-              <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0">
-                -{formatRupiah(totalDiscount)}
-              </Badge>
+        <div className="flex flex-wrap-reverse gap-2">
+          <div className="grid min-w-0 flex-1 basis-40 grid-cols-2 gap-1.5">
+            <Button
+              variant="outline"
+              className="h-9 px-2 text-xs"
+              disabled={items.length === 0}
+              onClick={() => setDiscountDialogOpen(true)}
+            >
+              <Percent className="mr-1 h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Diskon F2</span>
+              {totalDiscount > 0 && (
+                <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0 shrink-0">
+                  -{formatRupiah(totalDiscount)}
+                </Badge>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-9 px-2 text-xs"
+              disabled={items.length === 0}
+              onClick={handleHold}
+            >
+              <PauseCircle className="mr-1 h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Simpan F3</span>
+            </Button>
+            {activeShift && (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-9 px-2 text-xs"
+                  onClick={() => setCashFlowOpen(true)}
+                >
+                  <ArrowDownUp className="mr-1 h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Uang F10</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 px-2 text-xs text-destructive hover:text-destructive"
+                  onClick={() => navigate("/close-shift")}
+                >
+                  <DoorClosed className="mr-1 h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Tutup F6</span>
+                </Button>
+              </>
             )}
-          </Button>
+          </div>
           <Button
-            variant="outline"
-            className="h-9 flex-1 px-2 text-xs"
-            disabled={items.length === 0}
-            onClick={handleHold}
+            className="h-auto min-h-[4.5rem] flex-1 basis-20 text-lg font-semibold"
+            size="lg"
+            disabled={items.length === 0 || disabled}
+            onClick={onPay}
           >
-            <PauseCircle className="mr-1 h-3.5 w-3.5" />
-            Simpan F3
+            Bayar (F4)
           </Button>
-          {activeShift && (
-            <>
-              <Button
-                variant="outline"
-                className="h-9 flex-1 px-2 text-xs"
-                onClick={() => setCashFlowOpen(true)}
-              >
-                <ArrowDownUp className="mr-1 h-3.5 w-3.5" />
-                Uang F10
-              </Button>
-              <Button
-                variant="outline"
-                className="h-9 flex-1 px-2 text-xs text-destructive hover:text-destructive"
-                onClick={() => navigate("/close-shift")}
-              >
-                <DoorClosed className="mr-1 h-3.5 w-3.5" />
-                Tutup F6
-              </Button>
-            </>
-          )}
         </div>
       </div>
 

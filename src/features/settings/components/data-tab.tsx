@@ -281,7 +281,7 @@ export function DataTab() {
         setIsImporting(false)
         return
       }
-      const filePath = typeof selected === "string" ? selected : selected.path
+      const filePath = selected
       await invoke<string>("import_database", { importPath: filePath })
       toast.success(id.settings.importSuccess)
     } catch {
