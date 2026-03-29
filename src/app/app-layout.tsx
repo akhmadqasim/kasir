@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
-import { Outlet, useNavigate } from "react-router-dom"
-import { toast } from "sonner"
+import { Outlet } from "react-router-dom"
 import { Menu, Minus, Plus } from "lucide-react"
 import {
   SidebarInset,
@@ -8,8 +7,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
-import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { AppSidebar } from "@/components/app-sidebar"
 
 const SIDEBAR_OPEN_KEY = "kasir-sidebar-open"
@@ -36,9 +33,6 @@ function getInitialZoom(): number {
 }
 
 export function AppLayout() {
-  const updateActivity = useAuthStore((s) => s.updateActivity)
-  const checkTimeout = useAuthStore((s) => s.checkTimeout)
-  const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(getInitialOpen)
   const [autoCollapsed, setAutoCollapsed] = useState(
     () => window.innerWidth < AUTO_COLLAPSE_WIDTH
@@ -59,28 +53,28 @@ export function AppLayout() {
     })
   }
 
-  // Session timeout check (every 5 minutes)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (checkTimeout()) {
-        toast.error(id.auth.sessionExpired)
-        navigate("/login")
-      }
-    }, 5 * 60_000)
-    return () => clearInterval(interval)
-  }, [checkTimeout, navigate])
+  // Session timeout check — disabled (single-terminal POS, no need for auto-logout)
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (checkTimeout()) {
+  //       toast.error(id.auth.sessionExpired)
+  //       navigate("/login")
+  //     }
+  //   }, 5 * 60_000)
+  //   return () => clearInterval(interval)
+  // }, [checkTimeout, navigate])
 
-  // Track user activity
-  useEffect(() => {
-    const handler = () => updateActivity()
-    document.addEventListener("click", handler)
-    document.addEventListener("keypress", handler)
-    return () => {
-      document.removeEventListener("click", handler)
-      document.removeEventListener("keypress", handler)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Track user activity — disabled (auto-logout disabled)
+  // useEffect(() => {
+  //   const handler = () => updateActivity()
+  //   document.addEventListener("click", handler)
+  //   document.addEventListener("keypress", handler)
+  //   return () => {
+  //     document.removeEventListener("click", handler)
+  //     document.removeEventListener("keypress", handler)
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [])
 
   // Auto-collapse sidebar on small windows
   useEffect(() => {
