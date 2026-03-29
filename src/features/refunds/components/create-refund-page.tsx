@@ -299,8 +299,7 @@ export function CreateRefundPage() {
                 <SelectTrigger className="w-full max-w-56">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value="refund">{id.refund.actionRefund}</SelectItem>
+                <SelectContent>
                   <SelectItem value="exchange">{id.refund.actionExchange}</SelectItem>
                 </SelectContent>
               </Select>
@@ -588,8 +587,7 @@ function RefundItemCard({
                 <SelectTrigger className="w-full max-w-32 h-8">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value="good">{CONDITION_LABELS.good}</SelectItem>
+                <SelectContent>
                   <SelectItem value="damaged">{CONDITION_LABELS.damaged}</SelectItem>
                   <SelectItem value="expired">{CONDITION_LABELS.expired}</SelectItem>
                 </SelectContent>

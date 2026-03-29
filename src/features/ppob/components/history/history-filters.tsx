@@ -48,8 +48,7 @@ export function HistoryFilters({
         <SelectTrigger className="w-full max-w-48">
           <SelectValue placeholder="Semua Produk" />
         </SelectTrigger>
-        <SelectContent position="popper">
-          {PRODUCT_FILTER_OPTIONS.map((opt) => (
+        <SelectContent>
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>
@@ -61,8 +60,7 @@ export function HistoryFilters({
         <SelectTrigger className="w-full max-w-48">
           <SelectValue placeholder="Semua Status" />
         </SelectTrigger>
-        <SelectContent position="popper">
-          {STATUS_FILTER_OPTIONS.map((opt) => (
+        <SelectContent>
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>

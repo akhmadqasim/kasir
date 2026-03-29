@@ -103,7 +103,7 @@ export function RefundsPage() {
           <SelectTrigger className="w-full max-w-48">
             <SelectValue placeholder={id.refund.allTypes} />
           </SelectTrigger>
-          <SelectContent position="popper">
+          <SelectContent>
             <SelectItem value="all">{id.refund.allTypes}</SelectItem>
             <SelectItem value="refund">{id.refund.typeRefund}</SelectItem>
             <SelectItem value="exchange">{id.refund.typeExchange}</SelectItem>

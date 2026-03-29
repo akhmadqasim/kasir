@@ -207,9 +207,9 @@ export function StockWriteoffPage() {
           <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="rounded-xl" position="popper" sideOffset={4}>
+          <SelectContent>
             {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="rounded-lg">
+              <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
             ))}
@@ -220,9 +220,9 @@ export function StockWriteoffPage() {
           <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="rounded-xl" position="popper" sideOffset={4}>
+          <SelectContent>
             {REASON_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="rounded-lg">
+              <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
             ))}

@@ -285,9 +285,9 @@ function ChartRevenueInteractive() {
           >
             <SelectValue placeholder={t.dashboard.last1Week} />
           </SelectTrigger>
-          <SelectContent className="rounded-xl" position="popper" sideOffset={4}>
+          <SelectContent>
             {timeRangeOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="rounded-lg">
+              <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
             ))}

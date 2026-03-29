@@ -156,7 +156,7 @@ export function TransactionsPage() {
           <SelectTrigger className="w-full max-w-48">
             <SelectValue placeholder={id.transactions.allMethods} />
           </SelectTrigger>
-          <SelectContent position="popper">
+          <SelectContent>
             <SelectItem value="all">{id.transactions.allMethods}</SelectItem>
             <SelectItem value="cash">{id.payment.cash}</SelectItem>
             <SelectItem value="qris">{id.payment.qris}</SelectItem>
@@ -169,7 +169,7 @@ export function TransactionsPage() {
           <SelectTrigger className="w-full max-w-48">
             <SelectValue placeholder={id.transactions.allStatus} />
           </SelectTrigger>
-          <SelectContent position="popper">
+          <SelectContent>
             <SelectItem value="all">{id.transactions.allStatus}</SelectItem>
             <SelectItem value="completed">{id.transactions.completed}</SelectItem>
             <SelectItem value="pending_ppob">{id.transactions.pendingPpob}</SelectItem>

@@ -264,7 +264,7 @@ export function RefundDialog({ transactionId, onClose, onSuccess }: RefundDialog
                       <SelectTrigger className="w-full max-w-48">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent position="popper">
+                      <SelectContent>
                         <SelectItem value="refund">{id.refund.actionRefund}</SelectItem>
                         <SelectItem value="exchange">{id.refund.actionExchange}</SelectItem>
                       </SelectContent>
@@ -536,7 +536,7 @@ function RefundItemRow({
                 <SelectTrigger className="w-full max-w-32 h-8">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent position="popper">
+                <SelectContent>
                   <SelectItem value="good">{CONDITION_LABELS.good}</SelectItem>
                   <SelectItem value="damaged">{CONDITION_LABELS.damaged}</SelectItem>
                   <SelectItem value="expired">{CONDITION_LABELS.expired}</SelectItem>

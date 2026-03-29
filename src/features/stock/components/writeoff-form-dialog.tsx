@@ -241,9 +241,9 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih alasan" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl" position="popper" sideOffset={4}>
+                  <SelectContent>
                     {REASONS.map((r) => (
-                      <SelectItem key={r.value} value={r.value} className="rounded-lg">
+                      <SelectItem key={r.value} value={r.value}>
                         {r.label}
                       </SelectItem>
                     ))}
