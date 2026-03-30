@@ -49,7 +49,6 @@ const TYPE_FILTER_OPTIONS = [
 const DISPLAY_LABELS: Record<string, string> = {
   trxid: "ID Transaksi",
   trx_id: "ID Transaksi",
-  id: "ID",
   status: "Status",
   total: "Total",
   amount: "Nominal",
@@ -64,7 +63,7 @@ const DISPLAY_LABELS: Record<string, string> = {
   formatted_date: "Tanggal",
   product_name: "Produk",
   plu_desc: "Deskripsi",
-  igr_desc: "Deskripsi IGR",
+  igr_desc: "Deskripsi",
   description: "Keterangan",
   target: "Tujuan",
   customer_no: "No. Pelanggan",
@@ -81,14 +80,36 @@ const DISPLAY_LABELS: Record<string, string> = {
   denom: "Denominasi",
   bank: "Bank",
   nominal: "Nominal",
+  kwh: "KWH",
 }
+
+// Fields to hide from detail view (verbose/internal)
+const HIDDEN_KEYS = new Set([
+  "device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin",
+  "receipt_text", "invoice_url", "invoice_string",
+  "id", "max_adjustment", "advice_id", "ref_id",
+])
+
+// Fields to show first (priority order)
+const PRIORITY_KEYS = [
+  "created_at", "formatted_date",
+  "product_name", "plu_desc", "igr_desc", "description",
+  "target", "raw_paymentcode", "customer_no", "phone_number",
+  "total", "amount", "sell_price",
+  "amount_fee", "admin_fee", "fee",
+  "base_price", "vendor_price", "profit",
+  "token_number", "serial_number", "kwh",
+  "no_ref", "trxid", "trx_id",
+  "provider", "merchant", "denom",
+  "payment_code", "status",
+]
 
 function formatRawValue(key: string, value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null
-  if (typeof value === "object") return JSON.stringify(value)
+  if (typeof value === "object") return null
 
   const str = String(value)
-  if (str === "-" || str === "0" || str === "0.0") return null
+  if (str === "-" || str === "0" || str === "0.0" || str.trim() === "") return null
 
   const numKeys = ["total", "amount", "amount_fee", "admin_fee", "fee", "sell_price", "base_price", "vendor_price", "profit", "nominal", "topup_amount"]
   if (numKeys.includes(key) && !isNaN(Number(value))) {
@@ -106,21 +127,34 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
   const isIn = item.mutationType === "in"
   const raw = item.rawData as Record<string, unknown>
 
-  const skipKeys = new Set(["device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin"])
+  // Build ordered rows: priority keys first, then remaining
+  const seenKeys = new Set<string>()
+  const detailRows: { label: string; value: string }[] = []
 
-  const detailRows = Object.entries(raw)
-    .filter(([key, val]) => !skipKeys.has(key) && val !== null && val !== undefined && val !== "")
-    .map(([key, val]) => {
-      const formatted = formatRawValue(key, val)
-      if (!formatted) return null
-      const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
-      return { label, value: formatted }
-    })
-    .filter(Boolean) as { label: string; value: string }[]
+  for (const key of PRIORITY_KEYS) {
+    if (HIDDEN_KEYS.has(key) || seenKeys.has(key)) continue
+    const val = raw[key]
+    if (val === undefined) continue
+    seenKeys.add(key)
+    const formatted = formatRawValue(key, val)
+    if (!formatted) continue
+    const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    detailRows.push({ label, value: formatted })
+  }
+
+  // Remaining keys not in priority list
+  for (const [key, val] of Object.entries(raw)) {
+    if (HIDDEN_KEYS.has(key) || seenKeys.has(key)) continue
+    seenKeys.add(key)
+    const formatted = formatRawValue(key, val)
+    if (!formatted) continue
+    const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    detailRows.push({ label, value: formatted })
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isIn ? (
@@ -150,11 +184,11 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
           <Separator />
 
-          <div className="space-y-2">
+          <div className="max-h-[400px] overflow-y-auto space-y-1.5 pr-1">
             {detailRows.map((row) => (
-              <div key={row.label} className="grid grid-cols-[130px_1fr] gap-2 text-sm">
-                <span className="text-muted-foreground">{row.label}</span>
-                <span className="break-all">{row.value}</span>
+              <div key={row.label} className="flex justify-between gap-3 text-sm py-0.5">
+                <span className="text-muted-foreground shrink-0">{row.label}</span>
+                <span className="text-right font-medium">{row.value}</span>
               </div>
             ))}
           </div>
