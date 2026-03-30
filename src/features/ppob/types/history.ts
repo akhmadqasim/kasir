@@ -49,3 +49,15 @@ export interface HistoryDetailItem {
   basePrice: number | null
   profit: number | null
 }
+
+export interface MutasiItem {
+  id: string | null
+  mutationType: "in" | "out"
+  description: string | null
+  amount: number | null
+  status: string | null
+  createdAt: string | null
+  paymentMethod: string | null
+  reference: string | null
+  rawData: Record<string, unknown>
+}

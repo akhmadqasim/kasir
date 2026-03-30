@@ -1,5 +1,5 @@
 import { useTauriQuery } from "@/hooks/use-tauri-command"
-import type { HistoryPaymentItem, HistoryDetailItem } from "../types"
+import type { HistoryPaymentItem, HistoryDetailItem, MutasiItem } from "../types"
 
 export function usePpobHistory(startDate: string, endDate: string) {
   return useTauriQuery<HistoryPaymentItem[]>(
@@ -20,6 +20,18 @@ export function usePpobHistoryDetail(trxId: string | null) {
     {
       enabled: !!trxId,
       staleTime: 60000,
+      retry: false,
+    }
+  )
+}
+
+export function usePpobMutasi(startDate: string, endDate: string) {
+  return useTauriQuery<MutasiItem[]>(
+    "ppob_get_mutasi",
+    { startDate, endDate },
+    {
+      enabled: !!startDate && !!endDate,
+      staleTime: 30000,
       retry: false,
     }
   )

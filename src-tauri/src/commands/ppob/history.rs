@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use super::auth::get_mitra_client;
 use super::client::MitraClient;
-use super::models::{HistoryDetailItem, HistoryPaymentItem};
+use super::models::{HistoryDetailItem, HistoryPaymentItem, MutasiItem};
 use super::parsers::{get_num_field, get_str_field};
 use crate::utils::AppError;
 
@@ -304,4 +304,166 @@ pub async fn ppob_get_history_detail(
         })
         .unwrap_or_else(|| "Gagal memuat detail transaksi".into());
     Err(AppError::Internal(err_msg))
+}
+
+#[tauri::command]
+pub async fn ppob_get_mutasi(
+    db: State<'_, DatabaseConnection>,
+    mitra: State<'_, Arc<Mutex<MitraClient>>>,
+    start_date: String,
+    end_date: String,
+) -> Result<Vec<MutasiItem>, AppError> {
+    get_mitra_client(db.inner(), mitra.inner()).await?;
+
+    let client = mitra.lock().await;
+
+    // Fetch both payment history (out) and topup history (in) concurrently
+    let payment_future = client.post(
+        "history-payment",
+        json!({ "start_date": &start_date, "end_date": &end_date }),
+    );
+    let topup_future = client.post("topup/history", json!({}));
+
+    let (payment_result, topup_result) = tokio::join!(payment_future, topup_future);
+
+    let mut items: Vec<MutasiItem> = Vec::new();
+
+    // Parse payment history (saldo OUT)
+    if let Ok(result) = payment_result {
+        let arr = result
+            .get("history")
+            .or_else(|| result.get("data"))
+            .or_else(|| result.get("list"))
+            .or_else(|| {
+                result
+                    .as_object()
+                    .and_then(|obj| obj.values().find(|v| v.is_array()))
+            })
+            .and_then(|v| v.as_array());
+
+        if let Some(arr) = arr {
+            for item in arr {
+                if let Some(obj) = item.as_object() {
+                    items.push(MutasiItem {
+                        id: get_str_field(obj, &["trxid", "trx_id", "trxId", "id"]),
+                        mutation_type: "out".to_string(),
+                        description: get_str_field(
+                            obj,
+                            &[
+                                "plu_desc",
+                                "igr_desc",
+                                "description",
+                                "product_name",
+                                "target",
+                                "tujuan",
+                            ],
+                        ),
+                        amount: get_num_field(obj, &["total", "sell_price", "amount", "price"]),
+                        status: get_str_field(obj, &["status", "trx_status"]),
+                        created_at: get_str_field(
+                            obj,
+                            &[
+                                "created_at",
+                                "createdAt",
+                                "trx_date",
+                                "date",
+                                "formatted_date",
+                            ],
+                        ),
+                        payment_method: get_str_field(obj, &["payment_method", "method"]),
+                        reference: get_str_field(
+                            obj,
+                            &["no_ref", "ref", "reference", "trxid", "trx_id"],
+                        ),
+                        raw_data: item.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Parse topup history (saldo IN)
+    if let Ok(result) = topup_result {
+        eprintln!("[PPOB] topup/history raw response: {:?}", result);
+
+        let arr = result
+            .get("history")
+            .or_else(|| result.get("data"))
+            .or_else(|| result.get("list"))
+            .or_else(|| result.get("topup"))
+            .or_else(|| {
+                result
+                    .as_object()
+                    .and_then(|obj| obj.values().find(|v| v.is_array()))
+            })
+            .and_then(|v| v.as_array());
+
+        if let Some(arr) = arr {
+            for item in arr {
+                if let Some(obj) = item.as_object() {
+                    items.push(MutasiItem {
+                        id: get_str_field(
+                            obj,
+                            &["id", "topup_id", "trx_id", "transaction_id", "payment_code"],
+                        ),
+                        mutation_type: "in".to_string(),
+                        description: get_str_field(
+                            obj,
+                            &[
+                                "description",
+                                "desc",
+                                "keterangan",
+                                "channel",
+                                "merchant",
+                                "payment_method",
+                                "bank",
+                            ],
+                        )
+                        .or_else(|| Some("Topup Saldo".to_string())),
+                        amount: get_num_field(
+                            obj,
+                            &["amount", "nominal", "total", "topup_amount", "value"],
+                        ),
+                        status: get_str_field(obj, &["status", "topup_status", "trx_status"]),
+                        created_at: get_str_field(
+                            obj,
+                            &["created_at", "createdAt", "date", "topup_date", "datetime"],
+                        ),
+                        payment_method: get_str_field(
+                            obj,
+                            &[
+                                "payment_method",
+                                "channel",
+                                "merchant",
+                                "bank",
+                                "method",
+                                "via",
+                            ],
+                        ),
+                        reference: get_str_field(
+                            obj,
+                            &[
+                                "payment_code",
+                                "reference",
+                                "ref",
+                                "no_ref",
+                                "id",
+                                "topup_id",
+                            ],
+                        ),
+                        raw_data: item.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by date descending (newest first)
+    items.sort_by(|a, b| {
+        let date_a = a.created_at.as_deref().unwrap_or("");
+        let date_b = b.created_at.as_deref().unwrap_or("");
+        date_b.cmp(date_a)
+    });
+
+    Ok(items)
 }

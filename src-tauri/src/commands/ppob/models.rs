@@ -273,6 +273,22 @@ pub struct HistoryDetailItem {
     pub profit: Option<f64>,
 }
 
+// --- Mutation/topup history types ---
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MutasiItem {
+    pub id: Option<String>,
+    pub mutation_type: String, // "in" (topup) or "out" (payment)
+    pub description: Option<String>,
+    pub amount: Option<f64>,
+    pub status: Option<String>,
+    pub created_at: Option<String>,
+    pub payment_method: Option<String>,
+    pub reference: Option<String>,
+    pub raw_data: Value,
+}
+
 // --- Receipt types ---
 
 #[derive(Debug, Serialize, Clone)]

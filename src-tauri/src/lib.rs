@@ -126,6 +126,7 @@ pub fn run() {
             commands::ppob::payment::ppob_get_receipt_data,
             commands::ppob::history::ppob_get_history,
             commands::ppob::history::ppob_get_history_detail,
+            commands::ppob::history::ppob_get_mutasi,
             commands::backup::create_backup,
             commands::backup::get_backup_status,
             commands::backup::list_backups,
