@@ -54,7 +54,7 @@ const DISPLAY_LABELS: Record<string, string> = {
   amount: "Nominal",
   amount_fee: "Biaya Admin",
   admin_fee: "Biaya Admin",
-  fee: "Fee",
+  fee: "Biaya",
   sell_price: "Harga Jual",
   base_price: "Harga Modal",
   vendor_price: "Harga Vendor",
@@ -70,17 +70,23 @@ const DISPLAY_LABELS: Record<string, string> = {
   raw_paymentcode: "Kode Bayar",
   phone_number: "No. HP",
   token_number: "Token",
-  serial_number: "Serial Number",
+  serial_number: "No. Seri",
   no_ref: "No. Referensi",
-  provider: "Provider",
+  provider: "Penyedia",
   merchant: "Merchant",
-  channel: "Channel",
+  channel: "Kanal",
   payment_method: "Metode Bayar",
   payment_code: "Kode Pembayaran",
   denom: "Denominasi",
   bank: "Bank",
   nominal: "Nominal",
   kwh: "KWH",
+  type: "Tipe",
+  topup_amount: "Jumlah Topup",
+  topup_method: "Metode Topup",
+  balance: "Saldo",
+  prev_balance: "Saldo Sebelumnya",
+  last_balance: "Saldo Terakhir",
 }
 
 // Fields to hide from detail view (verbose/internal)
@@ -131,7 +137,7 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
   // Build ordered rows: priority keys first, then remaining
   const seenKeys = new Set<string>()
-  const seenValues = new Set<string>()
+  const seenLabels = new Set<string>()
   const detailRows: { label: string; value: string }[] = []
 
   const addRow = (key: string, val: unknown) => {
@@ -139,10 +145,10 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
     seenKeys.add(key)
     const formatted = formatRawValue(key, val)
     if (!formatted) return
-    // Deduplicate by value to avoid showing same info twice
-    if (seenValues.has(formatted)) return
-    seenValues.add(formatted)
     const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    // Deduplicate by label — keep only first occurrence of each label
+    if (seenLabels.has(label)) return
+    seenLabels.add(label)
     detailRows.push({ label, value: formatted })
   }
 
