@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   usePpobSaldo,
   usePulsaDetails,
@@ -426,17 +427,30 @@ function PlnInput({
   }) => void
   wideLayout?: boolean
 }) {
+  const [mode, setMode] = useState<"token" | "postpaid">("token")
   const [customerId, setCustomerId] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<number | null>(null)
   const { data: denoms, isLoading: denomsLoading } = usePlnDenom()
   const plnInquiry = usePlnInquiry()
   const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
 
+  const handleModeChange = (newMode: string) => {
+    setMode(newMode as "token" | "postpaid")
+    setSelectedDenom(null)
+    setInquiryResult(null)
+  }
+
   const handleInquiry = () => {
-    if (!customerId || selectedDenom === null) return
-    const denom = denoms?.find(d => d.id === selectedDenom)
+    if (!customerId) return
+    if (mode === "token" && selectedDenom === null) return
+    const denom = mode === "token" ? denoms?.find(d => d.id === selectedDenom) : null
     plnInquiry.mutate(
-      { customerId, paymentCode: denom?.denom ?? "", flagId: "0", amount: 0 },
+      {
+        customerId,
+        paymentCode: denom?.denom ?? "",
+        flagId: mode === "token" ? "0" : "1",
+        amount: 0,
+      },
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
@@ -446,19 +460,26 @@ function PlnInput({
 
   const handleConfirm = () => {
     if (!inquiryResult) return
+    const label = mode === "token" ? "PLN Token" : "PLN Bayar"
     onAddToCart({
-      name: `PLN Token ${inquiryResult.productName ?? ""} - ${inquiryResult.customerName ?? customerId}`,
+      name: `${label} ${inquiryResult.productName ?? ""} - ${inquiryResult.customerName ?? customerId}`,
       price: inquiryResult.total,
       service_type: "pln",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
       ppob_inquiry_id: inquiryResult.inquiryId,
-      ppob_payment_code: selectedDenom !== null ? denoms?.find((d) => d.id === selectedDenom)?.denom : undefined,
+      ppob_payment_code: mode === "token" && selectedDenom !== null
+        ? denoms?.find((d) => d.id === selectedDenom)?.denom
+        : undefined,
     })
   }
 
+  const canInquiry = mode === "token"
+    ? customerId.length >= 8 && selectedDenom !== null
+    : customerId.length >= 8
+
   const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: "PLN Token" },
+    { label: "Layanan", value: mode === "token" ? "PLN Token" : "PLN Pascabayar" },
     { label: "ID Pelanggan", value: customerId, mono: true },
     { label: "Nama", value: inquiryResult.customerName ?? "-" },
     { label: "Produk", value: inquiryResult.productName ?? "-" },
@@ -469,10 +490,17 @@ function PlnInput({
 
   const inputSection = (
     <div className="space-y-4">
+      <Tabs value={mode} onValueChange={handleModeChange}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="token">Token (Prepaid)</TabsTrigger>
+          <TabsTrigger value="postpaid">Bayar (Pascabayar)</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <div className="space-y-2">
-        <Label>ID Pelanggan / No. Meter</Label>
+        <Label>{mode === "token" ? "No. Meter" : "ID Pelanggan"}</Label>
         <Input
-          placeholder="Masukkan ID pelanggan"
+          placeholder={mode === "token" ? "Masukkan no. meter" : "Masukkan ID pelanggan"}
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
           className="font-mono !text-xl h-12 tracking-wider"
@@ -480,13 +508,13 @@ function PlnInput({
         />
       </div>
 
-      {denomsLoading && (
+      {mode === "token" && denomsLoading && (
         <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
       )}
 
-      {denoms && denoms.length > 0 && (
+      {mode === "token" && denoms && denoms.length > 0 && (
         <div className="space-y-2">
           <Label>Nominal</Label>
           <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
@@ -504,9 +532,12 @@ function PlnInput({
         </div>
       )}
 
-      {customerId && selectedDenom !== null && !inquiryResult && (
-        <Button className="w-full" onClick={handleInquiry} disabled={plnInquiry.isPending || customerId.length < 8}>
-          {plnInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...</> : "Cek Tagihan"}
+      {canInquiry && !inquiryResult && (
+        <Button className="w-full" onClick={handleInquiry} disabled={plnInquiry.isPending}>
+          {plnInquiry.isPending
+            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {mode === "token" ? "Cek Info..." : "Cek Tagihan..."}</>
+            : mode === "token" ? "Cek Info Pelanggan" : "Cek Tagihan"
+          }
         </Button>
       )}
 
