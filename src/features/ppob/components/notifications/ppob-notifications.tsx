@@ -13,9 +13,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -81,20 +84,15 @@ function NotificationDetailDialog({
             {getCategoryIcon(item.category)}
             {item.category}
           </DialogTitle>
+          <DialogDescription className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            {formatDate(item.createdAt)}
+          </DialogDescription>
         </DialogHeader>
 
+        <Separator />
+
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={getCategoryColor(item.category)}>
-              {item.category}
-            </Badge>
-            {item.status === "unread" && (
-              <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-            )}
-          </div>
-
-          <Separator />
-
           {item.title && item.title !== item.category && (
             <h3 className="font-semibold text-base">{item.title}</h3>
           )}
@@ -102,18 +100,13 @@ function NotificationDetailDialog({
           <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
             {item.message}
           </p>
-
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-2">
-            <Clock className="h-3.5 w-3.5" />
-            {formatDate(item.createdAt)}
-          </div>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
 
-function NotificationRow({
+function NotificationCard({
   item,
   onClick,
 }: {
@@ -123,29 +116,35 @@ function NotificationRow({
   const isUnread = item.status === "unread"
 
   return (
-    <button
-      className={`w-full text-left rounded-lg border p-4 transition-colors hover:bg-accent cursor-pointer ${
-        isUnread ? "bg-card border-l-4 border-l-blue-500" : "bg-muted/30"
+    <Card
+      className={`cursor-pointer transition-colors hover:bg-accent/50 ${
+        isUnread ? "border-l-4 border-l-blue-500" : "opacity-75"
       }`}
       onClick={onClick}
     >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5">{getCategoryIcon(item.category)}</div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold text-sm">{item.category}</span>
-            {isUnread && (
-              <span className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
-            )}
-          </div>
-          <p className="text-sm text-foreground line-clamp-2">{item.message}</p>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1.5">
-            <Clock className="h-3 w-3" />
-            {formatDate(item.createdAt)}
-          </div>
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-center gap-2">
+          {getCategoryIcon(item.category)}
+          <CardTitle className="text-sm">
+            <Badge variant="outline" className={getCategoryColor(item.category)}>
+              {item.category}
+            </Badge>
+          </CardTitle>
+          {isUnread && (
+            <span className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
+          )}
         </div>
-      </div>
-    </button>
+      </CardHeader>
+      <CardContent className="pb-3 pt-0 px-4 pl-[52px]">
+        <CardDescription className="text-foreground line-clamp-2 text-sm">
+          {item.message}
+        </CardDescription>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+          <Clock className="h-3 w-3" />
+          {formatDate(item.createdAt)}
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -229,28 +228,34 @@ export function PpobNotifications() {
           ))}
         </div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="h-12 w-12 text-muted-foreground/40 mb-3" />
-          <p className="text-sm text-destructive mb-2">Gagal memuat pemberitahuan</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            Coba Lagi
-          </Button>
-        </div>
+        <Card className="py-16">
+          <CardContent className="flex flex-col items-center justify-center text-center">
+            <Bell className="h-12 w-12 text-muted-foreground/40 mb-3" />
+            <p className="text-sm text-destructive mb-2">Gagal memuat pemberitahuan</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              Coba Lagi
+            </Button>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="h-12 w-12 text-muted-foreground/40 mb-3" />
-          <p className="text-sm text-muted-foreground">{i18n.ppob.noNotifications}</p>
-        </div>
+        <Card className="py-16">
+          <CardContent className="flex flex-col items-center justify-center text-center">
+            <Bell className="h-12 w-12 text-muted-foreground/40 mb-3" />
+            <p className="text-sm text-muted-foreground">{i18n.ppob.noNotifications}</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="space-y-2">
-          {items.map((item, idx) => (
-            <NotificationRow
-              key={item.inboxId || idx}
-              item={item}
-              onClick={() => handleItemClick(item)}
-            />
-          ))}
-        </div>
+        <ScrollArea className="h-[calc(100vh-140px)]">
+          <div className="space-y-2 pr-4">
+            {items.map((item, idx) => (
+              <NotificationCard
+                key={item.inboxId || idx}
+                item={item}
+                onClick={() => handleItemClick(item)}
+              />
+            ))}
+          </div>
+        </ScrollArea>
       )}
 
       {/* Detail Dialog */}
