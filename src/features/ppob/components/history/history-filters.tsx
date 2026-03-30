@@ -49,6 +49,7 @@ export function HistoryFilters({
           <SelectValue placeholder="Semua Produk" />
         </SelectTrigger>
         <SelectContent>
+          {PRODUCT_FILTER_OPTIONS.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>
@@ -61,6 +62,7 @@ export function HistoryFilters({
           <SelectValue placeholder="Semua Status" />
         </SelectTrigger>
         <SelectContent>
+          {STATUS_FILTER_OPTIONS.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>
