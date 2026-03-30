@@ -88,6 +88,8 @@ const HIDDEN_KEYS = new Set([
   "device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin",
   "receipt_text", "invoice_url", "invoice_string",
   "id", "max_adjustment", "advice_id", "ref_id",
+  "amount_base_price", "complaint", "uid", "user_id", "flag_member",
+  "member_id", "flag_topup", "topup_type", "type_topup",
 ])
 
 // Fields to show first (priority order)
