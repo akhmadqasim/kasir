@@ -308,6 +308,9 @@ pub struct NotificationItem {
 pub struct NotificationListResult {
     pub items: Vec<NotificationItem>,
     pub unread_count: i64,
+    pub total_count: i64,
+    pub current_page: i64,
+    pub total_pages: i64,
 }
 
 // --- Receipt types ---

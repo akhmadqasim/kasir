@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   ArrowLeft,
@@ -108,21 +108,17 @@ function NotificationDetailDialog({
 
 export function PpobNotifications() {
   const navigate = useNavigate()
-  const { data, isLoading, error, refetch, isRefetching } = usePpobNotifications()
+  const [currentPage, setCurrentPage] = useState(1)
+  const { data, isLoading, error, refetch, isRefetching } = usePpobNotifications(currentPage, ITEMS_PER_PAGE)
   const markAllRead = usePpobMarkAllRead()
   const markRead = usePpobMarkNotificationRead()
 
   const [selectedItem, setSelectedItem] = useState<NotificationItem | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
 
   const items = data?.items ?? []
   const unreadCount = data?.unreadCount ?? 0
-
-  const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE))
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE
-    return items.slice(start, start + ITEMS_PER_PAGE)
-  }, [items, currentPage])
+  const totalPages = data?.totalPages ?? 1
+  const totalCount = data?.totalCount ?? 0
 
   const handleItemClick = (item: NotificationItem) => {
     setSelectedItem(item)
@@ -208,7 +204,7 @@ export function PpobNotifications() {
         <>
           {/* Notification List */}
           <div className="divide-y rounded-lg border bg-card">
-            {paginatedItems.map((item, idx) => {
+            {items.map((item, idx) => {
               const isUnread = item.status === "unread"
               return (
                 <button
@@ -242,7 +238,7 @@ export function PpobNotifications() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-2">
               <p className="text-sm text-muted-foreground">
-                Halaman {currentPage} dari {totalPages} ({items.length} pemberitahuan)
+                Halaman {currentPage} dari {totalPages} ({totalCount} pemberitahuan)
               </p>
               <div className="flex items-center gap-1">
                 <Button

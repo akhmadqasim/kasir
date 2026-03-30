@@ -53,11 +53,26 @@ fn parse_notification(item: &Value) -> Option<NotificationItem> {
 pub async fn ppob_get_notifications(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
+    page: Option<i64>,
+    per_page: Option<i64>,
 ) -> Result<NotificationListResult, AppError> {
     get_mitra_client(db.inner(), mitra.inner()).await?;
 
+    let page_num = page.unwrap_or(1);
+    let limit = per_page.unwrap_or(20);
+
     let client = mitra.lock().await;
-    let result = client.post("inbox/get-all", json!({})).await?;
+    // Try sending page/limit params — API may or may not support them
+    let result = client
+        .post(
+            "inbox/get-all",
+            json!({
+                "page": page_num,
+                "limit": limit,
+                "per_page": limit,
+            }),
+        )
+        .await?;
 
     let inbox_array = result
         .get("inbox")
@@ -87,12 +102,23 @@ pub async fn ppob_get_notifications(
         db_date.cmp(da)
     });
 
-    // Limit to 200 most recent items to avoid sending too much data
-    items.truncate(200);
+    let total_count = items.len() as i64;
+    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
+
+    // Backend pagination: slice the sorted items
+    let start = ((page_num - 1) * limit) as usize;
+    let paginated: Vec<NotificationItem> = items
+        .into_iter()
+        .skip(start)
+        .take(limit as usize)
+        .collect();
 
     Ok(NotificationListResult {
-        items,
+        items: paginated,
         unread_count,
+        total_count,
+        current_page: page_num,
+        total_pages,
     })
 }
 

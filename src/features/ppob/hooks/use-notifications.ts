@@ -1,10 +1,10 @@
 import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import type { NotificationListResult } from "../types"
 
-export function usePpobNotifications() {
+export function usePpobNotifications(page: number = 1, perPage: number = 20) {
   return useTauriQuery<NotificationListResult>(
     "ppob_get_notifications",
-    {},
+    { page, perPage },
     {
       staleTime: 30000,
       retry: false,
