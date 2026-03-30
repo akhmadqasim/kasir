@@ -1,3 +1,4 @@
+use chrono::TimeZone;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -46,14 +47,23 @@ fn parse_notification(item: &Value) -> Option<NotificationItem> {
         .unwrap_or(0);
     let status = if flag_read == 1 { "read" } else { "unread" }.to_string();
 
-    // Parse formatted_date "DD-MM-YYYY HH:MM:SS" → ISO "YYYY-MM-DDTHH:MM:SS"
+    // Parse formatted_date "DD-MM-YYYY HH:MM:SS" (WIB/UTC+7) → local timezone ISO string
     let created_at = get_str_field(obj, &["formatted_date", "created_at", "date", "timestamp"])
         .map(|s| {
             let parts: Vec<&str> = s.splitn(2, ' ').collect();
             if parts.len() == 2 {
                 let date_parts: Vec<&str> = parts[0].split('-').collect();
                 if date_parts.len() == 3 {
-                    return format!("{}-{}-{}T{}", date_parts[2], date_parts[1], date_parts[0], parts[1]);
+                    let iso = format!("{}-{}-{}T{}", date_parts[2], date_parts[1], date_parts[0], parts[1]);
+                    // Parse as WIB (UTC+7) and convert to local timezone
+                    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M:%S") {
+                        let wib_offset = chrono::FixedOffset::east_opt(7 * 3600).unwrap();
+                        let wib_dt = wib_offset.from_local_datetime(&naive).single();
+                        if let Some(wib) = wib_dt {
+                            return wib.with_timezone(&chrono::Local).format("%Y-%m-%dT%H:%M:%S").to_string();
+                        }
+                    }
+                    return iso;
                 }
             }
             s
