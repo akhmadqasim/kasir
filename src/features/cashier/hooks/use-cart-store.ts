@@ -75,17 +75,15 @@ export const useCartStore = create<CartStore>()(
         )
 
         if (existing) {
+          // Move to top and increment quantity
+          const updated = { ...existing, quantity: existing.quantity + 1 }
           set({
-            items: items.map((item) =>
-              item.cart_id === existing.cart_id
-                ? { ...item, quantity: item.quantity + 1 }
-                : item
-            ),
+            items: [updated, ...items.filter((item) => item.cart_id !== existing.cart_id)],
           })
         } else {
+          // Prepend new item at top
           set({
             items: [
-              ...items,
               {
                 cart_id: `product-${product.id}`,
                 product_id: product.id,
@@ -95,6 +93,7 @@ export const useCartStore = create<CartStore>()(
                 stock: product.stock,
                 unit: product.unit,
               },
+              ...items,
             ],
           })
         }
@@ -106,7 +105,6 @@ export const useCartStore = create<CartStore>()(
         set({
           ppobCounter: counter,
           items: [
-            ...get().items,
             {
               cart_id: `ppob-${counter}-${Date.now()}`,
               product_name: item.name,
@@ -124,6 +122,7 @@ export const useCartStore = create<CartStore>()(
               ppob_inquiry_id: item.ppob_inquiry_id,
               ppob_payment_code: item.ppob_payment_code,
             },
+            ...get().items,
           ],
         })
       },

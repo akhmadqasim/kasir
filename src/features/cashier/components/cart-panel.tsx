@@ -60,7 +60,6 @@ function formatHeldDate(timestamp: number): string {
 export function CartPanel({ onPay, disabled }: CartPanelProps) {
   const navigate = useNavigate()
   const items = useCartStore((s) => s.items)
-  const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
   const getTotal = useCartStore((s) => s.getTotal)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
@@ -111,11 +110,15 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
     toast.success("Transaksi dilanjutkan")
   }
 
-  // F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = cash flow
+  // F1 = cash flow, F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = edit last item
   const anyDialogOpen = holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (anyDialogOpen) return
+      if (e.key === "F1" && activeShift) {
+        e.preventDefault()
+        setCashFlowOpen(true)
+      }
       if (e.key === "F2" && items.length > 0) {
         e.preventDefault()
         setDiscountDialogOpen(true)
@@ -134,14 +137,14 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
         setSelectedIdx(0)
         setRecallDialogOpen(true)
       }
-      if (e.key === "F10" && activeShift) {
+      if (e.key === "F10" && items.length > 0) {
         e.preventDefault()
-        setCashFlowOpen(true)
+        setEditItem(items[0])
       }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items.length, heldCarts.length, anyDialogOpen, activeShift])
+  }, [items, heldCarts.length, anyDialogOpen, activeShift])
 
   return (
     <div className="flex h-full flex-col">
@@ -194,7 +197,6 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Produk</TableHead>
-                <TableHead className="w-[100px] text-center">Qty</TableHead>
                 <TableHead className="w-[90px] text-right">Subtotal</TableHead>
                 <TableHead className="w-[36px]" />
               </TableRow>
@@ -204,7 +206,6 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
                 <CartItemRow
                   key={item.cart_id}
                   item={item}
-                  onUpdateQuantity={updateQuantity}
                   onRemove={removeItem}
                   onEdit={(it) => setEditItem(it)}
                   hasDiscount={!!itemDiscounts[item.cart_id]}
@@ -271,7 +272,7 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
                   onClick={() => setCashFlowOpen(true)}
                 >
                   <ArrowDownUp className="mr-1 h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Uang F10</span>
+                  <span className="truncate">Uang F1</span>
                 </Button>
                 <Button
                   variant="outline"
