@@ -329,20 +329,24 @@
           },
           "customer_id": {
             "type": "string",
-            "description": "Nomor meter PLN atau ID pelanggan",
-            "example": "12345678901"
+            "description": "Nomor meter PLN (11 digit) atau ID pelanggan/IDPEL (12 digit)",
+            "example": "45094614059"
           },
           "payment_code": {
             "type": "string",
-            "description": "Kode pembayaran"
+            "description": "Sama dengan customer_id (kirim nomor yang sama). Bisa No. Meter atau IDPEL, API akan resolve otomatis.",
+            "example": "45094614059"
           },
           "flag_id": {
             "type": "string",
-            "description": "Flag identifier"
+            "description": "Flag identifier: '0' untuk token/prepaid, '1' untuk tagihan/postpaid",
+            "enum": ["0", "1"],
+            "example": "0"
           },
           "amount": {
             "type": "number",
-            "description": "Jumlah pembayaran/pembelian"
+            "description": "Nominal token yang dipilih (untuk prepaid). Gunakan 0 untuk postpaid.",
+            "example": 20000
           }
         },
         "required": [
