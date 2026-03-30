@@ -17,6 +17,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/ui/calendar"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -39,7 +46,125 @@ const TYPE_FILTER_OPTIONS = [
   { value: "out", label: i18n.ppob.mutasiOut },
 ] as const
 
-function MutasiRow({ item }: { item: MutasiItem }) {
+const DISPLAY_LABELS: Record<string, string> = {
+  trxid: "ID Transaksi",
+  trx_id: "ID Transaksi",
+  id: "ID",
+  status: "Status",
+  total: "Total",
+  amount: "Nominal",
+  amount_fee: "Biaya Admin",
+  admin_fee: "Biaya Admin",
+  fee: "Fee",
+  sell_price: "Harga Jual",
+  base_price: "Harga Modal",
+  vendor_price: "Harga Vendor",
+  profit: "Keuntungan",
+  created_at: "Tanggal",
+  formatted_date: "Tanggal",
+  product_name: "Produk",
+  plu_desc: "Deskripsi",
+  igr_desc: "Deskripsi IGR",
+  description: "Keterangan",
+  target: "Tujuan",
+  customer_no: "No. Pelanggan",
+  raw_paymentcode: "Kode Bayar",
+  phone_number: "No. HP",
+  token_number: "Token",
+  serial_number: "Serial Number",
+  no_ref: "No. Referensi",
+  provider: "Provider",
+  merchant: "Merchant",
+  channel: "Channel",
+  payment_method: "Metode Bayar",
+  payment_code: "Kode Pembayaran",
+  denom: "Denominasi",
+  bank: "Bank",
+  nominal: "Nominal",
+}
+
+function formatRawValue(key: string, value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null
+  if (typeof value === "object") return JSON.stringify(value)
+
+  const str = String(value)
+  if (str === "-" || str === "0" || str === "0.0") return null
+
+  const numKeys = ["total", "amount", "amount_fee", "admin_fee", "fee", "sell_price", "base_price", "vendor_price", "profit", "nominal", "topup_amount"]
+  if (numKeys.includes(key) && !isNaN(Number(value))) {
+    return formatRupiah(Number(value))
+  }
+
+  return str
+}
+
+function MutasiDetailDialog({ item, open, onOpenChange }: {
+  item: MutasiItem
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const isIn = item.mutationType === "in"
+  const raw = item.rawData as Record<string, unknown>
+
+  const skipKeys = new Set(["device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin"])
+
+  const detailRows = Object.entries(raw)
+    .filter(([key, val]) => !skipKeys.has(key) && val !== null && val !== undefined && val !== "")
+    .map(([key, val]) => {
+      const formatted = formatRawValue(key, val)
+      if (!formatted) return null
+      const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+      return { label, value: formatted }
+    })
+    .filter(Boolean) as { label: string; value: string }[]
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {isIn ? (
+              <ArrowDownCircle className="h-5 w-5 text-green-600" />
+            ) : (
+              <ArrowUpCircle className="h-5 w-5 text-red-600" />
+            )}
+            {isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className={`text-lg font-bold ${isIn ? "text-green-600" : "text-red-600"}`}>
+              {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
+            </span>
+            <Badge variant="outline" className={
+              normalizeStatus(item.status) === "sukses"
+                ? "border-green-200 bg-green-50 text-green-700"
+                : normalizeStatus(item.status) === "gagal"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : ""
+            }>
+              {item.status ?? "-"}
+            </Badge>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            {detailRows.map((row) => (
+              <div key={row.label} className="grid grid-cols-[130px_1fr] gap-2 text-sm">
+                <span className="text-muted-foreground">{row.label}</span>
+                <span className="break-all">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void }) {
   const isIn = item.mutationType === "in"
   const status = normalizeStatus(item.status)
 
@@ -51,7 +176,11 @@ function MutasiRow({ item }: { item: MutasiItem }) {
   }[status]
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 cursor-pointer"
+      onClick={onClick}
+    >
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
         isIn
           ? "bg-green-100 dark:bg-green-950"
@@ -92,7 +221,7 @@ function MutasiRow({ item }: { item: MutasiItem }) {
           <p className="text-xs text-muted-foreground">{item.paymentMethod}</p>
         )}
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -102,6 +231,7 @@ export function PpobMutasi() {
   const { data: saldoData } = usePpobSaldo()
 
   const [typeFilter, setTypeFilter] = useState("all")
+  const [selectedItem, setSelectedItem] = useState<MutasiItem | null>(null)
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: new Date(defaults.start),
     to: new Date(defaults.end),
@@ -260,9 +390,21 @@ export function PpobMutasi() {
       ) : (
         <div className="space-y-2">
           {filteredItems.map((item, index) => (
-            <MutasiRow key={item.id ?? index} item={item} />
+            <MutasiRow
+              key={item.id ?? index}
+              item={item}
+              onClick={() => setSelectedItem(item)}
+            />
           ))}
         </div>
+      )}
+
+      {selectedItem && (
+        <MutasiDetailDialog
+          item={selectedItem}
+          open={!!selectedItem}
+          onOpenChange={(open) => { if (!open) setSelectedItem(null) }}
+        />
       )}
     </div>
   )
