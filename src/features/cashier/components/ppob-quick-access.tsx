@@ -494,11 +494,10 @@ function PlnInput({
               <Button
                 key={d.id}
                 variant={selectedDenom === d.id ? "default" : "outline"}
-                size="sm"
-                className="h-10"
+                className="h-12 text-sm font-semibold"
                 onClick={() => { setSelectedDenom(d.id); setInquiryResult(null) }}
               >
-                {d.denom}
+                {formatRupiah(parseFloat(d.denom))}
               </Button>
             ))}
           </div>
@@ -821,7 +820,7 @@ function EmoneyInput({
   const confirmItems = inquiryResult ? [
     { label: "Layanan", value: "E-Money" },
     { label: "Nomor", value: phoneNumber, mono: true },
-    { label: "Nominal", value: selectedDenom?.denom ?? "-" },
+    { label: "Nominal", value: selectedDenom?.denom ? formatRupiah(parseFloat(selectedDenom.denom)) : "-" },
     { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
   ] : null
 
@@ -849,10 +848,10 @@ function EmoneyInput({
           <Label>Nominal</Label>
           <div className="grid grid-cols-3 gap-2">
             {denoms.map((d) => (
-              <Button key={d.id} variant={selectedDenom?.id === d.id ? "default" : "outline"} size="sm" className="h-10"
+              <Button key={d.id} variant={selectedDenom?.id === d.id ? "default" : "outline"} className="h-12 text-sm font-semibold"
                 onClick={() => { setSelectedDenom(d); setInquiryResult(null) }}
               >
-                {d.denom}
+                {formatRupiah(parseFloat(d.denom))}
               </Button>
             ))}
           </div>
