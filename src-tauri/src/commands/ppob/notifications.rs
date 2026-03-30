@@ -87,6 +87,9 @@ pub async fn ppob_get_notifications(
         db_date.cmp(da)
     });
 
+    // Limit to 200 most recent items to avoid sending too much data
+    items.truncate(200);
+
     Ok(NotificationListResult {
         items,
         unread_count,
