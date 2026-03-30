@@ -87,6 +87,19 @@ const DISPLAY_LABELS: Record<string, string> = {
   balance: "Saldo",
   prev_balance: "Saldo Sebelumnya",
   last_balance: "Saldo Terakhir",
+  expire_at: "Kedaluwarsa",
+  expired_at: "Kedaluwarsa",
+  merchant_name: "Nama Merchant",
+  processed_at: "Diproses",
+  trx_reference: "No. Referensi",
+  trx_ref: "No. Referensi",
+  updated_at: "Diperbarui",
+  sender: "Pengirim",
+  receiver: "Penerima",
+  note: "Catatan",
+  notes: "Catatan",
+  remark: "Keterangan",
+  reason: "Alasan",
 }
 
 // Fields to hide from detail view (verbose/internal)
@@ -187,7 +200,7 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
                   ? "border-red-200 bg-red-50 text-red-700"
                   : ""
             }>
-              {item.status ?? "-"}
+              {normalizeStatus(item.status).toUpperCase()}
             </Badge>
           </div>
 
