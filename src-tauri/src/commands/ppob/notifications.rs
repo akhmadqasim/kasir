@@ -1,6 +1,7 @@
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -9,6 +10,16 @@ use super::client::MitraClient;
 use super::models::{NotificationItem, NotificationListResult};
 use super::parsers::get_str_field;
 use crate::utils::AppError;
+
+// Cache for notification data to avoid re-fetching 2000+ items on every page change
+struct NotificationCache {
+    items: Vec<NotificationItem>,
+    unread_count: i64,
+    fetched_at: Instant,
+}
+
+static NOTIFICATION_CACHE: std::sync::LazyLock<Mutex<Option<NotificationCache>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
 
 fn parse_notification(item: &Value) -> Option<NotificationItem> {
     let obj = item.as_object()?;
@@ -19,24 +30,23 @@ fn parse_notification(item: &Value) -> Option<NotificationItem> {
         return None;
     }
 
-    let title = get_str_field(obj, &["title", "subject", "category"])
+    let title = get_str_field(obj, &["title", "subject"])
         .unwrap_or_else(|| "Pemberitahuan".to_string());
 
     let message = get_str_field(obj, &["message", "body", "content", "description"])
         .unwrap_or_default();
 
-    let category = get_str_field(obj, &["category", "type", "tag"])
+    let category = get_str_field(obj, &["type", "category", "tag"])
         .unwrap_or_else(|| "INFORMASI".to_string())
         .to_uppercase();
 
-    let status_raw = get_str_field(obj, &["status", "is_read", "read"])
-        .unwrap_or_else(|| "unread".to_string());
-    let status = match status_raw.to_lowercase().as_str() {
-        "read" | "1" | "true" | "sudah_dibaca" => "read".to_string(),
-        _ => "unread".to_string(),
-    };
+    // flag_read: 1 = read, 0 = unread (integer field)
+    let flag_read = obj.get("flag_read")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0);
+    let status = if flag_read == 1 { "read" } else { "unread" }.to_string();
 
-    let created_at = get_str_field(obj, &["created_at", "date", "timestamp", "created_date"]);
+    let created_at = get_str_field(obj, &["formatted_date", "created_at", "date", "timestamp"]);
 
     Some(NotificationItem {
         inbox_id,
@@ -55,24 +65,46 @@ pub async fn ppob_get_notifications(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     page: Option<i64>,
     per_page: Option<i64>,
+    force_refresh: Option<bool>,
 ) -> Result<NotificationListResult, AppError> {
     get_mitra_client(db.inner(), mitra.inner()).await?;
 
     let page_num = page.unwrap_or(1);
     let limit = per_page.unwrap_or(20);
+    let force = force_refresh.unwrap_or(false);
 
+    // Check cache first (valid for 5 minutes)
+    let cache_ttl = std::time::Duration::from_secs(300);
+    {
+        let cache = NOTIFICATION_CACHE.lock().await;
+        if !force {
+            if let Some(ref c) = *cache {
+                if c.fetched_at.elapsed() < cache_ttl {
+                    let total_count = c.items.len() as i64;
+                    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
+                    let start = ((page_num - 1) * limit) as usize;
+                    let paginated: Vec<NotificationItem> = c.items
+                        .iter()
+                        .skip(start)
+                        .take(limit as usize)
+                        .cloned()
+                        .collect();
+
+                    return Ok(NotificationListResult {
+                        items: paginated,
+                        unread_count: c.unread_count,
+                        total_count,
+                        current_page: page_num,
+                        total_pages,
+                    });
+                }
+            }
+        }
+    }
+
+    // Fetch from API
     let client = mitra.lock().await;
-    // Try sending page/limit params — API may or may not support them
-    let result = client
-        .post(
-            "inbox/get-all",
-            json!({
-                "page": page_num,
-                "limit": limit,
-                "per_page": limit,
-            }),
-        )
-        .await?;
+    let result = client.post("inbox/get-all", json!({})).await?;
 
     let inbox_array = result
         .get("inbox")
@@ -102,10 +134,18 @@ pub async fn ppob_get_notifications(
         db_date.cmp(da)
     });
 
+    // Store in cache
+    {
+        let mut cache = NOTIFICATION_CACHE.lock().await;
+        *cache = Some(NotificationCache {
+            items: items.clone(),
+            unread_count,
+            fetched_at: Instant::now(),
+        });
+    }
+
     let total_count = items.len() as i64;
     let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
-
-    // Backend pagination: slice the sorted items
     let start = ((page_num - 1) * limit) as usize;
     let paginated: Vec<NotificationItem> = items
         .into_iter()
@@ -132,6 +172,10 @@ pub async fn ppob_mark_all_read(
     let client = mitra.lock().await;
     client.post("inbox/read-all", json!({})).await?;
 
+    // Invalidate cache
+    let mut cache = NOTIFICATION_CACHE.lock().await;
+    *cache = None;
+
     Ok(())
 }
 
@@ -153,6 +197,10 @@ pub async fn ppob_mark_notification_read(
             }),
         )
         .await?;
+
+    // Invalidate cache
+    let mut cache = NOTIFICATION_CACHE.lock().await;
+    *cache = None;
 
     Ok(())
 }
