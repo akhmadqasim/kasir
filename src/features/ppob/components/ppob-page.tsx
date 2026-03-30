@@ -12,6 +12,7 @@ import {
   RefreshCw,
   History,
   ArrowUpDown,
+  Bell,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -29,6 +30,7 @@ import { EmoneyFlow } from "./emoney-flow"
 import { VoucherFlow } from "./voucher-flow"
 import { PpobHistory } from "./history"
 import { PpobMutasi } from "./mutasi"
+import { PpobNotifications } from "./notifications"
 
 const services = [
   { key: "pulsa", icon: Smartphone, label: id.ppob.pulsa, path: "pulsa", color: "text-blue-500" },
@@ -112,6 +114,10 @@ function PpobHome() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{id.ppob.title}</h1>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("notifications")}>
+            <Bell className="mr-2 h-4 w-4" />
+            {id.ppob.notifications}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => navigate("mutasi")}>
             <ArrowUpDown className="mr-2 h-4 w-4" />
             {id.ppob.mutasi}
@@ -146,6 +152,7 @@ export function PpobPage() {
       <Route path="voucher" element={<VoucherFlow />} />
       <Route path="history" element={<PpobHistory />} />
       <Route path="mutasi" element={<PpobMutasi />} />
+      <Route path="notifications" element={<PpobNotifications />} />
     </Routes>
   )
 }
