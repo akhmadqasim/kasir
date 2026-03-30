@@ -129,32 +129,33 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
   // Build ordered rows: priority keys first, then remaining
   const seenKeys = new Set<string>()
+  const seenValues = new Set<string>()
   const detailRows: { label: string; value: string }[] = []
 
-  for (const key of PRIORITY_KEYS) {
-    if (HIDDEN_KEYS.has(key) || seenKeys.has(key)) continue
-    const val = raw[key]
-    if (val === undefined) continue
+  const addRow = (key: string, val: unknown) => {
+    if (HIDDEN_KEYS.has(key) || seenKeys.has(key)) return
     seenKeys.add(key)
     const formatted = formatRawValue(key, val)
-    if (!formatted) continue
+    if (!formatted) return
+    // Deduplicate by value to avoid showing same info twice
+    if (seenValues.has(formatted)) return
+    seenValues.add(formatted)
     const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     detailRows.push({ label, value: formatted })
+  }
+
+  for (const key of PRIORITY_KEYS) {
+    if (raw[key] !== undefined) addRow(key, raw[key])
   }
 
   // Remaining keys not in priority list
   for (const [key, val] of Object.entries(raw)) {
-    if (HIDDEN_KEYS.has(key) || seenKeys.has(key)) continue
-    seenKeys.add(key)
-    const formatted = formatRawValue(key, val)
-    if (!formatted) continue
-    const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
-    detailRows.push({ label, value: formatted })
+    addRow(key, val)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isIn ? (
@@ -184,11 +185,11 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
           <Separator />
 
-          <div className="max-h-[400px] overflow-y-auto space-y-1.5 pr-1">
+          <div className="max-h-[400px] overflow-y-auto space-y-1 pr-1">
             {detailRows.map((row) => (
-              <div key={row.label} className="flex justify-between gap-3 text-sm py-0.5">
-                <span className="text-muted-foreground shrink-0">{row.label}</span>
-                <span className="text-right font-medium">{row.value}</span>
+              <div key={row.label} className="grid grid-cols-[120px_1fr] gap-2 text-sm py-0.5">
+                <span className="text-muted-foreground text-xs">{row.label}</span>
+                <span className="font-medium break-words">{row.value}</span>
               </div>
             ))}
           </div>
