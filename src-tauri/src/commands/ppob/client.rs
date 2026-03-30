@@ -160,7 +160,28 @@ impl MitraClient {
                     "Sesi Mitra expired. Silakan coba lagi."
                 )));
             }
-            return Err(AppError::Internal(format!("Mitra API error: {}", err_msg)));
+            // Include field-level errors if available
+            let detail = if let Some(errors) = result["errors"].as_object() {
+                let fields: Vec<String> = errors
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        v.as_array().and_then(|msgs| {
+                            msgs.first()
+                                .and_then(|m| m.as_str())
+                                .map(|m| format!("{}: {}", k, m))
+                        })
+                    })
+                    .collect();
+                if fields.is_empty() {
+                    err_msg.to_string()
+                } else {
+                    format!("{} ({})", err_msg, fields.join(", "))
+                }
+            } else {
+                err_msg.to_string()
+            };
+            eprintln!("[Mitra] {} {} => {}", path, serde_json::to_string(&body).unwrap_or_default(), detail);
+            return Err(AppError::Internal(format!("Mitra API error: {}", detail)));
         }
 
         Ok(result)

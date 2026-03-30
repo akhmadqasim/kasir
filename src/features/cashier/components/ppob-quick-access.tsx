@@ -436,6 +436,7 @@ function PlnInput({
 
   const handleModeChange = (newMode: string) => {
     setMode(newMode as "token" | "postpaid")
+    setCustomerId("")
     setSelectedDenom(null)
     setInquiryResult(null)
   }
@@ -500,12 +501,18 @@ function PlnInput({
       <div className="space-y-2">
         <Label>{mode === "token" ? "No. Meter" : "ID Pelanggan"}</Label>
         <Input
-          placeholder={mode === "token" ? "Masukkan no. meter" : "Masukkan ID pelanggan"}
+          placeholder={mode === "token" ? "Masukkan no. meter (11 digit)" : "Masukkan ID pelanggan (12 digit)"}
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
           className="font-mono !text-xl h-12 tracking-wider"
           autoFocus
         />
+        <p className="text-xs text-muted-foreground">
+          {mode === "token"
+            ? "Gunakan No. Meter (bukan ID Pelanggan). Lihat di meteran atau struk PLN."
+            : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."
+          }
+        </p>
       </div>
 
       {mode === "token" && denomsLoading && (
