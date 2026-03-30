@@ -46,7 +46,18 @@ fn parse_notification(item: &Value) -> Option<NotificationItem> {
         .unwrap_or(0);
     let status = if flag_read == 1 { "read" } else { "unread" }.to_string();
 
-    let created_at = get_str_field(obj, &["formatted_date", "created_at", "date", "timestamp"]);
+    // Parse formatted_date "DD-MM-YYYY HH:MM:SS" → ISO "YYYY-MM-DDTHH:MM:SS"
+    let created_at = get_str_field(obj, &["formatted_date", "created_at", "date", "timestamp"])
+        .map(|s| {
+            let parts: Vec<&str> = s.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                let date_parts: Vec<&str> = parts[0].split('-').collect();
+                if date_parts.len() == 3 {
+                    return format!("{}-{}-{}T{}", date_parts[2], date_parts[1], date_parts[0], parts[1]);
+                }
+            }
+            s
+        });
 
     Some(NotificationItem {
         inbox_id,
