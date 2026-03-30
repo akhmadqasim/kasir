@@ -448,9 +448,9 @@ function PlnInput({
     plnInquiry.mutate(
       {
         customerId,
-        paymentCode: denom?.denom ?? "",
+        paymentCode: customerId,
         flagId: mode === "token" ? "0" : "1",
-        amount: 0,
+        amount: denom ? parseFloat(denom.denom) : 0,
       },
       {
         onSuccess: (result) => setInquiryResult(result),
@@ -462,16 +462,18 @@ function PlnInput({
   const handleConfirm = () => {
     if (!inquiryResult) return
     const label = mode === "token" ? "PLN Token" : "PLN Bayar"
+    const customerName = inquiryResult.customerName ?? customerId
+    const denomLabel = mode === "token" && selectedDenom !== null
+      ? ` ${formatRupiah(parseFloat(denoms?.find(d => d.id === selectedDenom)?.denom ?? "0"))}`
+      : ""
     onAddToCart({
-      name: `${label} ${inquiryResult.productName ?? ""} - ${inquiryResult.customerName ?? customerId}`,
+      name: `${label}${denomLabel} - ${customerName}`,
       price: inquiryResult.total,
       service_type: "pln",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
       ppob_inquiry_id: inquiryResult.inquiryId,
-      ppob_payment_code: mode === "token" && selectedDenom !== null
-        ? denoms?.find((d) => d.id === selectedDenom)?.denom
-        : undefined,
+      ppob_payment_code: customerId,
     })
   }
 
@@ -479,12 +481,13 @@ function PlnInput({
     ? customerId.length >= 8 && selectedDenom !== null
     : customerId.length >= 8
 
+  const plnInquiryData = inquiryResult?.rawData?.inquiry as Record<string, string> | undefined
   const confirmItems = inquiryResult ? [
     { label: "Layanan", value: mode === "token" ? "PLN Token" : "PLN Pascabayar" },
-    { label: "ID Pelanggan", value: customerId, mono: true },
+    { label: "No. Meter/IDPEL", value: customerId, mono: true },
     { label: "Nama", value: inquiryResult.customerName ?? "-" },
-    { label: "Produk", value: inquiryResult.productName ?? "-" },
-    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+    ...(plnInquiryData?.Golongan ? [{ label: "Tarif/Daya", value: `${plnInquiryData.Golongan}/${plnInquiryData.Kategori ?? ""}` }] : []),
+    { label: "Harga Token", value: formatRupiah(inquiryResult.amount) },
     { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
     { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
   ] : null
@@ -499,9 +502,9 @@ function PlnInput({
       </Tabs>
 
       <div className="space-y-2">
-        <Label>{mode === "token" ? "No. Meter" : "ID Pelanggan"}</Label>
+        <Label>{mode === "token" ? "No. Meter / IDPEL" : "ID Pelanggan"}</Label>
         <Input
-          placeholder={mode === "token" ? "Masukkan no. meter (11 digit)" : "Masukkan ID pelanggan (12 digit)"}
+          placeholder={mode === "token" ? "Masukkan no. meter atau IDPEL" : "Masukkan ID pelanggan (12 digit)"}
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
           className="font-mono !text-xl h-12 tracking-wider"
@@ -509,7 +512,7 @@ function PlnInput({
         />
         <p className="text-xs text-muted-foreground">
           {mode === "token"
-            ? "Gunakan No. Meter (bukan ID Pelanggan). Lihat di meteran atau struk PLN."
+            ? "Bisa pakai No. Meter (11 digit) atau IDPEL (12 digit) dari struk PLN."
             : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."
           }
         </p>

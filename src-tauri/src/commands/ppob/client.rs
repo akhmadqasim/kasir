@@ -133,6 +133,8 @@ impl MitraClient {
         let mut body = extra_body.as_object().cloned().unwrap_or_default();
         body.insert("device_id".to_string(), json!(self.device_id));
 
+        eprintln!("[Mitra] POST {} body: {}", path, serde_json::to_string(&body).unwrap_or_default());
+
         let resp = self
             .http
             .post(format!("{}/{}", BASE_URL, path))
@@ -148,6 +150,8 @@ impl MitraClient {
             .json()
             .await
             .map_err(|e| AppError::Internal(format!("Gagal parsing response: {}", e)))?;
+
+        eprintln!("[Mitra] RESP {} => {}", path, serde_json::to_string_pretty(&result).unwrap_or_default());
 
         if result["message"].as_str() != Some("OK") {
             let err_msg = result["errorMessage"]

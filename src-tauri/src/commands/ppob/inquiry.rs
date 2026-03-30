@@ -34,14 +34,31 @@ pub async fn ppob_pln_inquiry(
         )
         .await?;
 
+    // Parse from result["data"] if present, else from result directly
+    let data = if result["data"].is_object() {
+        &result["data"]
+    } else {
+        &result
+    };
+
+    // PLN nests customer info under data.inquiry
+    let inquiry = &data["inquiry"];
+    let customer_name = inquiry["Nama"]
+        .as_str()
+        .map(String::from)
+        .or_else(|| extract_optional_string(data, &["nama_pelanggan", "customer_name"]));
+
+    let total = extract_f64(data, &["total", "total_amount"]).max(amount);
+    let admin_fee = extract_f64(data, &["total_fee", "fee", "admin_fee", "admin"]);
+
     Ok(InquiryResult {
-        inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
-        customer_name: extract_optional_string(&result, &["nama_pelanggan", "customer_name"]),
+        inquiry_id: extract_string(data, &["inquiry_id", "id"]),
+        customer_name,
         customer_id: customer_id.clone(),
-        product_name: extract_optional_string(&result, &["product_name", "denom"]),
-        amount,
-        admin_fee: extract_f64(&result, &["admin_fee", "admin"]),
-        total: extract_f64(&result, &["total"]).max(amount),
+        product_name: extract_optional_string(data, &["product_name", "denom"]),
+        amount: extract_f64(data, &["price"]).max(amount),
+        admin_fee,
+        total,
         service_type: "pln".to_string(),
         raw_data: result,
     })
