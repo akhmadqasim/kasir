@@ -76,9 +76,9 @@ export type NormalizedStatus = "sukses" | "gagal" | "proses" | "unknown"
 
 export function normalizeStatus(status: string | null): NormalizedStatus {
   const s = (status ?? "").toLowerCase()
-  if (s === "sukses" || s === "success" || s === "berhasil") return "sukses"
-  if (s === "gagal" || s === "failed") return "gagal"
-  if (s === "pending" || s === "proses" || s === "processing") return "proses"
+  if (s === "sukses" || s === "success" || s === "berhasil" || s === "done" || s === "completed") return "sukses"
+  if (s === "gagal" || s === "failed" || s === "error") return "gagal"
+  if (s === "pending" || s === "proses" || s === "processing" || s === "waiting") return "proses"
   return "unknown"
 }
 
