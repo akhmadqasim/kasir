@@ -8,14 +8,12 @@ import {
   Info,
   CreditCard,
   CheckCheck,
-  Clock,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -46,9 +44,9 @@ function getCategoryIcon(category: string) {
 function getCategoryStyle(category: string) {
   switch (category.toUpperCase()) {
     case "TRANSAKSI":
-      return "border-blue-200 bg-blue-50 text-blue-700"
+      return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300"
     default:
-      return "border-amber-200 bg-amber-50 text-amber-700"
+      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
   }
 }
 
@@ -85,17 +83,16 @@ function NotificationDetailDialog({
             {getCategoryIcon(item.category)}
             {item.category}
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
+          <DialogDescription className="text-xs">
             {formatDate(item.createdAt)}
           </DialogDescription>
         </DialogHeader>
 
         <Separator />
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           {item.title && item.title !== item.category && (
-            <p className="font-semibold">{item.title}</p>
+            <p className="font-semibold text-sm">{item.title}</p>
           )}
           <p className="text-sm leading-relaxed whitespace-pre-wrap">
             {item.message}
@@ -135,14 +132,14 @@ export function PpobNotifications() {
   }
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-5 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-xl font-bold">{i18n.ppob.notifications}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.notifications}</h1>
           {unreadCount > 0 && (
             <Badge variant="destructive" className="text-xs px-2">
               {unreadCount}
@@ -179,56 +176,52 @@ export function PpobNotifications() {
       {/* Content */}
       {isLoading ? (
         <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
       ) : error ? (
-        <Card>
-          <CardContent className="flex flex-col items-center py-16">
-            <Bell className="h-10 w-10 text-muted-foreground/40 mb-3" />
-            <p className="text-sm text-destructive mb-3">Gagal memuat pemberitahuan</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              Coba Lagi
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Bell className="h-10 w-10 text-muted-foreground mb-3" />
+          <p className="text-destructive font-medium mb-1">Gagal memuat pemberitahuan</p>
+          <p className="text-sm text-muted-foreground">Silakan coba lagi nanti</p>
+        </div>
       ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center py-16">
-            <Bell className="h-10 w-10 text-muted-foreground/40 mb-3" />
-            <p className="text-sm text-muted-foreground">{i18n.ppob.noNotifications}</p>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Bell className="h-10 w-10 text-muted-foreground mb-3" />
+          <p className="font-medium mb-1">{i18n.ppob.noNotifications}</p>
+          <p className="text-sm text-muted-foreground">Belum ada pemberitahuan saat ini</p>
+        </div>
       ) : (
         <>
           {/* Notification List */}
-          <div className="divide-y rounded-lg border bg-card">
+          <div className="space-y-2">
             {items.map((item, idx) => {
               const isUnread = item.status === "unread"
               return (
                 <button
                   key={item.inboxId || idx}
-                  className={`w-full text-left px-4 py-3 transition-colors hover:bg-muted/50 ${
+                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 cursor-pointer ${
                     isUnread ? "bg-card" : "bg-muted/20"
                   }`}
                   onClick={() => handleItemClick(item)}
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className={`text-xs font-bold ${getCategoryStyle(item.category)}`}>
-                      {item.category}
-                    </Badge>
-                    {isUnread && (
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
-                    )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className={`text-xs font-bold ${getCategoryStyle(item.category)}`}>
+                        {item.category}
+                      </Badge>
+                      {isUnread && (
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                      )}
+                    </div>
+                    <p className={`text-sm line-clamp-2 ${isUnread ? "font-medium" : "text-muted-foreground"}`}>
+                      {item.message}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatDate(item.createdAt)}
+                    </p>
                   </div>
-                  <p className={`text-sm line-clamp-2 ${isUnread ? "font-medium" : "text-muted-foreground"}`}>
-                    {item.message}
-                  </p>
-                  <p className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDate(item.createdAt)}
-                  </p>
                 </button>
               )
             })}

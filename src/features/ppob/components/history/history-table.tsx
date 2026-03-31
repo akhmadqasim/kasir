@@ -29,21 +29,21 @@ function StatusBadge({ status }: { status: string | null }) {
   const normalized = normalizeStatus(status)
   switch (normalized) {
     case "sukses":
-      return <Badge className="bg-green-600 hover:bg-green-700 text-white">Sukses</Badge>
+      return <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300 text-xs">Sukses</Badge>
     case "gagal":
-      return <Badge variant="destructive">Gagal</Badge>
+      return <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300 text-xs">Gagal</Badge>
     case "proses":
-      return <Badge variant="secondary">Proses</Badge>
+      return <Badge variant="outline" className="border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300 text-xs">Proses</Badge>
     default:
-      return <Badge variant="outline">{status ?? "-"}</Badge>
+      return <Badge variant="outline" className="text-xs">{status ?? "-"}</Badge>
   }
 }
 
 function DetailRow({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
   if (!value || value === "-") return null
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
+    <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
+      <span className="text-muted-foreground text-xs">{label}</span>
       <span className={mono ? "font-mono" : ""}>{value}</span>
     </div>
   )
@@ -65,7 +65,7 @@ function TransactionDetailDialog({
 
   return (
     <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg" aria-describedby={undefined}>
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Detail Transaksi</DialogTitle>
         </DialogHeader>
@@ -95,7 +95,7 @@ function TransactionDetailDialog({
         <Separator />
 
         {/* Detail fields */}
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <DetailRow label="No. Transaksi" value={item.trxId} mono />
           <DetailRow label="No. Pelanggan" value={item.customerNo} mono />
           <DetailRow label="No. Referensi" value={item.noRef} mono />
@@ -109,13 +109,13 @@ function TransactionDetailDialog({
         <Separator />
 
         {/* Financial summary */}
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {item.basePrice != null && (
             <DetailRow label="Harga Modal" value={formatRupiah(item.basePrice)} />
           )}
           {nominal != null && (
-            <div className="grid grid-cols-[140px_1fr] gap-2 text-sm">
-              <span className="text-muted-foreground">Harga Jual</span>
+            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
+              <span className="text-muted-foreground text-xs">Harga Jual</span>
               <span className="font-semibold">{formatRupiah(nominal)}</span>
             </div>
           )}
@@ -123,8 +123,8 @@ function TransactionDetailDialog({
             <DetailRow label="Biaya Admin" value={formatRupiah(item.adminFee)} />
           )}
           {profit != null && (
-            <div className="grid grid-cols-[140px_1fr] gap-2 text-sm">
-              <span className="text-muted-foreground">Profit</span>
+            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
+              <span className="text-muted-foreground text-xs">Profit</span>
               <span className={profit >= 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
                 {profit >= 0 ? "+" : ""}{formatRupiah(profit)}
               </span>
