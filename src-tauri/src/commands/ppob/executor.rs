@@ -19,6 +19,7 @@ pub struct PpobFulfillmentRequest {
     pub product_id: Option<i64>,
     pub product_code: Option<String>,
     pub payment_code: Option<String>,
+    pub flag_id: Option<String>,
 }
 
 pub async fn execute_fulfillment_request(
@@ -129,6 +130,9 @@ async fn execute_confirm_payment(
     }
     if let Some(payment_code) = &request.payment_code {
         body["payment_code"] = json!(payment_code);
+    }
+    if let Some(flag_id) = &request.flag_id {
+        body["flag_id"] = json!(flag_id);
     }
 
     let result = client.post(endpoint, body).await?;

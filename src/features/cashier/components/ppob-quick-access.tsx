@@ -131,6 +131,7 @@ export function PpobQuickAccess({
     ppob_product_code?: string
     ppob_inquiry_id?: string
     ppob_payment_code?: string
+    ppob_flag_id?: string
   }) => {
     const validationError = getAddItemValidationError(items, "ppob")
     if (validationError) {
@@ -158,6 +159,7 @@ export function PpobQuickAccess({
       ppob_product_code: item.ppob_product_code,
       ppob_inquiry_id: item.ppob_inquiry_id,
       ppob_payment_code: item.ppob_payment_code,
+      ppob_flag_id: item.ppob_flag_id,
     })
     toast.success(`${item.name} ditambahkan ke keranjang`)
     if (onItemAdded) {
@@ -424,6 +426,7 @@ function PlnInput({
     buy_price?: number
     ppob_inquiry_id?: string
     ppob_payment_code?: string
+    ppob_flag_id?: string
   }) => void
   wideLayout?: boolean
 }) {
@@ -474,6 +477,7 @@ function PlnInput({
       buy_price: inquiryResult.amount,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: customerId,
+      ppob_flag_id: mode === "token" ? "0" : "1",
     })
   }
 

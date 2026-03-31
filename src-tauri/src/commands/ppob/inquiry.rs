@@ -271,6 +271,7 @@ pub async fn ppob_pulsa_purchase(
             product_id: Some(product_id),
             product_code: Some(product_code),
             payment_code: None,
+            flag_id: None,
         },
     )
     .await

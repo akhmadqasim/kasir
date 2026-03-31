@@ -32,6 +32,7 @@ pub struct TransactionItemInput {
     pub ppob_product_code: Option<String>,
     pub ppob_inquiry_id: Option<String>,
     pub ppob_payment_code: Option<String>,
+    pub ppob_flag_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -65,6 +66,7 @@ struct ResolvedItem {
     ppob_product_code: Option<String>,
     ppob_inquiry_id: Option<String>,
     ppob_payment_code: Option<String>,
+    ppob_flag_id: Option<String>,
 }
 
 fn now_timestamp() -> String {
@@ -186,6 +188,7 @@ async fn resolve_items<C: ConnectionTrait>(
                 ppob_product_code: item_input.ppob_product_code.clone(),
                 ppob_inquiry_id: item_input.ppob_inquiry_id.clone(),
                 ppob_payment_code: item_input.ppob_payment_code.clone(),
+                ppob_flag_id: item_input.ppob_flag_id.clone(),
             });
             continue;
         }
@@ -226,6 +229,7 @@ async fn resolve_items<C: ConnectionTrait>(
             ppob_product_code: None,
             ppob_inquiry_id: None,
             ppob_payment_code: None,
+            ppob_flag_id: None,
         });
     }
 
@@ -315,6 +319,7 @@ async fn persist_transaction<C: ConnectionTrait>(
             ppob_product_code: Set(item.ppob_product_code.clone()),
             ppob_inquiry_id: Set(item.ppob_inquiry_id.clone()),
             ppob_payment_code: Set(item.ppob_payment_code.clone()),
+            ppob_flag_id: Set(item.ppob_flag_id.clone()),
             ppob_status: Set(if is_ppob { Some("pending".to_string()) } else { None }),
             ppob_message: Set(None),
             ppob_serial_number: Set(None),
@@ -369,6 +374,7 @@ fn build_ppob_request(item: &transaction_items::Model) -> Result<PpobFulfillment
         product_id: item.ppob_product_id,
         product_code: item.ppob_product_code.clone(),
         payment_code: item.ppob_payment_code.clone(),
+        flag_id: item.ppob_flag_id.clone(),
     })
 }
 
@@ -951,6 +957,7 @@ mod tests {
                     ppob_product_code: None,
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
+                    ppob_flag_id: None,
                         item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
@@ -995,6 +1002,7 @@ mod tests {
                     ppob_product_code: Some("TS10".to_string()),
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
+                    ppob_flag_id: None,
                         item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
@@ -1047,6 +1055,7 @@ mod tests {
                     ppob_product_code: None,
                     ppob_inquiry_id: Some("INQ-1".to_string()),
                     ppob_payment_code: Some("20000".to_string()),
+                    ppob_flag_id: Some("0".to_string()),
                     item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
@@ -1094,6 +1103,7 @@ mod tests {
                         ppob_product_code: None,
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        ppob_flag_id: None,
                         item_discount: None,
                     },
                     TransactionItemInput {
@@ -1108,6 +1118,7 @@ mod tests {
                         ppob_product_code: Some("P1".to_string()),
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        ppob_flag_id: None,
                         item_discount: None,
                     },
                 ],
@@ -1176,6 +1187,7 @@ mod tests {
                         ppob_product_code: Some("P1".to_string()),
                         ppob_inquiry_id: None,
                         ppob_payment_code: None,
+                        ppob_flag_id: None,
                         item_discount: None,
                     },
                     TransactionItemInput {
@@ -1190,6 +1202,7 @@ mod tests {
                         ppob_product_code: None,
                         ppob_inquiry_id: Some("INQ-2".to_string()),
                         ppob_payment_code: Some("20000".to_string()),
+                        ppob_flag_id: Some("0".to_string()),
                         item_discount: None,
                     },
                 ],

@@ -859,6 +859,7 @@ mod tests {
             ppob_product_code: Set(None),
             ppob_inquiry_id: Set(None),
             ppob_payment_code: Set(None),
+            ppob_flag_id: Set(None),
             ppob_status: Set(None),
             ppob_message: Set(None),
             ppob_serial_number: Set(None),

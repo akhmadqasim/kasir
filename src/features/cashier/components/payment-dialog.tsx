@@ -128,6 +128,7 @@ export function PaymentDialog({
             ppob_product_code: item.ppob_product_code,
             ppob_inquiry_id: item.ppob_inquiry_id,
             ppob_payment_code: item.ppob_payment_code,
+            ppob_flag_id: item.ppob_flag_id,
           })),
           payment_method: paymentMethod,
           payment_amount: finalPaymentAmount,

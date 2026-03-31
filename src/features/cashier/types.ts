@@ -15,6 +15,7 @@ export interface CartItem {
   ppob_product_code?: string
   ppob_inquiry_id?: string
   ppob_payment_code?: string
+  ppob_flag_id?: string
 }
 
 export interface TransactionItemInput {
@@ -30,6 +31,7 @@ export interface TransactionItemInput {
   ppob_product_code?: string
   ppob_inquiry_id?: string
   ppob_payment_code?: string
+  ppob_flag_id?: string
 }
 
 export interface CheckoutTransactionInput {
@@ -73,6 +75,7 @@ export interface TransactionItem {
   ppob_product_code: string | null
   ppob_inquiry_id: string | null
   ppob_payment_code: string | null
+  ppob_flag_id: string | null
   ppob_status: string | null
   ppob_message: string | null
   ppob_serial_number: string | null
