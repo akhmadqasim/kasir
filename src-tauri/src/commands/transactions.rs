@@ -105,18 +105,9 @@ fn validate_cart_composition(items: &[TransactionItemInput]) -> Result<bool, App
         ));
     }
 
-    let ppob_count = items
-        .iter()
-        .filter(|item| item.service_type.is_some())
-        .count();
+    let has_ppob = items.iter().any(|item| item.service_type.is_some());
 
-    if ppob_count > 1 {
-        return Err(AppError::Validation(
-            "Checkout PPOB hanya mendukung 1 item PPOB per transaksi".into(),
-        ));
-    }
-
-    Ok(ppob_count == 1)
+    Ok(has_ppob)
 }
 
 async fn resolve_items<C: ConnectionTrait>(
@@ -444,36 +435,32 @@ where
         return Ok(result);
     }
 
-    // For PPOB items, build the fulfillment request but don't await it here.
-    // The caller (checkout_transaction) will spawn this as a background task.
-    let ppob_item = result
-        .items
-        .iter()
-        .find(|item| item.service_type.is_some())
-        .ok_or_else(|| AppError::Validation("Item PPOB tidak ditemukan".into()))?;
-    let request = build_ppob_request(ppob_item)?;
-    let ppob_item_id = ppob_item.id;
+    // Process all PPOB items
+    for ppob_item in result.items.iter().filter(|item| item.service_type.is_some()) {
+        let request = build_ppob_request(ppob_item)?;
+        let ppob_item_id = ppob_item.id;
 
-    match fulfill_ppob(request).await {
-        Ok(payment_result) => {
-            update_ppob_item_status(
-                db,
-                ppob_item_id,
-                "success",
-                Some(build_ppob_success_message(&payment_result)),
-                payment_result.serial_number.clone(),
-            )
-            .await?;
-        }
-        Err(error) => {
-            update_ppob_item_status(
-                db,
-                ppob_item_id,
-                "failed",
-                Some(error.to_string()),
-                None,
-            )
-            .await?;
+        match fulfill_ppob(request).await {
+            Ok(payment_result) => {
+                update_ppob_item_status(
+                    db,
+                    ppob_item_id,
+                    "success",
+                    Some(build_ppob_success_message(&payment_result)),
+                    payment_result.serial_number.clone(),
+                )
+                .await?;
+            }
+            Err(error) => {
+                update_ppob_item_status(
+                    db,
+                    ppob_item_id,
+                    "failed",
+                    Some(error.to_string()),
+                    None,
+                )
+                .await?;
+            }
         }
     }
 
@@ -507,40 +494,38 @@ pub async fn checkout_transaction(
     txn.commit().await?;
 
     if has_ppob {
-        let ppob_item = result
-            .items
-            .iter()
-            .find(|item| item.service_type.is_some())
-            .ok_or_else(|| AppError::Validation("Item PPOB tidak ditemukan".into()))?;
-        let request = build_ppob_request(ppob_item)?;
-        let ppob_item_id = ppob_item.id;
-        let bg_conn = conn.clone();
+        // Process each PPOB item in its own background task
+        for ppob_item in result.items.iter().filter(|item| item.service_type.is_some()) {
+            let request = build_ppob_request(ppob_item)?;
+            let ppob_item_id = ppob_item.id;
+            let bg_conn = conn.clone();
+            let bg_mitra = mitra.clone();
 
-        // Fire-and-forget: PPOB fulfillment runs in background
-        tokio::spawn(async move {
-            match execute_fulfillment_request(&bg_conn, &mitra, &request).await {
-                Ok(payment_result) => {
-                    let _ = update_ppob_item_status(
-                        &bg_conn,
-                        ppob_item_id,
-                        "success",
-                        Some(build_ppob_success_message(&payment_result)),
-                        payment_result.serial_number.clone(),
-                    )
-                    .await;
+            tokio::spawn(async move {
+                match execute_fulfillment_request(&bg_conn, &bg_mitra, &request).await {
+                    Ok(payment_result) => {
+                        let _ = update_ppob_item_status(
+                            &bg_conn,
+                            ppob_item_id,
+                            "success",
+                            Some(build_ppob_success_message(&payment_result)),
+                            payment_result.serial_number.clone(),
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        let _ = update_ppob_item_status(
+                            &bg_conn,
+                            ppob_item_id,
+                            "failed",
+                            Some(error.to_string()),
+                            None,
+                        )
+                        .await;
+                    }
                 }
-                Err(error) => {
-                    let _ = update_ppob_item_status(
-                        &bg_conn,
-                        ppob_item_id,
-                        "failed",
-                        Some(error.to_string()),
-                        None,
-                    )
-                    .await;
-                }
-            }
-        });
+            });
+        }
     }
 
     Ok(result)
@@ -1171,10 +1156,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn multi_ppob_cart_is_rejected_before_transaction_is_created() {
+    async fn multi_ppob_cart_succeeds_with_all_items_fulfilled() {
         let conn = setup_test_db().await;
 
-        let error = checkout_transaction_with_executor(
+        let result = checkout_transaction_with_executor(
             &conn,
             CheckoutTransactionInput {
                 user_id: 1,
@@ -1214,11 +1199,49 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
             },
-            |_request| async { unreachable!("executor should not be called") },
+            |request| async move {
+                let sn = if request.service_type == "pulsa" {
+                    "SN-PULSA"
+                } else {
+                    "SN-PLN"
+                };
+                Ok(PaymentResult {
+                    success: true,
+                    receipt_data: serde_json::json!({}),
+                    service_type: request.service_type.clone(),
+                    customer_id: request.customer_id.unwrap_or_default(),
+                    amount: 10_000.0,
+                    admin_fee: 0.0,
+                    total: 10_000.0,
+                    product_name: None,
+                    customer_name: None,
+                    serial_number: Some(sn.to_string()),
+                })
+            },
         )
         .await
-        .expect_err("multi PPOB cart must fail");
+        .expect("multi PPOB checkout should succeed");
 
-        assert!(error.to_string().contains("1 item PPOB"));
+        assert_eq!(result.transaction.status, STATUS_COMPLETED);
+        assert_eq!(result.items.len(), 2);
+
+        let pulsa_item = result
+            .items
+            .iter()
+            .find(|i| i.service_type.as_deref() == Some("pulsa"))
+            .unwrap();
+        assert_eq!(pulsa_item.ppob_status.as_deref(), Some("success"));
+        assert_eq!(
+            pulsa_item.ppob_serial_number.as_deref(),
+            Some("SN-PULSA")
+        );
+
+        let pln_item = result
+            .items
+            .iter()
+            .find(|i| i.service_type.as_deref() == Some("pln"))
+            .unwrap();
+        assert_eq!(pln_item.ppob_status.as_deref(), Some("success"));
+        assert_eq!(pln_item.ppob_serial_number.as_deref(), Some("SN-PLN"));
     }
 }
