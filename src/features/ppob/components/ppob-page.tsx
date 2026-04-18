@@ -1,14 +1,5 @@
 import { Routes, Route, useNavigate } from "react-router-dom"
 import {
-  Smartphone,
-  Zap,
-  Droplets,
-  HeartPulse,
-  CreditCard,
-  ArrowRightLeft,
-  Wallet,
-  Ticket,
-  Wifi,
   RefreshCw,
   History,
   ArrowUpDown,
@@ -19,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { id } from "@/i18n/id"
 import { usePpobSaldo } from "../hooks"
+import { PPOB_SERVICES } from "../constants"
 import { PulsaFlow } from "./pulsa-flow"
 import { DataFlow } from "./data-flow"
 import { PlnFlow } from "./pln-flow"
@@ -31,18 +23,6 @@ import { VoucherFlow } from "./voucher-flow"
 import { PpobHistory } from "./history"
 import { PpobMutasi } from "./mutasi"
 import { PpobNotifications } from "./notifications"
-
-const services = [
-  { key: "pulsa", icon: Smartphone, label: id.ppob.pulsa, path: "pulsa", color: "text-blue-500" },
-  { key: "data", icon: Wifi, label: id.ppob.dataPacket, path: "data", color: "text-purple-500" },
-  { key: "pln", icon: Zap, label: id.ppob.pln, path: "pln", color: "text-yellow-500" },
-  { key: "pdam", icon: Droplets, label: id.ppob.pdam, path: "pdam", color: "text-cyan-500" },
-  { key: "bpjs", icon: HeartPulse, label: id.ppob.bpjs, path: "bpjs", color: "text-red-500" },
-  { key: "pp", icon: CreditCard, label: id.ppob.pp, path: "pp", color: "text-green-500" },
-  { key: "transfer", icon: ArrowRightLeft, label: id.ppob.transfer, path: "transfer", color: "text-orange-500" },
-  { key: "emoney", icon: Wallet, label: id.ppob.emoney, path: "emoney", color: "text-pink-500" },
-  { key: "voucher", icon: Ticket, label: id.ppob.voucher, path: "voucher", color: "text-indigo-500" },
-] as const
 
 function SaldoCard() {
   const { data, isLoading, error, refetch } = usePpobSaldo()
@@ -92,7 +72,7 @@ function ServiceGrid() {
 
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-      {services.map((svc) => (
+      {PPOB_SERVICES.map((svc) => (
         <button
           key={svc.key}
           className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

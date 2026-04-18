@@ -4,8 +4,6 @@ import {
   Zap,
   Droplets,
   HeartPulse,
-  CreditCard,
-  Wifi,
   ArrowLeft,
   Loader2,
   CheckCircle2,
@@ -24,6 +22,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   usePpobSaldo,
   usePulsaDetails,
   usePlnDenom,
@@ -34,22 +39,14 @@ import {
   useEmoneyDenom,
   useEmoneyInquiry,
 } from "@/features/ppob/hooks"
+import { QUICK_ACCESS_SERVICES, type QuickAccessServiceKey } from "@/features/ppob/constants"
 import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import type { AppSettings } from "@/features/settings/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { formatRupiah, getAddItemValidationError } from "../utils"
 
-export type ServiceType = "pulsa" | "data" | "pln" | "pdam" | "bpjs" | "emoney"
-
-const SERVICES: { type: ServiceType; label: string; icon: typeof Smartphone; color: string }[] = [
-  { type: "pulsa", label: "Pulsa", icon: Smartphone, color: "text-blue-500" },
-  { type: "data", label: "Data", icon: Wifi, color: "text-green-500" },
-  { type: "pln", label: "PLN", icon: Zap, color: "text-yellow-500" },
-  { type: "pdam", label: "PDAM", icon: Droplets, color: "text-cyan-500" },
-  { type: "bpjs", label: "BPJS", icon: HeartPulse, color: "text-red-500" },
-  { type: "emoney", label: "E-Money", icon: CreditCard, color: "text-purple-500" },
-]
+export type ServiceType = QuickAccessServiceKey
 
 function calculateSellPrice(buyPrice: number, config: PpobMarkupConfig): number {
   if (config.value <= 0) return buyPrice
@@ -157,10 +154,6 @@ export function PpobQuickAccess({
   const addPpobItem = useCartStore((s) => s.addPpobItem)
 
   useEffect(() => {
-    setSelectedService(initialService ?? null)
-  }, [initialService])
-
-  useEffect(() => {
     invoke<AppSettings>("get_app_settings")
       .then((settings) => {
         if (settings.ppob?.markup) {
@@ -246,13 +239,13 @@ export function PpobQuickAccess({
           </Button>
           <div className="flex items-center gap-2">
             {(() => {
-              const svc = SERVICES.find(s => s.type === selectedService)
+              const svc = QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)
               if (!svc) return null
               const Icon = svc.icon
               return <Icon className={`h-4 w-4 ${svc.color}`} />
             })()}
             <span className="text-sm font-medium">
-              {SERVICES.find(s => s.type === selectedService)?.label}
+              {QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)?.label}
             </span>
           </div>
         </div>
@@ -271,12 +264,12 @@ export function PpobQuickAccess({
     <div className="p-4 space-y-3">
       {showSaldoBar && <SaldoBar />}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-        {SERVICES.map(({ type, label, icon: Icon, color }) => (
+        {QUICK_ACCESS_SERVICES.map(({ key, label, icon: Icon, color }) => (
           <Button
-            key={type}
+            key={key}
             variant="outline"
             className="h-auto flex-col gap-1.5 py-3"
-            onClick={() => setSelectedService(type)}
+            onClick={() => setSelectedService(key)}
           >
             <Icon className={`h-5 w-5 ${color}`} />
             <span className="text-xs font-medium">{label}</span>
@@ -710,16 +703,19 @@ function PdamInput({
       ) : (
         <div className="space-y-2">
           <Label>Pilih PDAM</Label>
-          <select
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          <Select
             value={selectedPdam}
-            onChange={(e) => { setSelectedPdam(e.target.value); setInquiryResult(null) }}
+            onValueChange={(value) => { setSelectedPdam(value); setInquiryResult(null) }}
           >
-            <option value="">-- Pilih PDAM --</option>
-            {pdamProducts?.map((p) => (
-              <option key={p.id} value={p.plu}>{p.merchant}</option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="-- Pilih PDAM --" />
+            </SelectTrigger>
+            <SelectContent>
+              {pdamProducts?.map((p) => (
+                <SelectItem key={p.id} value={p.plu}>{p.merchant}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
