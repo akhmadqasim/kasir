@@ -70,11 +70,6 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("id-ID").format(value)
 }
 
-function formatTime(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
-}
-
 function formatDateTime(dateStr: string): string {
   const d = new Date(dateStr)
   return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) +

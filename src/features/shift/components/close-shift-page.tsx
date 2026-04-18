@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { useAuthStore } from "@/features/auth"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"

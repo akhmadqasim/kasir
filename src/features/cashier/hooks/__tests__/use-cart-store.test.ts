@@ -3,7 +3,7 @@ import { useCartStore } from "../use-cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeProduct(overrides: Partial<Parameters<typeof useCartStore.getState>["0"]["addItem"] extends (p: infer P) => void ? P : never> & { id?: number; name?: string; sell_price?: number; stock?: number; unit?: string } = {}) {
+function makeProduct(overrides: Partial<{ id: number; name: string; sell_price: number; stock: number; unit: string }> = {}) {
   return {
     id: 1,
     name: "Indomie Goreng",
