@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -42,6 +43,7 @@ export function PaymentDialog({
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [paymentAmount, setPaymentAmount] = useState("")
   const [displayPayment, setDisplayPayment] = useState("")
+  const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
   const activeShift = useShiftStore((s) => s.activeShift)
@@ -134,6 +136,7 @@ export function PaymentDialog({
           payment_amount: finalPaymentAmount,
           transaction_discount: getTransactionDiscountAmount() || undefined,
           shift_id: activeShift?.id,
+          notes: notes.trim() || undefined,
         },
       },
       {
@@ -144,6 +147,7 @@ export function PaymentDialog({
           setPaymentAmount("")
           setDisplayPayment("")
           setPaymentMethod("cash")
+          setNotes("")
         },
         onError: (err) => {
           toast.error(`Gagal memproses transaksi: ${err.message}`)
@@ -157,6 +161,7 @@ export function PaymentDialog({
       setPaymentAmount("")
       setDisplayPayment("")
       setPaymentMethod("cash")
+      setNotes("")
     }
     onOpenChange(isOpen)
   }
@@ -225,17 +230,26 @@ export function PaymentDialog({
                   onKeyDown={handleKeyDown}
                 />
               </div>
-              <div className="flex flex-wrap gap-2">
-                {quickAmounts.map((amount) => (
-                  <Button
-                    key={amount}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleQuickAmount(amount)}
-                  >
-                    {amount === total ? "Uang Pas" : formatRupiah(amount)}
-                  </Button>
-                ))}
+              <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 flex-1">
+                  {quickAmounts.filter(a => a !== total).map((amount) => (
+                    <Button
+                      key={amount}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleQuickAmount(amount)}
+                    >
+                      {formatRupiah(amount)}
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  variant="default"
+                  className="h-auto min-h-[4rem] px-6 text-base font-bold self-stretch"
+                  onClick={() => handleQuickAmount(total)}
+                >
+                  Uang Pas
+                </Button>
               </div>
               {numericPayment > 0 && (
                 <div className="rounded-lg bg-muted p-3">
@@ -266,6 +280,18 @@ export function PaymentDialog({
               </TabsContent>
             ))}
           </Tabs>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="transaction-notes">Keterangan (opsional)</Label>
+          <Textarea
+            id="transaction-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Tambahkan catatan untuk transaksi ini..."
+            rows={2}
+            className="resize-none"
+          />
         </div>
 
         <DialogFooter>

@@ -122,18 +122,18 @@ export function TransactionSuccessDialog({
           {isCash && (
             <>
               <Separator />
-              <div className="text-center py-3">
-                <p className="text-sm text-muted-foreground mb-1">Jumlah Bayar</p>
-                <p className="text-5xl font-extrabold tabular-nums tracking-tight">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Jumlah Bayar</span>
+                <span className="text-lg font-semibold tabular-nums">
                   {formatRupiah(transaction.payment_amount)}
-                </p>
+                </span>
               </div>
               <Separator />
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Kembalian</span>
-                <span className="text-lg font-semibold text-green-600 tabular-nums">
+              <div className="text-center py-3">
+                <p className="text-sm text-muted-foreground mb-1">Kembalian</p>
+                <p className="text-5xl font-extrabold tabular-nums tracking-tight text-green-600">
                   {formatRupiah(transaction.change_amount)}
-                </span>
+                </p>
               </div>
             </>
           )}
@@ -143,6 +143,15 @@ export function TransactionSuccessDialog({
               <div className="flex items-center gap-2 text-sm text-blue-600">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
+              </div>
+            </>
+          )}
+          {transaction.notes && (
+            <>
+              <Separator />
+              <div className="text-sm">
+                <p className="text-muted-foreground mb-0.5">Catatan</p>
+                <p>{transaction.notes}</p>
               </div>
             </>
           )}
