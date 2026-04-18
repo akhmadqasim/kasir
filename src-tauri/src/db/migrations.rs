@@ -39,6 +39,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "010_ppob_flag_id",
         include_str!("../../migrations/010_ppob_flag_id.sql"),
     ),
+    (
+        "011_transaction_management",
+        include_str!("../../migrations/011_transaction_management.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

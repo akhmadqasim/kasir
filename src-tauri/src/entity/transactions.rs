@@ -18,6 +18,10 @@ pub struct Model {
     pub status: String,
     pub notes: Option<String>,
     pub shift_id: Option<i64>,
+    pub deleted_at: Option<String>,
+    pub deleted_by: Option<i64>,
+    pub deleted_reason: Option<String>,
+    pub updated_at: Option<String>,
     pub created_at: Option<String>,
 }
 

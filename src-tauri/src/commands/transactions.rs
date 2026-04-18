@@ -295,6 +295,10 @@ async fn persist_transaction<C: ConnectionTrait>(
         status: Set(status.to_string()),
         notes: Set(input.notes.clone()),
         shift_id: Set(input.shift_id),
+        deleted_at: Set(None),
+        deleted_by: Set(None),
+        deleted_reason: Set(None),
+        updated_at: Set(None),
         created_at: Set(Some(now.clone())),
     };
 
@@ -661,6 +665,8 @@ pub struct TransactionListItem {
     pub ppob_status: Option<String>,
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,
+    pub deleted_at: Option<String>,
+    pub deleted_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -788,6 +794,8 @@ pub async fn list_transactions(
             ppob_status,
             ppob_message,
             ppob_serial_number,
+            deleted_at: txn.deleted_at,
+            deleted_reason: txn.deleted_reason,
         });
     }
 
@@ -843,6 +851,164 @@ pub async fn get_transaction_detail(
         ppob_message,
         ppob_serial_number,
     })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteTransactionInput {
+    pub transaction_id: i64,
+    pub user_id: i64,
+    pub reason: String,
+}
+
+#[tauri::command]
+pub async fn delete_transaction(
+    db: State<'_, DatabaseConnection>,
+    input: DeleteTransactionInput,
+) -> Result<(), AppError> {
+    let user = users::Entity::find_by_id(input.user_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+
+    if user.role != "admin" {
+        return Err(AppError::Forbidden(
+            "Hanya admin yang dapat menghapus transaksi".into(),
+        ));
+    }
+
+    if input.reason.trim().is_empty() {
+        return Err(AppError::Validation("Alasan penghapusan wajib diisi".into()));
+    }
+
+    let transaction = transactions::Entity::find_by_id(input.transaction_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    if transaction.deleted_at.is_some() {
+        return Err(AppError::Validation("Transaksi sudah dihapus sebelumnya".into()));
+    }
+
+    // Check for linked refunds
+    use crate::entity::refunds;
+    let refund_count = refunds::Entity::find()
+        .filter(refunds::Column::TransactionId.eq(input.transaction_id))
+        .count(db.inner())
+        .await?;
+
+    if refund_count > 0 {
+        return Err(AppError::Validation(
+            "Tidak dapat menghapus transaksi yang sudah pernah di-refund".into(),
+        ));
+    }
+
+    let items = transaction_items::Entity::find()
+        .filter(transaction_items::Column::TransactionId.eq(input.transaction_id))
+        .all(db.inner())
+        .await?;
+
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    let txn = db.inner().begin().await?;
+
+    // Restore stock for regular items (not PPOB)
+    for item in &items {
+        if item.service_type.is_none() {
+            if let Some(product_id) = item.product_id {
+                txn.execute(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "UPDATE products SET stock = stock + $1, updated_at = $2 WHERE id = $3",
+                    vec![item.quantity.into(), now.clone().into(), product_id.into()],
+                ))
+                .await?;
+            }
+        }
+    }
+
+    // Soft delete the transaction
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "UPDATE transactions SET status = 'deleted', deleted_at = $1, deleted_by = $2, deleted_reason = $3, updated_at = $1 WHERE id = $4",
+        vec![
+            now.into(),
+            input.user_id.into(),
+            input.reason.trim().to_string().into(),
+            input.transaction_id.into(),
+        ],
+    ))
+    .await?;
+
+    txn.commit().await?;
+
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePaymentMethodInput {
+    pub transaction_id: i64,
+    pub user_id: i64,
+    pub payment_method: String,
+    pub reason: String,
+}
+
+#[tauri::command]
+pub async fn update_payment_method(
+    db: State<'_, DatabaseConnection>,
+    input: UpdatePaymentMethodInput,
+) -> Result<transactions::Model, AppError> {
+    let user = users::Entity::find_by_id(input.user_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+
+    if user.role != "admin" {
+        return Err(AppError::Forbidden(
+            "Hanya admin yang dapat mengubah metode pembayaran".into(),
+        ));
+    }
+
+    if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
+        return Err(AppError::Validation(format!(
+            "Metode pembayaran tidak valid: {}",
+            input.payment_method
+        )));
+    }
+
+    if input.reason.trim().is_empty() {
+        return Err(AppError::Validation("Alasan perubahan wajib diisi".into()));
+    }
+
+    let transaction = transactions::Entity::find_by_id(input.transaction_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    if transaction.deleted_at.is_some() {
+        return Err(AppError::Validation(
+            "Tidak dapat mengubah transaksi yang sudah dihapus".into(),
+        ));
+    }
+
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    // Recalculate change amount for cash payments
+    let change_amount = if input.payment_method == "cash" {
+        transaction.payment_amount - transaction.total_amount
+    } else {
+        0.0
+    };
+
+    let mut active_txn: transactions::ActiveModel = transaction.into();
+    active_txn.payment_method = Set(input.payment_method);
+    active_txn.change_amount = Set(Some(change_amount));
+    active_txn.updated_at = Set(Some(now));
+    let updated = active_txn.update(db.inner()).await?;
+
+    Ok(updated)
 }
 
 #[cfg(test)]

@@ -86,6 +86,8 @@ pub fn run() {
             commands::transactions::get_next_receipt_number,
             commands::transactions::list_transactions,
             commands::transactions::get_transaction_detail,
+            commands::transactions::delete_transaction,
+            commands::transactions::update_payment_method,
             commands::receipt::list_printers,
             commands::receipt::print_receipt,
             commands::receipt::test_print,

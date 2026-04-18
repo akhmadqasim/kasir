@@ -65,11 +65,13 @@ const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> =
   ppob_failed: "destructive",
   refunded: "destructive",
   partial_refund: "secondary",
+  deleted: "destructive",
 }
 
 const STATUS_CLASSNAMES: Record<string, string> = {
   completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
   pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -78,6 +80,7 @@ const STATUS_LABELS: Record<string, string> = {
   ppob_failed: id.transactions.ppobFailed,
   refunded: id.transactions.refunded,
   partial_refund: id.transactions.partialRefund,
+  deleted: id.transactions.deleted,
 }
 
 function toDateStr(d: Date): string {
@@ -176,6 +179,7 @@ export function TransactionsPage() {
             <SelectItem value="ppob_failed">{id.transactions.ppobFailed}</SelectItem>
             <SelectItem value="refunded">{id.transactions.refunded}</SelectItem>
             <SelectItem value="partial_refund">{id.transactions.partialRefund}</SelectItem>
+            <SelectItem value="deleted">{id.transactions.deleted}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -264,7 +268,11 @@ export function TransactionsPage() {
               </TableRow>
             ) : (
               data.data.map((txn) => (
-                <TableRow key={txn.id} className="cursor-pointer" onClick={() => setDetailTxn(txn)}>
+                <TableRow
+                  key={txn.id}
+                  className={`cursor-pointer ${txn.status === "deleted" ? "opacity-50" : ""}`}
+                  onClick={() => setDetailTxn(txn)}
+                >
                   <TableCell className="font-mono text-sm">
                     <div className="space-y-1">
                       <p>{txn.receipt_number}</p>
@@ -305,7 +313,7 @@ export function TransactionsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {!txn.has_ppob && txn.status !== "refunded" && (
+                      {!txn.has_ppob && txn.status !== "refunded" && txn.status !== "deleted" && (
                         <Button
                           variant="ghost"
                           size="icon"

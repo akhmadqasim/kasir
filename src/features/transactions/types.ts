@@ -17,6 +17,8 @@ export interface TransactionListItem {
   ppob_status: string | null
   ppob_message: string | null
   ppob_serial_number: string | null
+  deleted_at: string | null
+  deleted_reason: string | null
 }
 
 export interface PaginatedTransactions {
@@ -61,6 +63,10 @@ export interface Transaction {
   change_amount: number | null
   status: string
   notes: string | null
+  deleted_at: string | null
+  deleted_by: number | null
+  deleted_reason: string | null
+  updated_at: string | null
   created_at: string | null
 }
 

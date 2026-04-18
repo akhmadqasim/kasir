@@ -56,6 +56,10 @@ export interface Transaction {
   change_amount: number
   status: string
   notes: string | null
+  deleted_at: string | null
+  deleted_by: number | null
+  deleted_reason: string | null
+  updated_at: string | null
   created_at: string
 }
 

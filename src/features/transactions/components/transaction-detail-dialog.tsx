@@ -1,4 +1,4 @@
-import { Loader2, Printer, RefreshCcw, RotateCcw } from "lucide-react"
+import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
@@ -6,15 +6,35 @@ import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useAuthStore } from "@/features/auth"
 import { formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import type { TransactionDetail, TransactionListItem } from "../types"
@@ -45,11 +65,13 @@ const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> =
   ppob_failed: "destructive",
   refunded: "destructive",
   partial_refund: "secondary",
+  deleted: "destructive",
 }
 
 const STATUS_CLASSNAMES: Record<string, string> = {
   completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
   pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -58,6 +80,7 @@ const STATUS_LABELS: Record<string, string> = {
   ppob_failed: id.transactions.ppobFailed,
   refunded: id.transactions.refunded,
   partial_refund: id.transactions.partialRefund,
+  deleted: id.transactions.deleted,
 }
 
 const PPOB_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -74,7 +97,16 @@ interface TransactionDetailDialogProps {
 export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === "admin"
   const [isRetrying, setIsRetrying] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteReason, setDeleteReason] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showEditPayment, setShowEditPayment] = useState(false)
+  const [newPaymentMethod, setNewPaymentMethod] = useState("")
+  const [editPaymentReason, setEditPaymentReason] = useState("")
+  const [isUpdatingPayment, setIsUpdatingPayment] = useState(false)
 
   const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
     "get_transaction_detail",
@@ -109,6 +141,64 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
       setIsRetrying(false)
     }
   }
+
+  const handleDelete = async () => {
+    if (!transaction || !user) return
+    if (!deleteReason.trim()) {
+      toast.error(id.transactions.reasonRequired)
+      return
+    }
+    setIsDeleting(true)
+    try {
+      await invoke("delete_transaction", {
+        input: {
+          transaction_id: transaction.id,
+          user_id: user.id,
+          reason: deleteReason.trim(),
+        },
+      })
+      toast.success(id.transactions.deleteSuccess)
+      setShowDeleteConfirm(false)
+      setDeleteReason("")
+      onClose()
+      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+    } catch (e) {
+      toast.error(`${e}`)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleUpdatePaymentMethod = async () => {
+    if (!transaction || !user) return
+    if (!editPaymentReason.trim()) {
+      toast.error(id.transactions.reasonRequired)
+      return
+    }
+    setIsUpdatingPayment(true)
+    try {
+      await invoke("update_payment_method", {
+        input: {
+          transaction_id: transaction.id,
+          user_id: user.id,
+          payment_method: newPaymentMethod,
+          reason: editPaymentReason.trim(),
+        },
+      })
+      toast.success(id.transactions.editPaymentSuccess)
+      setShowEditPayment(false)
+      setNewPaymentMethod("")
+      setEditPaymentReason("")
+      queryClient.invalidateQueries({ queryKey: ["get_transaction_detail"] })
+      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+    } catch (e) {
+      toast.error(`${e}`)
+    } finally {
+      setIsUpdatingPayment(false)
+    }
+  }
+
+  const isDeleted = detail?.transaction.status === "deleted"
 
   return (
     <Dialog open={!!transaction} onOpenChange={(open) => !open && onClose()}>
@@ -217,6 +307,15 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   </div>
                 </>
               )}
+              {detail.transaction.deleted_reason && (
+                <>
+                  <Separator className="my-2" />
+                  <div className="rounded-md bg-red-50 p-2 dark:bg-red-950">
+                    <p className="text-sm font-medium text-red-700 dark:text-red-400">Alasan Penghapusan</p>
+                    <p className="text-sm text-red-600 dark:text-red-300">{detail.transaction.deleted_reason}</p>
+                  </div>
+                </>
+              )}
               {ppobItem && (
                 <div className="pt-1 space-y-1">
                   <p className="text-muted-foreground">Status PPOB</p>
@@ -230,43 +329,141 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               )}
             </div>
 
-            <div className="flex justify-end gap-2">
-              {ppobCanRetry && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRetryPpob}
-                  disabled={isRetrying}
-                >
-                  {isRetrying ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                  )}
-                  Retry PPOB
+            <div className="flex justify-between gap-2">
+              <div className="flex gap-2">
+                {isAdmin && !isDeleted && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {id.common.delete}
+                  </Button>
+                )}
+                {isAdmin && !isDeleted && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setNewPaymentMethod(detail.transaction.payment_method)
+                      setShowEditPayment(true)
+                    }}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    {id.transactions.editPaymentMethod}
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {ppobCanRetry && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRetryPpob}
+                    disabled={isRetrying}
+                  >
+                    {isRetrying ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                    )}
+                    Retry PPOB
+                  </Button>
+                )}
+                {!detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onClose()
+                      navigate(`/refund/${detail.transaction.id}`)
+                    }}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    {id.refund.title}
+                  </Button>
+                )}
+                <Button size="sm" onClick={handlePrint} disabled={isDeleted}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  {id.transactions.printReceipt}
                 </Button>
-              )}
-              {!detail.has_ppob && detail.transaction.status !== "refunded" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    onClose()
-                    navigate(`/refund/${detail.transaction.id}`)
-                  }}
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  {id.refund.title}
-                </Button>
-              )}
-              <Button size="sm" onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" />
-                {id.transactions.printReceipt}
-              </Button>
+              </div>
             </div>
           </div>
         )}
       </DialogContent>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{id.transactions.deleteTransaction}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {id.transactions.deleteConfirm}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            placeholder={id.transactions.deleteReasonPlaceholder}
+            value={deleteReason}
+            onChange={(e) => setDeleteReason(e.target.value)}
+            className="min-h-[80px]"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setDeleteReason(""); setShowDeleteConfirm(false) }}>
+              {id.common.cancel}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting || !deleteReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {id.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Payment Method Dialog */}
+      <Dialog open={showEditPayment} onOpenChange={setShowEditPayment}>
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{id.transactions.editPaymentMethod}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Select value={newPaymentMethod} onValueChange={setNewPaymentMethod}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">{id.payment.cash}</SelectItem>
+                <SelectItem value="qris">{id.payment.qris}</SelectItem>
+                <SelectItem value="ewallet">{id.payment.ewallet}</SelectItem>
+                <SelectItem value="transfer">{id.payment.transfer}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Textarea
+              placeholder={id.transactions.editPaymentReasonPlaceholder}
+              value={editPaymentReason}
+              onChange={(e) => setEditPaymentReason(e.target.value)}
+              className="min-h-[80px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditPaymentReason(""); setShowEditPayment(false) }}>
+              {id.common.cancel}
+            </Button>
+            <Button
+              onClick={handleUpdatePaymentMethod}
+              disabled={isUpdatingPayment || !editPaymentReason.trim() || !newPaymentMethod}
+            >
+              {isUpdatingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {id.common.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
