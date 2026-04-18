@@ -1,4 +1,3 @@
-export { RefundDialog } from "./components/refund-dialog"
 export { RefundsPage } from "./components/refunds-page"
 export { RefundDetailDialog } from "./components/refund-detail-dialog"
 export { CreateRefundPage } from "./components/create-refund-page"

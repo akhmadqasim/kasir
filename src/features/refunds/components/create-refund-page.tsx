@@ -1,8 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { toast } from "sonner"
-import { invoke } from "@tauri-apps/api/core"
-import { useQueryClient } from "@tanstack/react-query"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale"
 import { ArrowLeft, Search, Trash2, Plus, Minus } from "lucide-react"
@@ -35,54 +32,48 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { useAuthStore } from "@/features/auth"
 import { formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
-import type { TransactionDetail, TransactionItem } from "@/features/transactions/types"
-import type { Product, PaginatedProducts } from "@/features/products/types"
-import type { CreateRefundInput, RefundResult } from "../types"
-
-type Condition = "good" | "damaged" | "expired"
-type ActionType = "refund" | "exchange"
-
-interface RefundItemState {
-  checked: boolean
-  quantity: number
-  condition: Condition
-  maxQty: number
-}
-
-interface ExchangeItem {
-  product_id: number
-  product_name: string
-  sell_price: number
-  quantity: number
-  unit: string
-}
-
-const CONDITION_LABELS: Record<Condition, string> = {
-  good: id.refund.conditionGood,
-  damaged: id.refund.conditionDamaged,
-  expired: id.refund.conditionExpired,
-}
+import type { TransactionItem } from "@/features/transactions/types"
+import type { PaginatedProducts } from "@/features/products/types"
+import {
+  useRefundForm,
+  CONDITION_LABELS,
+  type Condition,
+  type RefundItemState,
+} from "../hooks/use-refund-form"
 
 export function CreateRefundPage() {
   const { transactionId } = useParams<{ transactionId: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
 
-  const [reason, setReason] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [itemStates, setItemStates] = useState<Record<number, RefundItemState>>({})
-  const [actionType, setActionType] = useState<ActionType>("refund")
-  const [exchangeItems, setExchangeItems] = useState<ExchangeItem[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [searchFocused, setSearchFocused] = useState(false)
   const debouncedSearch = useDebounce(searchQuery, 300)
 
-  const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
-    "get_transaction_detail",
-    { transactionId: Number(transactionId) },
-    { enabled: !!transactionId }
-  )
+  const {
+    detail,
+    isLoading,
+    itemStates,
+    actionType,
+    exchangeItems,
+    reason,
+    isSubmitting,
+    selectedItems,
+    totalRefund,
+    totalExchange,
+    difference,
+    setReason,
+    setActionType,
+    updateItem,
+    addExchangeItem,
+    updateExchangeQty,
+    removeExchangeItem,
+    handleSubmit,
+  } = useRefundForm({
+    transactionId: transactionId ? Number(transactionId) : null,
+    userId: user?.id ?? null,
+    onSuccess: () => navigate(-1),
+  })
 
   const searchArgs = useMemo(() => ({
     params: { query: debouncedSearch, page: 1, per_page: 5 },
@@ -93,117 +84,6 @@ export function CreateRefundPage() {
     searchArgs,
     { enabled: actionType === "exchange" && debouncedSearch.length >= 2 }
   )
-
-  useEffect(() => {
-    if (!detail) return
-    const states: Record<number, RefundItemState> = {}
-    for (const item of detail.items) {
-      states[item.id] = {
-        checked: false,
-        quantity: item.quantity,
-        condition: "good",
-        maxQty: item.quantity,
-      }
-    }
-    setItemStates(states)
-  }, [detail])
-
-  const updateItem = useCallback((itemId: number, updates: Partial<RefundItemState>) => {
-    setItemStates((prev) => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], ...updates },
-    }))
-  }, [])
-
-  const addExchangeItem = useCallback((product: Product) => {
-    setExchangeItems((prev) => {
-      const existing = prev.find((i) => i.product_id === product.id)
-      if (existing) {
-        return prev.map((i) =>
-          i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i
-        )
-      }
-      return [...prev, {
-        product_id: product.id,
-        product_name: product.name,
-        sell_price: product.sell_price,
-        quantity: 1,
-        unit: product.unit,
-      }]
-    })
-    setSearchQuery("")
-  }, [])
-
-  const updateExchangeQty = useCallback((productId: number, qty: number) => {
-    setExchangeItems((prev) =>
-      prev.map((i) => i.product_id === productId ? { ...i, quantity: Math.max(1, qty) } : i)
-    )
-  }, [])
-
-  const removeExchangeItem = useCallback((productId: number) => {
-    setExchangeItems((prev) => prev.filter((i) => i.product_id !== productId))
-  }, [])
-
-  const selectedItems = useMemo(() => {
-    if (!detail) return []
-    return detail.items.filter((item) => itemStates[item.id]?.checked)
-  }, [detail, itemStates])
-
-  const totalRefund = useMemo(() => {
-    return selectedItems.reduce((sum, item) => {
-      const state = itemStates[item.id]
-      return sum + item.product_price * (state?.quantity ?? 0)
-    }, 0)
-  }, [selectedItems, itemStates])
-
-  const totalExchange = useMemo(() => {
-    return exchangeItems.reduce((sum, item) => sum + item.sell_price * item.quantity, 0)
-  }, [exchangeItems])
-
-  const difference = totalRefund - totalExchange
-
-  const handleSubmit = async () => {
-    if (!transactionId || !user) return
-
-    if (selectedItems.length === 0) {
-      toast.error(id.refund.noItemsSelected)
-      return
-    }
-
-    if (actionType === "exchange" && exchangeItems.length === 0) {
-      toast.error(id.refund.noExchangeItems)
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const refundInput: CreateRefundInput = {
-        transaction_id: Number(transactionId),
-        user_id: user.id,
-        reason: reason || undefined,
-        items: selectedItems.map((item) => ({
-          transaction_item_id: item.id,
-          product_id: item.product_id!,
-          quantity: itemStates[item.id].quantity,
-          condition: itemStates[item.id].condition,
-        })),
-        exchange_items: actionType === "exchange"
-          ? exchangeItems.map((i) => ({ product_id: i.product_id, quantity: i.quantity }))
-          : undefined,
-      }
-
-      await invoke<RefundResult>("create_refund", { input: refundInput })
-      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["list_refunds"] })
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
-      toast.success(actionType === "exchange" ? id.refund.exchangeSuccess : id.refund.refundSuccess)
-      navigate(-1)
-    } catch (e) {
-      toast.error(`${id.refund.refundFailed}: ${e}`)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   if (isLoading || !detail) {
     return (
@@ -289,9 +169,8 @@ export function CreateRefundPage() {
               <Select
                 value={actionType}
                 onValueChange={(v) => {
-                  setActionType(v as ActionType)
-                  if (v === "refund") {
-                    setExchangeItems([])
+                  setActionType(v as "refund" | "exchange")
+                  if (v !== "exchange") {
                     setSearchQuery("")
                   }
                 }}
@@ -300,6 +179,7 @@ export function CreateRefundPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="refund">{id.refund.actionRefund}</SelectItem>
                   <SelectItem value="exchange">{id.refund.actionExchange}</SelectItem>
                 </SelectContent>
               </Select>
@@ -328,7 +208,10 @@ export function CreateRefundPage() {
                         <button
                           key={product.id}
                           type="button"
-                          onClick={() => addExchangeItem(product)}
+                          onClick={() => {
+                            addExchangeItem(product)
+                            setSearchQuery("")
+                          }}
                           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
                         >
                           <div className="grid gap-0.5">
@@ -588,6 +471,7 @@ function RefundItemCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="good">{CONDITION_LABELS.good}</SelectItem>
                   <SelectItem value="damaged">{CONDITION_LABELS.damaged}</SelectItem>
                   <SelectItem value="expired">{CONDITION_LABELS.expired}</SelectItem>
                 </SelectContent>
