@@ -209,10 +209,13 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 </div>
               )}
               {detail.transaction.notes && (
-                <div className="pt-1">
-                  <p className="text-muted-foreground">{id.transactions.notes}</p>
-                  <p>{detail.transaction.notes}</p>
-                </div>
+                <>
+                  <Separator className="my-2" />
+                  <div>
+                    <p className="text-sm font-medium">{id.transactions.notes}</p>
+                    <p>{detail.transaction.notes}</p>
+                  </div>
+                </>
               )}
               {ppobItem && (
                 <div className="pt-1 space-y-1">
