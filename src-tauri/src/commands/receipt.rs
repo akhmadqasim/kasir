@@ -308,6 +308,7 @@ pub struct ReceiptDataResponse {
     pub payment_amount: f64,
     pub change_amount: f64,
     pub footer_text: Option<String>,
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -385,6 +386,7 @@ pub async fn get_receipt_data(
         payment_amount: transaction.payment_amount,
         change_amount: transaction.change_amount.unwrap_or(0.0),
         footer_text: settings.footer_text,
+        notes: transaction.notes,
     })
 }
 

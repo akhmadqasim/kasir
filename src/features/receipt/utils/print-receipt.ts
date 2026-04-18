@@ -164,6 +164,9 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
     }
   </table>
 
+  ${data.notes ? `<div class="divider"></div>
+  <div style="font-size: 11px;">Catatan: ${data.notes}</div>` : ""}
+
   <div class="divider-double"></div>
 
   <div class="footer">

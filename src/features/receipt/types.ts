@@ -11,6 +11,7 @@ export interface ReceiptData {
   payment_amount: number
   change_amount: number
   footer_text: string | null
+  notes: string | null
 }
 
 export interface ReceiptItem {
