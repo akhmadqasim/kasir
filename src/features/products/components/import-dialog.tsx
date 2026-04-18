@@ -34,6 +34,37 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useQueryClient } from "@tanstack/react-query"
 import type { BulkProductInput, BulkImportResult } from "../types"
 
+/** Validate EAN/UPC check digit for a barcode string of 8, 12, or 13 digits */
+function isValidCheckDigit(code: string): boolean {
+  if (!/^\d+$/.test(code)) return false
+  const len = code.length
+  if (len !== 8 && len !== 12 && len !== 13) return false
+  const digits = code.split("").map(Number)
+  const check = digits.pop()!
+  const sum = digits.reduce((acc, d, i) => {
+    const weight = len === 13 ? (i % 2 === 0 ? 1 : 3) : (i % 2 === 0 ? 3 : 1)
+    return acc + d * weight
+  }, 0)
+  return (10 - (sum % 10)) % 10 === check
+}
+
+/** Pad barcode with leading zeros to standard lengths and validate check digit */
+function fixBarcodeLeadingZero(value: string): string {
+  if (!value || !/^\d+$/.test(value)) return value
+  if (value.startsWith("0")) return value
+  const len = value.length
+  // Already a standard length - leave as is
+  if (len === 8 || len === 12 || len === 13) return value
+  // Try padding to each standard barcode length (smallest first)
+  for (const targetLen of [8, 12, 13]) {
+    if (len < targetLen) {
+      const padded = value.padStart(targetLen, "0")
+      if (isValidCheckDigit(padded)) return padded
+    }
+  }
+  return value
+}
+
 const TARGET_FIELDS = [
   { key: "skip", label: "-- Lewati --" },
   { key: "name", label: "Produk (Nama)" },
@@ -165,21 +196,40 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         }
         const sheet = wb.Sheets[bestSheet]
 
-        const allRows: string[][] = utils.sheet_to_json(sheet, {
-          header: 1,
-          raw: true,
-          defval: "",
-        })
-
-        // Convert all values to strings, fixing scientific notation for barcodes
-        const stringRows = allRows.map((row) =>
-          row.map((cell) => {
-            if (typeof cell === "number" && cell > 1e10) {
-              return Math.round(cell).toString()
+        // Read cells directly to properly handle barcodes with leading zeros
+        const ref = sheet["!ref"]
+        if (!ref) {
+          toast.error("Sheet kosong")
+          return
+        }
+        const range = utils.decode_range(ref)
+        const stringRows: string[][] = []
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const row: string[] = []
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cell = sheet[utils.encode_cell({ r, c })]
+            if (!cell) {
+              row.push("")
+              continue
             }
-            return String(cell ?? "").trim()
-          })
-        )
+            if (cell.t === "s") {
+              // Text cell — preserves leading zeros
+              row.push(String(cell.v ?? "").trim())
+            } else if (cell.t === "n") {
+              // Number cell — prefer formatted text (preserves custom formats like leading zeros)
+              const w = cell.w as string | undefined
+              if (w && !/[eE]/.test(w)) {
+                row.push(w.trim())
+              } else {
+                const num = cell.v as number
+                row.push(Number.isFinite(num) ? num.toFixed(0) : String(num))
+              }
+            } else {
+              row.push(String(cell.w ?? cell.v ?? "").trim())
+            }
+          }
+          stringRows.push(row)
+        }
 
         // Auto-detect header row by looking for known column names
         const knownHeaders = ["produk", "barcode", "harga", "stok", "nama", "nama produk", "hpp"]
@@ -238,12 +288,12 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
       results.push({
         name: product.name,
-        barcode: product.barcode || undefined,
+        barcode: fixBarcodeLeadingZero(product.barcode || "") || undefined,
         category_name: product.category_name || undefined,
-        buy_price: parseFloat(product.buy_price) || 0,
-        sell_price: parseFloat(product.sell_price) || 0,
-        margin: parseFloat(product.margin) || 0,
-        stock: parseInt(product.stock, 10) || 0,
+        buy_price: parseFloat(String(product.buy_price).replace(/[^\d.-]/g, "")) || 0,
+        sell_price: parseFloat(String(product.sell_price).replace(/[^\d.-]/g, "")) || 0,
+        margin: parseFloat(String(product.margin).replace(/[^\d.-]/g, "")) || 0,
+        stock: parseInt(String(product.stock).replace(/[^\d-]/g, ""), 10) || 0,
         unit: product.unit || "pcs",
       })
     }
