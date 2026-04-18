@@ -39,6 +39,7 @@ interface CartStore {
     ppob_product_code?: string
     ppob_inquiry_id?: string
     ppob_payment_code?: string
+    ppob_flag_id?: string
   }) => void
   removeItem: (cartId: string) => void
   updateQuantity: (cartId: string, qty: number) => void

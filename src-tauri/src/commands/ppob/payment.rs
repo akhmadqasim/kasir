@@ -18,6 +18,8 @@ pub async fn ppob_confirm_payment(
     product_code: Option<String>,
     payment_code: Option<String>,
     flag_id: Option<String>,
+    phone_number: Option<String>,
+    amount: Option<f64>,
 ) -> Result<PaymentResult, AppError> {
     execute_fulfillment_request(
         db.inner(),
@@ -30,6 +32,8 @@ pub async fn ppob_confirm_payment(
             product_code,
             payment_code,
             flag_id,
+            phone_number,
+            amount,
         },
     )
     .await

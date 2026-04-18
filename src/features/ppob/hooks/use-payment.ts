@@ -8,5 +8,8 @@ export function usePpobPayment() {
     customerId?: string
     productCode?: string
     paymentCode?: string
+    flagId?: string
+    phoneNumber?: string
+    amount?: number
   }>("ppob_confirm_payment")
 }

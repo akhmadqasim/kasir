@@ -74,6 +74,63 @@ function extractNominal(name: string): number | null {
   return null
 }
 
+interface BpjsParticipant {
+  number: string
+  name: string
+}
+
+function getBpjsDataBook(rawData: Record<string, unknown> | undefined): string {
+  const inquiry = rawData?.inquiry
+  if (inquiry && typeof inquiry === "object" && typeof (inquiry as { data_book?: unknown }).data_book === "string") {
+    return (inquiry as { data_book: string }).data_book
+  }
+
+  const data = rawData?.data
+  if (data && typeof data === "object" && typeof (data as { data_book?: unknown }).data_book === "string") {
+    return (data as { data_book: string }).data_book
+  }
+
+  return ""
+}
+
+function parseBpjsParticipants(dataBook: string): BpjsParticipant[] {
+  const participants: BpjsParticipant[] = []
+  let current: Partial<BpjsParticipant> = {}
+
+  const pushCurrent = () => {
+    if (current.number || current.name) {
+      participants.push({
+        number: current.number ?? "",
+        name: current.name ?? "",
+      })
+      current = {}
+    }
+  }
+
+  for (const line of dataBook.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    if (trimmed.startsWith("----- Peserta")) {
+      pushCurrent()
+      continue
+    }
+
+    const [label, rawValue] = trimmed.split(/\s*:\s*/, 2)
+    const value = rawValue?.trim() ?? ""
+    if (!value) continue
+
+    if (label === "Nomor Peserta") {
+      current.number = value
+    } else if (label === "Nama Peserta") {
+      current.name = value
+    }
+  }
+
+  pushCurrent()
+  return participants
+}
+
 const DEFAULT_MARKUP: PpobMarkupConfig = { type: "fixed", value: 0 }
 
 interface PpobQuickAccessProps {
@@ -715,6 +772,11 @@ function PdamInput({
 }
 
 // --- BPJS Input ---
+const BPJS_TYPE_OPTIONS = [
+  { value: "BPJSKES", label: "Kesehatan", serviceLabel: "BPJS Kesehatan" },
+  { value: "BPJSTK", label: "Ketenagakerjaan", serviceLabel: "BPJS Ketenagakerjaan" },
+] as const
+
 function BpjsInput({
   onAddToCart,
   wideLayout = false,
@@ -725,18 +787,46 @@ function BpjsInput({
     service_type: string
     service_ref: string
     buy_price?: number
+    ppob_product_code?: string
     ppob_inquiry_id?: string
+    ppob_payment_code?: string
+    ppob_flag_id?: string
   }) => void
   wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
+  const [bpjsType, setBpjsType] = useState<(typeof BPJS_TYPE_OPTIONS)[number]["value"]>("BPJSKES")
   const bpjsInquiry = useBpjsInquiry()
   const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const bpjsRawData = inquiryResult?.rawData as Record<string, unknown> | undefined
+  const bpjsDataBook = getBpjsDataBook(bpjsRawData)
+  const bpjsParticipants = parseBpjsParticipants(bpjsDataBook)
+  const primaryParticipant =
+    bpjsParticipants.find((participant) => participant.number === customerId) ?? bpjsParticipants[0]
+  const displayCustomerName = primaryParticipant?.name ?? inquiryResult?.customerName ?? customerId
+  const selectedBpjsType = BPJS_TYPE_OPTIONS.find((option) => option.value === bpjsType) ?? BPJS_TYPE_OPTIONS[0]
+  const customerIdLabel = selectedBpjsType.value === "BPJSKES" ? "Nomor VA" : "Nomor Kartu"
+  const customerIdPlaceholder = selectedBpjsType.value === "BPJSKES"
+    ? "Masukkan nomor VA BPJS"
+    : "Masukkan nomor kartu BPJS"
+  const bpjsPaymentCode = (() => {
+    const raw = inquiryResult?.rawData as { data?: Record<string, unknown>; payment_code?: unknown } | undefined
+    const fromData = raw?.data?.payment_code
+    if (typeof fromData === "string" && fromData.length > 0) return fromData
+    if (typeof raw?.payment_code === "string" && raw.payment_code.length > 0) return raw.payment_code
+    return customerId
+  })()
 
   const handleInquiry = () => {
     if (!customerId) return
     bpjsInquiry.mutate(
-      { customerId, phoneNumber: customerId, paymentCode: "", bpjsType: "1", period: "1" },
+      {
+        customerId,
+        phoneNumber: "00",
+        paymentCode: customerId,
+        bpjsType: selectedBpjsType.value,
+        period: "1",
+      },
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
@@ -747,19 +837,27 @@ function BpjsInput({
   const handleConfirm = () => {
     if (!inquiryResult) return
     onAddToCart({
-      name: `BPJS - ${inquiryResult.customerName ?? customerId}`,
+      name: `${selectedBpjsType.serviceLabel} - ${displayCustomerName}${bpjsParticipants.length > 1 ? ` +${bpjsParticipants.length - 1} peserta` : ""}`,
       price: inquiryResult.total,
       service_type: "bpjs",
       service_ref: customerId,
       buy_price: inquiryResult.amount,
+      ppob_product_code: selectedBpjsType.value,
       ppob_inquiry_id: inquiryResult.inquiryId,
+      ppob_payment_code: bpjsPaymentCode,
+      ppob_flag_id: "00",
     })
   }
 
   const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: "BPJS Kesehatan" },
-    { label: "No. BPJS", value: customerId, mono: true },
-    { label: "Nama", value: inquiryResult.customerName ?? "-" },
+    { label: "Layanan", value: selectedBpjsType.serviceLabel },
+    { label: customerIdLabel, value: customerId, mono: true },
+    { label: "Nama Utama", value: displayCustomerName },
+    ...(bpjsParticipants.length > 1 ? [{ label: "Jumlah Peserta", value: String(bpjsParticipants.length) }] : []),
+    ...bpjsParticipants.map((participant, index) => ({
+      label: `Peserta ${index + 1}`,
+      value: participant.name || participant.number || "-",
+    })),
     { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
     { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
     { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
@@ -767,10 +865,26 @@ function BpjsInput({
 
   const inputSection = (
     <div className="space-y-4">
+      <Tabs
+        value={bpjsType}
+        onValueChange={(value) => {
+          setBpjsType(value as (typeof BPJS_TYPE_OPTIONS)[number]["value"])
+          setInquiryResult(null)
+        }}
+      >
+        <TabsList className="grid w-full grid-cols-2">
+          {BPJS_TYPE_OPTIONS.map((option) => (
+            <TabsTrigger key={option.value} value={option.value}>
+              {option.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       <div className="space-y-2">
-        <Label>Nomor BPJS</Label>
+        <Label>{customerIdLabel}</Label>
         <Input
-          placeholder="Masukkan nomor BPJS"
+          placeholder={customerIdPlaceholder}
           value={customerId}
           onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
           className="font-mono !text-xl h-12 tracking-wider"

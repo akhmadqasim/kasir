@@ -61,7 +61,7 @@ pub fn extract_optional_string(val: &Value, keys: &[&str]) -> Option<String> {
 /// Extract f64 from Value trying multiple keys (returns 0.0 if not found)
 pub fn extract_f64(val: &Value, keys: &[&str]) -> f64 {
     for key in keys {
-        if let Some(n) = val[*key].as_f64() {
+        if let Some(n) = parse_number(Some(&val[*key])) {
             return n;
         }
     }

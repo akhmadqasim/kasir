@@ -374,7 +374,21 @@ fn build_ppob_request(item: &transaction_items::Model) -> Result<PpobFulfillment
         product_id: item.ppob_product_id,
         product_code: item.ppob_product_code.clone(),
         payment_code: item.ppob_payment_code.clone(),
-        flag_id: item.ppob_flag_id.clone(),
+        flag_id: if item.service_type.as_deref() == Some("pln") {
+            item.ppob_flag_id.clone()
+        } else {
+            None
+        },
+        phone_number: if item.service_type.as_deref() == Some("bpjs") {
+            item.ppob_flag_id.clone()
+        } else {
+            None
+        },
+        amount: if item.service_type.as_deref() == Some("bpjs") {
+            item.buy_price
+        } else {
+            None
+        },
     })
 }
 
