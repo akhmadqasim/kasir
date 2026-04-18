@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Minus, Plus } from "lucide-react"
 import {
   Dialog,
@@ -33,30 +33,32 @@ export function CartItemEditDialog({
   onOpenChange,
   item,
 }: CartItemEditDialogProps) {
+  if (!item) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+        <CartItemEditBody item={item} onOpenChange={onOpenChange} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CartItemEditBody({
+  item,
+  onOpenChange,
+}: {
+  item: CartItem
+  onOpenChange: (open: boolean) => void
+}) {
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const setItemDiscount = useCartStore((s) => s.setItemDiscount)
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
 
-  const [qty, setQty] = useState(1)
-  const [discType, setDiscType] = useState<"fixed" | "percentage">("fixed")
-  const [discRaw, setDiscRaw] = useState("")
-
-  // Sync state when dialog opens or item changes
-  useEffect(() => {
-    if (open && item) {
-      setQty(item.quantity)
-      const disc = itemDiscounts[item.cart_id]
-      if (disc) {
-        setDiscType(disc.type)
-        setDiscRaw(String(disc.value))
-      } else {
-        setDiscType("fixed")
-        setDiscRaw("")
-      }
-    }
-  }, [open, item, itemDiscounts])
-
-  if (!item) return null
+  const disc = itemDiscounts[item.cart_id]
+  const [qty, setQty] = useState(item.quantity)
+  const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
+  const [discRaw, setDiscRaw] = useState(disc ? String(disc.value) : "")
 
   const lineTotal = item.product_price * qty
   const discValue = Number(discRaw) || 0
@@ -114,13 +116,12 @@ export function CartItemEditDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle className="leading-snug">
-            {item.product_name}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle className="leading-snug">
+          {item.product_name}
+        </DialogTitle>
+      </DialogHeader>
 
         {/* Price info */}
         <div className="text-sm text-muted-foreground">
@@ -230,7 +231,6 @@ export function CartItemEditDialog({
           )}
           <Button onClick={handleSave}>Simpan</Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </>
   )
 }

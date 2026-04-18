@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -39,73 +39,91 @@ interface ProductFormDialogProps {
 }
 
 export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <ProductFormBody product={product} onOpenChange={onOpenChange} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface FormState {
+  name: string
+  barcode: string
+  sku: string
+  skuManual: boolean
+  categoryId: string
+  buyPrice: string
+  sellPrice: string
+  margin: string
+  stock: string
+  unit: string
+  minStock: string
+}
+
+const emptyForm: FormState = {
+  name: "",
+  barcode: "",
+  sku: "",
+  skuManual: false,
+  categoryId: "",
+  buyPrice: "",
+  sellPrice: "",
+  margin: "",
+  stock: "",
+  unit: "pcs",
+  minStock: "",
+}
+
+function buildFormFromProduct(p: Product): FormState {
+  let margin = p.margin ? String(p.margin) : ""
+  if (!p.margin && p.buy_price > 0 && p.sell_price > 0) {
+    const m = ((p.sell_price - p.buy_price) / p.buy_price) * 100
+    margin = m % 1 === 0 ? String(m) : m.toFixed(2)
+  }
+  return {
+    name: p.name,
+    barcode: p.barcode || "",
+    sku: p.sku || "",
+    skuManual: true,
+    categoryId: p.category_id ? String(p.category_id) : "",
+    buyPrice: String(p.buy_price),
+    sellPrice: String(p.sell_price),
+    margin,
+    stock: String(p.stock),
+    unit: p.unit,
+    minStock: String(p.min_stock),
+  }
+}
+
+function ProductFormBody({ product, onOpenChange }: { product?: Product | null; onOpenChange: (open: boolean) => void }) {
   const isEditing = !!product
   const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createProduct = useCreateProduct()
   const updateProduct = useUpdateProduct()
 
-  const [name, setName] = useState("")
-  const [barcode, setBarcode] = useState("")
-  const [sku, setSku] = useState("")
-  const [skuManual, setSkuManual] = useState(false)
-  const [categoryId, setCategoryId] = useState<string>("")
-  const [buyPrice, setBuyPrice] = useState("")
-  const [sellPrice, setSellPrice] = useState("")
-  const [margin, setMargin] = useState("")
-  const [stock, setStock] = useState("")
-  const [unit, setUnit] = useState("pcs")
-  const [minStock, setMinStock] = useState("")
+  const [form, setForm] = useState<FormState>(() =>
+    product ? buildFormFromProduct(product) : emptyForm
+  )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  useEffect(() => {
-    if (open) {
-      if (product) {
-        setName(product.name)
-        setBarcode(product.barcode || "")
-        setSku(product.sku || "")
-        setSkuManual(true)
-        setCategoryId(product.category_id ? String(product.category_id) : "")
-        setBuyPrice(String(product.buy_price))
-        setSellPrice(String(product.sell_price))
-        setMargin(product.margin ? String(product.margin) : "")
-        // Recalculate margin from actual prices if not set
-        if (!product.margin && product.buy_price > 0 && product.sell_price > 0) {
-          const m = ((product.sell_price - product.buy_price) / product.buy_price) * 100
-          setMargin(m % 1 === 0 ? String(m) : m.toFixed(2))
-        }
-        setStock(String(product.stock))
-        setUnit(product.unit)
-        setMinStock(String(product.min_stock))
-      } else {
-        setName("")
-        setBarcode("")
-        setSku("")
-        setSkuManual(false)
-        setCategoryId("")
-        setBuyPrice("")
-        setSellPrice("")
-        setMargin("")
-        setStock("")
-        setUnit("pcs")
-        setMinStock("")
-      }
-      setErrors({})
-    }
-  }, [open, product])
+  const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }))
 
   const recalcSellPrice = (bp: number, m: number) => {
     if (bp > 0 && m > 0) {
-      setSellPrice(String(Math.round(bp * (1 + m / 100))))
+      setForm((prev) => ({ ...prev, sellPrice: String(Math.round(bp * (1 + m / 100))) }))
     }
   }
 
   const recalcMargin = (bp: number, sp: number) => {
     if (bp > 0 && sp > 0) {
       const m = ((sp - bp) / bp) * 100
-      setMargin(m % 1 === 0 ? String(m) : m.toFixed(2))
+      setForm((prev) => ({ ...prev, margin: m % 1 === 0 ? String(m) : m.toFixed(2) }))
     } else {
-      setMargin("")
+      setForm((prev) => ({ ...prev, margin: "" }))
     }
   }
 
@@ -115,10 +133,10 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
-    if (!name.trim()) newErrors.name = "Nama produk wajib diisi"
-    if (!sellPrice || Number(sellPrice) <= 0) newErrors.sellPrice = "Harga jual harus lebih dari 0"
-    if (!buyPrice || Number(buyPrice) < 0) newErrors.buyPrice = "Harga modal tidak valid"
-    if (stock === "" || Number(stock) < 0) newErrors.stock = "Stok tidak boleh negatif"
+    if (!form.name.trim()) newErrors.name = "Nama produk wajib diisi"
+    if (!form.sellPrice || Number(form.sellPrice) <= 0) newErrors.sellPrice = "Harga jual harus lebih dari 0"
+    if (!form.buyPrice || Number(form.buyPrice) < 0) newErrors.buyPrice = "Harga modal tidak valid"
+    if (form.stock === "" || Number(form.stock) < 0) newErrors.stock = "Stok tidak boleh negatif"
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -128,16 +146,16 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     if (!validate()) return
 
     const input: CreateProductInput = {
-      name: name.trim(),
-      barcode: barcode.trim() || null,
-      sku: sku.trim() || null,
-      category_id: categoryId ? Number(categoryId) : null,
-      buy_price: Number(buyPrice),
-      sell_price: Number(sellPrice),
-      margin: margin ? Number(margin) : 0,
-      stock: Number(stock),
-      unit,
-      min_stock: minStock ? Number(minStock) : 0,
+      name: form.name.trim(),
+      barcode: form.barcode.trim() || null,
+      sku: form.sku.trim() || null,
+      category_id: form.categoryId ? Number(form.categoryId) : null,
+      buy_price: Number(form.buyPrice),
+      sell_price: Number(form.sellPrice),
+      margin: form.margin ? Number(form.margin) : 0,
+      stock: Number(form.stock),
+      unit: form.unit,
+      min_stock: form.minStock ? Number(form.minStock) : 0,
     }
 
     if (isEditing && product) {
@@ -155,16 +173,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
   }
 
   const isPending = createProduct.isPending || updateProduct.isPending
-  const actualMargin = Number(buyPrice) > 0 && Number(sellPrice) > 0
-    ? ((Number(sellPrice) - Number(buyPrice)) / Number(buyPrice) * 100).toFixed(1)
+  const actualMargin = Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
+    ? ((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice) * 100).toFixed(1)
     : null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing ? id.common.edit : id.products.add}
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {isEditing ? id.common.edit : id.products.add}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -173,12 +190,14 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
               <Label htmlFor="name">{id.products.name} *</Label>
               <Input
                 id="name"
-                value={name}
+                value={form.name}
                 onChange={(e) => {
-                  setName(e.target.value)
-                  if (!skuManual) {
-                    setSku(generateSku(e.target.value))
-                  }
+                  const val = e.target.value
+                  setForm((prev) => ({
+                    ...prev,
+                    name: val,
+                    ...(!prev.skuManual ? { sku: generateSku(val) } : {}),
+                  }))
                 }}
                 placeholder={id.products.name}
               />
@@ -190,27 +209,24 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                 <Label htmlFor="barcode">{id.products.barcode}</Label>
                 <Input
                   id="barcode"
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
+                  value={form.barcode}
+                  onChange={(e) => updateField("barcode", e.target.value)}
                   placeholder={id.products.barcode}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sku" className="flex items-center gap-1.5">
                   {id.products.sku}
-                  {!skuManual && (
+                  {!form.skuManual && (
                     <span className="text-xs text-muted-foreground">(otomatis)</span>
                   )}
                 </Label>
                 <Input
                   id="sku"
-                  value={sku}
-                  onChange={(e) => {
-                    setSku(e.target.value)
-                    setSkuManual(true)
-                  }}
+                  value={form.sku}
+                  onChange={(e) => setForm((prev) => ({ ...prev, sku: e.target.value, skuManual: true }))}
                   placeholder="AUTO"
-                  className={!skuManual ? "text-muted-foreground" : ""}
+                  className={!form.skuManual ? "text-muted-foreground" : ""}
                 />
               </div>
             </div>
@@ -219,8 +235,8 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
               <Label>{id.products.category}</Label>
               <CategoryCombobox
                 categories={categories ?? []}
-                value={categoryId}
-                onValueChange={setCategoryId}
+                value={form.categoryId}
+                onValueChange={(v) => updateField("categoryId", v)}
               />
             </div>
 
@@ -231,15 +247,15 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                   id="stock"
                   type="number"
                   min="0"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
+                  value={form.stock}
+                  onChange={(e) => updateField("stock", e.target.value)}
                   placeholder="0"
                 />
                 {errors.stock && <p className="text-sm text-destructive">{errors.stock}</p>}
               </div>
               <div className="space-y-2">
                 <Label>{id.products.unit} *</Label>
-                <Select value={unit} onValueChange={setUnit}>
+                <Select value={form.unit} onValueChange={(v) => updateField("unit", v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -258,8 +274,8 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                   id="minStock"
                   type="number"
                   min="0"
-                  value={minStock}
-                  onChange={(e) => setMinStock(e.target.value)}
+                  value={form.minStock}
+                  onChange={(e) => updateField("minStock", e.target.value)}
                   placeholder="0"
                 />
               </div>
@@ -278,10 +294,10 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       id="buyPrice"
                       type="number"
                       min="0"
-                      value={buyPrice}
+                      value={form.buyPrice}
                       onChange={(e) => {
-                        setBuyPrice(e.target.value)
-                        recalcSellPrice(Number(e.target.value), Number(margin))
+                        updateField("buyPrice", e.target.value)
+                        recalcSellPrice(Number(e.target.value), Number(form.margin))
                       }}
                       placeholder="0"
                     />
@@ -294,10 +310,10 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       type="number"
                       min="0"
                       step="any"
-                      value={margin}
+                      value={form.margin}
                       onChange={(e) => {
-                        setMargin(e.target.value)
-                        recalcSellPrice(Number(buyPrice), Number(e.target.value))
+                        updateField("margin", e.target.value)
+                        recalcSellPrice(Number(form.buyPrice), Number(e.target.value))
                       }}
                       placeholder="0"
                       className="w-20"
@@ -310,10 +326,10 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                       id="sellPrice"
                       type="number"
                       min="0"
-                      value={sellPrice}
+                      value={form.sellPrice}
                       onChange={(e) => {
-                        setSellPrice(e.target.value)
-                        recalcMargin(Number(buyPrice), Number(e.target.value))
+                        updateField("sellPrice", e.target.value)
+                        recalcMargin(Number(form.buyPrice), Number(e.target.value))
                       }}
                       placeholder="0"
                     />
@@ -330,7 +346,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                     <span>Margin aktual:</span>
                     <span className="font-semibold text-foreground">{actualMargin}%</span>
                     <span>
-                      (Rp {(Number(sellPrice) - Number(buyPrice)).toLocaleString("id-ID")} / item)
+                      (Rp {(Number(form.sellPrice) - Number(form.buyPrice)).toLocaleString("id-ID")} / item)
                     </span>
                   </div>
                 )}
@@ -347,8 +363,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </>
   )
 }
 

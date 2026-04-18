@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -29,34 +29,27 @@ interface UserFormDialogProps {
 }
 
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <UserFormBody user={user} onOpenChange={onOpenChange} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange: (open: boolean) => void }) {
   const isEdit = !!user
   const currentUser = useAuthStore((s) => s.user)
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
 
-  const [username, setUsername] = useState("")
-  const [fullName, setFullName] = useState("")
-  const [role, setRole] = useState<"admin" | "kasir">("kasir")
+  const [username, setUsername] = useState(user?.username ?? "")
+  const [fullName, setFullName] = useState(user?.full_name ?? "")
+  const [role, setRole] = useState<"admin" | "kasir">(user?.role ?? "kasir")
   const [pin, setPin] = useState("")
   const [confirmPin, setConfirmPin] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (open) {
-      if (user) {
-        setUsername(user.username)
-        setFullName(user.full_name)
-        setRole(user.role)
-      } else {
-        setUsername("")
-        setFullName("")
-        setRole("kasir")
-      }
-      setPin("")
-      setConfirmPin("")
-      setErrors({})
-    }
-  }, [open, user])
 
   const validate = () => {
     const newErrors: Record<string, string> = {}
@@ -117,99 +110,97 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const isPending = createUser.isPending || updateUser.isPending
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? id.users.editUser : id.users.addUser}</DialogTitle>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle>{isEdit ? id.users.editUser : id.users.addUser}</DialogTitle>
+      </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="username">{id.users.username}</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="contoh: kasir01"
-              disabled={isPending}
-            />
-            {errors.username && (
-              <p className="text-sm text-destructive">{errors.username}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="fullName">{id.users.fullName}</Label>
-            <Input
-              id="fullName"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="contoh: Ahmad Kasir"
-              disabled={isPending}
-            />
-            {errors.fullName && (
-              <p className="text-sm text-destructive">{errors.fullName}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>{id.users.role}</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as "admin" | "kasir")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="admin">{id.users.admin}</SelectItem>
-                <SelectItem value="kasir">{id.users.kasir}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="pin">
-              {isEdit ? id.users.resetPin : id.users.pin}
-            </Label>
-            {isEdit && (
-              <p className="text-xs text-muted-foreground">{id.users.resetPinDesc}</p>
-            )}
-            <PinInput
-              id="pin"
-              value={pin}
-              onChange={setPin}
-              placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
-              disabled={isPending}
-            />
-            {errors.pin && (
-              <p className="text-sm text-destructive">{errors.pin}</p>
-            )}
-          </div>
-
-          {(pin || !isEdit) && (
-            <div className="space-y-2">
-              <Label htmlFor="confirmPin">{id.users.confirmPin}</Label>
-              <PinInput
-                id="confirmPin"
-                value={confirmPin}
-                onChange={setConfirmPin}
-                placeholder="Ulangi PIN"
-                disabled={isPending}
-              />
-              {errors.confirmPin && (
-                <p className="text-sm text-destructive">{errors.confirmPin}</p>
-              )}
-            </div>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="username">{id.users.username}</Label>
+          <Input
+            id="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="contoh: kasir01"
+            disabled={isPending}
+          />
+          {errors.username && (
+            <p className="text-sm text-destructive">{errors.username}</p>
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-            {id.users.cancel}
-          </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "..." : id.users.save}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="space-y-2">
+          <Label htmlFor="fullName">{id.users.fullName}</Label>
+          <Input
+            id="fullName"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="contoh: Ahmad Kasir"
+            disabled={isPending}
+          />
+          {errors.fullName && (
+            <p className="text-sm text-destructive">{errors.fullName}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>{id.users.role}</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as "admin" | "kasir")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="admin">{id.users.admin}</SelectItem>
+              <SelectItem value="kasir">{id.users.kasir}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="pin">
+            {isEdit ? id.users.resetPin : id.users.pin}
+          </Label>
+          {isEdit && (
+            <p className="text-xs text-muted-foreground">{id.users.resetPinDesc}</p>
+          )}
+          <PinInput
+            id="pin"
+            value={pin}
+            onChange={setPin}
+            placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
+            disabled={isPending}
+          />
+          {errors.pin && (
+            <p className="text-sm text-destructive">{errors.pin}</p>
+          )}
+        </div>
+
+        {(pin || !isEdit) && (
+          <div className="space-y-2">
+            <Label htmlFor="confirmPin">{id.users.confirmPin}</Label>
+            <PinInput
+              id="confirmPin"
+              value={confirmPin}
+              onChange={setConfirmPin}
+              placeholder="Ulangi PIN"
+              disabled={isPending}
+            />
+            {errors.confirmPin && (
+              <p className="text-sm text-destructive">{errors.confirmPin}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+          {id.users.cancel}
+        </Button>
+        <Button onClick={handleSubmit} disabled={isPending}>
+          {isPending ? "..." : id.users.save}
+        </Button>
+      </DialogFooter>
+    </>
   )
 }

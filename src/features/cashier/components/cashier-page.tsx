@@ -33,11 +33,14 @@ export function CashierPage() {
   const needsShift = !activeShift
 
   // Auto-open shift dialog when entering cashier without active shift
-  useEffect(() => {
+  // (React "adjust state during render" pattern — no useEffect needed)
+  const [prevNeedsShift, setPrevNeedsShift] = useState(needsShift)
+  if (needsShift !== prevNeedsShift) {
+    setPrevNeedsShift(needsShift)
     if (needsShift) {
       setShiftDialogOpen(true)
     }
-  }, [needsShift])
+  }
 
   const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)

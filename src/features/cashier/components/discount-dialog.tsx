@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,16 @@ function parseDiscount(raw: string, type: "fixed" | "percentage"): number {
 }
 
 export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+        <DiscountDialogBody onOpenChange={onOpenChange} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const transactionDiscount = useCartStore((s) => s.transactionDiscount)
   const setTransactionDiscount = useCartStore((s) => s.setTransactionDiscount)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
@@ -39,15 +49,8 @@ export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
   const getTotal = useCartStore((s) => s.getTotal)
   const getItemDiscountsTotal = useCartStore((s) => s.getItemDiscountsTotal)
 
-  const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">("fixed")
-  const [txnRaw, setTxnRaw] = useState("")
-
-  useEffect(() => {
-    if (open) {
-      setTxnDiscType(transactionDiscount?.type ?? "fixed")
-      setTxnRaw(transactionDiscount ? String(transactionDiscount.value) : "")
-    }
-  }, [open, transactionDiscount])
+  const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(transactionDiscount?.type ?? "fixed")
+  const [txnRaw, setTxnRaw] = useState(transactionDiscount ? String(transactionDiscount.value) : "")
 
   const subtotal = getSubtotal()
   const itemDiscountsTotal = getItemDiscountsTotal()
@@ -80,11 +83,10 @@ export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>Diskon Total Transaksi</DialogTitle>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle>Diskon Total Transaksi</DialogTitle>
+      </DialogHeader>
 
         {/* Transaction-level discount */}
         <div className="space-y-2">
@@ -148,7 +150,6 @@ export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
           )}
           <Button onClick={() => onOpenChange(false)}>Selesai</Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </>
   )
 }

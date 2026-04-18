@@ -144,7 +144,7 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items, heldCarts.length, anyDialogOpen, activeShift])
+  }, [items, heldCarts.length, anyDialogOpen, activeShift, navigate])
 
   return (
     <div className="flex h-full flex-col">

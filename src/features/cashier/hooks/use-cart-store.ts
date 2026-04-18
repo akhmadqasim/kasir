@@ -131,7 +131,7 @@ export const useCartStore = create<CartStore>()(
 
       removeItem: (cartId) => {
         const { itemDiscounts } = get()
-        const { [cartId]: _, ...restDiscounts } = itemDiscounts
+        const { [cartId]: _removed, ...restDiscounts } = itemDiscounts
         set({
           items: get().items.filter((item) => item.cart_id !== cartId),
           itemDiscounts: restDiscounts,
@@ -170,7 +170,7 @@ export const useCartStore = create<CartStore>()(
       setItemDiscount: (cartId, discount) => {
         const { itemDiscounts } = get()
         if (!discount || discount.value <= 0) {
-          const { [cartId]: _, ...rest } = itemDiscounts
+          const { [cartId]: _removed, ...rest } = itemDiscounts
           set({ itemDiscounts: rest })
         } else {
           set({ itemDiscounts: { ...itemDiscounts, [cartId]: discount } })

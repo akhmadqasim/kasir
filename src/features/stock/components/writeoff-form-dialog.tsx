@@ -40,6 +40,16 @@ interface WriteoffFormDialogProps {
 }
 
 export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        {open && <WriteoffFormBody onOpenChange={onOpenChange} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const user = useAuthStore((s) => s.user)
   const createWriteoff = useCreateWriteoff()
 
@@ -81,20 +91,6 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
-
-  // Reset form when dialog opens/closes
-  useEffect(() => {
-    if (open) {
-      setProductSearch("")
-      setDebouncedSearch("")
-      setSelectedProduct(null)
-      setShowResults(false)
-      setQuantity("")
-      setReason("")
-      setNotes("")
-      setErrors({})
-    }
-  }, [open])
 
   const lossValue = selectedProduct && quantity
     ? selectedProduct.buy_price * Number(quantity)
@@ -139,7 +135,7 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
     setProductSearch(product.name)
     setShowResults(false)
     setErrors((prev) => {
-      const { product: _, ...rest } = prev
+      const { product: _product, ...rest } = prev
       return rest
     })
   }
@@ -153,11 +149,10 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
   const searchResults = searchData?.data ?? []
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Buat Write-off Baru</DialogTitle>
-          <DialogDescription>
+    <>
+      <DialogHeader>
+        <DialogTitle>Buat Write-off Baru</DialogTitle>
+        <DialogDescription>
             Catat barang yang rusak, kadaluarsa, atau hilang dari stok.
           </DialogDescription>
         </DialogHeader>
@@ -288,7 +283,6 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </>
   )
 }
