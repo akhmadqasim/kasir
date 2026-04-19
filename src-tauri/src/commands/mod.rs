@@ -2,6 +2,7 @@ pub mod auth;
 pub mod backup;
 pub mod categories;
 pub mod dashboard;
+pub mod logging;
 pub mod onboarding;
 pub mod ppob;
 pub mod products;
