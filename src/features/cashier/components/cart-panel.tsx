@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   ArrowDownUp,
@@ -49,6 +49,7 @@ import type { CartItem } from "../types"
 interface CartPanelProps {
   onPay: () => void
   disabled?: boolean
+  onRequestProductSearchFocus?: () => void
 }
 
 function formatHeldDate(timestamp: number): string {
@@ -57,7 +58,7 @@ function formatHeldDate(timestamp: number): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export function CartPanel({ onPay, disabled }: CartPanelProps) {
+export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: CartPanelProps) {
   const navigate = useNavigate()
   const items = useCartStore((s) => s.items)
   const removeItem = useCartStore((s) => s.removeItem)
@@ -92,6 +93,11 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
   const totalDiscount = getTotalDiscount()
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
+  const closeEditDialog = useCallback(() => {
+    setEditItem(null)
+    onRequestProductSearchFocus?.()
+  }, [onRequestProductSearchFocus])
+
   const handleHold = () => {
     if (items.length === 0) return
     setHoldLabel("")
@@ -114,6 +120,18 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
   const anyDialogOpen = holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "F10") {
+        e.preventDefault()
+        if (editItem) {
+          closeEditDialog()
+          return
+        }
+        if (!anyDialogOpen && items.length > 0) {
+          setEditItem(items[0])
+        }
+        return
+      }
+
       if (anyDialogOpen) return
       if (e.key === "F1" && activeShift) {
         e.preventDefault()
@@ -137,14 +155,10 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
         setSelectedIdx(0)
         setRecallDialogOpen(true)
       }
-      if (e.key === "F10" && items.length > 0) {
-        e.preventDefault()
-        setEditItem(items[0])
-      }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items, heldCarts.length, anyDialogOpen, activeShift, navigate])
+  }, [items, heldCarts.length, anyDialogOpen, activeShift, navigate, editItem, closeEditDialog])
 
   return (
     <div className="flex h-full flex-col">
@@ -233,8 +247,8 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
             </>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-xl font-semibold">Total</span>
-            <span className="text-3xl font-bold tabular-nums">
+            <span className="text-2xl font-semibold">Total</span>
+            <span className="text-4xl font-bold leading-none tabular-nums md:text-5xl">
               {formatRupiah(total)}
             </span>
           </div>
@@ -437,7 +451,7 @@ export function CartPanel({ onPay, disabled }: CartPanelProps) {
       {/* Cart Item Edit Dialog */}
       <CartItemEditDialog
         open={!!editItem}
-        onOpenChange={(open) => { if (!open) setEditItem(null) }}
+        onOpenChange={(open) => { if (!open) closeEditDialog() }}
         item={editItem}
       />
 

@@ -51,7 +51,11 @@ interface ShortcutProduct {
   select_count: number
 }
 
-export function ProductSearchPanel() {
+interface ProductSearchPanelProps {
+  focusKey?: number
+}
+
+export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [holdingPinId, setHoldingPinId] = useState<number | null>(null)
@@ -92,6 +96,11 @@ export function ProductSearchPanel() {
       input?.focus()
     }, 50)
   }, [])
+
+  useEffect(() => {
+    if (focusKey === 0) return
+    focusInput()
+  }, [focusKey, focusInput])
 
   const trackSelection = useCallback(async (productId: number) => {
     try {

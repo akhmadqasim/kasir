@@ -14,6 +14,7 @@ import type { TransactionResult } from "../types"
 export function CashierPage() {
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
+  const [productSearchFocusKey, setProductSearchFocusKey] = useState(0)
   const [successResult, setSuccessResult] = useState<TransactionResult | null>(
     null
   )
@@ -57,6 +58,10 @@ export function CashierPage() {
     setPaymentOpen(true)
   }, [needsShift])
 
+  const requestProductSearchFocus = useCallback(() => {
+    setProductSearchFocusKey((prev) => prev + 1)
+  }, [])
+
   // F4 shortcut to open payment dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -95,12 +100,16 @@ export function CashierPage() {
       <div className="flex h-full flex-col gap-4 lg:grid lg:grid-cols-10">
         {/* Cart (top when stacked, left when side-by-side) */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-4 lg:flex-none">
-          <CartPanel onPay={openPayment} disabled={needsShift} />
+          <CartPanel
+            onPay={openPayment}
+            disabled={needsShift}
+            onRequestProductSearchFocus={requestProductSearchFocus}
+          />
         </div>
 
         {/* Product Search (bottom when stacked, right when side-by-side) */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-6 lg:flex-none">
-          <ProductSearchPanel />
+          <ProductSearchPanel focusKey={productSearchFocusKey} />
         </div>
       </div>
 

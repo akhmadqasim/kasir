@@ -212,7 +212,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
                   </span>
                 </div>
               )}
-              {errors.product && <p className="text-sm text-destructive">{errors.product}</p>}
+              {errors.product && <p className="text-sm font-medium text-destructive">{errors.product}</p>}
             </div>
 
             {/* Quantity & Reason */}
@@ -228,7 +228,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
                   onChange={(e) => setQuantity(e.target.value)}
                   placeholder="0"
                 />
-                {errors.quantity && <p className="text-sm text-destructive">{errors.quantity}</p>}
+                {errors.quantity && <p className="text-sm font-medium text-destructive">{errors.quantity}</p>}
               </div>
               <div className="space-y-2">
                 <Label>Alasan *</Label>
@@ -244,7 +244,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.reason && <p className="text-sm text-destructive">{errors.reason}</p>}
+                {errors.reason && <p className="text-sm font-medium text-destructive">{errors.reason}</p>}
               </div>
             </div>
 

@@ -174,6 +174,7 @@ pub fn run() {
             commands::shifts::get_shift_summary,
             commands::shifts::create_cash_flow,
             commands::shifts::list_cash_flows,
+            commands::shifts::delete_cash_flow,
             commands::stock::list_stock_writeoffs,
             commands::stock::create_stock_writeoff,
             commands::stock::approve_stock_writeoff,

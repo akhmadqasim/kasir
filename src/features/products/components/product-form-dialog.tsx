@@ -201,7 +201,7 @@ function ProductFormBody({ product, onOpenChange }: { product?: Product | null; 
                 }}
                 placeholder={id.products.name}
               />
-              {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+              {errors.name && <p className="text-sm font-medium text-destructive">{errors.name}</p>}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -251,7 +251,7 @@ function ProductFormBody({ product, onOpenChange }: { product?: Product | null; 
                   onChange={(e) => updateField("stock", e.target.value)}
                   placeholder="0"
                 />
-                {errors.stock && <p className="text-sm text-destructive">{errors.stock}</p>}
+                {errors.stock && <p className="text-sm font-medium text-destructive">{errors.stock}</p>}
               </div>
               <div className="space-y-2">
                 <Label>{id.products.unit} *</Label>
@@ -337,8 +337,8 @@ function ProductFormBody({ product, onOpenChange }: { product?: Product | null; 
                 </div>
                 {(errors.buyPrice || errors.sellPrice) && (
                   <div className="mt-2 space-y-1">
-                    {errors.buyPrice && <p className="text-xs text-destructive">{errors.buyPrice}</p>}
-                    {errors.sellPrice && <p className="text-xs text-destructive">{errors.sellPrice}</p>}
+                    {errors.buyPrice && <p className="text-xs font-medium text-destructive">{errors.buyPrice}</p>}
+                    {errors.sellPrice && <p className="text-xs font-medium text-destructive">{errors.sellPrice}</p>}
                   </div>
                 )}
                 {actualMargin && (

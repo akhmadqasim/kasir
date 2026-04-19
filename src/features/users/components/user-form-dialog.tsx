@@ -126,7 +126,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
             disabled={isPending}
           />
           {errors.username && (
-            <p className="text-sm text-destructive">{errors.username}</p>
+            <p className="text-sm font-medium text-destructive">{errors.username}</p>
           )}
         </div>
 
@@ -140,7 +140,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
             disabled={isPending}
           />
           {errors.fullName && (
-            <p className="text-sm text-destructive">{errors.fullName}</p>
+            <p className="text-sm font-medium text-destructive">{errors.fullName}</p>
           )}
         </div>
 
@@ -172,7 +172,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
             disabled={isPending}
           />
           {errors.pin && (
-            <p className="text-sm text-destructive">{errors.pin}</p>
+            <p className="text-sm font-medium text-destructive">{errors.pin}</p>
           )}
         </div>
 
@@ -187,7 +187,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
               disabled={isPending}
             />
             {errors.confirmPin && (
-              <p className="text-sm text-destructive">{errors.confirmPin}</p>
+              <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>
             )}
           </div>
         )}

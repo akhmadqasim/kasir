@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react"
-import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
+import { createHashRouter, RouterProvider } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
+import { StartPage } from "./start-page"
 
 const OnboardingPage = lazy(() => import("@/features/onboarding/components/onboarding-page").then(m => ({ default: m.OnboardingPage })))
 const LoginPage = lazy(() => import("@/features/auth/components/login-page").then(m => ({ default: m.LoginPage })))
@@ -59,7 +60,7 @@ const router = createHashRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/dashboard" replace />,
+            element: <StartPage />,
           },
           {
             path: "cashier",

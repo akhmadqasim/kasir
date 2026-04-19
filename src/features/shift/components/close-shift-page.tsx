@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/features/auth"
 import { toast } from "sonner"
@@ -10,6 +10,16 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -27,11 +37,12 @@ import {
   Receipt,
   ShoppingBag,
   Store,
+  Trash2,
   User,
   Wallet,
 } from "lucide-react"
 import { useShiftStore } from "../hooks/use-shift-store"
-import type { ShiftSummary } from "../types"
+import type { CashFlow, ShiftSummary } from "../types"
 
 function formatRp(n: number): string {
   return `Rp ${new Intl.NumberFormat("id-ID").format(Math.round(n))}`
@@ -61,12 +72,15 @@ function paymentLabel(method: string): string {
 
 export function CloseShiftPage() {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
   const [closingCash, setClosingCash] = useState("")
   const [displayCash, setDisplayCash] = useState("")
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeletingCashFlow, setIsDeletingCashFlow] = useState(false)
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [closedSummary, setClosedSummary] = useState<ShiftSummary | null>(null)
+  const [cashFlowToDelete, setCashFlowToDelete] = useState<CashFlow | null>(null)
   const [storeName, setStoreName] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -79,6 +93,12 @@ export function CloseShiftPage() {
       .catch(() => {})
   }, [])
 
+  const loadSummary = useCallback(async () => {
+    if (!activeShift) return
+    const s = await invoke<ShiftSummary>("get_shift_summary", { shiftId: activeShift.id })
+    setSummary(s)
+  }, [activeShift])
+
   useEffect(() => {
     if (!activeShift) {
       if (!closedSummary) {
@@ -86,9 +106,8 @@ export function CloseShiftPage() {
       }
       return
     }
-    invoke<ShiftSummary>("get_shift_summary", { shiftId: activeShift.id })
-      .then((s) => {
-        setSummary(s)
+    loadSummary()
+      .then(() => {
         setIsLoading(false)
         setTimeout(() => inputRef.current?.focus(), 100)
       })
@@ -96,7 +115,26 @@ export function CloseShiftPage() {
         setIsLoading(false)
         toast.error("Gagal memuat ringkasan shift")
       })
-  }, [activeShift, closedSummary, navigate])
+  }, [activeShift, closedSummary, navigate, loadSummary])
+
+  const handleDeleteCashFlow = async () => {
+    if (!cashFlowToDelete || !user) return
+
+    setIsDeletingCashFlow(true)
+    try {
+      await invoke("delete_cash_flow", {
+        cashFlowId: cashFlowToDelete.id,
+        callerId: user.id,
+      })
+      await loadSummary()
+      toast.success("Arus kas berhasil dihapus")
+      setCashFlowToDelete(null)
+    } catch (err) {
+      toast.error(`Gagal menghapus arus kas: ${err}`)
+    } finally {
+      setIsDeletingCashFlow(false)
+    }
+  }
 
   const formatNumber = (num: number): string =>
     new Intl.NumberFormat("id-ID").format(num)
@@ -289,7 +327,7 @@ export function CloseShiftPage() {
                 {summary.cashFlows.map((cf) => (
                   <Tooltip key={cf.id}>
                     <TooltipTrigger asChild>
-                      <div className="flex items-center gap-2 cursor-default">
+                      <div className="flex items-center gap-2">
                         {cf.flowType === "in" ? (
                           <ArrowDownCircle className="h-4 w-4 shrink-0 text-green-600" />
                         ) : (
@@ -299,6 +337,17 @@ export function CloseShiftPage() {
                         <span className={`ml-auto shrink-0 text-sm font-medium tabular-nums ${cf.flowType === "in" ? "text-green-600" : "text-red-500"}`}>
                           {cf.flowType === "in" ? "+" : "-"}{formatRp(cf.amount)}
                         </span>
+                        {(user?.role === "admin" || user?.id === cf.userId) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => setCashFlowToDelete(cf)}
+                            title="Hapus arus kas"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="top">
@@ -389,6 +438,37 @@ export function CloseShiftPage() {
           </CardFooter>
         </Card>
       </div>
+
+      <AlertDialog
+        open={!!cashFlowToDelete}
+        onOpenChange={(open) => !open && setCashFlowToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Arus Kas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Entri uang masuk/keluar ini akan dihapus dari shift yang sedang berjalan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {cashFlowToDelete && (
+            <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+              <div><span className="text-muted-foreground">Jenis:</span> {cashFlowToDelete.flowType === "in" ? "Uang Masuk" : "Uang Keluar"}</div>
+              <div><span className="text-muted-foreground">Nominal:</span> {formatRp(cashFlowToDelete.amount)}</div>
+              <div><span className="text-muted-foreground">Keterangan:</span> {cashFlowToDelete.description}</div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCashFlow}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCashFlow}
+              disabled={isDeletingCashFlow}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingCashFlow ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

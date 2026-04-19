@@ -199,7 +199,7 @@ export function PaymentDialog({
             </span>
           </div>
           {cartValidationError && (
-            <p className="mt-3 text-sm text-destructive">{cartValidationError}</p>
+            <p className="mt-3 text-sm font-medium text-destructive">{cartValidationError}</p>
           )}
         </div>
 

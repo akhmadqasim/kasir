@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Minus, Plus } from "lucide-react"
 import {
   Dialog,
@@ -37,17 +37,19 @@ export function CartItemEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        <CartItemEditBody item={item} onOpenChange={onOpenChange} />
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+        <CartItemEditBody open={open} item={item} onOpenChange={onOpenChange} />
       </DialogContent>
     </Dialog>
   )
 }
 
 function CartItemEditBody({
+  open,
   item,
   onOpenChange,
 }: {
+  open: boolean
   item: CartItem
   onOpenChange: (open: boolean) => void
 }) {
@@ -61,6 +63,7 @@ function CartItemEditBody({
   const [discRaw, setDiscRaw] = useState(disc ? String(disc.value) : "")
 
   const lineTotal = item.product_price * qty
+  const qtyInputId = `cart-item-edit-qty-${item.cart_id}`
   const discValue = Number(discRaw) || 0
   const discAmount =
     discType === "percentage"
@@ -115,6 +118,18 @@ function CartItemEditBody({
     setItemDiscount(item.cart_id, null)
   }
 
+  useEffect(() => {
+    if (!open || item.is_ppob) return
+
+    const timer = setTimeout(() => {
+      const input = document.getElementById(qtyInputId) as HTMLInputElement | null
+      input?.focus()
+      input?.select()
+    }, 50)
+
+    return () => clearTimeout(timer)
+  }, [open, item.is_ppob, qtyInputId])
+
   return (
     <>
       <DialogHeader>
@@ -143,10 +158,12 @@ function CartItemEditBody({
                 <Minus className="h-4 w-4" />
               </Button>
               <Input
+                id={qtyInputId}
                 type="text"
                 inputMode="numeric"
                 className="h-9 w-20 text-center text-lg font-semibold tabular-nums"
                 value={qty}
+                autoFocus
                 onChange={(e) => {
                   const parsed = parseInt(e.target.value, 10)
                   if (!isNaN(parsed)) handleQtyChange(parsed)

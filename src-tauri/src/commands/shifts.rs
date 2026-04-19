@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::entity::{cash_flows, shifts, users};
-use crate::utils::AppError;
+use crate::utils::{require_role, AppError};
 
 async fn get_user_name(db: &DatabaseConnection, user_id: i64) -> String {
     users::Entity::find_by_id(user_id)
@@ -400,4 +400,40 @@ pub async fn list_cash_flows(
         .await?;
 
     Ok(flows.into_iter().map(CashFlowResponse::from).collect())
+}
+
+#[tauri::command]
+pub async fn delete_cash_flow(
+    db: State<'_, DatabaseConnection>,
+    cash_flow_id: i64,
+    caller_id: i64,
+) -> Result<(), AppError> {
+    let caller = require_role(db.inner(), caller_id, "any").await?;
+
+    let flow = cash_flows::Entity::find_by_id(cash_flow_id)
+        .one(db.inner())
+        .await?
+        .ok_or(AppError::NotFound("Arus kas tidak ditemukan".into()))?;
+
+    let shift = shifts::Entity::find_by_id(flow.shift_id)
+        .one(db.inner())
+        .await?
+        .ok_or(AppError::NotFound("Shift tidak ditemukan".into()))?;
+
+    if shift.status != "open" {
+        return Err(AppError::Validation(
+            "Arus kas hanya bisa dihapus saat shift masih terbuka".into(),
+        ));
+    }
+
+    if caller.role != "admin" && flow.user_id != caller_id {
+        return Err(AppError::Forbidden(
+            "Hanya admin atau pembuat entri yang dapat menghapus arus kas ini.".into(),
+        ));
+    }
+
+    let active: cash_flows::ActiveModel = flow.into();
+    active.delete(db.inner()).await?;
+
+    Ok(())
 }
