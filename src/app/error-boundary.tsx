@@ -1,6 +1,7 @@
 import { Component } from "react"
 import type { ReactNode, ErrorInfo } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface Props {
   children: ReactNode
@@ -42,8 +43,10 @@ export class ErrorBoundary extends Component<Props, State> {
             <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-3 text-xs text-muted-foreground">
               {this.state.error?.stack}
             </pre>
-            <button
-              className="mt-4 inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
+            <Button
+              variant="destructive"
+              size="sm"
+              className="mt-4"
               onClick={() => {
                 this.setState({ hasError: false, error: null, errorInfo: null })
                 window.location.hash = "/"
@@ -52,7 +55,7 @@ export class ErrorBoundary extends Component<Props, State> {
             >
               <RefreshCw className="h-4 w-4" />
               Muat Ulang
-            </button>
+            </Button>
           </div>
         </div>
       )
