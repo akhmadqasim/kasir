@@ -37,10 +37,10 @@ const paymentLabels: Record<string, string> = {
 }
 
 const paymentColors: Record<string, string> = {
-  cash: "bg-blue-500",
-  qris: "bg-purple-500",
-  ewallet: "bg-orange-500",
-  transfer: "bg-green-500",
+  cash: "bg-[var(--chart-1)]",
+  qris: "bg-[var(--chart-2)]",
+  ewallet: "bg-[var(--chart-3)]",
+  transfer: "bg-[var(--chart-4)]",
 }
 
 export function PaymentMethodsPage() {

@@ -1,5 +1,6 @@
 import { Component } from "react"
 import type { ReactNode, ErrorInfo } from "react"
+import { AlertTriangle, RefreshCw } from "lucide-react"
 
 interface Props {
   children: ReactNode
@@ -29,23 +30,27 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-red-50 p-8">
-          <div className="max-w-2xl rounded-lg border border-red-200 bg-white p-6 shadow-lg">
-            <h1 className="mb-2 text-xl font-bold text-red-600">Terjadi Error</h1>
-            <p className="mb-4 text-sm text-red-800">
+        <div className="flex min-h-screen items-center justify-center bg-background p-8">
+          <div className="max-w-2xl rounded-lg border border-destructive/30 bg-card p-6 shadow-lg">
+            <div className="mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <h1 className="text-xl font-bold text-destructive">Terjadi Error</h1>
+            </div>
+            <p className="mb-4 text-sm text-muted-foreground">
               {this.state.error?.message || "Unknown error"}
             </p>
-            <pre className="max-h-64 overflow-auto rounded bg-red-50 p-3 text-xs text-red-700">
+            <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-3 text-xs text-muted-foreground">
               {this.state.error?.stack}
             </pre>
             <button
-              className="mt-4 rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+              className="mt-4 inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
               onClick={() => {
                 this.setState({ hasError: false, error: null, errorInfo: null })
                 window.location.hash = "/"
                 window.location.reload()
               }}
             >
+              <RefreshCw className="h-4 w-4" />
               Muat Ulang
             </button>
           </div>
