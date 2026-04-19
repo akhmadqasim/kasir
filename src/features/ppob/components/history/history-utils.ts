@@ -11,6 +11,7 @@ import {
   Package,
   type LucideIcon,
 } from "lucide-react"
+import { PPOB_SERVICE_COLORS, type PpobServiceKey } from "../../constants"
 import type { HistoryPaymentItem } from "../../types"
 
 export interface ServiceInfo {
@@ -20,24 +21,29 @@ export interface ServiceInfo {
   label: string
 }
 
+function fromKey(key: PpobServiceKey, icon: LucideIcon, label: string): ServiceInfo {
+  const c = PPOB_SERVICE_COLORS[key]
+  return { icon, bg: c.bgMuted, text: c.text, label }
+}
+
 const SERVICE_MAP: Record<string, ServiceInfo> = {
-  pulsa: { icon: Smartphone, bg: "bg-blue-100 dark:bg-blue-950", text: "text-blue-600", label: "PULSA" },
-  data: { icon: Wifi, bg: "bg-purple-100 dark:bg-purple-950", text: "text-purple-600", label: "PAKET DATA" },
-  pln: { icon: Zap, bg: "bg-yellow-100 dark:bg-yellow-950", text: "text-yellow-600", label: "PLN" },
-  pdam: { icon: Droplets, bg: "bg-cyan-100 dark:bg-cyan-950", text: "text-cyan-600", label: "PDAM" },
-  bpjs: { icon: ShieldCheck, bg: "bg-green-100 dark:bg-green-950", text: "text-green-600", label: "BPJS" },
-  pp: { icon: Building2, bg: "bg-orange-100 dark:bg-orange-950", text: "text-orange-600", label: "PAYMENT POINT" },
-  payment_point: { icon: Building2, bg: "bg-orange-100 dark:bg-orange-950", text: "text-orange-600", label: "PAYMENT POINT" },
-  emoney: { icon: Wallet, bg: "bg-pink-100 dark:bg-pink-950", text: "text-pink-600", label: "E-MONEY" },
-  "e-money": { icon: Wallet, bg: "bg-pink-100 dark:bg-pink-950", text: "text-pink-600", label: "E-MONEY" },
-  transfer: { icon: ArrowLeftRight, bg: "bg-indigo-100 dark:bg-indigo-950", text: "text-indigo-600", label: "TRANSFER" },
-  voucher: { icon: Ticket, bg: "bg-violet-100 dark:bg-violet-950", text: "text-violet-600", label: "VOUCHER" },
+  pulsa: fromKey("pulsa", Smartphone, "PULSA"),
+  data: fromKey("data", Wifi, "PAKET DATA"),
+  pln: fromKey("pln", Zap, "PLN"),
+  pdam: fromKey("pdam", Droplets, "PDAM"),
+  bpjs: fromKey("bpjs", ShieldCheck, "BPJS"),
+  pp: fromKey("pp", Building2, "PAYMENT POINT"),
+  payment_point: fromKey("pp", Building2, "PAYMENT POINT"),
+  emoney: fromKey("emoney", Wallet, "E-MONEY"),
+  "e-money": fromKey("emoney", Wallet, "E-MONEY"),
+  transfer: fromKey("transfer", ArrowLeftRight, "TRANSFER"),
+  voucher: fromKey("voucher", Ticket, "VOUCHER"),
 }
 
 const FALLBACK_SERVICE: ServiceInfo = {
   icon: Package,
-  bg: "bg-gray-100 dark:bg-gray-900",
-  text: "text-gray-600",
+  bg: "bg-muted",
+  text: "text-muted-foreground",
   label: "LAINNYA",
 }
 

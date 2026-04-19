@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { id } from "@/i18n/id"
 import { usePpobSaldo } from "../hooks"
-import { PPOB_SERVICES } from "../constants"
+import { PPOB_SERVICES, PPOB_SERVICE_COLORS } from "../constants"
 import { PulsaFlow } from "./pulsa-flow"
 import { DataFlow } from "./data-flow"
 import { PlnFlow } from "./pln-flow"
@@ -78,7 +78,7 @@ function ServiceGrid() {
           className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => navigate(svc.path)}
         >
-          <svc.icon className={`h-7 w-7 ${svc.color}`} />
+          <svc.icon className={`h-7 w-7 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
           <span className="text-sm font-medium text-center">{svc.label}</span>
         </button>
       ))}

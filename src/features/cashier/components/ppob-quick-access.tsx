@@ -39,7 +39,7 @@ import {
   useEmoneyDenom,
   useEmoneyInquiry,
 } from "@/features/ppob/hooks"
-import { QUICK_ACCESS_SERVICES, type QuickAccessServiceKey } from "@/features/ppob/constants"
+import { QUICK_ACCESS_SERVICES, PPOB_SERVICE_COLORS, type QuickAccessServiceKey } from "@/features/ppob/constants"
 import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import type { AppSettings } from "@/features/settings/types"
@@ -242,7 +242,7 @@ export function PpobQuickAccess({
               const svc = QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)
               if (!svc) return null
               const Icon = svc.icon
-              return <Icon className={`h-4 w-4 ${svc.color}`} />
+              return <Icon className={`h-4 w-4 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
             })()}
             <span className="text-sm font-medium">
               {QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)?.label}
@@ -264,14 +264,14 @@ export function PpobQuickAccess({
     <div className="p-4 space-y-3">
       {showSaldoBar && <SaldoBar />}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-        {QUICK_ACCESS_SERVICES.map(({ key, label, icon: Icon, color }) => (
+        {QUICK_ACCESS_SERVICES.map(({ key, label, icon: Icon }) => (
           <Button
             key={key}
             variant="outline"
             className="h-auto flex-col gap-1.5 py-3"
             onClick={() => setSelectedService(key)}
           >
-            <Icon className={`h-5 w-5 ${color}`} />
+            <Icon className={`h-5 w-5 ${PPOB_SERVICE_COLORS[key].text}`} />
             <span className="text-xs font-medium">{label}</span>
           </Button>
         ))}
