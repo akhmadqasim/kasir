@@ -15,6 +15,7 @@ import type { DateRange } from "react-day-picker"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/status-badge"
 import { Calendar } from "@/components/ui/calendar"
 import {
   Dialog,
@@ -193,15 +194,13 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
             <span className={`text-lg font-bold ${isIn ? "text-green-600" : "text-red-600"}`}>
               {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
             </span>
-            <Badge variant="outline" className={
-              normalizeStatus(item.status) === "sukses"
-                ? "border-green-200 bg-green-50 text-green-700"
-                : normalizeStatus(item.status) === "gagal"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : ""
-            }>
-              {normalizeStatus(item.status).toUpperCase()}
-            </Badge>
+            {(() => {
+              const ns = normalizeStatus(item.status)
+              if (ns === "sukses") return <StatusBadge status="success">SUKSES</StatusBadge>
+              if (ns === "gagal") return <StatusBadge status="error">GAGAL</StatusBadge>
+              if (ns === "proses") return <StatusBadge status="warning">PROSES</StatusBadge>
+              return <Badge variant="outline">{(item.status ?? "-").toUpperCase()}</Badge>
+            })()}
           </div>
 
           <Separator />
@@ -225,9 +224,9 @@ function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void })
   const status = normalizeStatus(item.status)
 
   const statusBadge = {
-    sukses: <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300 text-xs">Sukses</Badge>,
-    gagal: <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300 text-xs">Gagal</Badge>,
-    proses: <Badge variant="outline" className="border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300 text-xs">Proses</Badge>,
+    sukses: <StatusBadge status="success" className="text-xs">Sukses</StatusBadge>,
+    gagal: <StatusBadge status="error" className="text-xs">Gagal</StatusBadge>,
+    proses: <StatusBadge status="warning" className="text-xs">Proses</StatusBadge>,
     unknown: <Badge variant="outline" className="text-xs">{item.status ?? "-"}</Badge>,
   }[status]
 

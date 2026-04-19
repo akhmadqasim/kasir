@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { StatusBadge, ColorBadge } from "@/components/status-badge"
 import {
   Select,
   SelectContent,
@@ -72,7 +73,7 @@ function ReasonBadge({ reason }: { reason: string }) {
     case "damaged":
       return <Badge variant="destructive">Rusak</Badge>
     case "expired":
-      return <Badge className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-950 dark:text-orange-300">Kadaluarsa</Badge>
+      return <ColorBadge color="orange">Kadaluarsa</ColorBadge>
     case "lost":
       return <Badge variant="outline">Hilang</Badge>
     default:
@@ -80,14 +81,14 @@ function ReasonBadge({ reason }: { reason: string }) {
   }
 }
 
-function StatusBadge({ status }: { status: string }) {
+function WriteoffStatusBadge({ status }: { status: string }) {
   switch (status) {
     case "pending":
-      return <Badge className="border-yellow-300 bg-yellow-50 text-yellow-700 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">Menunggu</Badge>
+      return <StatusBadge status="warning">Menunggu</StatusBadge>
     case "approved":
-      return <Badge className="border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300">Disetujui</Badge>
+      return <StatusBadge status="success">Disetujui</StatusBadge>
     case "rejected":
-      return <Badge className="border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-300">Ditolak</Badge>
+      return <StatusBadge status="error">Ditolak</StatusBadge>
     default:
       return <Badge variant="secondary">{STATUS_LABELS[status] ?? status}</Badge>
   }
@@ -270,7 +271,7 @@ export function StockWriteoffPage() {
                       <TableCell className="text-right font-medium text-destructive">
                         {formatRupiah(wo.lossValue)}
                       </TableCell>
-                      <TableCell><StatusBadge status={wo.status} /></TableCell>
+                      <TableCell><WriteoffStatusBadge status={wo.status} /></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDate(wo.createdAt)}
                       </TableCell>

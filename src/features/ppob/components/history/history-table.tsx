@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { StatusBadge as SharedStatusBadge } from "@/components/status-badge"
 import {
   Dialog,
   DialogContent,
@@ -25,15 +26,15 @@ import {
   getNominal,
 } from "./history-utils"
 
-function StatusBadge({ status }: { status: string | null }) {
+function PpobStatusBadge({ status }: { status: string | null }) {
   const normalized = normalizeStatus(status)
   switch (normalized) {
     case "sukses":
-      return <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300 text-xs">Sukses</Badge>
+      return <SharedStatusBadge status="success" className="text-xs">Sukses</SharedStatusBadge>
     case "gagal":
-      return <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300 text-xs">Gagal</Badge>
+      return <SharedStatusBadge status="error" className="text-xs">Gagal</SharedStatusBadge>
     case "proses":
-      return <Badge variant="outline" className="border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300 text-xs">Proses</Badge>
+      return <SharedStatusBadge status="warning" className="text-xs">Proses</SharedStatusBadge>
     default:
       return <Badge variant="outline" className="text-xs">{status ?? "-"}</Badge>
   }
@@ -81,7 +82,7 @@ function TransactionDetailDialog({
               <p className="text-sm text-muted-foreground">{formatDateTime(item.createdAt)}</p>
             </div>
           </div>
-          <StatusBadge status={item.status} />
+          <PpobStatusBadge status={item.status} />
         </div>
 
         <Separator />
@@ -194,7 +195,7 @@ export function HistoryTable({ items }: HistoryTableProps) {
                       {nominal != null ? formatRupiah(nominal) : "-"}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={item.status} />
+                      <PpobStatusBadge status={item.status} />
                     </TableCell>
                   </TableRow>
                 )
