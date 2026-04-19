@@ -73,8 +73,9 @@ describe("addItem", () => {
     store().addItem(makeProduct({ id: 2, name: "Teh Botol", sell_price: 5000 }))
 
     expect(store().items).toHaveLength(2)
-    expect(store().items[0].product_name).toBe("Indomie Goreng")
-    expect(store().items[1].product_name).toBe("Teh Botol")
+    // newest item is prepended to top
+    expect(store().items[0].product_name).toBe("Teh Botol")
+    expect(store().items[1].product_name).toBe("Indomie Goreng")
   })
 
   it("generates cart_id from product id", () => {
