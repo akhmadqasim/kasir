@@ -10,20 +10,41 @@ use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Ensure data directory exists
-    let data_dir = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("data"))
-        .unwrap_or_else(|| std::path::PathBuf::from("data"));
+    let data_dir = utils::paths::get_data_dir();
+    utils::logging::log_startup(&format!("App starting, data_dir={}", data_dir.display()));
 
-    fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+    if let Err(e) = fs::create_dir_all(&data_dir) {
+        let msg = format!(
+            "Failed to create data directory {}: {}",
+            data_dir.display(),
+            e
+        );
+        utils::logging::log_error(&msg);
+        eprintln!("{}", msg);
+        panic!("{}", msg);
+    }
 
-    let db_path = data_dir.join("kasir.db");
-    let database = tauri::async_runtime::block_on(db::setup_database(
-        db_path.to_str().expect("Invalid DB path"),
-    ))
-    .expect("Failed to initialize database");
+    let db_path = utils::paths::get_db_path();
+    utils::logging::log_startup(&format!("Opening database at {}", db_path.display()));
+
+    let database = match tauri::async_runtime::block_on(db::setup_database(
+        db_path.to_str().unwrap_or(""),
+    )) {
+        Ok(db) => {
+            utils::logging::log_startup("Database initialized successfully");
+            db
+        }
+        Err(e) => {
+            let msg = format!(
+                "Failed to initialize database at {}: {}",
+                db_path.display(),
+                e
+            );
+            utils::logging::log_error(&msg);
+            eprintln!("{}", msg);
+            panic!("{}", msg);
+        }
+    };
 
     let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
 
@@ -159,7 +180,12 @@ pub fn run() {
             commands::stock::reject_stock_writeoff,
             commands::stock::delete_stock_writeoff,
             commands::stock::get_stock_writeoff_detail,
+            commands::logging::write_log_entry,
+            commands::logging::get_log_dir,
+            commands::logging::get_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    utils::logging::log_startup("App shutdown");
 }

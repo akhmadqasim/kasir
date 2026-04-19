@@ -173,12 +173,7 @@ pub struct DatabaseInfo {
 // --- Helper: get database path ---
 
 fn get_db_path() -> std::path::PathBuf {
-    let data_dir = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("data"))
-        .unwrap_or_else(|| std::path::PathBuf::from("data"));
-    data_dir.join("kasir.db")
+    crate::utils::paths::get_db_path()
 }
 
 // --- Helper: parse AppSettings from additional_info JSON ---

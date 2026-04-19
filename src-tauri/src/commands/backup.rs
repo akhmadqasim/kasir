@@ -48,24 +48,12 @@ pub struct BackupStatus {
     pub settings: BackupSettings,
 }
 
-/// Get the database file path
 fn get_db_path() -> PathBuf {
-    let data_dir = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("data"))
-        .unwrap_or_else(|| PathBuf::from("data"));
-    data_dir.join("kasir.db")
+    crate::utils::paths::get_db_path()
 }
 
-/// Get the backup directory (data/backups/)
 fn get_backup_dir() -> PathBuf {
-    let data_dir = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("data"))
-        .unwrap_or_else(|| PathBuf::from("data"));
-    data_dir.join("backups")
+    crate::utils::paths::get_backup_dir()
 }
 
 /// Create a compressed backup of the database
