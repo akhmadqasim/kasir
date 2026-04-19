@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import type { User } from "../types"
 
 const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000 // 8 hours
+const HYDRATION_TIMEOUT_MS = 5_000
 
 interface AuthState {
   user: User | null
@@ -47,11 +48,35 @@ export function useAuthHydrated() {
   const [hydrated, setHydrated] = useState(useAuthStore.persist.hasHydrated())
 
   useEffect(() => {
+    if (hydrated) return
+
     const unsub = useAuthStore.persist.onFinishHydration(() => {
       setHydrated(true)
     })
-    return unsub
-  }, [])
+
+    // Re-check: hydration may have completed between useState init and this effect
+    if (useAuthStore.persist.hasHydrated()) {
+      unsub()
+      queueMicrotask(() => setHydrated(true))
+      return
+    }
+
+    // Safety timeout: if hydration never completes, clear stored state and proceed
+    const timeout = setTimeout(() => {
+      if (!useAuthStore.persist.hasHydrated()) {
+        console.error("[AUTH] Hydration timeout — clearing stored auth state")
+        try {
+          localStorage.removeItem("kasir-auth")
+        } catch { /* storage may be inaccessible */ }
+        setHydrated(true)
+      }
+    }, HYDRATION_TIMEOUT_MS)
+
+    return () => {
+      unsub()
+      clearTimeout(timeout)
+    }
+  }, [hydrated])
 
   return hydrated
 }
