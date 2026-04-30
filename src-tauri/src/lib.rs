@@ -168,6 +168,7 @@ pub fn run() {
             commands::reports::report_returns,
             commands::reports::report_current_stock,
             commands::reports::report_losses,
+            commands::reports::report_cash_flows,
             commands::shifts::open_shift,
             commands::shifts::get_active_shift,
             commands::shifts::close_shift,

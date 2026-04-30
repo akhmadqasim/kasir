@@ -145,6 +145,27 @@ pub struct LossSummary {
     pub items: Vec<LossRow>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashFlowReportRow {
+    pub id: i64,
+    pub shift_id: i64,
+    pub cashier_name: String,
+    pub flow_type: String,
+    pub amount: f64,
+    pub description: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashFlowReportSummary {
+    pub total_in: f64,
+    pub total_out: f64,
+    pub net_total: f64,
+    pub items: Vec<CashFlowReportRow>,
+}
+
 // --- Helpers ---
 
 async fn query_daily_sales(
@@ -164,7 +185,7 @@ async fn query_daily_sales(
             FROM transactions t
             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
             LEFT JOIN products p ON p.id = ti.product_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
             GROUP BY sale_date
             ORDER BY sale_date DESC",
@@ -215,7 +236,7 @@ pub async fn report_sales_monthly(
             FROM transactions t
             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
             LEFT JOIN products p ON p.id = ti.product_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND strftime('%Y', t.created_at, 'localtime') = $1
             GROUP BY sale_month
             ORDER BY sale_month DESC",
@@ -320,13 +341,30 @@ pub async fn report_payment_methods(
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
+            "WITH payment_method_rows AS (
+                SELECT
+                    tp.payment_method as payment_method,
+                    tp.amount as amount,
+                    tp.transaction_id as transaction_id
+                FROM transaction_payments tp
+                JOIN transactions t ON t.id = tp.transaction_id
+                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
+                AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+                UNION ALL
+                SELECT
+                    t.payment_method as payment_method,
+                    t.total_amount as amount,
+                    t.id as transaction_id
+                FROM transactions t
+                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
+                AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+                AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
+            )
+            SELECT
                 payment_method,
-                COUNT(*) as transaction_count,
-                COALESCE(SUM(total_amount), 0) as total_amount
-            FROM transactions
-            WHERE status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
-            AND date(created_at, 'localtime') BETWEEN $1 AND $2
+                COUNT(DISTINCT transaction_id) as transaction_count,
+                COALESCE(SUM(amount), 0) as total_amount
+            FROM payment_method_rows
             GROUP BY payment_method
             ORDER BY total_amount DESC",
             vec![start_date.into(), end_date.into()],
@@ -377,7 +415,7 @@ pub async fn report_product_sales(
             JOIN transactions t ON t.id = ti.transaction_id
             LEFT JOIN products p ON p.id = ti.product_id
             LEFT JOIN categories c ON c.id = p.category_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC",
@@ -424,7 +462,7 @@ pub async fn report_popular_products(
             JOIN transactions t ON t.id = ti.transaction_id
             LEFT JOIN products p ON p.id = ti.product_id
             LEFT JOIN categories c ON c.id = p.category_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded')
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC
@@ -635,6 +673,65 @@ pub async fn report_losses(
         total_quantity,
         total_loss_value,
         by_reason,
+        items,
+    })
+}
+
+#[tauri::command]
+pub async fn report_cash_flows(
+    db: State<'_, DatabaseConnection>,
+    start_date: String,
+    end_date: String,
+) -> Result<CashFlowReportSummary, AppError> {
+    let db = db.inner();
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT
+                cf.id,
+                cf.shift_id,
+                COALESCE(u.full_name, '-') as cashier_name,
+                cf.type as flow_type,
+                cf.amount,
+                cf.description,
+                cf.created_at
+            FROM cash_flows cf
+            LEFT JOIN users u ON u.id = cf.user_id
+            WHERE date(cf.created_at, 'localtime') BETWEEN $1 AND $2
+            ORDER BY cf.created_at DESC",
+            vec![start_date.into(), end_date.into()],
+        ))
+        .await?;
+
+    let items: Vec<CashFlowReportRow> = rows
+        .iter()
+        .map(|row| CashFlowReportRow {
+            id: row.try_get_by_index(0).unwrap_or(0),
+            shift_id: row.try_get_by_index(1).unwrap_or(0),
+            cashier_name: row.try_get_by_index(2).unwrap_or_default(),
+            flow_type: row.try_get_by_index(3).unwrap_or_default(),
+            amount: row.try_get_by_index(4).unwrap_or(0.0),
+            description: row.try_get_by_index(5).unwrap_or_default(),
+            created_at: row.try_get_by_index(6).unwrap_or_default(),
+        })
+        .collect();
+
+    let total_in = items
+        .iter()
+        .filter(|item| item.flow_type == "in")
+        .map(|item| item.amount)
+        .sum();
+    let total_out = items
+        .iter()
+        .filter(|item| item.flow_type == "out")
+        .map(|item| item.amount)
+        .sum();
+
+    Ok(CashFlowReportSummary {
+        total_in,
+        total_out,
+        net_total: total_in - total_out,
         items,
     })
 }

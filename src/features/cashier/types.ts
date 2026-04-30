@@ -34,14 +34,27 @@ export interface TransactionItemInput {
   ppob_flag_id?: string
 }
 
+export interface PaymentSplitInput {
+  payment_method: string
+  bank_name?: string
+  amount: number
+}
+
 export interface CheckoutTransactionInput {
   user_id: number
   items: TransactionItemInput[]
   payment_method: string
   payment_amount: number
+  payment_breakdown?: PaymentSplitInput[]
   notes?: string
   transaction_discount?: number
   shift_id?: number
+}
+
+export interface PaymentSplit {
+  payment_method: string
+  bank_name?: string | null
+  amount: number
 }
 
 export interface Transaction {
@@ -89,4 +102,5 @@ export interface TransactionItem {
 export interface TransactionResult {
   transaction: Transaction
   items: TransactionItem[]
+  payment_breakdown: PaymentSplit[]
 }

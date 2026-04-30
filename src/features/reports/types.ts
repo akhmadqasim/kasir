@@ -122,3 +122,20 @@ export interface LossSummary {
   byReason: { reason: string; count: number; totalValue: number }[]
   items: LossRow[]
 }
+
+export interface CashFlowReportRow {
+  id: number
+  shiftId: number
+  cashierName: string
+  flowType: string
+  amount: number
+  description: string
+  createdAt: string
+}
+
+export interface CashFlowReportSummary {
+  totalIn: number
+  totalOut: number
+  netTotal: number
+  items: CashFlowReportRow[]
+}

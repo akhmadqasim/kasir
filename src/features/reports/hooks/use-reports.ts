@@ -11,6 +11,7 @@ import type {
   ReturnRow,
   CurrentStockRow,
   LossSummary,
+  CashFlowReportSummary,
 } from "../types"
 
 export function useSalesDaily(startDate: string, endDate: string) {
@@ -80,5 +81,12 @@ export function useLosses(startDate: string, endDate: string) {
   return useQuery<LossSummary>({
     queryKey: ["reports", "losses", startDate, endDate],
     queryFn: () => invoke("report_losses", { startDate, endDate }),
+  })
+}
+
+export function useCashFlows(startDate: string, endDate: string) {
+  return useQuery<CashFlowReportSummary>({
+    queryKey: ["reports", "cash-flows", startDate, endDate],
+    queryFn: () => invoke("report_cash_flows", { startDate, endDate }),
   })
 }

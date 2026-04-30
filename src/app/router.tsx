@@ -1,9 +1,11 @@
 import { lazy, Suspense } from "react"
-import { createHashRouter, RouterProvider } from "react-router-dom"
+import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 import { StartPage } from "./start-page"
+import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
 const OnboardingPage = lazy(() => import("@/features/onboarding/components/onboarding-page").then(m => ({ default: m.OnboardingPage })))
 const LoginPage = lazy(() => import("@/features/auth/components/login-page").then(m => ({ default: m.LoginPage })))
@@ -21,6 +23,7 @@ const SalesMonthlyPage = lazy(() => import("@/features/reports/components/sales-
 const SalesPeriodPage = lazy(() => import("@/features/reports/components/sales-period-page").then(m => ({ default: m.SalesPeriodPage })))
 const SalesReceiptPage = lazy(() => import("@/features/reports/components/sales-receipt-page").then(m => ({ default: m.SalesReceiptPage })))
 const PaymentMethodsPage = lazy(() => import("@/features/reports/components/payment-methods-page").then(m => ({ default: m.PaymentMethodsPage })))
+const CashFlowsPage = lazy(() => import("@/features/reports/components/cash-flows-page").then(m => ({ default: m.CashFlowsPage })))
 const ProductSalesPage = lazy(() => import("@/features/reports/components/product-sales-page").then(m => ({ default: m.ProductSalesPage })))
 const PopularProductsPage = lazy(() => import("@/features/reports/components/popular-products-page").then(m => ({ default: m.PopularProductsPage })))
 const ReturnsPage = lazy(() => import("@/features/reports/components/returns-page").then(m => ({ default: m.ReturnsPage })))
@@ -42,6 +45,17 @@ function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>
 }
 
+function ResumeRedirect() {
+  const user = useAuthStore((s) => s.user)
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  const target = resolveResumeRoute(user.role, readStoredResumeRoute())
+  return <Navigate to={target} replace />
+}
+
 const router = createHashRouter([
   {
     path: "/onboarding",
@@ -60,6 +74,10 @@ const router = createHashRouter([
         children: [
           {
             index: true,
+            element: <ResumeRedirect />,
+          },
+          {
+            path: "start",
             element: <StartPage />,
           },
           {
@@ -107,6 +125,7 @@ const router = createHashRouter([
               { path: "sales-period", element: <LazyPage><SalesPeriodPage /></LazyPage> },
               { path: "sales-receipt", element: <LazyPage><SalesReceiptPage /></LazyPage> },
               { path: "payment-methods", element: <LazyPage><PaymentMethodsPage /></LazyPage> },
+              { path: "cash-flows", element: <LazyPage><CashFlowsPage /></LazyPage> },
               { path: "product-sales", element: <LazyPage><ProductSalesPage /></LazyPage> },
               { path: "popular-products", element: <LazyPage><PopularProductsPage /></LazyPage> },
               { path: "returns", element: <LazyPage><ReturnsPage /></LazyPage> },

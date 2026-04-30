@@ -4,8 +4,15 @@ import type { ReceiptData } from "../types"
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Tunai",
   qris: "QRIS",
+  debit: "Debit",
   ewallet: "E-Wallet",
   transfer: "Transfer Bank",
+  mixed: "Campuran",
+}
+
+function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null): string {
+  const label = PAYMENT_LABELS[paymentMethod] ?? paymentMethod
+  return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }
 
 function formatRupiah(amount: number): string {
@@ -30,8 +37,55 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
     )
     .join("")
 
-  const paymentLabel = PAYMENT_LABELS[data.payment_method] ?? data.payment_method
-  const isCash = data.payment_method === "cash"
+  const paymentLabel = formatPaymentSplitLabel(
+    data.payment_method,
+    data.payment_breakdown[0]?.bank_name
+  )
+  const hasCashPayment =
+    data.payment_method === "cash" ||
+    data.payment_breakdown.some((split) => split.payment_method === "cash")
+  const paymentRowsHtml =
+    data.payment_breakdown.length > 1
+      ? data.payment_breakdown
+          .map(
+            (split) => `
+    <tr>
+      <td>Bayar (${formatPaymentSplitLabel(split.payment_method, split.bank_name)})</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(split.amount)}</td>
+    </tr>`
+          )
+          .join("") +
+        `${
+          data.change_amount > 0
+            ? `
+    <tr>
+      <td>Dibayar</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
+    </tr>
+    <tr>
+      <td>Kembalian</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(data.change_amount)}</td>
+    </tr>`
+            : ""
+        }`
+      : `
+    <tr>
+      <td>Bayar (${paymentLabel})</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
+    </tr>
+    ${
+      hasCashPayment && data.change_amount > 0
+        ? `<tr>
+      <td>Kembalian</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(data.change_amount)}</td>
+    </tr>`
+        : ""
+    }`
 
   const footerLines = data.footer_text
     ? data.footer_text
@@ -40,11 +94,19 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
         .join("")
     : `<div>Terima kasih!</div><div>Barang yang sudah dibeli</div><div>tidak dapat dikembalikan</div>`
 
+  const titleSuffix = data.is_deleted ? " - VOID" : ""
+  const voidInfoHtml = data.is_deleted
+    ? `
+  <div class="divider"></div>
+  ${data.deleted_by_name ? `<div class="info-row"><span class="info-label">Void By:</span><span class="info-value">${data.deleted_by_name}</span></div>` : ""}
+  ${data.deleted_reason ? `<div style="font-size: 11px;">Alasan Void: ${data.deleted_reason}</div>` : ""}`
+    : ""
+
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Struk ${data.receipt_number}</title>
+<title>Struk ${data.receipt_number}${titleSuffix}</title>
 <style>
   @page {
     size: ${width} auto;
@@ -126,6 +188,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
     <div class="store-name">${data.store_name}</div>
     ${data.store_address ? `<div>${data.store_address}</div>` : ""}
     ${data.store_phone ? `<div>Telp: ${data.store_phone}</div>` : ""}
+    ${data.is_deleted ? `<div style="margin-top:4px;font-weight:bold;">Receipt Salinan (Void)</div>` : ""}
   </div>
 
   <div class="divider-double"></div>
@@ -146,26 +209,14 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
     <tr class="total-row">
       <td>TOTAL</td>
       <td></td>
-      <td style="text-align:right">${formatRupiah(data.total_amount)}</td>
+      <td style="text-align:right">${formatRupiah(data.original_total_amount)}</td>
     </tr>
-    <tr>
-      <td>Bayar (${paymentLabel})</td>
-      <td></td>
-      <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
-    </tr>
-    ${
-      isCash && data.change_amount > 0
-        ? `<tr>
-      <td>Kembalian</td>
-      <td></td>
-      <td style="text-align:right">${formatRupiah(data.change_amount)}</td>
-    </tr>`
-        : ""
-    }
+    ${paymentRowsHtml}
   </table>
 
   ${data.notes ? `<div class="divider"></div>
   <div style="font-size: 11px;">Catatan: ${data.notes}</div>` : ""}
+  ${voidInfoHtml}
 
   <div class="divider-double"></div>
 

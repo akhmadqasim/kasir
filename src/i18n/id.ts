@@ -139,6 +139,7 @@ export const id = {
     cashier: "Kasir",
     totalAmount: "Total",
     paymentMethod: "Metode Bayar",
+    description: "Keterangan",
     status: "Status",
     items: "Item",
     date: "Tanggal",
@@ -236,8 +237,10 @@ export const id = {
   payment: {
     cash: "Tunai",
     qris: "QRIS",
+    debit: "Debit",
     ewallet: "E-Wallet",
     transfer: "Transfer Bank",
+    mixed: "Campuran",
   },
   settings: {
     title: "Pengaturan",

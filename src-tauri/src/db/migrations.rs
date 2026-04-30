@@ -43,6 +43,22 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "011_transaction_management",
         include_str!("../../migrations/011_transaction_management.sql"),
     ),
+    (
+        "012_transaction_payments",
+        include_str!("../../migrations/012_transaction_payments.sql"),
+    ),
+    (
+        "013_transaction_deleted_status",
+        include_str!("../../migrations/013_transaction_deleted_status.sql"),
+    ),
+    (
+        "014_payment_method_debit_mixed",
+        include_str!("../../migrations/014_payment_method_debit_mixed.sql"),
+    ),
+    (
+        "015_transaction_payment_bank_name",
+        include_str!("../../migrations/015_transaction_payment_bank_name.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

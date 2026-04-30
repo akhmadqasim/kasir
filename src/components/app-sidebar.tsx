@@ -73,6 +73,7 @@ const navMain = [
       { group: "Penjualan", title: "Per Periode", url: "/reports/sales-period" },
       { group: "Penjualan", title: "Per Struk", url: "/reports/sales-receipt" },
       { group: "Penjualan", title: "Jenis Pembayaran", url: "/reports/payment-methods" },
+      { group: "Kas", title: "Uang Masuk / Keluar", url: "/reports/cash-flows" },
       { group: "Produk", title: "Penjualan Produk", url: "/reports/product-sales" },
       { group: "Produk", title: "Produk Populer", url: "/reports/popular-products" },
       { group: "Produk", title: "Retur Produk", url: "/reports/returns" },

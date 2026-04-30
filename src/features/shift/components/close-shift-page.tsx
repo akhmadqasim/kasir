@@ -81,6 +81,8 @@ export function CloseShiftPage() {
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [closedSummary, setClosedSummary] = useState<ShiftSummary | null>(null)
   const [cashFlowToDelete, setCashFlowToDelete] = useState<CashFlow | null>(null)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showFinalCloseConfirm, setShowFinalCloseConfirm] = useState(false)
   const [storeName, setStoreName] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -170,6 +172,22 @@ export function CloseShiftPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const resetCloseConfirmation = () => {
+    setShowCloseConfirm(false)
+    setShowFinalCloseConfirm(false)
+  }
+
+  const openCloseConfirmation = () => {
+    if (isSubmitting) return
+    setShowFinalCloseConfirm(false)
+    setShowCloseConfirm(true)
+  }
+
+  const proceedToFinalCloseConfirmation = () => {
+    setShowCloseConfirm(false)
+    setShowFinalCloseConfirm(true)
   }
 
   const numericClosing = Number(closingCash) || 0
@@ -424,7 +442,7 @@ export function CloseShiftPage() {
               variant="destructive"
               className="h-12 w-full text-base font-semibold"
               disabled={isSubmitting}
-              onClick={handleClose}
+              onClick={openCloseConfirmation}
             >
               {isSubmitting ? (
                 <>
@@ -438,6 +456,90 @@ export function CloseShiftPage() {
           </CardFooter>
         </Card>
       </div>
+
+      <AlertDialog
+        open={showCloseConfirm}
+        onOpenChange={(open) => {
+          if (!open) resetCloseConfirmation()
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Konfirmasi Tutup Kasir</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Kasir</span>
+              <span className="font-medium">{summary.shift.userName}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Total transaksi</span>
+              <span className="font-medium tabular-nums">{summary.totalTransactions}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Saldo aplikasi</span>
+              <span className="font-medium tabular-nums">{formatRp(summary.expectedCash)}</span>
+            </div>
+            {closingCash ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Saldo aktual</span>
+                <span className="font-medium tabular-nums">{formatRp(numericClosing)}</span>
+              </div>
+            ) : null}
+            {cashDifference !== null ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Selisih</span>
+                <span className="font-medium tabular-nums">
+                  {cashDifference >= 0 ? "+" : ""}
+                  {formatRp(cashDifference)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              onClick={proceedToFinalCloseConfirmation}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Lanjutkan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={showFinalCloseConfirm}
+        onOpenChange={(open) => {
+          if (!open) resetCloseConfirmation()
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Verifikasi Terakhir</AlertDialogTitle>
+            <AlertDialogDescription>
+              Shift akan ditutup sekarang dan laporan tutup kasir akan dibuat. Lanjutkan hanya jika Anda benar-benar yakin.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang masih dalam proses pembayaran.
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>Kembali</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isSubmitting ? "Menutup..." : "Ya, Tutup Kasir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={!!cashFlowToDelete}

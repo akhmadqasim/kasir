@@ -11,11 +11,21 @@ pub struct ReceiptData {
     pub items: Vec<ReceiptItem>,
     pub subtotal_amount: f64,
     pub discount_amount: f64,
-    pub total_amount: f64,
     pub payment_method: String,
     pub payment_amount: f64,
     pub change_amount: f64,
+    pub payment_breakdown: Vec<ReceiptPaymentSplit>,
     pub footer_text: Option<String>,
+    pub is_deleted: bool,
+    pub deleted_reason: Option<String>,
+    pub deleted_by_name: Option<String>,
+    pub original_total_amount: f64,
+}
+
+pub struct ReceiptPaymentSplit {
+    pub payment_method: String,
+    pub bank_name: Option<String>,
+    pub amount: f64,
 }
 
 pub struct ReceiptItem {
@@ -57,9 +67,19 @@ fn payment_method_label(method: &str) -> &str {
     match method {
         "cash" => "Tunai",
         "qris" => "QRIS",
+        "debit" => "Debit",
         "ewallet" => "E-Wallet",
         "transfer" => "Transfer",
+        "mixed" => "Campuran",
         _ => method,
+    }
+}
+
+fn payment_method_label_with_bank(method: &str, bank_name: Option<&str>) -> String {
+    let label = payment_method_label(method);
+    match bank_name.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(bank_name) => format!("{} ({})", label, bank_name),
+        None => label.to_string(),
     }
 }
 
@@ -120,6 +140,16 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         text: "=".repeat(cpl),
         bold: false,
     });
+    if data.is_deleted {
+        lines.push(ReceiptTextLine {
+            text: center_text("RECEIPT SALINAN (VOID)", cpl),
+            bold: true,
+        });
+        lines.push(ReceiptTextLine {
+            text: "=".repeat(cpl),
+            bold: false,
+        });
+    }
 
     // Transaction info
     lines.push(ReceiptTextLine {
@@ -171,23 +201,76 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         });
     }
     lines.push(ReceiptTextLine {
-        text: two_col_text("TOTAL", &format_rupiah(data.total_amount), cpl),
+        text: two_col_text("TOTAL", &format_rupiah(data.original_total_amount), cpl),
         bold: true,
     });
-    let method_label = payment_method_label(&data.payment_method);
-    lines.push(ReceiptTextLine {
-        text: two_col_text(
-            &format!("Bayar ({})", method_label),
-            &format_rupiah(data.payment_amount),
-            cpl,
-        ),
-        bold: false,
-    });
-    if data.payment_method == "cash" && data.change_amount > 0.0 {
+    if data.payment_breakdown.len() > 1 {
+        for split in &data.payment_breakdown {
+            let method_label =
+                payment_method_label_with_bank(&split.payment_method, split.bank_name.as_deref());
+            lines.push(ReceiptTextLine {
+                text: two_col_text(
+                    &format!("Bayar ({})", method_label),
+                    &format_rupiah(split.amount),
+                    cpl,
+                ),
+                bold: false,
+            });
+        }
+        if data.change_amount > 0.0 {
+            lines.push(ReceiptTextLine {
+                text: two_col_text("Dibayar", &format_rupiah(data.payment_amount), cpl),
+                bold: false,
+            });
+            lines.push(ReceiptTextLine {
+                text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
+                bold: false,
+            });
+        }
+    } else {
+        let method_label = payment_method_label_with_bank(
+            &data.payment_method,
+            data.payment_breakdown
+                .first()
+                .and_then(|split| split.bank_name.as_deref()),
+        );
         lines.push(ReceiptTextLine {
-            text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
+            text: two_col_text(
+                &format!("Bayar ({})", method_label),
+                &format_rupiah(data.payment_amount),
+                cpl,
+            ),
             bold: false,
         });
+        if data.payment_method == "cash" && data.change_amount > 0.0 {
+            lines.push(ReceiptTextLine {
+                text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
+                bold: false,
+            });
+        }
+    }
+
+    if data.is_deleted {
+        lines.push(ReceiptTextLine {
+            text: "-".repeat(cpl),
+            bold: false,
+        });
+        if let Some(ref deleted_by_name) = data.deleted_by_name {
+            lines.push(ReceiptTextLine {
+                text: two_col_text("Void By:", deleted_by_name, cpl),
+                bold: false,
+            });
+        }
+        if let Some(ref deleted_reason) = data.deleted_reason {
+            lines.push(ReceiptTextLine {
+                text: "Alasan Void:".to_string(),
+                bold: false,
+            });
+            lines.push(ReceiptTextLine {
+                text: deleted_reason.clone(),
+                bold: false,
+            });
+        }
     }
 
     lines.push(ReceiptTextLine {
@@ -344,13 +427,21 @@ mod tests {
                     subtotal: 36000.0,
                 },
             ],
-            total_amount: 101000.0,
             subtotal_amount: 101000.0,
             discount_amount: 0.0,
             payment_method: "cash".to_string(),
             payment_amount: 110000.0,
             change_amount: 9000.0,
+            payment_breakdown: vec![ReceiptPaymentSplit {
+                payment_method: "cash".to_string(),
+                bank_name: None,
+                amount: 101000.0,
+            }],
             footer_text: None,
+            is_deleted: false,
+            deleted_reason: None,
+            deleted_by_name: None,
+            original_total_amount: 101000.0,
         };
 
         let lines = format_receipt_text(&data, 58);

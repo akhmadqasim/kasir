@@ -3,6 +3,7 @@ use sea_orm::{
     DbBackend, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement,
     TransactionTrait,
 };
+use sea_orm::sea_query::Expr;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
@@ -12,11 +13,12 @@ use tokio::sync::Mutex;
 use crate::commands::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::commands::ppob::{MitraClient, PaymentResult};
 use crate::commands::settings::parse_app_settings;
-use crate::entity::{products, store_info, transaction_items, transactions, users};
+use crate::entity::{products, store_info, transaction_items, transaction_payments, transactions, users};
 use crate::utils::AppError;
 
-const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "ewallet", "transfer"];
+const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "transfer"];
 const STATUS_COMPLETED: &str = "completed";
+const MIXED_PAYMENT_METHOD: &str = "mixed";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionItemInput {
@@ -41,15 +43,31 @@ pub struct CheckoutTransactionInput {
     pub items: Vec<TransactionItemInput>,
     pub payment_method: String,
     pub payment_amount: f64,
+    pub payment_breakdown: Option<Vec<PaymentSplitInput>>,
     pub notes: Option<String>,
     pub transaction_discount: Option<f64>,
     pub shift_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PaymentSplitInput {
+    pub payment_method: String,
+    pub bank_name: Option<String>,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PaymentSplit {
+    pub payment_method: String,
+    pub bank_name: Option<String>,
+    pub amount: f64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TransactionResult {
     pub transaction: transactions::Model,
     pub items: Vec<transaction_items::Model>,
+    pub payment_breakdown: Vec<PaymentSplit>,
 }
 
 struct ResolvedItem {
@@ -236,11 +254,22 @@ async fn resolve_items<C: ConnectionTrait>(
     Ok(resolved_items)
 }
 
+fn validate_payment_method(method: &str) -> Result<(), AppError> {
+    if !VALID_PAYMENT_METHODS.contains(&method) {
+        return Err(AppError::Validation(format!(
+            "Metode pembayaran tidak valid: {}",
+            method
+        )));
+    }
+
+    Ok(())
+}
+
 fn calculate_payment_amount(
     payment_method: &str,
     requested_payment_amount: f64,
     total_amount: f64,
-) -> Result<(f64, f64), AppError> {
+) -> Result<(f64, f64, Vec<PaymentSplit>), AppError> {
     if payment_method == "cash" && requested_payment_amount < total_amount {
         return Err(AppError::Validation(format!(
             "Pembayaran kurang. Total: {}, Dibayar: {}",
@@ -259,7 +288,134 @@ fn calculate_payment_amount(
         0.0
     };
 
-    Ok((payment_amount, change_amount))
+    Ok((
+        payment_amount,
+        change_amount,
+        vec![PaymentSplit {
+            payment_method: payment_method.to_string(),
+            bank_name: None,
+            amount: total_amount,
+        }],
+    ))
+}
+
+fn calculate_payment_amount_with_breakdown(
+    input: &CheckoutTransactionInput,
+    total_amount: f64,
+) -> Result<(String, f64, f64, Vec<PaymentSplit>), AppError> {
+    if let Some(payment_breakdown) = &input.payment_breakdown {
+        let splits: Vec<PaymentSplit> = payment_breakdown
+            .iter()
+            .filter(|split| split.amount > 0.0)
+            .map(|split| PaymentSplit {
+                payment_method: split.payment_method.clone(),
+                bank_name: split.bank_name.clone().and_then(|name| {
+                    let trimmed = name.trim().to_string();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                }),
+                amount: split.amount,
+            })
+            .collect();
+
+        if !splits.is_empty() {
+            for split in &splits {
+                validate_payment_method(&split.payment_method)?;
+                if split.payment_method == "transfer"
+                    && split
+                        .bank_name
+                        .as_ref()
+                        .is_none_or(|name| name.trim().is_empty())
+                {
+                    return Err(AppError::Validation(
+                        "Nama bank wajib diisi untuk pembayaran transfer bank".into(),
+                    ));
+                }
+            }
+
+            let mut seen = std::collections::HashSet::new();
+            if splits.iter().any(|split| !seen.insert(split.payment_method.clone())) {
+                return Err(AppError::Validation(
+                    "Metode pembayaran tidak boleh duplikat".into(),
+                ));
+            }
+
+            let cash_index = splits
+                .iter()
+                .position(|split| split.payment_method == "cash");
+            let total_paid: f64 = splits.iter().map(|split| split.amount).sum();
+
+            if let Some(cash_index) = cash_index {
+                let non_cash_total: f64 = splits
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != cash_index)
+                    .map(|(_, split)| split.amount)
+                    .sum();
+
+                if non_cash_total - total_amount > 0.01 {
+                    return Err(AppError::Validation(
+                        "Nominal non-tunai tidak boleh melebihi total transaksi".into(),
+                    ));
+                }
+
+                let remaining_due = (total_amount - non_cash_total).max(0.0);
+                if splits[cash_index].amount + 0.01 < remaining_due {
+                    return Err(AppError::Validation(
+                        "Nominal tunai belum cukup untuk menutup sisa pembayaran".into(),
+                    ));
+                }
+
+                let change_amount = (splits[cash_index].amount - remaining_due).max(0.0);
+                let mut effective_splits = splits.clone();
+                effective_splits[cash_index].amount = remaining_due;
+
+                let payment_method = if effective_splits.len() == 1 {
+                    effective_splits[0].payment_method.clone()
+                } else {
+                    MIXED_PAYMENT_METHOD.to_string()
+                };
+
+                return Ok((payment_method, total_paid, change_amount, effective_splits));
+            }
+
+            if (total_paid - total_amount).abs() > 0.01 {
+                return Err(AppError::Validation(
+                    "Total pembayaran gabungan harus sama dengan total transaksi".into(),
+                ));
+            }
+
+            let payment_method = if splits.len() == 1 {
+                splits[0].payment_method.clone()
+            } else {
+                MIXED_PAYMENT_METHOD.to_string()
+            };
+
+            return Ok((payment_method, total_paid, 0.0, splits));
+        }
+    }
+
+    let (payment_amount, change_amount, splits) = calculate_payment_amount(
+        &input.payment_method,
+        input.payment_amount,
+        total_amount,
+    )?;
+
+    if input.payment_method == "transfer" {
+        return Err(AppError::Validation(
+            "Nama bank wajib diisi untuk pembayaran transfer bank".into(),
+        ));
+    }
+
+    Ok((
+        input.payment_method.clone(),
+        payment_amount,
+        change_amount,
+        splits,
+    ))
 }
 
 async fn persist_transaction<C: ConnectionTrait>(
@@ -274,11 +430,8 @@ async fn persist_transaction<C: ConnectionTrait>(
     let transaction_discount = input.transaction_discount.unwrap_or(0.0);
     let discount_amount = item_discounts_total + transaction_discount;
     let total_amount = (subtotal_amount - discount_amount).max(0.0);
-    let (payment_amount, change_amount) = calculate_payment_amount(
-        &input.payment_method,
-        input.payment_amount,
-        total_amount,
-    )?;
+    let (payment_method, payment_amount, change_amount, payment_breakdown) =
+        calculate_payment_amount_with_breakdown(input, total_amount)?;
     let receipt_number = generate_receipt_number(db).await?;
     let now = now_timestamp();
 
@@ -289,7 +442,7 @@ async fn persist_transaction<C: ConnectionTrait>(
         total_amount: Set(total_amount),
         subtotal_amount: Set(subtotal_amount),
         discount_amount: Set(discount_amount),
-        payment_method: Set(input.payment_method.clone()),
+        payment_method: Set(payment_method),
         payment_amount: Set(payment_amount),
         change_amount: Set(Some(change_amount)),
         status: Set(status.to_string()),
@@ -345,7 +498,24 @@ async fn persist_transaction<C: ConnectionTrait>(
         }
     }
 
-    Ok(TransactionResult { transaction, items })
+    for split in &payment_breakdown {
+        transaction_payments::ActiveModel {
+            id: NotSet,
+            transaction_id: Set(transaction.id),
+            payment_method: Set(split.payment_method.clone()),
+            bank_name: Set(split.bank_name.clone()),
+            amount: Set(split.amount),
+            created_at: Set(Some(now.clone())),
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(TransactionResult {
+        transaction,
+        items,
+        payment_breakdown,
+    })
 }
 
 async fn fetch_transaction_result(
@@ -362,7 +532,41 @@ async fn fetch_transaction_result(
         .all(db)
         .await?;
 
-    Ok(TransactionResult { transaction, items })
+    let payment_breakdown = load_payment_breakdown(db, transaction_id, &transaction).await?;
+
+    Ok(TransactionResult {
+        transaction,
+        items,
+        payment_breakdown,
+    })
+}
+
+async fn load_payment_breakdown<C: ConnectionTrait>(
+    db: &C,
+    transaction_id: i64,
+    transaction: &transactions::Model,
+) -> Result<Vec<PaymentSplit>, AppError> {
+    let splits = transaction_payments::Entity::find()
+        .filter(transaction_payments::Column::TransactionId.eq(transaction_id))
+        .all(db)
+        .await?;
+
+    if !splits.is_empty() {
+        return Ok(splits
+            .into_iter()
+            .map(|split| PaymentSplit {
+                payment_method: split.payment_method,
+                bank_name: split.bank_name,
+                amount: split.amount,
+            })
+            .collect());
+    }
+
+    Ok(vec![PaymentSplit {
+        payment_method: transaction.payment_method.clone(),
+        bank_name: None,
+        amount: transaction.total_amount,
+    }])
 }
 
 fn build_ppob_request(item: &transaction_items::Model) -> Result<PpobFulfillmentRequest, AppError> {
@@ -438,12 +642,7 @@ where
     F: Fn(PpobFulfillmentRequest) -> Fut,
     Fut: Future<Output = Result<PaymentResult, AppError>>,
 {
-    if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
-        return Err(AppError::Validation(format!(
-            "Metode pembayaran tidak valid: {}",
-            input.payment_method
-        )));
-    }
+    validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
     let allow_negative_stock = load_allow_negative_stock(db).await?;
@@ -500,12 +699,7 @@ pub async fn checkout_transaction(
     let conn = db.inner().clone();
     let mitra = mitra.inner().clone();
 
-    if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
-        return Err(AppError::Validation(format!(
-            "Metode pembayaran tidak valid: {}",
-            input.payment_method
-        )));
-    }
+    validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
     let allow_negative_stock = load_allow_negative_stock(&conn).await?;
@@ -667,6 +861,7 @@ pub struct TransactionListItem {
     pub ppob_serial_number: Option<String>,
     pub deleted_at: Option<String>,
     pub deleted_reason: Option<String>,
+    pub payment_breakdown: Vec<PaymentSplit>,
 }
 
 #[derive(Debug, Serialize)]
@@ -732,7 +927,14 @@ pub async fn list_transactions(
 
     if let Some(ref method) = input.payment_method {
         if !method.is_empty() {
-            query = query.filter(transactions::Column::PaymentMethod.eq(method.as_str()));
+            query = query.filter(
+                sea_orm::Condition::any()
+                    .add(transactions::Column::PaymentMethod.eq(method.as_str()))
+                    .add(Expr::cust_with_values(
+                        "EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = transactions.id AND tp.payment_method = $1)",
+                        vec![sea_orm::Value::String(Some(Box::new(method.clone())))],
+                    )),
+            );
         }
     }
 
@@ -774,6 +976,7 @@ pub async fn list_transactions(
         let cashier_name = cashier
             .map(|u| u.full_name)
             .unwrap_or_else(|| "Unknown".into());
+        let payment_breakdown = load_payment_breakdown(db.inner(), txn.id, &txn).await?;
 
         data.push(TransactionListItem {
             id: txn.id,
@@ -796,6 +999,7 @@ pub async fn list_transactions(
             ppob_serial_number,
             deleted_at: txn.deleted_at,
             deleted_reason: txn.deleted_reason,
+            payment_breakdown,
         });
     }
 
@@ -817,6 +1021,7 @@ pub struct TransactionDetail {
     pub ppob_status: Option<String>,
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,
+    pub payment_breakdown: Vec<PaymentSplit>,
 }
 
 #[tauri::command]
@@ -841,6 +1046,7 @@ pub async fn get_transaction_detail(
     let cashier_name = cashier
         .map(|u| u.full_name)
         .unwrap_or_else(|| "Unknown".into());
+    let payment_breakdown = load_payment_breakdown(db.inner(), transaction_id, &transaction).await?;
 
     Ok(TransactionDetail {
         transaction,
@@ -850,6 +1056,7 @@ pub async fn get_transaction_detail(
         ppob_status,
         ppob_message,
         ppob_serial_number,
+        payment_breakdown,
     })
 }
 
@@ -930,7 +1137,14 @@ pub async fn delete_transaction(
     // Soft delete the transaction
     txn.execute(Statement::from_sql_and_values(
         DbBackend::Sqlite,
-        "UPDATE transactions SET status = 'deleted', deleted_at = $1, deleted_by = $2, deleted_reason = $3, updated_at = $1 WHERE id = $4",
+        "UPDATE transactions
+         SET status = 'deleted',
+             total_amount = 0,
+             deleted_at = $1,
+             deleted_by = $2,
+             deleted_reason = $3,
+             updated_at = $1
+         WHERE id = $4",
         vec![
             now.into(),
             input.user_id.into(),
@@ -995,18 +1209,39 @@ pub async fn update_payment_method(
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
-    // Recalculate change amount for cash payments
-    let change_amount = if input.payment_method == "cash" {
-        transaction.payment_amount - transaction.total_amount
-    } else {
-        0.0
-    };
+    let payment_amount = transaction.total_amount;
+    let txn = db.inner().begin().await?;
+
+    // Changing payment method should also rewrite the payment breakdown
+    // so shift closing and reports read the same source of truth.
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "DELETE FROM transaction_payments WHERE transaction_id = $1",
+        vec![input.transaction_id.into()],
+    ))
+    .await?;
+
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO transaction_payments (transaction_id, payment_method, bank_name, amount, created_at)
+         VALUES ($1, $2, NULL, $3, $4)",
+        vec![
+            input.transaction_id.into(),
+            input.payment_method.clone().into(),
+            transaction.total_amount.into(),
+            now.clone().into(),
+        ],
+    ))
+    .await?;
 
     let mut active_txn: transactions::ActiveModel = transaction.into();
     active_txn.payment_method = Set(input.payment_method);
-    active_txn.change_amount = Set(Some(change_amount));
+    active_txn.payment_amount = Set(payment_amount);
+    active_txn.change_amount = Set(Some(0.0));
     active_txn.updated_at = Set(Some(now));
-    let updated = active_txn.update(db.inner()).await?;
+    let updated = active_txn.update(&txn).await?;
+
+    txn.commit().await?;
 
     Ok(updated)
 }

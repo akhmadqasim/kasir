@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Check, Delete, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -6,20 +7,18 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Separator } from "@/components/ui/separator"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "../hooks/use-cart-store"
 import { useCheckoutTransaction } from "../hooks/use-cashier"
+import { cn } from "@/lib/utils"
 import { formatRupiah, getCartValidationError } from "../utils"
-import type { TransactionResult } from "../types"
+import type { PaymentSplitInput, TransactionResult } from "../types"
 
 interface PaymentDialogProps {
   open: boolean
@@ -30,9 +29,41 @@ interface PaymentDialogProps {
 const PAYMENT_METHODS = [
   { value: "cash", label: "Tunai" },
   { value: "qris", label: "QRIS" },
+  { value: "debit", label: "Debit" },
   { value: "ewallet", label: "E-Wallet" },
   { value: "transfer", label: "Transfer Bank" },
 ] as const
+
+const BANK_OPTIONS = [
+  "BCA",
+  "BRI",
+  "BNI",
+  "Mandiri",
+  "BTN",
+  "CIMB Niaga",
+  "Permata",
+  "Danamon",
+  "BSI",
+  "SeaBank",
+  "Jago",
+  "Neo Bank",
+] as const
+
+interface PaymentSplitForm {
+  payment_method: string
+  bank_name: string
+  amount: string
+  selected: boolean
+}
+
+function createInitialPaymentSplits(): PaymentSplitForm[] {
+  return PAYMENT_METHODS.map((method) => ({
+    payment_method: method.value,
+    bank_name: "",
+    amount: "",
+    selected: method.value === "cash",
+  }))
+}
 
 export function PaymentDialog({
   open,
@@ -40,9 +71,10 @@ export function PaymentDialog({
   onSuccess,
 }: PaymentDialogProps) {
   const queryClient = useQueryClient()
-  const [paymentMethod, setPaymentMethod] = useState("cash")
-  const [paymentAmount, setPaymentAmount] = useState("")
-  const [displayPayment, setDisplayPayment] = useState("")
+  const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(
+    createInitialPaymentSplits
+  )
+  const [activePaymentMethod, setActivePaymentMethod] = useState("cash")
   const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
@@ -58,26 +90,110 @@ export function PaymentDialog({
   const total = getTotal()
   const subtotal = getSubtotal()
   const totalDiscount = getTotalDiscount()
-  const numericPayment = Number(paymentAmount) || 0
-  const changeAmount = paymentMethod === "cash" ? numericPayment - total : 0
-  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
   const cartValidationError = getCartValidationError(items)
+  const selectedPaymentSplits = useMemo(
+    () => paymentSplits.filter((split) => split.selected),
+    [paymentSplits]
+  )
+  const activeSplit =
+    paymentSplits.find((split) => split.payment_method === activePaymentMethod) ??
+    paymentSplits[0]
+  const selectedMethodCount = selectedPaymentSplits.length
+  const selectedTransferSplits = selectedPaymentSplits.filter(
+    (split) => split.payment_method === "transfer"
+  )
+  const isSingleCashSelection =
+    selectedMethodCount === 1 &&
+    selectedPaymentSplits[0]?.payment_method === "cash"
+  const primaryPaymentMethod =
+    selectedPaymentSplits[0]?.payment_method ?? "cash"
+  const primaryPaymentAmount = Number(selectedPaymentSplits[0]?.amount) || 0
+  const changeAmount = isSingleCashSelection ? primaryPaymentAmount - total : 0
+  const totalSplitAmount = useMemo(
+    () =>
+      selectedPaymentSplits.reduce(
+        (sum, split) => sum + (Number(split.amount) || 0),
+        0
+      ),
+    [selectedPaymentSplits]
+  )
+  const nonCashSplitAmount = useMemo(
+    () =>
+      selectedPaymentSplits
+        .filter((split) => split.payment_method !== "cash")
+        .reduce((sum, split) => sum + (Number(split.amount) || 0), 0),
+    [selectedPaymentSplits]
+  )
+  const cashSplitAmount = useMemo(
+    () =>
+      selectedPaymentSplits
+        .filter((split) => split.payment_method === "cash")
+        .reduce((sum, split) => sum + (Number(split.amount) || 0), 0),
+    [selectedPaymentSplits]
+  )
+  const splitDifference = total - totalSplitAmount
+  const normalizedSplits: PaymentSplitInput[] = selectedPaymentSplits
+    .filter((split) => split.payment_method && (Number(split.amount) || 0) > 0)
+    .map((split) => ({
+      payment_method: split.payment_method,
+      bank_name:
+        split.payment_method === "transfer"
+          ? split.bank_name.trim() || undefined
+          : undefined,
+      amount: Number(split.amount) || 0,
+    }))
+  const splitMethods = normalizedSplits.map((split) => split.payment_method)
+  const hasDuplicateSplitMethod = new Set(splitMethods).size !== splitMethods.length
+  const hasCashInSplit = selectedPaymentSplits.some(
+    (split) => split.payment_method === "cash"
+  )
+  const allSelectedMethodsHaveAmount = selectedPaymentSplits.every(
+    (split) => (Number(split.amount) || 0) > 0
+  )
+  const allTransferMethodsHaveBank = selectedTransferSplits.every(
+    (split) => split.bank_name.trim().length > 0
+  )
+  const isSplitSelectionValid =
+    normalizedSplits.length > 0 &&
+    normalizedSplits.length === selectedPaymentSplits.length &&
+    !hasDuplicateSplitMethod &&
+    (hasCashInSplit
+      ? nonCashSplitAmount <= total + 0.01 &&
+        cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0)
+      : Math.abs(splitDifference) < 0.01)
 
-  const isCashValid = paymentMethod !== "cash" || numericPayment >= total
+  const isCashValid = !isSingleCashSelection || primaryPaymentAmount >= total
   const canConfirm =
     items.length > 0 &&
     !cartValidationError &&
-    isCashValid &&
+    selectedMethodCount > 0 &&
+    allTransferMethodsHaveBank &&
+    (isSingleCashSelection
+      ? isCashValid
+      : allSelectedMethodsHaveAmount && isSplitSelectionValid) &&
     !checkoutTransaction.isPending
 
-  const quickAmounts = getQuickAmounts(total)
+  const quickAmounts = QUICK_AMOUNT_OPTIONS
 
   // Auto-focus payment input when dialog opens
   useEffect(() => {
-    if (open && paymentMethod === "cash") {
+    if (open && isSingleCashSelection) {
       setTimeout(() => paymentInputRef.current?.focus(), 100)
     }
-  }, [open, paymentMethod])
+  }, [isSingleCashSelection, open])
+
+  useEffect(() => {
+    if (selectedMethodCount !== 1 || primaryPaymentMethod === "cash") return
+    if ((Number(selectedPaymentSplits[0]?.amount) || 0) > 0) return
+
+    setPaymentSplits((current) =>
+      current.map((split) =>
+        split.payment_method === primaryPaymentMethod
+          ? { ...split, amount: String(total) }
+          : split
+      )
+    )
+  }, [primaryPaymentMethod, selectedMethodCount, selectedPaymentSplits, total])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && canConfirm) {
@@ -90,28 +206,176 @@ export function PaymentDialog({
     return new Intl.NumberFormat("id-ID").format(num)
   }
 
-  const handlePaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "")
-    if (raw === "") {
-      setPaymentAmount("")
-      setDisplayPayment("")
+  const formatAmountDisplay = (raw: string): string =>
+    raw ? formatNumber(Number(raw) || 0) : ""
+
+  const sanitizeAmount = (raw: string): string =>
+    raw.replace(/^0+(?=\d)/, "")
+
+  const updateSplit = useCallback((method: string, next: Partial<PaymentSplitForm>) => {
+    setPaymentSplits((current) =>
+      current.map((split) =>
+        split.payment_method === method ? { ...split, ...next } : split
+      )
+    )
+  }, [])
+
+  const handleAmountChange = useCallback((method: string, value: string) => {
+    updateSplit(method, {
+      amount: sanitizeAmount(value.replace(/\D/g, "")),
+      selected: true,
+    })
+  }, [updateSplit])
+
+  const handleBankNameChange = useCallback((method: string, value: string) => {
+    updateSplit(method, {
+      bank_name: value,
+      selected: true,
+    })
+  }, [updateSplit])
+
+  const handleQuickAmount = useCallback((amount: number) => {
+    updateSplit("cash", { amount: String(amount), selected: true })
+  }, [updateSplit])
+
+  useEffect(() => {
+    if (!open || !isSingleCashSelection) return
+
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+        return
+      }
+
+      if (event.key !== "`" && event.code !== "Backquote") {
+        return
+      }
+
+      const target = event.target
+      if (target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      event.preventDefault()
+      handleQuickAmount(total)
+      paymentInputRef.current?.focus()
+      paymentInputRef.current?.select()
+    }
+
+    window.addEventListener("keydown", handleShortcut)
+    return () => window.removeEventListener("keydown", handleShortcut)
+  }, [handleQuickAmount, isSingleCashSelection, open, total])
+
+  const handleMethodToggle = useCallback((method: string, checked: boolean) => {
+    setPaymentSplits((current) =>
+      current.map((split) => {
+        if (split.payment_method !== method) return split
+
+        if (!checked) {
+          return { ...split, selected: false, amount: "", bank_name: "" }
+        }
+
+        return {
+          ...split,
+          selected: true,
+          amount: split.amount,
+        }
+      })
+    )
+  }, [])
+
+  const handleMethodButtonClick = useCallback((method: string) => {
+    const split = paymentSplits.find(
+      (current) => current.payment_method === method
+    )
+
+    if (!split) return
+
+    if (!split.selected) {
+      handleMethodToggle(method, true)
+      setActivePaymentMethod(method)
       return
     }
-    const num = Number(raw)
-    setPaymentAmount(String(num))
-    setDisplayPayment(formatNumber(num))
-  }
 
-  const handleQuickAmount = (amount: number) => {
-    setPaymentAmount(String(amount))
-    setDisplayPayment(formatNumber(amount))
-  }
+    if (activePaymentMethod !== method) {
+      setActivePaymentMethod(method)
+      return
+    }
+
+    handleMethodToggle(method, false)
+    const fallback = paymentSplits.find(
+      (current) => current.payment_method !== method && current.selected
+    )
+    setActivePaymentMethod(fallback?.payment_method ?? "cash")
+  }, [activePaymentMethod, handleMethodToggle, paymentSplits])
+
+  const ensureActiveMethodSelected = useCallback(() => {
+    if (activeSplit?.selected) return
+    handleMethodToggle(activePaymentMethod, true)
+  }, [activePaymentMethod, activeSplit?.selected, handleMethodToggle])
+
+  const handleKeypadInput = useCallback((key: string) => {
+    ensureActiveMethodSelected()
+
+    const currentAmount = activeSplit?.amount ?? ""
+    const nextAmount = sanitizeAmount(`${currentAmount}${key}`)
+    updateSplit(activePaymentMethod, {
+      amount: nextAmount,
+      selected: true,
+    })
+  }, [activePaymentMethod, activeSplit?.amount, ensureActiveMethodSelected, updateSplit])
+
+  const handleKeypadDelete = useCallback(() => {
+    if (!activeSplit) return
+
+    updateSplit(activePaymentMethod, {
+      amount: activeSplit.amount.slice(0, -1),
+      selected: true,
+    })
+  }, [activePaymentMethod, activeSplit, updateSplit])
+
+  const handleKeypadClear = useCallback(() => {
+    if (!activeSplit) return
+
+    updateSplit(activePaymentMethod, {
+      amount: "",
+      selected: activeSplit.selected,
+    })
+  }, [activePaymentMethod, activeSplit, updateSplit])
+
+  const handleSetExactAmount = useCallback((amount: number) => {
+    ensureActiveMethodSelected()
+    updateSplit(activePaymentMethod, {
+      amount: String(amount),
+      selected: true,
+    })
+  }, [activePaymentMethod, ensureActiveMethodSelected, updateSplit])
+
+  const handleSetRemainingAmount = useCallback(() => {
+    ensureActiveMethodSelected()
+
+    const otherTotal = paymentSplits
+      .filter(
+        (split) =>
+          split.payment_method !== activePaymentMethod && split.selected
+      )
+      .reduce((sum, split) => sum + (Number(split.amount) || 0), 0)
+
+    const remaining = Math.max(total - otherTotal, 0)
+    updateSplit(activePaymentMethod, {
+      amount: String(remaining),
+      selected: true,
+    })
+  }, [activePaymentMethod, ensureActiveMethodSelected, paymentSplits, total, updateSplit])
 
   const handleConfirm = () => {
     if (!user) return
 
     const finalPaymentAmount =
-      paymentMethod === "cash" ? numericPayment : total
+      isSingleCashSelection ? primaryPaymentAmount : totalSplitAmount
+    const finalPaymentMethod =
+      selectedMethodCount > 1
+        ? normalizedSplits[0]?.payment_method ?? "cash"
+        : primaryPaymentMethod
 
     checkoutTransaction.mutate(
       {
@@ -132,23 +396,27 @@ export function PaymentDialog({
             ppob_payment_code: item.ppob_payment_code,
             ppob_flag_id: item.ppob_flag_id,
           })),
-          payment_method: paymentMethod,
+          payment_method: finalPaymentMethod,
           payment_amount: finalPaymentAmount,
+          payment_breakdown:
+            selectedMethodCount > 1
+              ? normalizedSplits
+              : primaryPaymentMethod === "transfer"
+                ? normalizedSplits
+                : undefined,
           transaction_discount: getTransactionDiscountAmount() || undefined,
           shift_id: activeShift?.id,
           notes: notes.trim() || undefined,
         },
       },
       {
-        onSuccess: (result) => {
-          queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
-          queryClient.invalidateQueries({ queryKey: ["search_products"] })
-          onSuccess(result)
-          setPaymentAmount("")
-          setDisplayPayment("")
-          setPaymentMethod("cash")
-          setNotes("")
-        },
+          onSuccess: (result) => {
+            queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+            queryClient.invalidateQueries({ queryKey: ["search_products"] })
+            onSuccess(result)
+            setPaymentSplits(createInitialPaymentSplits())
+            setNotes("")
+          },
         onError: (err) => {
           toast.error(`Gagal memproses transaksi: ${err.message}`)
         },
@@ -158,9 +426,8 @@ export function PaymentDialog({
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
-      setPaymentAmount("")
-      setDisplayPayment("")
-      setPaymentMethod("cash")
+      setPaymentSplits(createInitialPaymentSplits())
+      setActivePaymentMethod("cash")
       setNotes("")
     }
     onOpenChange(isOpen)
@@ -168,159 +435,329 @@ export function PaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="p-0 sm:max-w-[min(96vw,72rem)]">
         <DialogHeader>
-          <DialogTitle>Ringkasan Pesanan</DialogTitle>
+          <DialogTitle className="px-6 pt-6 text-lg font-semibold">
+            Pembayaran
+          </DialogTitle>
         </DialogHeader>
-
-        {/* Order summary */}
-        <div className="rounded-lg bg-muted p-4">
-          <div className="flex justify-between text-sm">
-            <span>{itemCount} item</span>
-          </div>
-          <Separator className="my-2" />
-          {totalDiscount > 0 ? (
-            <>
-              <div className="flex justify-between text-sm">
-                <span>Subtotal</span>
-                <span className="tabular-nums">{formatRupiah(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-destructive">
-                <span>Diskon</span>
-                <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
-              </div>
-              <Separator className="my-2" />
-            </>
-          ) : null}
-          <div className="flex justify-between">
-            <span className="font-medium">Total</span>
-            <span className="text-xl font-bold tabular-nums">
-              {formatRupiah(total)}
-            </span>
-          </div>
-          {cartValidationError && (
-            <p className="mt-3 text-sm font-medium text-destructive">{cartValidationError}</p>
-          )}
-        </div>
-
-        {/* Payment Method */}
-        <div>
-          <Label className="mb-2 block">Metode Pembayaran</Label>
-          <Tabs value={paymentMethod} onValueChange={setPaymentMethod}>
-            <TabsList className="grid w-full grid-cols-4">
-              {PAYMENT_METHODS.map((method) => (
-                <TabsTrigger key={method.value} value={method.value}>
-                  {method.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            <TabsContent value="cash" className="mt-4 space-y-3">
-              <div>
-                <Label htmlFor="payment-amount">Jumlah Bayar</Label>
-                <Input
-                  ref={paymentInputRef}
-                  id="payment-amount"
-                  type="text"
-                  inputMode="numeric"
-                  className="mt-1 !h-12 !text-lg !font-bold text-right tabular-nums"
-                  placeholder="0"
-                  value={displayPayment}
-                  onChange={handlePaymentChange}
-                  onKeyDown={handleKeyDown}
-                />
-              </div>
-              <div className="flex gap-2">
-                <div className="flex flex-wrap gap-2 flex-1">
-                  {quickAmounts.filter(a => a !== total).map((amount) => (
-                    <Button
-                      key={amount}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleQuickAmount(amount)}
-                    >
-                      {formatRupiah(amount)}
-                    </Button>
-                  ))}
-                </div>
-                <Button
-                  variant="default"
-                  className="h-auto min-h-[4rem] px-6 text-base font-bold self-stretch"
-                  onClick={() => handleQuickAmount(total)}
-                >
-                  Uang Pas
-                </Button>
-              </div>
-              {numericPayment > 0 && (
-                <div className="rounded-lg bg-muted p-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Kembalian</span>
-                    <span
-                      className={`text-base font-bold tabular-nums ${
-                        changeAmount < 0 ? "text-destructive" : "text-green-600"
-                      }`}
-                    >
-                      {formatRupiah(Math.max(0, changeAmount))}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            {["qris", "ewallet", "transfer"].map((method) => (
-              <TabsContent key={method} value={method} className="mt-4">
-                <div className="rounded-lg bg-muted p-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Pembayaran sebesar
+        <div className="grid gap-0 md:grid-cols-2">
+          <div className="border-b p-4 sm:p-5 md:border-b-0 md:border-r xl:p-6">
+            <div className="rounded-xl border bg-muted/40 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                    Total Transaksi
                   </p>
-                  <p className="text-xl font-bold tabular-nums">
+                  {totalDiscount > 0 && (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Diskon: {formatRupiah(totalDiscount)}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className="text-4xl font-semibold tracking-tight tabular-nums lg:text-5xl">
                     {formatRupiah(total)}
                   </p>
+                  {subtotal !== total && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Subtotal {formatRupiah(subtotal)}
+                    </p>
+                  )}
                 </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </div>
+              </div>
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="transaction-notes">Keterangan (opsional)</Label>
-          <Textarea
-            id="transaction-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Tambahkan catatan untuk transaksi ini..."
-            rows={2}
-            className="resize-none"
-          />
-        </div>
+            <div className="mt-5 space-y-3">
+              {selectedPaymentSplits.length > 0 ? (
+                selectedPaymentSplits.map((split) => {
+                  const amountInputId = `payment-amount-${split.payment_method}`
+                  const label =
+                    PAYMENT_METHODS.find(
+                      (method) => method.value === split.payment_method
+                    )?.label ?? split.payment_method
 
-        <DialogFooter>
-          <Button
-            className="h-12 w-full text-lg font-semibold"
-            disabled={!canConfirm}
-            onClick={handleConfirm}
-          >
-            {checkoutTransaction.isPending
-              ? "Memproses..."
-              : "Proses Pembayaran"}
-          </Button>
-        </DialogFooter>
+                  return (
+                    <div
+                      key={split.payment_method}
+                      className={cn(
+                        "grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3 rounded-xl border bg-card p-3 sm:grid-cols-[180px_minmax(0,1fr)]",
+                        activePaymentMethod === split.payment_method &&
+                          "border-primary ring-2 ring-primary/20"
+                      )}
+                    >
+                      <div className="text-sm font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        {label}
+                      </div>
+                      <Input
+                        ref={
+                          split.payment_method === "cash"
+                            ? paymentInputRef
+                            : undefined
+                        }
+                        id={amountInputId}
+                        type="text"
+                        inputMode="numeric"
+                        className="h-12 border-0 bg-transparent text-right text-2xl font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-14 sm:text-3xl lg:text-4xl"
+                        placeholder="0"
+                        value={formatAmountDisplay(split.amount)}
+                        onClick={() => {
+                          setActivePaymentMethod(split.payment_method)
+                        }}
+                        onChange={(event) =>
+                          handleAmountChange(
+                            split.payment_method,
+                            event.target.value
+                          )
+                        }
+                        onKeyDown={handleKeyDown}
+                      />
+                      {split.payment_method === "transfer" && (
+                        <div className="col-span-2 sm:col-start-2 sm:col-span-1">
+                          <Label
+                            htmlFor={`payment-bank-${split.payment_method}`}
+                            className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
+                          >
+                            Bank
+                          </Label>
+                          <Input
+                            id={`payment-bank-${split.payment_method}`}
+                            list="transfer-bank-options"
+                            value={split.bank_name}
+                            placeholder="Contoh: BCA / SeaBank"
+                            onClick={() => {
+                              setActivePaymentMethod(split.payment_method)
+                            }}
+                            onChange={(event) =>
+                              handleBankNameChange(
+                                split.payment_method,
+                                event.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                  Pilih metode pembayaran di panel kanan untuk mulai mengisi nominal.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="transaction-notes"
+                  className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
+                >
+                  Catatan
+                </Label>
+                <Textarea
+                  id="transaction-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Tambahkan catatan untuk transaksi ini..."
+                  rows={4}
+                  className="resize-none"
+                />
+              </div>
+              {isSingleCashSelection && primaryPaymentAmount > 0 && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Kembalian</span>
+                  <span
+                    className={cn(
+                      "font-semibold tabular-nums",
+                      changeAmount < 0 ? "text-destructive" : "text-green-600"
+                    )}
+                  >
+                    {formatRupiah(Math.max(0, changeAmount))}
+                  </span>
+                </div>
+              )}
+              {cartValidationError && (
+                <p className="text-sm font-medium text-destructive">
+                  {cartValidationError}
+                </p>
+              )}
+              {selectedMethodCount > 1 &&
+                ((!hasCashInSplit && Math.abs(splitDifference) >= 0.01) ||
+                  (hasCashInSplit &&
+                    (nonCashSplitAmount > total + 0.01 ||
+                      cashSplitAmount + 0.01 < Math.max(total - nonCashSplitAmount, 0)))) && (
+                <p className="text-sm font-medium text-destructive">
+                  {hasCashInSplit
+                    ? nonCashSplitAmount > total + 0.01
+                      ? "Nominal non-tunai melebihi total transaksi."
+                      : `Nominal tunai masih kurang ${formatRupiah(
+                          Math.max(total - nonCashSplitAmount - cashSplitAmount, 0)
+                        )}.`
+                    : splitDifference > 0
+                      ? `Nominal gabungan masih kurang ${formatRupiah(splitDifference)}.`
+                      : `Nominal gabungan kelebihan ${formatRupiah(Math.abs(splitDifference))}.`}
+                </p>
+              )}
+              {selectedMethodCount > 1 &&
+                hasCashInSplit &&
+                nonCashSplitAmount <= total + 0.01 &&
+                cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0) &&
+                totalSplitAmount - total > 0.01 && (
+                <p className="text-sm font-medium text-green-600">
+                  Kembalian tunai: {formatRupiah(totalSplitAmount - total)}
+                </p>
+              )}
+              {!allTransferMethodsHaveBank && (
+                <p className="text-sm font-medium text-destructive">
+                  Isi nama bank untuk pembayaran transfer bank.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t p-4 sm:space-y-4 sm:p-5 md:border-t-0 xl:space-y-5 xl:p-6">
+              <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2 sm:grid-cols-[minmax(0,1fr)_130px] xl:grid-cols-[minmax(0,1fr)_170px]">
+                <div className="grid grid-cols-3 gap-2">
+                {[
+                  "1",
+                  "2",
+                  "3",
+                  "4",
+                  "5",
+                  "6",
+                  "7",
+                  "8",
+                  "9",
+                  "00",
+                  "0",
+                  "000",
+                ].map((key) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant="outline"
+                    className="h-12 text-lg font-medium tabular-nums sm:h-14 sm:text-xl xl:h-16 xl:text-2xl"
+                    onClick={() => handleKeypadInput(key)}
+                  >
+                    {key}
+                  </Button>
+                ))}
+              </div>
+              <div className="grid grid-rows-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-full min-h-[100px] text-sm font-medium sm:min-h-[115px] sm:text-base xl:min-h-[131px] xl:text-xl"
+                  onClick={handleKeypadDelete}
+                >
+                  <Delete className="mr-2 h-5 w-5" />
+                  Delete
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-full min-h-[100px] text-sm font-medium sm:min-h-[115px] sm:text-base xl:min-h-[131px] xl:text-xl"
+                  onClick={handleKeypadClear}
+                >
+                  <RotateCcw className="mr-2 h-5 w-5" />
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {quickAmounts.map((amount) => (
+                <Button
+                  key={amount}
+                  type="button"
+                  variant="outline"
+                  className="h-11 text-xs font-medium tabular-nums sm:h-12 sm:text-sm xl:h-14 xl:text-base"
+                  onClick={() => handleSetExactAmount(amount)}
+                >
+                  {formatQuickAmountLabel(amount)}
+                </Button>
+              ))}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full text-lg font-semibold sm:h-14 sm:text-xl xl:h-18 xl:text-2xl"
+              onClick={handleSetRemainingAmount}
+            >
+              Uang Pas
+            </Button>
+
+            <div>
+              <Label className="mb-3 block text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Metode Pembayaran
+              </Label>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {PAYMENT_METHODS.map((method) => {
+                  const split = paymentSplits.find(
+                    (current) => current.payment_method === method.value
+                  )
+
+                  if (!split) return null
+
+                  const isSelected = split.selected
+                  const isActive = activePaymentMethod === method.value
+
+                  return (
+                    <Button
+                      key={method.value}
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "h-11 justify-start gap-3 px-3 text-left text-sm font-medium sm:h-12 sm:px-4 xl:h-14",
+                        isSelected && "border-primary bg-primary/10 text-primary",
+                        isActive && "ring-2 ring-primary/20"
+                      )}
+                      onClick={() => handleMethodButtonClick(method.value)}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-5 w-5 items-center justify-center rounded border",
+                          isSelected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-muted-foreground/30"
+                        )}
+                      >
+                        {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+                      <span className="flex-1">{method.label}</span>
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <Button
+              className="h-12 w-full text-lg font-semibold sm:h-14 sm:text-xl xl:h-16 xl:text-2xl"
+              disabled={!canConfirm}
+              onClick={handleConfirm}
+            >
+              {checkoutTransaction.isPending ? "Memproses..." : "Bayar"}
+            </Button>
+            <datalist id="transfer-bank-options">
+              {BANK_OPTIONS.map((bank) => (
+                <option key={bank} value={bank} />
+              ))}
+            </datalist>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )
 }
 
-function getQuickAmounts(total: number): number[] {
-  const amounts = new Set<number>()
-  amounts.add(total) // Uang Pas
+const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
 
-  const roundUps = [1000, 5000, 10000, 20000, 50000, 100000]
-  for (const r of roundUps) {
-    const rounded = Math.ceil(total / r) * r
-    if (rounded > total) {
-      amounts.add(rounded)
-    }
+function formatQuickAmountLabel(amount: number): string {
+  if (amount >= 1000 && amount % 1000 === 0) {
+    return `${amount / 1000}k`
   }
 
-  return Array.from(amounts).sort((a, b) => a - b).slice(0, 6)
+  return formatRupiah(amount).replace("Rp", "").trim()
 }

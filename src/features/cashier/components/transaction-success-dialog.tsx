@@ -15,8 +15,15 @@ import { toast } from "sonner"
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Tunai",
   qris: "QRIS",
+  debit: "Debit",
   ewallet: "E-Wallet",
   transfer: "Transfer Bank",
+  mixed: "Campuran",
+}
+
+function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null): string {
+  const label = PAYMENT_LABELS[paymentMethod] ?? paymentMethod
+  return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }
 
 interface TransactionSuccessDialogProps {
@@ -34,7 +41,10 @@ export function TransactionSuccessDialog({
   const autoPrintedRef = useRef<number | null>(null)
 
   const transaction = result?.transaction
-  const isCash = transaction?.payment_method === "cash"
+  const paymentBreakdown = result?.payment_breakdown ?? []
+  const hasCashPayment =
+    transaction?.payment_method === "cash" ||
+    paymentBreakdown.some((split) => split.payment_method === "cash")
   const ppobItem = result?.items.find((item) => item.service_type)
   const hasPpob = !!ppobItem
 
@@ -114,12 +124,35 @@ export function TransactionSuccessDialog({
           <div className="flex justify-between">
             <span className="text-muted-foreground">Metode Pembayaran</span>
             <span className="font-medium">
-              {PAYMENT_LABELS[transaction.payment_method] ??
-                transaction.payment_method}
+              {formatPaymentSplitLabel(
+                transaction.payment_method,
+                paymentBreakdown[0]?.bank_name
+              )}
             </span>
           </div>
 
-          {isCash && (
+          {paymentBreakdown.length > 1 && (
+            <>
+              <Separator />
+              <div className="space-y-2 text-sm">
+                {paymentBreakdown.map((split) => (
+                  <div
+                    key={`${split.payment_method}-${split.bank_name ?? "default"}`}
+                    className="flex justify-between"
+                  >
+                    <span className="text-muted-foreground">
+                      {formatPaymentSplitLabel(split.payment_method, split.bank_name)}
+                    </span>
+                    <span className="font-medium tabular-nums">
+                      {formatRupiah(split.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {hasCashPayment && (transaction.change_amount ?? 0) > 0 && (
             <>
               <Separator />
               <div className="flex justify-between items-center">
@@ -132,7 +165,7 @@ export function TransactionSuccessDialog({
               <div className="text-center py-3">
                 <p className="text-sm text-muted-foreground mb-1">Kembalian</p>
                 <p className="text-5xl font-extrabold tabular-nums tracking-tight text-green-600">
-                  {formatRupiah(transaction.change_amount)}
+                  {formatRupiah(transaction.change_amount ?? 0)}
                 </p>
               </div>
             </>

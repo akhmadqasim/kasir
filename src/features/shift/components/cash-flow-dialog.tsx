@@ -12,8 +12,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useShiftStore } from "../hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { CashFlow } from "../types"
@@ -24,7 +24,7 @@ interface CashFlowDialogProps {
 }
 
 export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
-  const [flowType, setFlowType] = useState<"in" | "out">("out")
+  const [flowType, setFlowType] = useState<"in" | "out" | "">("")
   const [amount, setAmount] = useState("")
   const [displayAmount, setDisplayAmount] = useState("")
   const [description, setDescription] = useState("")
@@ -35,7 +35,7 @@ export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
 
   useEffect(() => {
     if (open) {
-      setFlowType("out")
+      setFlowType("")
       setAmount("")
       setDisplayAmount("")
       setDescription("")
@@ -60,7 +60,10 @@ export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
 
   const numericAmount = Number(amount) || 0
   const canSubmit =
-    numericAmount > 0 && description.trim().length > 0 && !isSubmitting
+    flowType !== "" &&
+    numericAmount > 0 &&
+    description.trim().length > 0 &&
+    !isSubmitting
 
   const handleSubmit = async () => {
     if (!canSubmit || !activeShift || !user) return
@@ -105,21 +108,39 @@ export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
         <div className="space-y-4">
           <div>
             <Label className="mb-2 block">Jenis</Label>
-            <Tabs
-              value={flowType}
-              onValueChange={(v) => setFlowType(v as "in" | "out")}
-            >
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="in" className="gap-1.5">
-                  <ArrowDownCircle className="h-4 w-4 text-green-600" />
-                  Uang Masuk
-                </TabsTrigger>
-                <TabsTrigger value="out" className="gap-1.5">
-                  <ArrowUpCircle className="h-4 w-4 text-red-500" />
-                  Uang Keluar
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="grid w-full grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  "justify-center gap-1.5",
+                  flowType === "in" &&
+                    "border-green-600 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500 dark:bg-green-950/40 dark:text-green-300"
+                )}
+                onClick={() => setFlowType("in")}
+              >
+                <ArrowDownCircle className="h-4 w-4 text-green-600" />
+                Uang Masuk
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  "justify-center gap-1.5",
+                  flowType === "out" &&
+                    "border-red-500 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500 dark:bg-red-950/40 dark:text-red-300"
+                )}
+                onClick={() => setFlowType("out")}
+              >
+                <ArrowUpCircle className="h-4 w-4 text-red-500" />
+                Uang Keluar
+              </Button>
+            </div>
+            {flowType === "" ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Pilih jenis arus kas terlebih dahulu.
+              </p>
+            ) : null}
           </div>
 
           <div>

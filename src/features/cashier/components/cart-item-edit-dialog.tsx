@@ -59,6 +59,7 @@ function CartItemEditBody({
 
   const disc = itemDiscounts[item.cart_id]
   const [qty, setQty] = useState(item.quantity)
+  const [qtyRaw, setQtyRaw] = useState(String(item.quantity))
   const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
   const [discRaw, setDiscRaw] = useState(disc ? String(disc.value) : "")
 
@@ -74,6 +75,19 @@ function CartItemEditBody({
   const handleQtyChange = (newQty: number) => {
     const validated = Math.max(1, newQty)
     setQty(validated)
+    setQtyRaw(String(validated))
+  }
+
+  const handleQtyInputChange = (value: string) => {
+    const cleaned = value.replace(/[^\d]/g, "")
+    setQtyRaw(cleaned)
+
+    if (!cleaned) return
+
+    const parsed = parseInt(cleaned, 10)
+    if (!isNaN(parsed)) {
+      setQty(Math.max(1, parsed))
+    }
   }
 
   const handleDiscChange = (value: string) => {
@@ -94,9 +108,13 @@ function CartItemEditBody({
   }
 
   const handleSave = () => {
+    const normalizedQty = Math.max(1, parseInt(qtyRaw || String(qty), 10) || qty)
+    setQty(normalizedQty)
+    setQtyRaw(String(normalizedQty))
+
     // Update quantity
     if (!item.is_ppob) {
-      updateQuantity(item.cart_id, qty)
+      updateQuantity(item.cart_id, normalizedQty)
     }
 
     // Update discount
@@ -121,6 +139,11 @@ function CartItemEditBody({
   useEffect(() => {
     if (!open || item.is_ppob) return
 
+    setQty(item.quantity)
+    setQtyRaw(String(item.quantity))
+    setDiscType(disc?.type ?? "fixed")
+    setDiscRaw(disc ? String(disc.value) : "")
+
     const timer = setTimeout(() => {
       const input = document.getElementById(qtyInputId) as HTMLInputElement | null
       input?.focus()
@@ -128,7 +151,7 @@ function CartItemEditBody({
     }, 50)
 
     return () => clearTimeout(timer)
-  }, [open, item.is_ppob, qtyInputId])
+  }, [disc, item.is_ppob, item.quantity, open, qtyInputId])
 
   return (
     <>
@@ -162,12 +185,10 @@ function CartItemEditBody({
                 type="text"
                 inputMode="numeric"
                 className="h-9 w-20 text-center text-lg font-semibold tabular-nums"
-                value={qty}
+                value={qtyRaw}
                 autoFocus
-                onChange={(e) => {
-                  const parsed = parseInt(e.target.value, 10)
-                  if (!isNaN(parsed)) handleQtyChange(parsed)
-                }}
+                onChange={(e) => handleQtyInputChange(e.target.value)}
+                onBlur={() => setQtyRaw(String(qty))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSave()
                 }}

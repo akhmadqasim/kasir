@@ -90,7 +90,7 @@ pub async fn get_dashboard_summary(
                SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as cnt \
                FROM transactions \
                WHERE date(created_at, 'localtime') = date('now', 'localtime') \
-               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ), \
              today_refunds AS ( \
                SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
@@ -101,7 +101,7 @@ pub async fn get_dashboard_summary(
                SELECT COALESCE(SUM(total_amount), 0) as revenue \
                FROM transactions \
                WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') \
-               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ), \
              product_counts AS ( \
                SELECT \
@@ -115,7 +115,7 @@ pub async fn get_dashboard_summary(
                JOIN transactions t ON ti.transaction_id = t.id \
                JOIN products p ON ti.product_id = p.id \
                WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
-               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ) \
              SELECT \
                ts.revenue, ts.cnt, \
@@ -178,7 +178,7 @@ pub async fn get_daily_revenue(
              COALESCE(SUM(total_amount), 0) as revenue, \
              COUNT(*) as transactions \
              FROM transactions \
-             WHERE date(created_at, 'localtime') >= date('now', 'localtime', $1) AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', $1) AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              GROUP BY date(created_at, 'localtime') \
              ORDER BY d ASC",
             vec![Value::String(Some(Box::new(days_param)))],
@@ -219,9 +219,19 @@ pub async fn get_payment_method_stats(
     let rows = db
         .query_all(Statement::from_string(
             DbBackend::Sqlite,
-            "SELECT payment_method, COUNT(*) as cnt, COALESCE(SUM(total_amount), 0) as total \
-             FROM transactions \
-             WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+            "WITH payment_method_rows AS ( \
+               SELECT tp.payment_method as payment_method, tp.amount as amount, tp.transaction_id as transaction_id \
+               FROM transaction_payments tp \
+               JOIN transactions t ON t.id = tp.transaction_id \
+               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+               UNION ALL \
+               SELECT t.payment_method as payment_method, t.total_amount as amount, t.id as transaction_id \
+               FROM transactions t \
+               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+                 AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
+             ) \
+             SELECT payment_method, COUNT(DISTINCT transaction_id) as cnt, COALESCE(SUM(amount), 0) as total \
+             FROM payment_method_rows \
              GROUP BY payment_method"
                 .to_owned(),
         ))
@@ -256,7 +266,7 @@ pub async fn get_top_products(
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') \
-               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                AND ti.product_id IS NOT NULL \
              GROUP BY ti.product_id, ti.product_name \
              ORDER BY total_qty DESC \
@@ -361,7 +371,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) \
              FROM transactions \
-             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')"
                 .to_owned(),
         ))
         .await?;
@@ -381,7 +391,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              JOIN products p ON ti.product_id = p.id \
-             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed')"
+             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')"
                 .to_owned(),
         ))
         .await?;
@@ -398,7 +408,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
                SELECT COUNT(*) as item_count \
                FROM transaction_items ti \
                JOIN transactions t ON ti.transaction_id = t.id \
-               WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed') \
+               WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                GROUP BY ti.transaction_id \
              )"
                 .to_owned(),

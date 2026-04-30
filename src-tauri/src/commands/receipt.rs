@@ -2,11 +2,19 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::entity::{store_info, transaction_items, transactions, users};
+use crate::entity::{store_info, transaction_items, transaction_payments, transactions, users};
 use crate::printing::receipt::{
     format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
 };
 use crate::utils::AppError;
+
+fn effective_receipt_total(transaction: &transactions::Model) -> f64 {
+    if transaction.status == "deleted" {
+        (transaction.subtotal_amount - transaction.discount_amount).max(0.0)
+    } else {
+        transaction.total_amount
+    }
+}
 
 fn utc_to_local_formatted(utc_str: &str) -> String {
     chrono::NaiveDateTime::parse_from_str(utc_str, "%Y-%m-%d %H:%M:%S")
@@ -135,7 +143,7 @@ pub async fn print_receipt(
         .await?;
 
     let has_ppob = items.iter().any(|item| item.service_type.is_some());
-    if has_ppob && transaction.status != "completed" {
+    if has_ppob && transaction.status != "completed" && transaction.status != "deleted" {
         return Err(AppError::Validation(
             "Struk PPOB hanya bisa dicetak setelah fulfillment berhasil".into(),
         ));
@@ -147,6 +155,14 @@ pub async fn print_receipt(
     let cashier_name = user
         .map(|u| u.full_name)
         .unwrap_or_else(|| "Unknown".to_string());
+    let deleted_by_name = if let Some(deleted_by) = transaction.deleted_by {
+        users::Entity::find_by_id(deleted_by)
+            .one(db.inner())
+            .await?
+            .map(|u| u.full_name)
+    } else {
+        None
+    };
 
     let date_time = transaction
         .created_at
@@ -163,6 +179,10 @@ pub async fn print_receipt(
             subtotal: item.subtotal,
         })
         .collect();
+    let payment_breakdown = load_payment_breakdown(db.inner(), &transaction).await?;
+    let is_deleted = transaction.status == "deleted";
+    let original_total_amount = effective_receipt_total(&transaction);
+    let deleted_reason = transaction.deleted_reason.clone();
 
     eprintln!(
         "[print_receipt] Transaction #{}, items count: {}",
@@ -186,11 +206,22 @@ pub async fn print_receipt(
         items: receipt_items,
         subtotal_amount: transaction.subtotal_amount,
         discount_amount: transaction.discount_amount,
-        total_amount: transaction.total_amount,
         payment_method: transaction.payment_method,
         payment_amount: transaction.payment_amount,
         change_amount: transaction.change_amount.unwrap_or(0.0),
+        payment_breakdown: payment_breakdown
+            .iter()
+            .map(|split| crate::printing::receipt::ReceiptPaymentSplit {
+                payment_method: split.payment_method.clone(),
+                bank_name: split.bank_name.clone(),
+                amount: split.amount,
+            })
+            .collect(),
         footer_text: settings.footer_text,
+        is_deleted,
+        deleted_reason,
+        deleted_by_name,
+        original_total_amount,
     };
 
     let text_lines = format_receipt_text(&receipt_data, paper_width);
@@ -307,8 +338,13 @@ pub struct ReceiptDataResponse {
     pub payment_method: String,
     pub payment_amount: f64,
     pub change_amount: f64,
+    pub payment_breakdown: Vec<ReceiptPaymentSplitResponse>,
     pub footer_text: Option<String>,
     pub notes: Option<String>,
+    pub is_deleted: bool,
+    pub deleted_reason: Option<String>,
+    pub deleted_by_name: Option<String>,
+    pub original_total_amount: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -317,6 +353,40 @@ pub struct ReceiptItemResponse {
     pub quantity: i32,
     pub price: f64,
     pub subtotal: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReceiptPaymentSplitResponse {
+    pub payment_method: String,
+    pub bank_name: Option<String>,
+    pub amount: f64,
+}
+
+async fn load_payment_breakdown(
+    db: &DatabaseConnection,
+    transaction: &transactions::Model,
+) -> Result<Vec<ReceiptPaymentSplitResponse>, AppError> {
+    let splits = transaction_payments::Entity::find()
+        .filter(transaction_payments::Column::TransactionId.eq(transaction.id))
+        .all(db)
+        .await?;
+
+    if !splits.is_empty() {
+        return Ok(splits
+            .into_iter()
+            .map(|split| ReceiptPaymentSplitResponse {
+                payment_method: split.payment_method,
+                bank_name: split.bank_name,
+                amount: split.amount,
+            })
+            .collect());
+    }
+
+    Ok(vec![ReceiptPaymentSplitResponse {
+        payment_method: transaction.payment_method.clone(),
+        bank_name: None,
+        amount: transaction.total_amount,
+    }])
 }
 
 #[tauri::command]
@@ -342,7 +412,7 @@ pub async fn get_receipt_data(
         .await?;
 
     let has_ppob = items.iter().any(|item| item.service_type.is_some());
-    if has_ppob && transaction.status != "completed" {
+    if has_ppob && transaction.status != "completed" && transaction.status != "deleted" {
         return Err(AppError::Validation(
             "Struk PPOB hanya tersedia setelah fulfillment berhasil".into(),
         ));
@@ -354,6 +424,14 @@ pub async fn get_receipt_data(
     let cashier_name = user
         .map(|u| u.full_name)
         .unwrap_or_else(|| "Unknown".to_string());
+    let deleted_by_name = if let Some(deleted_by) = transaction.deleted_by {
+        users::Entity::find_by_id(deleted_by)
+            .one(db.inner())
+            .await?
+            .map(|u| u.full_name)
+    } else {
+        None
+    };
 
     let date_time = transaction
         .created_at
@@ -370,6 +448,11 @@ pub async fn get_receipt_data(
             subtotal: item.subtotal,
         })
         .collect();
+    let payment_breakdown = load_payment_breakdown(db.inner(), &transaction).await?;
+    let is_deleted = transaction.status == "deleted";
+    let original_total_amount = effective_receipt_total(&transaction);
+    let notes = transaction.notes.clone();
+    let deleted_reason = transaction.deleted_reason.clone();
 
     Ok(ReceiptDataResponse {
         store_name: store.name,
@@ -385,8 +468,13 @@ pub async fn get_receipt_data(
         payment_method: transaction.payment_method,
         payment_amount: transaction.payment_amount,
         change_amount: transaction.change_amount.unwrap_or(0.0),
+        payment_breakdown,
         footer_text: settings.footer_text,
-        notes: transaction.notes,
+        notes,
+        is_deleted,
+        deleted_reason,
+        deleted_by_name,
+        original_total_amount,
     })
 }
 

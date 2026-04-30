@@ -2,10 +2,11 @@ import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
@@ -36,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
 import { formatRupiah } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { id } from "@/i18n/id"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
@@ -55,8 +57,15 @@ function formatDate(dateStr: string | null | undefined): string {
 const PAYMENT_LABELS: Record<string, string> = {
   cash: id.payment.cash,
   qris: id.payment.qris,
+  debit: id.payment.debit,
   ewallet: id.payment.ewallet,
   transfer: id.payment.transfer,
+  mixed: id.payment.mixed,
+}
+
+function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null): string {
+  const label = PAYMENT_LABELS[paymentMethod] || paymentMethod
+  return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }
 
 const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
@@ -94,6 +103,27 @@ interface TransactionDetailDialogProps {
   onClose: () => void
 }
 
+function SummaryRow({
+  label,
+  value,
+  mono = false,
+  rowClassName,
+  valueClassName,
+}: {
+  label: string
+  value: ReactNode
+  mono?: boolean
+  rowClassName?: string
+  valueClassName?: string
+}) {
+  return (
+    <div className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm", rowClassName)}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("min-w-0 text-right font-medium", mono && "font-mono", valueClassName)}>{value}</span>
+    </div>
+  )
+}
+
 export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -116,6 +146,11 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = ppobItem?.ppob_status === "failed" || ppobItem?.ppob_status === "pending"
+  const isDeleted = detail?.transaction.status === "deleted"
+  const hasRefundAction = !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
+  const originalTotalAmount = detail
+    ? Math.max(detail.transaction.subtotal_amount - detail.transaction.discount_amount, 0)
+    : 0
 
   const handlePrint = async () => {
     if (!transaction) return
@@ -198,199 +233,283 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
     }
   }
 
-  const isDeleted = detail?.transaction.status === "deleted"
-
   return (
     <Dialog open={!!transaction} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg" aria-describedby={undefined}>
-        <DialogHeader>
+      <DialogContent className="max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0 sm:max-w-md" aria-describedby={undefined}>
+        <DialogHeader className="border-b px-4 py-4">
           <DialogTitle>{id.transactions.detail}</DialogTitle>
         </DialogHeader>
 
         {isLoading || !detail ? (
-          <div className="space-y-3">
+          <div className="space-y-3 px-4 py-4">
             <Skeleton className="h-5 w-full" />
             <Skeleton className="h-5 w-3/4" />
             <Skeleton className="h-5 w-1/2" />
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">{id.transactions.receiptNumber}</p>
-                <p className="font-mono font-medium">{detail.transaction.receipt_number}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">{id.transactions.date}</p>
-                <p>{formatDate(detail.transaction.created_at)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">{id.transactions.cashier}</p>
-                <p>{detail.cashier_name}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">{id.transactions.status}</p>
-                <Badge
-                  variant={STATUS_VARIANTS[detail.transaction.status] || "secondary"}
-                  className={STATUS_CLASSNAMES[detail.transaction.status]}
-                >
-                  {STATUS_LABELS[detail.transaction.status] || detail.transaction.status}
-                </Badge>
-              </div>
-            </div>
+          <>
+            <ScrollArea className="max-h-[min(78svh,680px)]">
+              <div className="space-y-4 px-4 py-4">
+                <section className="space-y-2.5">
+                  <h3 className="text-sm font-semibold">Ringkasan Transaksi</h3>
+                  <div className="space-y-1.5">
+                    <SummaryRow
+                      label={id.transactions.receiptNumber}
+                      value={detail.transaction.receipt_number}
+                      mono
+                    />
+                    <SummaryRow
+                      label={id.transactions.date}
+                      value={formatDate(detail.transaction.created_at)}
+                    />
+                    <SummaryRow
+                      label={id.transactions.cashier}
+                      value={detail.cashier_name}
+                    />
+                    <SummaryRow
+                      label={id.transactions.status}
+                      value={(
+                        <Badge
+                          variant={STATUS_VARIANTS[detail.transaction.status] || "secondary"}
+                          className={STATUS_CLASSNAMES[detail.transaction.status]}
+                        >
+                          {STATUS_LABELS[detail.transaction.status] || detail.transaction.status}
+                        </Badge>
+                      )}
+                      rowClassName="items-center"
+                    />
+                  </div>
+                </section>
 
-            <Separator />
+                <Separator />
 
-            <div>
-              <h4 className="mb-2 text-sm font-medium">{id.transactions.itemList}</h4>
-              <div className="space-y-1">
-                {detail.items.map((item) => {
-                  const ppobStatus = item.ppob_status ? PPOB_STATUS_CONFIG[item.ppob_status] : null
-                  return (
-                    <div key={item.id} className="flex items-center justify-between text-sm">
-                      <div className="min-w-0 flex-1">
-                        <span>{item.product_name}</span>
-                        <span className="ml-2 text-muted-foreground">× {item.quantity}</span>
-                        {ppobStatus && (
-                          <Badge variant="outline" className={`ml-2 text-xs ${ppobStatus.className}`}>
-                            {item.ppob_status === "pending" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                            {ppobStatus.label}
-                          </Badge>
+                <section className="space-y-2.5">
+                  <h3 className="text-sm font-semibold">{id.transactions.itemList}</h3>
+                  <div className="rounded-lg border">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <span>Item</span>
+                      <span className="text-right">Subtotal</span>
+                    </div>
+                    <div className="divide-y">
+                      {detail.items.map((item) => {
+                        const ppobStatus = item.ppob_status ? PPOB_STATUS_CONFIG[item.ppob_status] : null
+                        return (
+                          <div
+                            key={item.id}
+                            className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5 text-sm"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium break-words">{item.product_name}</span>
+                                <span className="text-muted-foreground">× {item.quantity}</span>
+                                {ppobStatus && (
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs ${ppobStatus.className}`}
+                                  >
+                                    {item.ppob_status === "pending" && (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    )}
+                                    {ppobStatus.label}
+                                  </Badge>
+                                )}
+                              </div>
+                              {item.item_discount > 0 && (
+                                <p className="text-xs text-destructive">
+                                  Diskon item: -{formatRupiah(item.item_discount)}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right font-medium tabular-nums">
+                              {formatRupiah(item.subtotal)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </section>
+
+                <Separator />
+
+                <section className="space-y-2.5">
+                  <h3 className="text-sm font-semibold">Ringkasan Pembayaran</h3>
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <div className="space-y-1.5">
+                      {detail.transaction.discount_amount > 0 && (
+                        <>
+                          <SummaryRow
+                            label="Subtotal"
+                            value={formatRupiah(detail.transaction.subtotal_amount)}
+                            valueClassName="tabular-nums"
+                          />
+                          <SummaryRow
+                            label="Diskon"
+                            value={`-${formatRupiah(detail.transaction.discount_amount)}`}
+                            valueClassName="tabular-nums text-destructive"
+                          />
+                        </>
+                      )}
+                      <SummaryRow
+                        label={id.transactions.totalAmount}
+                        value={formatRupiah(detail.transaction.total_amount)}
+                        valueClassName="tabular-nums text-base font-semibold text-foreground"
+                      />
+                      {isDeleted && (
+                        <SummaryRow
+                          label="Total sebelum hapus"
+                          value={formatRupiah(originalTotalAmount)}
+                          valueClassName="tabular-nums"
+                        />
+                      )}
+                      <SummaryRow
+                        label={id.transactions.paymentMethod}
+                        value={formatPaymentSplitLabel(
+                          detail.transaction.payment_method,
+                          detail.payment_breakdown[0]?.bank_name
+                        )}
+                        valueClassName="text-foreground"
+                      />
+                      {detail.payment_breakdown.length > 1 && (
+                        <div className="rounded-md border bg-background px-3 py-2">
+                          <div className="space-y-1.5">
+                            {detail.payment_breakdown.map((split) => (
+                              <SummaryRow
+                                key={`${split.payment_method}-${split.bank_name ?? "default"}`}
+                                label={formatPaymentSplitLabel(split.payment_method, split.bank_name)}
+                                value={formatRupiah(split.amount)}
+                                valueClassName="tabular-nums"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <SummaryRow
+                        label={id.transactions.paymentAmount}
+                        value={formatRupiah(detail.transaction.payment_amount)}
+                        valueClassName="tabular-nums"
+                      />
+                      {(detail.transaction.change_amount ?? 0) > 0 && (
+                        <SummaryRow
+                          label={id.transactions.changeAmount}
+                          value={formatRupiah(detail.transaction.change_amount ?? 0)}
+                          valueClassName="tabular-nums"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                {(detail.transaction.notes || detail.transaction.deleted_reason || ppobItem) && (
+                  <>
+                    <Separator />
+                    <section className="space-y-2.5">
+                      <h3 className="text-sm font-semibold">Info Tambahan</h3>
+                      <div className="space-y-2.5">
+                        {detail.transaction.notes && (
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              {id.transactions.notes}
+                            </p>
+                            <p className="mt-2 text-sm leading-relaxed">{detail.transaction.notes}</p>
+                          </div>
+                        )}
+                        {detail.transaction.deleted_reason && (
+                          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-destructive">
+                              Alasan Penghapusan
+                            </p>
+                            <p className="mt-2 text-sm leading-relaxed text-destructive">
+                              {detail.transaction.deleted_reason}
+                            </p>
+                          </div>
+                        )}
+                        {ppobItem && (
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              Status PPOB
+                            </p>
+                            {ppobItem.ppob_message && (
+                              <p className="mt-2 text-sm leading-relaxed">{ppobItem.ppob_message}</p>
+                            )}
+                            {ppobItem.ppob_serial_number && (
+                              <p className="mt-2 font-mono text-xs text-muted-foreground">
+                                SN: {ppobItem.ppob_serial_number}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <span className="tabular-nums">{formatRupiah(item.subtotal)}</span>
-                    </div>
-                  )
-                })}
+                    </section>
+                  </>
+                )}
               </div>
-            </div>
+            </ScrollArea>
 
-            <Separator />
-
-            <div className="space-y-1 text-sm">
-              {detail.transaction.discount_amount > 0 && (
-                <>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Subtotal</span>
-                    <span className="tabular-nums">{formatRupiah(detail.transaction.subtotal_amount)}</span>
-                  </div>
-                  <div className="flex justify-between text-destructive">
-                    <span>Diskon</span>
-                    <span className="tabular-nums">-{formatRupiah(detail.transaction.discount_amount)}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between font-semibold">
-                <span>{id.transactions.totalAmount}</span>
-                <span className="tabular-nums">{formatRupiah(detail.transaction.total_amount)}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>{id.transactions.paymentMethod}</span>
-                <span>{PAYMENT_LABELS[detail.transaction.payment_method] || detail.transaction.payment_method}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>{id.transactions.paymentAmount}</span>
-                <span className="tabular-nums">{formatRupiah(detail.transaction.payment_amount)}</span>
-              </div>
-              {detail.transaction.payment_method === "cash" && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{id.transactions.changeAmount}</span>
-                  <span className="tabular-nums">{formatRupiah(detail.transaction.change_amount ?? 0)}</span>
-                </div>
-              )}
-              {detail.transaction.notes && (
-                <>
-                  <Separator className="my-2" />
-                  <div>
-                    <p className="text-sm font-medium">{id.transactions.notes}</p>
-                    <p>{detail.transaction.notes}</p>
-                  </div>
-                </>
-              )}
-              {detail.transaction.deleted_reason && (
-                <>
-                  <Separator className="my-2" />
-                  <div className="rounded-md bg-red-50 p-2 dark:bg-red-950">
-                    <p className="text-sm font-medium text-red-700 dark:text-red-400">Alasan Penghapusan</p>
-                    <p className="text-sm text-red-600 dark:text-red-300">{detail.transaction.deleted_reason}</p>
-                  </div>
-                </>
-              )}
-              {ppobItem && (
-                <div className="pt-1 space-y-1">
-                  <p className="text-muted-foreground">Status PPOB</p>
-                  {ppobItem.ppob_message && <p>{ppobItem.ppob_message}</p>}
-                  {ppobItem.ppob_serial_number && (
-                    <p className="font-mono text-xs text-muted-foreground">
-                      SN: {ppobItem.ppob_serial_number}
-                    </p>
+            <div className="border-t bg-muted/30 px-4 py-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  {isAdmin && !isDeleted && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {id.common.delete}
+                    </Button>
+                  )}
+                  {isAdmin && !isDeleted && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setNewPaymentMethod(detail.transaction.payment_method)
+                        setShowEditPayment(true)
+                      }}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {id.transactions.editPaymentMethod}
+                    </Button>
                   )}
                 </div>
-              )}
-            </div>
-
-            <div className="flex justify-between gap-2">
-              <div className="flex gap-2">
-                {isAdmin && !isDeleted && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {id.common.delete}
+                <div className="flex flex-wrap gap-2 xl:justify-end">
+                  {ppobCanRetry && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRetryPpob}
+                      disabled={isRetrying}
+                    >
+                      {isRetrying ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCcw className="mr-2 h-4 w-4" />
+                      )}
+                      Retry PPOB
+                    </Button>
+                  )}
+                  {hasRefundAction && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        onClose()
+                        navigate(`/refund/${detail.transaction.id}`)
+                      }}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      {id.refund.title}
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={handlePrint}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    {id.transactions.printReceipt}
                   </Button>
-                )}
-                {isAdmin && !isDeleted && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setNewPaymentMethod(detail.transaction.payment_method)
-                      setShowEditPayment(true)
-                    }}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    {id.transactions.editPaymentMethod}
-                  </Button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {ppobCanRetry && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRetryPpob}
-                    disabled={isRetrying}
-                  >
-                    {isRetrying ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCcw className="mr-2 h-4 w-4" />
-                    )}
-                    Retry PPOB
-                  </Button>
-                )}
-                {!detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      onClose()
-                      navigate(`/refund/${detail.transaction.id}`)
-                    }}
-                  >
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    {id.refund.title}
-                  </Button>
-                )}
-                <Button size="sm" onClick={handlePrint} disabled={isDeleted}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  {id.transactions.printReceipt}
-                </Button>
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
       </DialogContent>
 
@@ -439,6 +558,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               <SelectContent>
                 <SelectItem value="cash">{id.payment.cash}</SelectItem>
                 <SelectItem value="qris">{id.payment.qris}</SelectItem>
+                <SelectItem value="debit">{id.payment.debit}</SelectItem>
                 <SelectItem value="ewallet">{id.payment.ewallet}</SelectItem>
                 <SelectItem value="transfer">{id.payment.transfer}</SelectItem>
               </SelectContent>

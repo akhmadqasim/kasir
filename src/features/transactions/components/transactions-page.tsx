@@ -6,6 +6,7 @@ import { id as idLocale } from "date-fns/locale"
 import { type DateRange } from "react-day-picker"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
+import { keepPreviousData } from "@tanstack/react-query"
 import {
   Table,
   TableBody,
@@ -55,8 +56,10 @@ function formatDate(dateStr: string | null | undefined): string {
 const PAYMENT_LABELS: Record<string, string> = {
   cash: id.payment.cash,
   qris: id.payment.qris,
+  debit: id.payment.debit,
   ewallet: id.payment.ewallet,
   transfer: id.payment.transfer,
+  mixed: id.payment.mixed,
 }
 
 const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
@@ -81,6 +84,22 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: id.transactions.refunded,
   partial_refund: id.transactions.partialRefund,
   deleted: id.transactions.deleted,
+}
+
+function getTransactionDescription(txn: TransactionListItem): string {
+  if (txn.deleted_reason?.trim()) {
+    return `Alasan hapus: ${txn.deleted_reason.trim()}`
+  }
+
+  if (txn.notes?.trim()) {
+    return txn.notes.trim()
+  }
+
+  if (txn.ppob_message?.trim()) {
+    return txn.ppob_message.trim()
+  }
+
+  return "—"
 }
 
 function toDateStr(d: Date): string {
@@ -114,7 +133,10 @@ export function TransactionsPage() {
 
   const { data, isLoading, error } = useTauriQuery<PaginatedTransactions>(
     "list_transactions",
-    queryArgs
+    queryArgs,
+    {
+      placeholderData: keepPreviousData,
+    }
   )
 
   const handlePrint = useCallback(async (transactionId: number) => {
@@ -163,8 +185,10 @@ export function TransactionsPage() {
             <SelectItem value="all">{id.transactions.allMethods}</SelectItem>
             <SelectItem value="cash">{id.payment.cash}</SelectItem>
             <SelectItem value="qris">{id.payment.qris}</SelectItem>
+            <SelectItem value="debit">{id.payment.debit}</SelectItem>
             <SelectItem value="ewallet">{id.payment.ewallet}</SelectItem>
             <SelectItem value="transfer">{id.payment.transfer}</SelectItem>
+            <SelectItem value="mixed">{id.payment.mixed}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -230,7 +254,7 @@ export function TransactionsPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
+        <Table className="min-w-[1180px]">
           <TableHeader>
             <TableRow>
               <TableHead>{id.transactions.receiptNumber}</TableHead>
@@ -238,6 +262,7 @@ export function TransactionsPage() {
               <TableHead>{id.transactions.date}</TableHead>
               <TableHead className="text-center">{id.transactions.items}</TableHead>
               <TableHead>{id.transactions.paymentMethod}</TableHead>
+              <TableHead>{id.transactions.description}</TableHead>
               <TableHead>{id.transactions.status}</TableHead>
               <TableHead className="text-right">{id.transactions.totalAmount}</TableHead>
               <TableHead className="text-right w-24" />
@@ -247,7 +272,7 @@ export function TransactionsPage() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-5 w-full" />
                     </TableCell>
@@ -256,13 +281,13 @@ export function TransactionsPage() {
               ))
             ) : error ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-destructive">
+                <TableCell colSpan={9} className="h-32 text-center text-destructive">
                   Error: {error.message}
                 </TableCell>
               </TableRow>
             ) : !data?.data?.length ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                   {id.transactions.noTransactions}
                 </TableCell>
               </TableRow>
@@ -290,6 +315,11 @@ export function TransactionsPage() {
                     <Badge variant="outline">
                       {PAYMENT_LABELS[txn.payment_method] || txn.payment_method}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-64 whitespace-normal">
+                    <p className="break-words text-sm text-muted-foreground">
+                      {getTransactionDescription(txn)}
+                    </p>
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -328,7 +358,7 @@ export function TransactionsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        disabled={txn.has_ppob && txn.status !== "completed"}
+                        disabled={txn.has_ppob && txn.status !== "completed" && txn.status !== "deleted"}
                         onClick={(e) => { e.stopPropagation(); handlePrint(txn.id) }}
                         title={id.transactions.printReceipt}
                       >
