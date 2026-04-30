@@ -1,3 +1,9 @@
+export interface PaymentSplit {
+  payment_method: string
+  bank_name?: string | null
+  amount: number
+}
+
 export interface TransactionListItem {
   id: number
   receipt_number: string
@@ -19,6 +25,7 @@ export interface TransactionListItem {
   ppob_serial_number: string | null
   deleted_at: string | null
   deleted_reason: string | null
+  payment_breakdown: PaymentSplit[]
 }
 
 export interface PaginatedTransactions {
@@ -78,6 +85,7 @@ export interface TransactionDetail {
   ppob_status: string | null
   ppob_message: string | null
   ppob_serial_number: string | null
+  payment_breakdown: PaymentSplit[]
 }
 
 export interface ListTransactionsInput {

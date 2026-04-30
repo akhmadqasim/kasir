@@ -49,3 +49,4 @@ src-tauri/WixTools/
 tmp/
 temp/
 data/backups/
+tmp-*.png

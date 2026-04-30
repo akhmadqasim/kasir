@@ -33,34 +33,38 @@ export function CashierPage() {
 
   const needsShift = !activeShift
 
-  // Auto-open shift dialog when entering cashier without active shift
-  // (React "adjust state during render" pattern — no useEffect needed)
-  const [prevNeedsShift, setPrevNeedsShift] = useState(needsShift)
-  if (needsShift !== prevNeedsShift) {
-    setPrevNeedsShift(needsShift)
+  useEffect(() => {
     if (needsShift) {
       setShiftDialogOpen(true)
     }
-  }
+  }, [needsShift])
 
   const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)
     setSuccessResult(result)
   }, [])
 
+  const requestProductSearchFocus = useCallback(() => {
+    setProductSearchFocusKey((prev) => prev + 1)
+  }, [])
+
   const handleNewTransaction = useCallback(() => {
     clear()
     setSuccessResult(null)
-  }, [clear])
+    requestProductSearchFocus()
+  }, [clear, requestProductSearchFocus])
 
   const openPayment = useCallback(() => {
     if (needsShift) return
     setPaymentOpen(true)
   }, [needsShift])
 
-  const requestProductSearchFocus = useCallback(() => {
-    setProductSearchFocusKey((prev) => prev + 1)
-  }, [])
+  const handlePaymentOpenChange = useCallback((open: boolean) => {
+    setPaymentOpen(open)
+    if (!open) {
+      requestProductSearchFocus()
+    }
+  }, [requestProductSearchFocus])
 
   // F4 shortcut to open payment dialog
   useEffect(() => {
@@ -115,7 +119,7 @@ export function CashierPage() {
 
       <PaymentDialog
         open={paymentOpen}
-        onOpenChange={setPaymentOpen}
+        onOpenChange={handlePaymentOpenChange}
         onSuccess={handlePaymentSuccess}
       />
 

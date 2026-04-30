@@ -55,6 +55,10 @@ interface ProductSearchPanelProps {
   focusKey?: number
 }
 
+function isBarcodeQuery(query: string): boolean {
+  return /^\d{6,}$/.test(query)
+}
+
 export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -169,33 +173,45 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   }, [addItem, items, trackSelection])
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key !== "Enter" || !searchQuery.trim()) return
+    if (e.key !== "Enter") return
 
     const query = searchQuery.trim()
+    if (!query) return
 
-    try {
-      const product = await getProductByBarcode(query)
-      if (product) {
-        e.preventDefault()
-        addToCart(product, false)
-        setSearchQuery("")
-        setDebouncedQuery("")
-        focusInput()
-        return
-      }
-    } catch {
-      // Not a barcode, continue with search results
-    }
-
-    if (searchResults?.data && searchResults.data.length > 0) {
+    if (isBarcodeQuery(query)) {
       e.preventDefault()
-      addToCart(searchResults.data[0], true)
+      e.stopPropagation()
+
+      try {
+        const product = await getProductByBarcode(query)
+        if (product) {
+          addToCart(product, false)
+          setSearchQuery("")
+          setDebouncedQuery("")
+          focusInput()
+          return
+        }
+      } catch {
+        // Fall through to barcode not found feedback
+      }
+
+      toast.error(`Barcode "${query}" tidak ditemukan`)
       setSearchQuery("")
       setDebouncedQuery("")
       focusInput()
       return
     }
 
+    if (searchResults?.data && searchResults.data.length > 0) {
+      // Let cmdk handle Enter so only the actively selected item is chosen.
+      return
+    }
+
+    if (debouncedQuery !== query) {
+      return
+    }
+
+    e.preventDefault()
     toast.error(`Produk "${query}" tidak ditemukan`)
     setSearchQuery("")
     setDebouncedQuery("")
@@ -232,6 +248,14 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
             <Kbd>Enter</Kbd>
           </div>
         </div>
+
+        {showSearchResults && searchResults?.data?.[0] && (
+          <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+            Enter akan pilih item aktif:{" "}
+            <span className="font-medium text-foreground">{searchResults.data[0].name}</span>{" "}
+            <span className="tabular-nums">({formatRupiah(searchResults.data[0].sell_price)})</span>
+          </div>
+        )}
 
         {/* Search Results */}
         {showSearchResults && (

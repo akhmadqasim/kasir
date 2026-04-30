@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use super::auth::get_mitra_client;
+use super::auth::get_mitra_request_context;
 use super::client::MitraClient;
 use super::models::{HistoryDetailItem, HistoryPaymentItem, MutasiItem};
 use super::parsers::{get_num_field, get_str_field};
@@ -17,9 +17,7 @@ pub async fn ppob_get_history(
     start_date: String,
     end_date: String,
 ) -> Result<Vec<HistoryPaymentItem>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "history-payment",
@@ -186,9 +184,7 @@ pub async fn ppob_get_history_detail(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     trx_id: String,
 ) -> Result<HistoryDetailItem, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
 
     // Try different parameter names — API might expect "id" or "trx_id"
     let params_attempts = vec![
@@ -313,12 +309,11 @@ pub async fn ppob_get_mutasi(
     start_date: String,
     end_date: String,
 ) -> Result<Vec<MutasiItem>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
 
     // Fetch both payment history (out) and topup history (in) concurrently
-    let payment_future = client.post(
+    let payment_client = client.clone();
+    let payment_future = payment_client.post(
         "history-payment",
         json!({ "start_date": &start_date, "end_date": &end_date }),
     );
@@ -384,8 +379,6 @@ pub async fn ppob_get_mutasi(
 
     // Parse topup history (saldo IN)
     if let Ok(result) = topup_result {
-        eprintln!("[PPOB] topup/history raw response: {:?}", result);
-
         let arr = result
             .get("history")
             .or_else(|| result.get("data"))

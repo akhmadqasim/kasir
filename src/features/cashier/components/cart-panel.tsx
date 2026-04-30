@@ -178,7 +178,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
           disabled={heldCarts.length === 0}
         >
           <PlayCircle className="mr-1 h-4 w-4" />
-          Tersimpan (F9)
+          Tersimpan
           {heldCarts.length > 0 && (
             <Badge
               variant="destructive"
@@ -206,28 +206,30 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
           </EmptyHeader>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produk</TableHead>
-                <TableHead className="w-[90px] text-right">Subtotal</TableHead>
-                <TableHead className="w-[36px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <CartItemRow
-                  key={item.cart_id}
-                  item={item}
-                  onRemove={removeItem}
-                  onEdit={(it) => setEditItem(it)}
-                  hasDiscount={!!itemDiscounts[item.cart_id]}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </ScrollArea>
+        <>
+          <ScrollArea className="min-h-0 flex-1">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produk</TableHead>
+                  <TableHead className="w-[90px] text-right">Subtotal</TableHead>
+                  <TableHead className="w-[36px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <CartItemRow
+                    key={item.cart_id}
+                    item={item}
+                    onRemove={removeItem}
+                    onEdit={(it) => setEditItem(it)}
+                    hasDiscount={!!itemDiscounts[item.cart_id]}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </>
       )}
 
       {/* Footer */}
@@ -262,7 +264,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
               onClick={() => setDiscountDialogOpen(true)}
             >
               <Percent className="mr-1 h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Diskon F2</span>
+              <span className="truncate">Diskon</span>
               {totalDiscount > 0 && (
                 <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0 shrink-0">
                   -{formatRupiah(totalDiscount)}
@@ -276,7 +278,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
               onClick={handleHold}
             >
               <PauseCircle className="mr-1 h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Simpan F3</span>
+              <span className="truncate">Simpan</span>
             </Button>
             {activeShift && (
               <>
@@ -286,7 +288,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
                   onClick={() => setCashFlowOpen(true)}
                 >
                   <ArrowDownUp className="mr-1 h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Uang F1</span>
+                  <span className="truncate">Uang</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -294,7 +296,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
                   onClick={() => navigate("/close-shift")}
                 >
                   <DoorClosed className="mr-1 h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Tutup F6</span>
+                  <span className="truncate">Tutup</span>
                 </Button>
               </>
             )}
@@ -305,9 +307,14 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
             disabled={items.length === 0 || disabled}
             onClick={onPay}
           >
-            Bayar (F4)
+            Bayar
           </Button>
         </div>
+        {items.length > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Shortcut cepat: F1 uang, F2 diskon, F3 simpan, F4 bayar, F9 transaksi tersimpan.
+          </p>
+        )}
       </div>
 
       {/* Hold Dialog */}

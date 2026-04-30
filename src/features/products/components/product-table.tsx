@@ -27,6 +27,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useDeleteProduct } from "../hooks/use-products"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useQueryClient } from "@tanstack/react-query"
+import { cn } from "@/lib/utils"
 import type { Product, Category } from "../types"
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -120,6 +121,26 @@ export function ProductTable({
 
   const categoryMap = new Map(categories.map((c) => [c.id, c.name]))
 
+  const getStockBadge = (product: Product) => {
+    if (product.stock < 0) {
+      return <Badge variant="destructive">Stok Minus</Badge>
+    }
+    if (product.stock === 0) {
+      return <Badge variant="destructive">Stok Habis</Badge>
+    }
+    if (product.stock <= product.min_stock) {
+      return (
+        <Badge
+          variant="outline"
+          className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50"
+        >
+          {id.products.lowStock}
+        </Badge>
+      )
+    }
+    return null
+  }
+
   const handleDelete = () => {
     if (!deleteTarget) return
     deleteProduct.mutate({ id: deleteTarget.id, callerId: user!.id }, {
@@ -151,22 +172,43 @@ export function ProductTable({
             ) : (
               products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="space-y-1">
+                      <div>{product.name}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {!product.barcode?.trim() && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Tanpa Barcode
+                          </Badge>
+                        )}
+                        {!product.category_id && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Tanpa Kategori
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {product.barcode || "—"}
+                    {product.barcode?.trim() || "—"}
                   </TableCell>
                   <TableCell>
-                    {product.category_id ? categoryMap.get(product.category_id) || "—" : "—"}
+                    <span className={cn(!product.category_id && "text-muted-foreground")}>
+                      {product.category_id ? categoryMap.get(product.category_id) || "—" : "Tanpa kategori"}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right">
                     {rupiahFormatter.format(product.sell_price)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <span>{product.stock}</span>
-                      {product.stock <= product.min_stock && (
-                        <Badge variant="destructive">{id.products.lowStock}</Badge>
-                      )}
+                      <span className={cn(
+                        "tabular-nums",
+                        product.stock < 0 && "font-semibold text-destructive"
+                      )}>
+                        {product.stock}
+                      </span>
+                      {getStockBadge(product)}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">

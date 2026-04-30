@@ -1,12 +1,18 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::super::settings::parse_app_settings;
-use super::client::MitraClient;
+use super::client::{MitraClient, MitraRequestContext};
 use crate::entity::store_info;
 use crate::utils::AppError;
 use sea_orm::EntityTrait;
+
+pub struct MitraSessionContext {
+    pub request: MitraRequestContext,
+    pub menu_saldo_payload: Option<Value>,
+}
 
 /// Save current tokens to database for persistence across restarts
 pub async fn save_tokens(
@@ -39,78 +45,68 @@ pub async fn save_tokens(
 /// Load tokens from database
 pub async fn load_tokens(
     db: &DatabaseConnection,
-) -> Result<Option<(String, Option<String>, String)>, AppError> {
+) -> Result<Option<(String, String, Option<String>, String)>, AppError> {
     let result = db
         .query_one(Statement::from_string(
             DbBackend::Sqlite,
-            "SELECT access_token, refresh_token, device_id FROM mitra_tokens WHERE id = 1"
+            "SELECT phone_number, access_token, refresh_token, device_id FROM mitra_tokens WHERE id = 1"
                 .to_owned(),
         ))
         .await
         .map_err(|e| AppError::Internal(format!("Gagal baca token: {}", e)))?;
 
     if let Some(row) = result {
-        let token: String = row
+        let phone_number: String = row
             .try_get_by_index(0)
+            .map_err(|e| AppError::Internal(format!("Gagal parse phone_number: {}", e)))?;
+        let token: String = row
+            .try_get_by_index(1)
             .map_err(|e| AppError::Internal(format!("Gagal parse token: {}", e)))?;
         let refresh: Option<String> = row
-            .try_get_by_index::<String>(1)
+            .try_get_by_index::<String>(2)
             .ok()
             .filter(|s| !s.is_empty());
         let device_id: String = row
-            .try_get_by_index(2)
+            .try_get_by_index(3)
             .map_err(|e| AppError::Internal(format!("Gagal parse device_id: {}", e)))?;
-        Ok(Some((token, refresh, device_id)))
+        Ok(Some((phone_number, token, refresh, device_id)))
     } else {
         Ok(None)
     }
 }
 
-/// Ensure client is authenticated using 3-tier flow:
-/// 1. Check in-memory token
-/// 2. Try loading persisted token from database
-/// 3. Full re-login from stored credentials
-pub async fn get_mitra_client(
+pub async fn clear_tokens(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute(Statement::from_string(
+        DbBackend::Sqlite,
+        "DELETE FROM mitra_tokens WHERE id = 1".to_string(),
+    ))
+    .await
+    .map_err(|e| AppError::Internal(format!("Gagal menghapus token Mitra: {}", e)))?;
+
+    Ok(())
+}
+
+pub async fn get_mitra_request_context(
     db: &DatabaseConnection,
     client: &Arc<Mutex<MitraClient>>,
-) -> Result<(), AppError> {
-    let mut mitra = client.lock().await;
+) -> Result<MitraRequestContext, AppError> {
+    Ok(get_mitra_session_context(db, client).await?.request)
+}
 
-    // 1. Already authenticated in memory
-    if mitra.is_authenticated() {
-        return Ok(());
-    }
-
-    // 2. Try loading persisted token from database
-    if let Some((token, refresh, device_id)) = load_tokens(db).await? {
-        mitra.token = Some(token);
-        mitra.refresh_token = refresh;
-        mitra.device_id = device_id;
-
-        // Validate token with a lightweight API call
-        match mitra.get("menu-saldo").await {
-            Ok(_) => {
-                return Ok(());
-            }
-            Err(_) => {
-                if mitra.try_refresh().await? {
-                    let store = store_info::Entity::find_by_id(1_i64)
-                        .one(db)
-                        .await?
-                        .ok_or_else(|| AppError::NotFound("Store info belum diatur".into()))?;
-                    let settings = parse_app_settings(&store.additional_info);
-                    save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
-                    return Ok(());
-                }
-                // Refresh failed, clear stale tokens
-                mitra.token = None;
-                mitra.refresh_token = None;
-
-            }
+pub async fn get_mitra_session_context(
+    db: &DatabaseConnection,
+    client: &Arc<Mutex<MitraClient>>,
+) -> Result<MitraSessionContext, AppError> {
+    {
+        let mitra = client.lock().await;
+        if mitra.is_authenticated() {
+            return Ok(MitraSessionContext {
+                request: mitra.request_context()?,
+                menu_saldo_payload: None,
+            });
         }
     }
 
-    // 3. Full re-login from stored credentials
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db)
         .await?
@@ -124,15 +120,73 @@ pub async fn get_mitra_client(
         ));
     }
 
-    mitra
-        .login(
-            &settings.ppob.phone_number,
-            &settings.ppob.password,
-            &settings.ppob.device_id,
-        )
-        .await?;
+    if let Some((phone_number, token, refresh, device_id)) = load_tokens(db).await? {
+        if phone_number == settings.ppob.phone_number && device_id == settings.ppob.device_id {
+            let request = {
+                let mut mitra = client.lock().await;
+                if mitra.is_authenticated() {
+                    return Ok(MitraSessionContext {
+                        request: mitra.request_context()?,
+                        menu_saldo_payload: None,
+                    });
+                }
 
-    save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
+                mitra.token = Some(token);
+                mitra.refresh_token = refresh;
+                mitra.device_id = device_id;
+                mitra.request_context()?
+            };
 
-    Ok(())
+            match request.post("get-menu-saldo", json!({})).await {
+                Ok(payload) => {
+                    return Ok(MitraSessionContext {
+                        request,
+                        menu_saldo_payload: Some(payload),
+                    });
+                }
+                Err(_) => {
+                    let refreshed_request = {
+                        let mut mitra = client.lock().await;
+                        if mitra.try_refresh().await? {
+                            save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
+                            Some(mitra.request_context()?)
+                        } else {
+                            mitra.clear_auth();
+                            None
+                        }
+                    };
+
+                    if let Some(request) = refreshed_request {
+                        return Ok(MitraSessionContext {
+                            request,
+                            menu_saldo_payload: None,
+                        });
+                    }
+
+                    clear_tokens(db).await?;
+                }
+            }
+        } else {
+            clear_tokens(db).await?;
+        }
+    }
+
+    let request = {
+        let mut mitra = client.lock().await;
+        mitra
+            .login(
+                &settings.ppob.phone_number,
+                &settings.ppob.password,
+                &settings.ppob.device_id,
+            )
+            .await?;
+
+        save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
+        mitra.request_context()?
+    };
+
+    Ok(MitraSessionContext {
+        request,
+        menu_saldo_payload: None,
+    })
 }

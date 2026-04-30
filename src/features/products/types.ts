@@ -47,9 +47,17 @@ export interface UpdateProductInput extends CreateProductInput {
   id: number
 }
 
+export type ProductQuickFilter =
+  | "all"
+  | "low_stock"
+  | "negative_stock"
+  | "no_barcode"
+  | "needs_review"
+
 export interface SearchProductsParams {
   query?: string
   category_id?: number | null
+  quick_filter?: Exclude<ProductQuickFilter, "all">
   page?: number
   per_page?: number
   sort_by?: string

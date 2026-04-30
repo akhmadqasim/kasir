@@ -4,20 +4,29 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use super::auth::get_mitra_client;
+use super::auth::{get_mitra_request_context, get_mitra_session_context};
 use super::client::MitraClient;
 use super::models::*;
 use crate::utils::AppError;
+
+async fn fetch_menu_saldo_payload(
+    db: State<'_, DatabaseConnection>,
+    mitra: State<'_, Arc<Mutex<MitraClient>>>,
+) -> Result<serde_json::Value, AppError> {
+    let session = get_mitra_session_context(db.inner(), mitra.inner()).await?;
+    if let Some(payload) = session.menu_saldo_payload {
+        Ok(payload)
+    } else {
+        session.request.post("get-menu-saldo", json!({})).await
+    }
+}
 
 #[tauri::command]
 pub async fn ppob_login(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<PpobSaldoResponse, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
-    let result = client.post("get-menu-saldo", json!({})).await?;
+    let result = fetch_menu_saldo_payload(db, mitra).await?;
 
     Ok(PpobSaldoResponse {
         saldo: result["saldo"].as_f64().unwrap_or(0.0),
@@ -38,10 +47,7 @@ pub async fn ppob_get_saldo(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<PpobSaldoResponse, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
-    let result = client.post("get-menu-saldo", json!({})).await?;
+    let result = fetch_menu_saldo_payload(db, mitra).await?;
 
     Ok(PpobSaldoResponse {
         saldo: result["saldo"].as_f64().unwrap_or(0.0),
@@ -62,10 +68,7 @@ pub async fn ppob_get_menu(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PpobMenuGroup>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
-    let result = client.post("get-menu-saldo", json!({})).await?;
+    let result = fetch_menu_saldo_payload(db, mitra).await?;
 
     let menu_groups: Vec<PpobMenuGroup> = result["menu"]
         .as_array()
@@ -87,9 +90,7 @@ pub async fn ppob_get_providers(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PulsaProvider>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.get("pulsa/get-providers").await?;
 
     let providers: Vec<PulsaProvider> = result["providers"]
@@ -111,9 +112,7 @@ pub async fn ppob_get_pulsa_details(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     phone_number: String,
 ) -> Result<PulsaDetailsResponse, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "pulsa/v2/get-details",
@@ -144,9 +143,7 @@ pub async fn ppob_get_pulsa_price_list(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     provider_uid: String,
 ) -> Result<Vec<PulsaProduct>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "pulsa/get-pulsa-price-list",
@@ -173,9 +170,7 @@ pub async fn ppob_get_data_price_list(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     provider_uid: String,
 ) -> Result<Vec<PulsaProduct>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "pulsa/get-data-price-list",
@@ -201,9 +196,7 @@ pub async fn ppob_get_pln_denom(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PlnDenom>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.post("pln/get-denom", json!({})).await?;
 
     let denoms: Vec<PlnDenom> = result["pln"]
@@ -224,9 +217,7 @@ pub async fn ppob_get_pdam_products(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PdamProduct>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.post("pdam/get-product", json!({})).await?;
 
     let products: Vec<PdamProduct> = result["list_product"]
@@ -248,9 +239,7 @@ pub async fn ppob_get_emoney_denom(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     product_id: i64,
 ) -> Result<Vec<EmoneyDenom>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post("emoney/get-denom", json!({ "product_id": product_id }))
         .await?;
@@ -274,9 +263,7 @@ pub async fn ppob_get_pp_sub_menu(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     pp_id: i64,
 ) -> Result<Vec<PpSubMenuItem>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post("pp/get-sub-menu", json!({ "pp_id": pp_id }))
         .await?;
@@ -299,9 +286,7 @@ pub async fn ppob_get_transfer_channels(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<TransferChannelGroup>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.get("transfer-uang/channel-group").await?;
 
     let channels: Vec<TransferChannelGroup> = result["channelList"]
@@ -322,9 +307,7 @@ pub async fn ppob_get_voucher_groups(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<VoucherGroup>, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.get("voucher-prepaid/get/group").await?;
 
     let groups: Vec<VoucherGroup> = result["group_list"]

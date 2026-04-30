@@ -50,6 +50,20 @@ export interface BackupSettings {
   retention_days: number
 }
 
+export interface BackupInfo {
+  filename: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface BackupStatus {
+  last_backup: BackupInfo | null
+  total_backups: number
+  total_size_bytes: number
+  backup_dir: string
+  settings: BackupSettings
+}
+
 export interface AppSettings {
   sales: SalesSettings
   security: SecuritySettings

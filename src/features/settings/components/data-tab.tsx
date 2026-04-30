@@ -1,4 +1,4 @@
-import { useState } from "react"
+import React, { useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -12,12 +12,19 @@ import {
   Clock,
   FolderOpen,
   Settings2,
+  ShieldCheck,
+  ArrowDownToLine,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
 import {
   Card,
   CardContent,
@@ -53,24 +60,8 @@ import {
 } from "@/components/ui/table"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import type { AppSettings, DatabaseInfo } from "../types"
-
-interface BackupInfo {
-  filename: string
-  size_bytes: number
-  created_at: string
-}
-
-interface BackupStatus {
-  last_backup: BackupInfo | null
-  total_backups: number
-  total_size_bytes: number
-  backup_dir: string
-  settings: {
-    interval_hours: number
-    retention_days: number
-  }
-}
+import { BACKUP_LIST_QUERY_KEY, BACKUP_STATUS_QUERY_KEY, useCreateBackupMutation } from "../hooks/use-backup"
+import type { AppSettings, BackupInfo, BackupStatus, DatabaseInfo } from "../types"
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -200,6 +191,7 @@ export function DataTab() {
   const [isImporting, setIsImporting] = useState(false)
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
+  const exportSectionRef = React.useRef<HTMLDivElement | null>(null)
 
   const dbInfoQuery = useQuery<DatabaseInfo>({
     queryKey: ["database-info"],
@@ -207,24 +199,15 @@ export function DataTab() {
   })
 
   const backupStatusQuery = useQuery<BackupStatus>({
-    queryKey: ["backup-status"],
+    queryKey: BACKUP_STATUS_QUERY_KEY,
     queryFn: () => invoke<BackupStatus>("get_backup_status"),
   })
 
   const backupListQuery = useQuery<BackupInfo[]>({
-    queryKey: ["backup-list"],
+    queryKey: BACKUP_LIST_QUERY_KEY,
     queryFn: () => invoke<BackupInfo[]>("list_backups"),
   })
-
-  const createBackupMutation = useMutation({
-    mutationFn: () => invoke<BackupInfo>("create_backup", { callerId: user!.id }),
-    onSuccess: (info) => {
-      toast.success(`Backup berhasil: ${info.filename} (${formatFileSize(info.size_bytes)})`)
-      queryClient.invalidateQueries({ queryKey: ["backup-status"] })
-      queryClient.invalidateQueries({ queryKey: ["backup-list"] })
-    },
-    onError: (error) => toast.error(String(error)),
-  })
+  const createBackupMutation = useCreateBackupMutation()
 
   const deleteBackupMutation = useMutation({
     mutationFn: (filename: string) => invoke("delete_backup", { filename, callerId: user!.id }),
@@ -306,9 +289,41 @@ export function DataTab() {
 
   const status = backupStatusQuery.data
   const backups = backupListQuery.data ?? []
+  const showSafetyBanner = !!dbInfoQuery.data && !!backupStatusQuery.data
 
   return (
     <div className="space-y-4">
+      {showSafetyBanner && (
+        <Alert className="border-primary/20 bg-primary/5 px-4 py-4 text-foreground">
+          <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
+          <AlertTitle className="text-base">
+            Update normal tidak menghapus data kasir.
+          </AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p>
+              Database disimpan terpisah dari file aplikasi dan backup otomatis tetap berjalan.
+              Jika pindah dari versi debug/portable ke installer, gunakan Export Database lalu Import Database.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                onClick={() => createBackupMutation.mutate()}
+                disabled={createBackupMutation.isPending}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => exportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              >
+                <ArrowDownToLine className="mr-2 h-4 w-4" />
+                Ke Export Database
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Database Info */}
       <Card>
         <CardHeader>
@@ -492,13 +507,14 @@ export function DataTab() {
 
       {/* Manual Export */}
       <Card>
+        <div ref={exportSectionRef} />
         <CardHeader>
           <CardTitle>{id.settings.exportDatabase}</CardTitle>
           <CardDescription>{id.settings.exportDatabaseDesc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="export-path">Lokasi File (fallback)</Label>
+            <Label htmlFor="export-path">Lokasi File</Label>
             <Input
               id="export-path"
               value={exportPath}
@@ -521,7 +537,7 @@ export function DataTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="import-path">Lokasi File Backup (fallback)</Label>
+            <Label htmlFor="import-path">Lokasi File Backup</Label>
             <Input
               id="import-path"
               value={importPath}

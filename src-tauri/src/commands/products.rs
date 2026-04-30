@@ -3,6 +3,7 @@ use sea_orm::{
     EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement,
     TransactionTrait,
 };
+use sea_orm::sea_query::Expr;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -14,6 +15,7 @@ use crate::utils::require_role;
 pub struct ProductSearchParams {
     pub query: Option<String>,
     pub category_id: Option<i64>,
+    pub quick_filter: Option<String>,
     pub page: Option<i64>,
     pub per_page: Option<i64>,
     pub sort_by: Option<String>,
@@ -100,6 +102,32 @@ fn build_search_condition(params: &ProductSearchParams) -> Condition {
 
     if let Some(cat_id) = params.category_id {
         condition = condition.add(products::Column::CategoryId.eq(cat_id));
+    }
+
+    if let Some(ref quick_filter) = params.quick_filter {
+        condition = match quick_filter.as_str() {
+            "low_stock" => condition.add(
+                Condition::any()
+                    .add(products::Column::Stock.lte(0))
+                    .add(Expr::col(products::Column::Stock).lte(Expr::col(products::Column::MinStock))),
+            ),
+            "negative_stock" => condition.add(products::Column::Stock.lt(0)),
+            "no_barcode" => condition.add(
+                Condition::any()
+                    .add(products::Column::Barcode.is_null())
+                    .add(products::Column::Barcode.eq("")),
+            ),
+            "needs_review" => condition.add(
+                Condition::any()
+                    .add(products::Column::Stock.lt(0))
+                    .add(products::Column::CategoryId.is_null())
+                    .add(products::Column::MinStock.is_null())
+                    .add(products::Column::MinStock.lte(0))
+                    .add(products::Column::Barcode.is_null())
+                    .add(products::Column::Barcode.eq("")),
+            ),
+            _ => condition,
+        };
     }
 
     condition

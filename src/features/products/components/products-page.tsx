@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react"
+import { useMemo, useState, useCallback } from "react"
 import { Plus, Tags, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { id } from "@/i18n/id"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
@@ -9,11 +10,12 @@ import { ProductTable } from "./product-table"
 import { ProductFormDialog } from "./product-form-dialog"
 import { CategoryManager } from "./category-manager"
 import { ImportDialog } from "./import-dialog"
-import type { Product } from "../types"
+import type { Product, ProductQuickFilter } from "../types"
 
 export function ProductsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [quickFilter, setQuickFilter] = useState<ProductQuickFilter>("all")
   const [page, setPage] = useState(1)
   const [sortBy, setSortBy] = useState<string | undefined>(undefined)
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
@@ -22,16 +24,37 @@ export function ProductsPage() {
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
+  const effectiveSortBy =
+    !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
+      ? "stock"
+      : sortBy
+  const effectiveSortOrder =
+    !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
+      ? "asc"
+      : sortOrder
+
   const { data: productsData, isLoading } = useSearchProducts({
     query: searchQuery || undefined,
     category_id: categoryId,
+    quick_filter: quickFilter === "all" ? undefined : quickFilter,
     page,
     per_page: 50,
-    sort_by: sortBy,
-    sort_order: sortOrder,
+    sort_by: effectiveSortBy,
+    sort_order: effectiveSortOrder,
   })
 
   const { data: categories } = useCategories()
+  const products = productsData?.data ?? []
+
+  const reviewSummary = useMemo(() => {
+    const noBarcode = products.filter((product) => !product.barcode?.trim()).length
+    const negativeStock = products.filter((product) => product.stock < 0).length
+    const lowStock = products.filter(
+      (product) => product.stock >= 0 && product.stock <= product.min_stock
+    ).length
+
+    return { noBarcode, negativeStock, lowStock }
+  }, [products])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -40,6 +63,11 @@ export function ProductsPage() {
 
   const handleCategoryChange = useCallback((catId: number | null) => {
     setCategoryId(catId)
+    setPage(1)
+  }, [])
+
+  const handleQuickFilterChange = useCallback((filter: ProductQuickFilter) => {
+    setQuickFilter(filter)
     setPage(1)
   }, [])
 
@@ -88,7 +116,30 @@ export function ProductsPage() {
       <ProductSearch
         onSearchChange={handleSearchChange}
         onCategoryChange={handleCategoryChange}
+        quickFilter={quickFilter}
+        onQuickFilterChange={handleQuickFilterChange}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold tabular-nums">{reviewSummary.lowStock}</div>
+            <p className="text-sm text-muted-foreground">Stok rendah pada hasil saat ini</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold tabular-nums">{reviewSummary.negativeStock}</div>
+            <p className="text-sm text-muted-foreground">Stok minus pada hasil saat ini</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold tabular-nums">{reviewSummary.noBarcode}</div>
+            <p className="text-sm text-muted-foreground">Tanpa barcode pada hasil saat ini</p>
+          </CardContent>
+        </Card>
+      </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -96,14 +147,14 @@ export function ProductsPage() {
         </div>
       ) : (
         <ProductTable
-          products={productsData?.data ?? []}
+          products={products}
           categories={categories ?? []}
           page={productsData?.page ?? 1}
           totalPages={productsData?.total_pages ?? 1}
           onPageChange={setPage}
           onEdit={handleEdit}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
+          sortBy={effectiveSortBy}
+          sortOrder={effectiveSortOrder}
           onSortChange={handleSortChange}
         />
       )}

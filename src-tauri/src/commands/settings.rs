@@ -8,6 +8,7 @@ use crate::entity::{store_info, users};
 use crate::utils::AppError;
 use crate::utils::require_role;
 
+use super::ppob::auth::clear_tokens;
 use super::ppob::client::MitraClient;
 
 // Simple obfuscation for sensitive fields stored in DB
@@ -291,6 +292,14 @@ pub async fn update_app_settings(
         .as_ref()
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(serde_json::json!({}));
+    let current_settings = parse_app_settings(&store.additional_info);
+    let should_reset_ppob_session =
+        !settings.ppob.enabled
+            || current_settings.ppob.enabled != settings.ppob.enabled
+            || current_settings.ppob.phone_number != settings.ppob.phone_number
+            || current_settings.ppob.password != settings.ppob.password
+            || current_settings.ppob.device_id != settings.ppob.device_id
+            || current_settings.ppob.pin != settings.ppob.pin;
 
     // Obfuscate sensitive PPOB credentials before storing
     let mut ppob_to_store = settings.ppob.clone();
@@ -317,8 +326,8 @@ pub async fn update_app_settings(
     ));
     active.update(db.inner()).await?;
 
-    // Clear Mitra token so next request uses updated credentials
-    {
+    if should_reset_ppob_session {
+        clear_tokens(db.inner()).await?;
         let mut client = mitra.lock().await;
         client.clear_auth();
     }

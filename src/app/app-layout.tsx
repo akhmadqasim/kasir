@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 import { Menu, Minus, Plus } from "lucide-react"
 import {
   SidebarInset,
@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { AppSidebar } from "@/components/app-sidebar"
+import { storeResumeRoute } from "./resume-route"
 
 const SIDEBAR_OPEN_KEY = "kasir-sidebar-open"
 const ZOOM_LEVEL_KEY = "kasir-zoom-level"
@@ -33,17 +34,21 @@ function getInitialZoom(): number {
 }
 
 export function AppLayout() {
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(getInitialOpen)
   const [autoCollapsed, setAutoCollapsed] = useState(
     () => window.innerWidth < AUTO_COLLAPSE_WIDTH
   )
   const [zoom, setZoom] = useState(getInitialZoom)
 
-  // Apply zoom level
   useEffect(() => {
     document.documentElement.style.zoom = String(zoom)
     localStorage.setItem(ZOOM_LEVEL_KEY, String(zoom))
   }, [zoom])
+
+  useEffect(() => {
+    storeResumeRoute(location.pathname)
+  }, [location.pathname])
 
   const toggleSidebar = () => {
     setSidebarOpen((prev) => {

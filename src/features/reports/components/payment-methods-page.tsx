@@ -32,15 +32,18 @@ function getDefaultRange(): DateRange {
 const paymentLabels: Record<string, string> = {
   cash: "Tunai",
   qris: "QRIS",
+  debit: "Debit",
   ewallet: "E-Wallet",
   transfer: "Transfer",
+  mixed: "Campuran",
 }
 
 const paymentColors: Record<string, string> = {
   cash: "bg-[var(--chart-1)]",
   qris: "bg-[var(--chart-2)]",
+  debit: "bg-[var(--chart-4)]",
   ewallet: "bg-[var(--chart-3)]",
-  transfer: "bg-[var(--chart-4)]",
+  transfer: "bg-[var(--chart-5)]",
 }
 
 export function PaymentMethodsPage() {

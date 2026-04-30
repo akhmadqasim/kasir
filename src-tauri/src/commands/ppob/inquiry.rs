@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::commands::settings::parse_app_settings;
 use crate::entity::store_info;
-use super::auth::get_mitra_client;
+use super::auth::get_mitra_request_context;
 use super::client::MitraClient;
 use super::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use super::models::{InquiryResult, PaymentResult};
@@ -82,8 +82,7 @@ pub async fn ppob_pln_inquiry(
     flag_id: String,
     amount: f64,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "pln/inquiry",
@@ -134,8 +133,7 @@ pub async fn ppob_pdam_inquiry(
     product_id: i64,
     payment_code: String,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "pdam/inquiry",
@@ -172,7 +170,7 @@ pub async fn ppob_bpjs_inquiry(
     bpjs_type: String,
     period: String,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
 
     let fallback_phone_number = store_info::Entity::find_by_id(1_i64)
         .one(db.inner())
@@ -201,7 +199,6 @@ pub async fn ppob_bpjs_inquiry(
         phone_number.trim().to_string()
     };
 
-    let client = mitra.lock().await;
     let request_body = |resolved_phone_number: &str| {
         json!({
             "customer_id": customer_id,
@@ -281,8 +278,7 @@ pub async fn ppob_pp_inquiry(
     payment_point_group_id: i64,
     product_code: Option<String>,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
 
     let mut body = json!({
         "customer_id": customer_id,
@@ -321,8 +317,7 @@ pub async fn ppob_transfer_inquiry(
     nama_pengirim: String,
     notelp_pengirim: String,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "transfer-uang/inquiry",
@@ -358,8 +353,7 @@ pub async fn ppob_emoney_inquiry(
     customer_id: String,
     product_code: String,
 ) -> Result<InquiryResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client
         .post(
             "emoney/inquiry",

@@ -6,7 +6,7 @@ use std::time::Instant;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use super::auth::get_mitra_client;
+use super::auth::get_mitra_request_context;
 use super::client::MitraClient;
 use super::models::{NotificationItem, NotificationListResult};
 use super::parsers::get_str_field;
@@ -88,8 +88,6 @@ pub async fn ppob_get_notifications(
     per_page: Option<i64>,
     force_refresh: Option<bool>,
 ) -> Result<NotificationListResult, AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
     let page_num = page.unwrap_or(1);
     let limit = per_page.unwrap_or(20);
     let force = force_refresh.unwrap_or(false);
@@ -124,7 +122,7 @@ pub async fn ppob_get_notifications(
     }
 
     // Fetch from API
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     let result = client.post("inbox/get-all", json!({})).await?;
 
     let inbox_array = result
@@ -188,9 +186,7 @@ pub async fn ppob_mark_all_read(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<(), AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     client.post("inbox/read-all", json!({})).await?;
 
     // Invalidate cache
@@ -206,9 +202,7 @@ pub async fn ppob_mark_notification_read(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     inbox_id: String,
 ) -> Result<(), AppError> {
-    get_mitra_client(db.inner(), mitra.inner()).await?;
-
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
     client
         .post(
             "inbox/update",

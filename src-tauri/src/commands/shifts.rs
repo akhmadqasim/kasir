@@ -213,36 +213,29 @@ async fn build_shift_summary(
         None => (0.0, 0),
     };
 
-    // Cash sales only (for expected cash calculation)
+    // Cash sales kept in drawer
     let cash_sales_result = db
         .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(total_amount), 0) as total
-             FROM transactions
-             WHERE shift_id = $1 AND status IN ('completed', 'partial_refund')
-             AND payment_method = 'cash'",
+            "WITH cash_rows AS (
+                SELECT tp.amount as amount
+                FROM transaction_payments tp
+                JOIN transactions t ON t.id = tp.transaction_id
+                WHERE t.shift_id = $1 AND t.status IN ('completed', 'partial_refund')
+                AND tp.payment_method = 'cash'
+                UNION ALL
+                SELECT t.total_amount as amount
+                FROM transactions t
+                WHERE t.shift_id = $1 AND t.status IN ('completed', 'partial_refund')
+                AND t.payment_method = 'cash'
+                AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
+             )
+             SELECT COALESCE(SUM(amount), 0) as total FROM cash_rows",
             vec![shift.id.into()],
         ))
         .await?;
 
     let cash_sales: f64 = match cash_sales_result {
-        Some(row) => row.try_get("", "total").unwrap_or(0.0),
-        None => 0.0,
-    };
-
-    // Cash change given back
-    let change_result = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(change_amount), 0) as total
-             FROM transactions
-             WHERE shift_id = $1 AND status IN ('completed', 'partial_refund')
-             AND payment_method = 'cash'",
-            vec![shift.id.into()],
-        ))
-        .await?;
-
-    let total_change: f64 = match change_result {
         Some(row) => row.try_get("", "total").unwrap_or(0.0),
         None => 0.0,
     };
@@ -268,17 +261,26 @@ async fn build_shift_summary(
         })
         .collect();
 
-    // Expected cash = opening + cash received - change given + cash_in - cash_out
-    let expected_cash =
-        shift.opening_cash + cash_sales - total_change + cash_in - cash_out;
+    // Expected cash = opening + cash retained from sales + cash_in - cash_out
+    let expected_cash = shift.opening_cash + cash_sales + cash_in - cash_out;
 
     // Payment method breakdown
     let payment_rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT payment_method, COUNT(*) as cnt, COALESCE(SUM(total_amount), 0) as total
-             FROM transactions
-             WHERE shift_id = $1 AND status IN ('completed', 'partial_refund')
+            "WITH payment_method_rows AS (
+                SELECT tp.payment_method as payment_method, tp.amount as amount, tp.transaction_id as transaction_id
+                FROM transaction_payments tp
+                JOIN transactions t ON t.id = tp.transaction_id
+                WHERE t.shift_id = $1 AND t.status IN ('completed', 'partial_refund')
+                UNION ALL
+                SELECT t.payment_method as payment_method, t.total_amount as amount, t.id as transaction_id
+                FROM transactions t
+                WHERE t.shift_id = $1 AND t.status IN ('completed', 'partial_refund')
+                AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
+             )
+             SELECT payment_method, COUNT(DISTINCT transaction_id) as cnt, COALESCE(SUM(amount), 0) as total
+             FROM payment_method_rows
              GROUP BY payment_method
              ORDER BY total DESC",
             vec![shift.id.into()],

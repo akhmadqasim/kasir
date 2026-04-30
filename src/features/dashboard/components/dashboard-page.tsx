@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Card,
   CardAction,
@@ -44,8 +45,16 @@ import {
   TrendingUpIcon,
   TrendingDownIcon,
   AlertTriangleIcon,
+  DatabaseBackupIcon,
+  HistoryIcon,
+  PackageIcon,
+  ShoppingCartIcon,
 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { id as t } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
+import { useCreateBackupMutation } from "@/features/settings/hooks/use-backup"
 import {
   useDashboardSummary,
   useDailyRevenue,
@@ -89,8 +98,9 @@ const paymentChartConfig = {
   total: { label: "Total" },
   cash: { label: t.payment.cash, color: "var(--chart-1)" },
   qris: { label: t.payment.qris, color: "var(--chart-2)" },
+  debit: { label: t.payment.debit, color: "var(--chart-4)" },
   ewallet: { label: t.payment.ewallet, color: "var(--chart-3)" },
-  transfer: { label: t.payment.transfer, color: "var(--chart-4)" },
+  transfer: { label: t.payment.transfer, color: "var(--chart-5)" },
 } satisfies ChartConfig
 
 // --- Sub-components ---
@@ -208,6 +218,111 @@ function SectionCards() {
             {t.dashboard.todayBreakdown}
           </div>
         </CardFooter>
+      </Card>
+    </div>
+  )
+}
+
+function QuickActions() {
+  const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const activeShift = useShiftStore((s) => s.activeShift)
+  const fetchActiveShift = useShiftStore((s) => s.fetchActiveShift)
+  const createBackupMutation = useCreateBackupMutation()
+  const isAdmin = user?.role === "admin"
+
+  useEffect(() => {
+    if (user) {
+      void fetchActiveShift(user.id)
+    }
+  }, [user, fetchActiveShift])
+
+  const actions = [
+    {
+      title: activeShift ? "Lanjut transaksi" : "Buka shift dan mulai transaksi",
+      description: activeShift
+        ? "Masuk ke kasir dan teruskan transaksi aktif."
+        : "Masuk ke kasir untuk buka shift dan mulai berjualan.",
+      icon: <ShoppingCartIcon className="h-4 w-4" />,
+      onClick: () => navigate("/cashier"),
+      label: "Mulai Penjualan",
+      variant: "default" as const,
+      visible: true,
+      loading: false,
+    },
+    {
+      title: "Lihat riwayat transaksi",
+      description: "Cek transaksi terbaru, pembayaran, dan detail struk.",
+      icon: <HistoryIcon className="h-4 w-4" />,
+      onClick: () => navigate("/transactions"),
+      label: "Riwayat Transaksi",
+      variant: "outline" as const,
+      visible: true,
+      loading: false,
+    },
+    {
+      title: "Kelola produk",
+      description: "Tambah, ubah, dan cek stok produk toko.",
+      icon: <PackageIcon className="h-4 w-4" />,
+      onClick: () => navigate("/products"),
+      label: "Kelola Produk",
+      variant: "outline" as const,
+      visible: isAdmin,
+      loading: false,
+    },
+    {
+      title: "Backup data sekarang",
+      description: "Buat backup manual sebelum update atau perubahan besar.",
+      icon: <DatabaseBackupIcon className="h-4 w-4" />,
+      onClick: () => createBackupMutation.mutate(),
+      label: createBackupMutation.isPending ? "Membuat Backup..." : "Backup Sekarang",
+      variant: "outline" as const,
+      visible: isAdmin,
+      loading: createBackupMutation.isPending,
+    },
+  ].filter((action) => action.visible)
+
+  return (
+    <div className="px-4 lg:px-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi Cepat</CardTitle>
+          <CardDescription>
+            Buka area kerja utama tanpa harus berpindah-pindah menu.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {actions.map((action) => (
+              <Button
+                key={action.title}
+                variant={action.variant}
+                className={`h-auto min-h-28 flex-col items-start gap-2 px-4 py-4 text-left ${
+                  action.variant === "default" ? "text-primary-foreground hover:text-primary-foreground" : ""
+                }`}
+                onClick={action.onClick}
+                disabled={action.loading}
+              >
+                <span className={`flex items-center gap-2 text-sm font-semibold ${
+                  action.variant === "default" ? "text-primary-foreground" : ""
+                }`}>
+                  {action.icon}
+                  {action.label}
+                </span>
+                <span className={`text-base font-semibold leading-tight ${
+                  action.variant === "default" ? "text-primary-foreground" : "text-foreground"
+                }`}>
+                  {action.title}
+                </span>
+                <span className={`text-xs leading-relaxed ${
+                  action.variant === "default" ? "text-primary-foreground/80" : "text-muted-foreground"
+                }`}>
+                  {action.description}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </CardContent>
       </Card>
     </div>
   )
@@ -587,6 +702,7 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 @container/main">
       <SectionCards />
+      <QuickActions />
       <div className="px-4 lg:px-6">
         <ChartRevenueInteractive />
       </div>

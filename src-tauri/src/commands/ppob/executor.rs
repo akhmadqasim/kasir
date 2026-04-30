@@ -3,8 +3,8 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::auth::get_mitra_client;
-use super::client::MitraClient;
+use super::auth::get_mitra_request_context;
+use super::client::{MitraClient, MitraRequestContext};
 use super::models::PaymentResult;
 use super::parsers::{extract_f64, extract_optional_string};
 use crate::commands::settings::parse_app_settings;
@@ -29,15 +29,13 @@ pub async fn execute_fulfillment_request(
     mitra: &Arc<Mutex<MitraClient>>,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
-    get_mitra_client(db, mitra).await?;
-
     let settings = store_info::Entity::find_by_id(1_i64)
         .one(db)
         .await?
         .map(|store| parse_app_settings(&store.additional_info))
         .unwrap_or_default();
 
-    let client = mitra.lock().await;
+    let client = get_mitra_request_context(db, mitra).await?;
 
     match request.service_type.as_str() {
         "pulsa" | "data" => execute_direct_topup(&client, &settings.ppob.pin, request).await,
@@ -52,7 +50,7 @@ pub async fn execute_fulfillment_request(
 }
 
 async fn execute_direct_topup(
-    client: &MitraClient,
+    client: &MitraRequestContext,
     pin: &str,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
@@ -96,7 +94,7 @@ async fn execute_direct_topup(
 }
 
 async fn execute_confirm_payment(
-    client: &MitraClient,
+    client: &MitraRequestContext,
     pin: &str,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {

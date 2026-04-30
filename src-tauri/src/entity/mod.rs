@@ -9,5 +9,6 @@ pub mod shifts;
 pub mod stock_writeoffs;
 pub mod store_info;
 pub mod transaction_items;
+pub mod transaction_payments;
 pub mod transactions;
 pub mod users;

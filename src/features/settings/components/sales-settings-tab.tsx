@@ -94,6 +94,7 @@ export function SalesSettingsTab() {
   const paymentOptions = [
     { value: "cash", label: id.payment.cash },
     { value: "qris", label: id.payment.qris },
+    { value: "debit", label: id.payment.debit },
     { value: "ewallet", label: id.payment.ewallet },
     { value: "transfer", label: id.payment.transfer },
   ] as const
