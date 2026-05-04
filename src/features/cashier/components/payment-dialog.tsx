@@ -296,11 +296,6 @@ export function PaymentDialog({
       return
     }
 
-    if (activePaymentMethod !== method) {
-      setActivePaymentMethod(method)
-      return
-    }
-
     handleMethodToggle(method, false)
     const fallback = paymentSplits.find(
       (current) => current.payment_method !== method && current.selected
@@ -435,15 +430,15 @@ export function PaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="p-0 sm:max-w-[min(96vw,72rem)]">
+      <DialogContent className="max-h-[min(92svh,720px)] overflow-hidden p-0 sm:max-w-[min(82vw,52rem)]">
         <DialogHeader>
           <DialogTitle className="px-6 pt-6 text-lg font-semibold">
             Pembayaran
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-0 md:grid-cols-2">
-          <div className="border-b p-4 sm:p-5 md:border-b-0 md:border-r xl:p-6">
-            <div className="rounded-xl border bg-muted/40 p-5">
+        <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
+          <div className="min-h-0 overflow-y-auto border-b p-3.5 sm:p-4 md:border-b-0 md:border-r">
+            <div className="rounded-xl border bg-muted/40 p-3.5 sm:p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -456,7 +451,7 @@ export function PaymentDialog({
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-4xl font-semibold tracking-tight tabular-nums lg:text-5xl">
+                  <p className="text-[2.6rem] font-semibold tracking-tight tabular-nums sm:text-[2.9rem]">
                     {formatRupiah(total)}
                   </p>
                   {subtotal !== total && (
@@ -468,7 +463,7 @@ export function PaymentDialog({
               </div>
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-3.5 space-y-2.5">
               {selectedPaymentSplits.length > 0 ? (
                 selectedPaymentSplits.map((split) => {
                   const amountInputId = `payment-amount-${split.payment_method}`
@@ -481,7 +476,7 @@ export function PaymentDialog({
                     <div
                       key={split.payment_method}
                       className={cn(
-                        "grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3 rounded-xl border bg-card p-3 sm:grid-cols-[180px_minmax(0,1fr)]",
+                        "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-card p-2.5 sm:grid-cols-[120px_minmax(0,1fr)]",
                         activePaymentMethod === split.payment_method &&
                           "border-primary ring-2 ring-primary/20"
                       )}
@@ -498,7 +493,7 @@ export function PaymentDialog({
                         id={amountInputId}
                         type="text"
                         inputMode="numeric"
-                        className="h-12 border-0 bg-transparent text-right text-2xl font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-14 sm:text-3xl lg:text-4xl"
+                        className="h-9 border-0 bg-transparent pr-0 text-right text-lg font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-10 sm:text-[1.75rem]"
                         placeholder="0"
                         value={formatAmountDisplay(split.amount)}
                         onClick={() => {
@@ -547,7 +542,7 @@ export function PaymentDialog({
               )}
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-3.5 space-y-2.5">
               <div className="space-y-2">
                 <Label
                   htmlFor="transaction-notes"
@@ -560,7 +555,7 @@ export function PaymentDialog({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Tambahkan catatan untuk transaksi ini..."
-                  rows={4}
+                  rows={2}
                   className="resize-none"
                 />
               </div>
@@ -616,8 +611,8 @@ export function PaymentDialog({
             </div>
           </div>
 
-          <div className="space-y-3 border-t p-4 sm:space-y-4 sm:p-5 md:border-t-0 xl:space-y-5 xl:p-6">
-              <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2 sm:grid-cols-[minmax(0,1fr)_130px] xl:grid-cols-[minmax(0,1fr)_170px]">
+          <div className="flex min-h-0 flex-col gap-2 border-t p-3 sm:gap-2.5 sm:p-3.5 md:border-t-0">
+            <div className="grid grid-cols-[minmax(0,1fr)_84px] gap-2 sm:grid-cols-[minmax(0,1fr)_96px]">
                 <div className="grid grid-cols-3 gap-2">
                 {[
                   "1",
@@ -637,7 +632,7 @@ export function PaymentDialog({
                     key={key}
                     type="button"
                     variant="outline"
-                    className="h-12 text-lg font-medium tabular-nums sm:h-14 sm:text-xl xl:h-16 xl:text-2xl"
+                    className="h-9 text-base font-medium tabular-nums sm:h-9.5 sm:text-[1rem]"
                     onClick={() => handleKeypadInput(key)}
                   >
                     {key}
@@ -648,7 +643,7 @@ export function PaymentDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-full min-h-[100px] text-sm font-medium sm:min-h-[115px] sm:text-base xl:min-h-[131px] xl:text-xl"
+                  className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                   onClick={handleKeypadDelete}
                 >
                   <Delete className="mr-2 h-5 w-5" />
@@ -657,7 +652,7 @@ export function PaymentDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-full min-h-[100px] text-sm font-medium sm:min-h-[115px] sm:text-base xl:min-h-[131px] xl:text-xl"
+                  className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                   onClick={handleKeypadClear}
                 >
                   <RotateCcw className="mr-2 h-5 w-5" />
@@ -672,7 +667,7 @@ export function PaymentDialog({
                   key={amount}
                   type="button"
                   variant="outline"
-                  className="h-11 text-xs font-medium tabular-nums sm:h-12 sm:text-sm xl:h-14 xl:text-base"
+                  className="h-8 text-xs font-medium tabular-nums sm:h-8.5 sm:text-xs"
                   onClick={() => handleSetExactAmount(amount)}
                 >
                   {formatQuickAmountLabel(amount)}
@@ -683,13 +678,13 @@ export function PaymentDialog({
             <Button
               type="button"
               variant="outline"
-              className="h-12 w-full text-lg font-semibold sm:h-14 sm:text-xl xl:h-18 xl:text-2xl"
+              className="h-9 w-full text-base font-semibold sm:h-9.5 sm:text-lg"
               onClick={handleSetRemainingAmount}
             >
               Uang Pas
             </Button>
 
-            <div>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <Label className="mb-3 block text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Metode Pembayaran
               </Label>
@@ -710,7 +705,7 @@ export function PaymentDialog({
                       type="button"
                       variant="outline"
                       className={cn(
-                        "h-11 justify-start gap-3 px-3 text-left text-sm font-medium sm:h-12 sm:px-4 xl:h-14",
+                        "h-9 justify-start gap-2.5 px-3 text-left text-sm font-medium",
                         isSelected && "border-primary bg-primary/10 text-primary",
                         isActive && "ring-2 ring-primary/20"
                       )}
@@ -734,7 +729,7 @@ export function PaymentDialog({
             </div>
 
             <Button
-              className="h-12 w-full text-lg font-semibold sm:h-14 sm:text-xl xl:h-16 xl:text-2xl"
+              className="sticky bottom-0 h-10 w-full shrink-0 text-base font-semibold sm:h-10.5 sm:text-lg"
               disabled={!canConfirm}
               onClick={handleConfirm}
             >
