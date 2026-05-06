@@ -36,13 +36,23 @@ interface ProductFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   product?: Product | null
+  onCreateSuccess?: () => void
 }
 
-export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDialogProps) {
+export function ProductFormDialog({
+  open,
+  onOpenChange,
+  product,
+  onCreateSuccess,
+}: ProductFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
-        <ProductFormBody product={product} onOpenChange={onOpenChange} />
+        <ProductFormBody
+          product={product}
+          onOpenChange={onOpenChange}
+          onCreateSuccess={onCreateSuccess}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -97,7 +107,15 @@ function buildFormFromProduct(p: Product): FormState {
   }
 }
 
-function ProductFormBody({ product, onOpenChange }: { product?: Product | null; onOpenChange: (open: boolean) => void }) {
+function ProductFormBody({
+  product,
+  onOpenChange,
+  onCreateSuccess,
+}: {
+  product?: Product | null
+  onOpenChange: (open: boolean) => void
+  onCreateSuccess?: () => void
+}) {
   const isEditing = !!product
   const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
@@ -167,7 +185,12 @@ function ProductFormBody({ product, onOpenChange }: { product?: Product | null; 
     } else {
       createProduct.mutate(
         { input, callerId: user!.id },
-        { onSuccess: () => onOpenChange(false) }
+        {
+          onSuccess: () => {
+            onCreateSuccess?.()
+            onOpenChange(false)
+          },
+        }
       )
     }
   }

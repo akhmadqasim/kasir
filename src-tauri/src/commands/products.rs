@@ -154,6 +154,9 @@ pub async fn search_products(
     };
 
     let sort_col = match params.sort_by.as_deref() {
+        Some("created_at") => products::Column::CreatedAt,
+        Some("updated_at") => products::Column::UpdatedAt,
+        Some("name") => products::Column::Name,
         Some("sell_price") => products::Column::SellPrice,
         Some("stock") => products::Column::Stock,
         _ => products::Column::Name,
@@ -161,10 +164,23 @@ pub async fn search_products(
 
     let query = products::Entity::find().filter(build_search_condition(&params));
 
-    let query = if params.sort_order.as_deref() == Some("desc") {
+    let is_desc = params.sort_order.as_deref() == Some("desc");
+    let query = if is_desc {
         query.order_by_desc(sort_col)
     } else {
         query.order_by_asc(sort_col)
+    };
+    let query = if matches!(
+        params.sort_by.as_deref(),
+        Some("created_at") | Some("updated_at")
+    ) {
+        if is_desc {
+            query.order_by_desc(products::Column::Id)
+        } else {
+            query.order_by_asc(products::Column::Id)
+        }
+    } else {
+        query
     };
 
     let data = query

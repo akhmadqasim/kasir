@@ -27,11 +27,11 @@ export function ProductsPage() {
   const effectiveSortBy =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "stock"
-      : sortBy
+      : sortBy ?? "created_at"
   const effectiveSortOrder =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "asc"
-      : sortOrder
+      : sortBy ? sortOrder : "desc"
 
   const { data: productsData, isLoading } = useSearchProducts({
     query: searchQuery || undefined,
@@ -163,6 +163,7 @@ export function ProductsPage() {
         open={formOpen}
         onOpenChange={handleFormOpenChange}
         product={editingProduct}
+        onCreateSuccess={() => setPage(1)}
       />
 
       <CategoryManager
