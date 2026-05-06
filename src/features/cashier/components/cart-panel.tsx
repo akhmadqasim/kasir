@@ -250,7 +250,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
           )}
           <div className="flex items-center justify-between">
             <span className="text-2xl font-semibold">Total</span>
-            <span className="text-4xl font-bold leading-none text-green-600 tabular-nums md:text-5xl">
+            <span className="text-4xl font-bold leading-none tabular-nums md:text-5xl">
               {formatRupiah(total)}
             </span>
           </div>
@@ -302,7 +302,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
             )}
           </div>
           <Button
-            className="h-auto min-h-[4.5rem] flex-1 basis-20 text-lg font-semibold"
+            className="h-auto min-h-[4.5rem] flex-1 basis-20 bg-green-600 text-lg font-semibold text-white hover:bg-green-700"
             size="lg"
             disabled={items.length === 0 || disabled}
             onClick={onPay}
