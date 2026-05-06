@@ -174,11 +174,6 @@ export function CloseShiftPage() {
     }
   }
 
-  const resetCloseConfirmation = () => {
-    setShowCloseConfirm(false)
-    setShowFinalCloseConfirm(false)
-  }
-
   const openCloseConfirmation = () => {
     if (isSubmitting) return
     setShowFinalCloseConfirm(false)
@@ -459,9 +454,7 @@ export function CloseShiftPage() {
 
       <AlertDialog
         open={showCloseConfirm}
-        onOpenChange={(open) => {
-          if (!open) resetCloseConfirmation()
-        }}
+        onOpenChange={setShowCloseConfirm}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -514,9 +507,7 @@ export function CloseShiftPage() {
 
       <AlertDialog
         open={showFinalCloseConfirm}
-        onOpenChange={(open) => {
-          if (!open) resetCloseConfirmation()
-        }}
+        onOpenChange={setShowFinalCloseConfirm}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
