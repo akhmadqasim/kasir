@@ -250,7 +250,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
           )}
           <div className="flex items-center justify-between">
             <span className="text-2xl font-semibold">Total</span>
-            <span className="text-4xl font-bold leading-none tabular-nums md:text-5xl">
+            <span className="text-4xl font-bold leading-none text-green-600 tabular-nums md:text-5xl">
               {formatRupiah(total)}
             </span>
           </div>

@@ -496,7 +496,7 @@ export function PaymentDialog({
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-[2.6rem] font-semibold tracking-tight tabular-nums sm:text-[2.9rem]">
+                  <p className="text-[2.6rem] font-semibold tracking-tight text-green-600 tabular-nums sm:text-[2.9rem]">
                     {formatRupiah(total)}
                   </p>
                   {subtotal !== total && (
