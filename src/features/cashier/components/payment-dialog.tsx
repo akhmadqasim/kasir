@@ -75,6 +75,8 @@ export function PaymentDialog({
     createInitialPaymentSplits
   )
   const [activePaymentMethod, setActivePaymentMethod] = useState("cash")
+  const [hasChangedPrimaryPaymentMethod, setHasChangedPrimaryPaymentMethod] =
+    useState(false)
   const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
@@ -182,19 +184,6 @@ export function PaymentDialog({
     }
   }, [isSingleCashSelection, open])
 
-  useEffect(() => {
-    if (selectedMethodCount !== 1 || primaryPaymentMethod === "cash") return
-    if ((Number(selectedPaymentSplits[0]?.amount) || 0) > 0) return
-
-    setPaymentSplits((current) =>
-      current.map((split) =>
-        split.payment_method === primaryPaymentMethod
-          ? { ...split, amount: String(total) }
-          : split
-      )
-    )
-  }, [primaryPaymentMethod, selectedMethodCount, selectedPaymentSplits, total])
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && canConfirm) {
       e.preventDefault()
@@ -290,8 +279,62 @@ export function PaymentDialog({
 
     if (!split) return
 
+    if (split.selected) {
+      setActivePaymentMethod(method)
+      return
+    }
+
+    if (selectedMethodCount === 1 && !hasChangedPrimaryPaymentMethod) {
+      setPaymentSplits((current) =>
+        current.map((currentSplit) =>
+          currentSplit.payment_method === method
+            ? {
+                ...currentSplit,
+                selected: true,
+                amount:
+                  method !== "cash" && !currentSplit.amount
+                    ? String(total)
+                    : currentSplit.amount,
+              }
+            : { ...currentSplit, selected: false, amount: "", bank_name: "" }
+        )
+      )
+      setHasChangedPrimaryPaymentMethod(true)
+      setActivePaymentMethod(method)
+      return
+    }
+
+    handleMethodToggle(method, true)
+    setHasChangedPrimaryPaymentMethod(true)
+    setActivePaymentMethod(method)
+  }, [
+    handleMethodToggle,
+    hasChangedPrimaryPaymentMethod,
+    paymentSplits,
+    selectedMethodCount,
+    total,
+  ])
+
+  const handleMethodCheckboxClick = useCallback((
+    event: React.MouseEvent<HTMLSpanElement>,
+    method: string
+  ) => {
+    event.stopPropagation()
+
+    const split = paymentSplits.find(
+      (current) => current.payment_method === method
+    )
+
+    if (!split) return
+
     if (!split.selected) {
       handleMethodToggle(method, true)
+      setHasChangedPrimaryPaymentMethod(true)
+      setActivePaymentMethod(method)
+      return
+    }
+
+    if (selectedMethodCount <= 1) {
       setActivePaymentMethod(method)
       return
     }
@@ -301,7 +344,7 @@ export function PaymentDialog({
       (current) => current.payment_method !== method && current.selected
     )
     setActivePaymentMethod(fallback?.payment_method ?? "cash")
-  }, [activePaymentMethod, handleMethodToggle, paymentSplits])
+  }, [handleMethodToggle, paymentSplits, selectedMethodCount])
 
   const ensureActiveMethodSelected = useCallback(() => {
     if (activeSplit?.selected) return
@@ -410,6 +453,7 @@ export function PaymentDialog({
             queryClient.invalidateQueries({ queryKey: ["search_products"] })
             onSuccess(result)
             setPaymentSplits(createInitialPaymentSplits())
+            setHasChangedPrimaryPaymentMethod(false)
             setNotes("")
           },
         onError: (err) => {
@@ -423,6 +467,7 @@ export function PaymentDialog({
     if (!isOpen) {
       setPaymentSplits(createInitialPaymentSplits())
       setActivePaymentMethod("cash")
+      setHasChangedPrimaryPaymentMethod(false)
       setNotes("")
     }
     onOpenChange(isOpen)
@@ -493,7 +538,7 @@ export function PaymentDialog({
                         id={amountInputId}
                         type="text"
                         inputMode="numeric"
-                        className="h-9 border-0 bg-transparent pr-0 text-right text-lg font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-10 sm:text-[1.75rem]"
+                        className="h-11 border-0 bg-transparent pr-0 text-right text-2xl font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-12 sm:text-[2rem] md:text-[2rem]"
                         placeholder="0"
                         value={formatAmountDisplay(split.amount)}
                         onClick={() => {
@@ -718,6 +763,9 @@ export function PaymentDialog({
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-muted-foreground/30"
                         )}
+                        onClick={(event) =>
+                          handleMethodCheckboxClick(event, method.value)
+                        }
                       >
                         {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                       </span>
