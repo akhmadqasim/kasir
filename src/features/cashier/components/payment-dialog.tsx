@@ -11,6 +11,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
@@ -75,8 +82,6 @@ export function PaymentDialog({
     createInitialPaymentSplits
   )
   const [activePaymentMethod, setActivePaymentMethod] = useState("cash")
-  const [hasChangedPrimaryPaymentMethod, setHasChangedPrimaryPaymentMethod] =
-    useState(false)
   const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
@@ -284,36 +289,38 @@ export function PaymentDialog({
       return
     }
 
-    if (selectedMethodCount === 1 && !hasChangedPrimaryPaymentMethod) {
+    if (isSingleCashSelection && method !== "cash") {
       setPaymentSplits((current) =>
         current.map((currentSplit) =>
           currentSplit.payment_method === method
             ? {
                 ...currentSplit,
                 selected: true,
-                amount:
-                  method !== "cash" && !currentSplit.amount
-                    ? String(total)
-                    : currentSplit.amount,
+                amount: currentSplit.amount || String(total),
               }
             : { ...currentSplit, selected: false, amount: "", bank_name: "" }
         )
       )
-      setHasChangedPrimaryPaymentMethod(true)
       setActivePaymentMethod(method)
       return
     }
 
-    handleMethodToggle(method, true)
-    setHasChangedPrimaryPaymentMethod(true)
+    setPaymentSplits((current) =>
+      current.map((currentSplit) =>
+        currentSplit.payment_method === method
+          ? {
+              ...currentSplit,
+              selected: true,
+              amount:
+                method === "cash"
+                  ? "0"
+                  : currentSplit.amount,
+            }
+          : currentSplit
+      )
+    )
     setActivePaymentMethod(method)
-  }, [
-    handleMethodToggle,
-    hasChangedPrimaryPaymentMethod,
-    paymentSplits,
-    selectedMethodCount,
-    total,
-  ])
+  }, [isSingleCashSelection, paymentSplits, total])
 
   const handleMethodCheckboxClick = useCallback((
     event: React.MouseEvent<HTMLSpanElement>,
@@ -329,7 +336,6 @@ export function PaymentDialog({
 
     if (!split.selected) {
       handleMethodToggle(method, true)
-      setHasChangedPrimaryPaymentMethod(true)
       setActivePaymentMethod(method)
       return
     }
@@ -453,7 +459,6 @@ export function PaymentDialog({
             queryClient.invalidateQueries({ queryKey: ["search_products"] })
             onSuccess(result)
             setPaymentSplits(createInitialPaymentSplits())
-            setHasChangedPrimaryPaymentMethod(false)
             setNotes("")
           },
         onError: (err) => {
@@ -467,7 +472,6 @@ export function PaymentDialog({
     if (!isOpen) {
       setPaymentSplits(createInitialPaymentSplits())
       setActivePaymentMethod("cash")
-      setHasChangedPrimaryPaymentMethod(false)
       setNotes("")
     }
     onOpenChange(isOpen)
@@ -560,21 +564,31 @@ export function PaymentDialog({
                           >
                             Bank
                           </Label>
-                          <Input
-                            id={`payment-bank-${split.payment_method}`}
-                            list="transfer-bank-options"
+                          <Select
                             value={split.bank_name}
-                            placeholder="Contoh: BCA / SeaBank"
-                            onClick={() => {
-                              setActivePaymentMethod(split.payment_method)
-                            }}
-                            onChange={(event) =>
-                              handleBankNameChange(
-                                split.payment_method,
-                                event.target.value
-                              )
+                            onValueChange={(value) =>
+                              handleBankNameChange(split.payment_method, value)
                             }
-                          />
+                            onOpenChange={(isOpen) => {
+                              if (isOpen) {
+                                setActivePaymentMethod(split.payment_method)
+                              }
+                            }}
+                          >
+                            <SelectTrigger
+                              id={`payment-bank-${split.payment_method}`}
+                              className="h-10 w-full"
+                            >
+                              <SelectValue placeholder="Pilih bank" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BANK_OPTIONS.map((bank) => (
+                                <SelectItem key={bank} value={bank}>
+                                  {bank}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       )}
                     </div>
@@ -783,11 +797,6 @@ export function PaymentDialog({
             >
               {checkoutTransaction.isPending ? "Memproses..." : "Bayar"}
             </Button>
-            <datalist id="transfer-bank-options">
-              {BANK_OPTIONS.map((bank) => (
-                <option key={bank} value={bank} />
-              ))}
-            </datalist>
           </div>
         </div>
       </DialogContent>
