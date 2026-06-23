@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
@@ -29,6 +29,11 @@ import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
+import {
+  getProductSearchEnterAction,
+  isLikelyBarcodeScannerInput,
+  rankProductsForSearch,
+} from "../search-behavior"
 import { formatRupiah, getAddItemValidationError } from "../utils"
 import { PpobQuickAccess } from "./ppob-quick-access"
 
@@ -55,18 +60,17 @@ interface ProductSearchPanelProps {
   focusKey?: number
 }
 
-function isBarcodeQuery(query: string): boolean {
-  return /^\d{6,}$/.test(query)
-}
-
 export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [selectedProductValue, setSelectedProductValue] = useState<string | undefined>()
   const [holdingPinId, setHoldingPinId] = useState<number | null>(null)
   const [holdProgress, setHoldProgress] = useState(0)
   const commandInputRef = useRef<HTMLDivElement>(null)
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const holdStartRef = useRef<number>(0)
+  const searchQueryRef = useRef("")
+  const inputTimingRef = useRef({ query: "", startedAt: 0, lastInputAt: 0 })
   const items = useCartStore((s) => s.items)
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
@@ -85,9 +89,29 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
 
   const { data: searchResults } = useTauriQuery<PaginatedProducts>(
     "search_products",
-    { params: { query: debouncedQuery, per_page: 20 } },
+    { params: { query: debouncedQuery, per_page: 50 } },
     { enabled: debouncedQuery.length > 0 }
   )
+
+  const rankedSearchResults = useMemo(
+    () => rankProductsForSearch(searchResults?.data ?? [], debouncedQuery),
+    [searchResults?.data, debouncedQuery]
+  )
+
+  useEffect(() => {
+    if (rankedSearchResults.length === 0) {
+      setSelectedProductValue(undefined)
+      return
+    }
+
+    setSelectedProductValue((current) => {
+      if (current && rankedSearchResults.some((product) => String(product.id) === current)) {
+        return current
+      }
+
+      return String(rankedSearchResults[0].id)
+    })
+  }, [rankedSearchResults])
 
   const { data: shortcutProducts } = useTauriQuery<ShortcutProduct[]>(
     "get_popular_products",
@@ -99,6 +123,44 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
       const input = commandInputRef.current?.querySelector("input")
       input?.focus()
     }, 50)
+  }, [])
+
+  const resetSearchInputTiming = useCallback(() => {
+    searchQueryRef.current = ""
+    inputTimingRef.current = { query: "", startedAt: 0, lastInputAt: 0 }
+  }, [])
+
+  const clearSearch = useCallback(() => {
+    resetSearchInputTiming()
+    setSearchQuery("")
+    setDebouncedQuery("")
+    setSelectedProductValue(undefined)
+  }, [resetSearchInputTiming])
+
+  const handleSearchQueryChange = useCallback((value: string) => {
+    const now = Date.now()
+    const previousValue = searchQueryRef.current
+    const previousTiming = inputTimingRef.current
+    const isSingleCharacterAppend =
+      value.length === previousValue.length + 1 && value.startsWith(previousValue)
+    const isContinuingFastInput =
+      isSingleCharacterAppend && now - previousTiming.lastInputAt <= 50
+
+    searchQueryRef.current = value
+
+    if (!value) {
+      inputTimingRef.current = { query: "", startedAt: 0, lastInputAt: 0 }
+    } else if (isContinuingFastInput) {
+      inputTimingRef.current = {
+        query: value,
+        startedAt: previousTiming.startedAt,
+        lastInputAt: now,
+      }
+    } else {
+      inputTimingRef.current = { query: value, startedAt: now, lastInputAt: now }
+    }
+
+    setSearchQuery(value)
   }, [])
 
   useEffect(() => {
@@ -178,7 +240,22 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     const query = searchQuery.trim()
     if (!query) return
 
-    if (isBarcodeQuery(query)) {
+    const enterAction = getProductSearchEnterAction({
+      query,
+      debouncedQuery,
+      resultCount: rankedSearchResults.length,
+      hasSearchData: searchResults !== undefined,
+    })
+
+    if (enterAction === "ignore") return
+
+    if (enterAction === "select-active-result") {
+      // Let cmdk select the controlled active item. The first result is active by
+      // default, but ArrowUp/ArrowDown can move the selection before Enter.
+      return
+    }
+
+    if (enterAction === "lookup-exact-barcode") {
       e.preventDefault()
       e.stopPropagation()
 
@@ -186,8 +263,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         const product = await getProductByBarcode(query)
         if (product) {
           addToCart(product, false)
-          setSearchQuery("")
-          setDebouncedQuery("")
+          clearSearch()
           focusInput()
           return
         }
@@ -195,33 +271,47 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         // Fall through to barcode not found feedback
       }
 
+      const isLikelyScannerInput = isLikelyBarcodeScannerInput({
+        submittedAt: Date.now(),
+        ...inputTimingRef.current,
+        query,
+      })
+
+      if (isLikelyScannerInput) {
+        toast.error(`Barcode "${query}" tidak ditemukan`)
+        clearSearch()
+        focusInput()
+        return
+      }
+
+      if (debouncedQuery.trim() !== query || searchResults === undefined) {
+        setDebouncedQuery(query)
+        focusInput()
+        return
+      }
+
       toast.error(`Barcode "${query}" tidak ditemukan`)
-      setSearchQuery("")
-      setDebouncedQuery("")
+      clearSearch()
       focusInput()
       return
     }
 
-    if (searchResults?.data && searchResults.data.length > 0) {
-      // Let cmdk handle Enter so only the actively selected item is chosen.
-      return
-    }
-
-    if (debouncedQuery !== query) {
+    if (enterAction === "wait-for-search") {
+      e.preventDefault()
+      setDebouncedQuery(query)
+      focusInput()
       return
     }
 
     e.preventDefault()
     toast.error(`Produk "${query}" tidak ditemukan`)
-    setSearchQuery("")
-    setDebouncedQuery("")
+    clearSearch()
     focusInput()
   }
 
   const handleProductSelect = (product: Product) => {
     addToCart(product, true)
-    setSearchQuery("")
-    setDebouncedQuery("")
+    clearSearch()
     focusInput()
   }
 
@@ -235,12 +325,17 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Search Bar */}
-      <Command className={cn("rounded-none border-none border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")} shouldFilter={false}>
+      <Command
+        className={cn("rounded-none border-none border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")}
+        shouldFilter={false}
+        value={selectedProductValue}
+        onValueChange={setSelectedProductValue}
+      >
         <div className="relative" ref={commandInputRef}>
           <CommandInput
             placeholder="Scan barcode atau cari produk..."
             value={searchQuery}
-            onValueChange={setSearchQuery}
+            onValueChange={handleSearchQueryChange}
             onKeyDown={handleKeyDown}
             className="h-14 text-lg"
           />
@@ -249,20 +344,20 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
           </div>
         </div>
 
-        {showSearchResults && searchResults?.data?.[0] && (
+        {showSearchResults && rankedSearchResults[0] && (
           <div className="border-t px-4 py-2 text-xs text-muted-foreground">
             Enter akan pilih item aktif:{" "}
-            <span className="font-medium text-foreground">{searchResults.data[0].name}</span>{" "}
-            <span className="tabular-nums">({formatRupiah(searchResults.data[0].sell_price)})</span>
+            <span className="font-medium text-foreground">{rankedSearchResults[0].name}</span>{" "}
+            <span className="tabular-nums">({formatRupiah(rankedSearchResults[0].sell_price)})</span>
           </div>
         )}
 
         {/* Search Results */}
         {showSearchResults && (
           <CommandList className="max-h-none flex-1">
-            {searchResults?.data && searchResults.data.length > 0 ? (
+            {rankedSearchResults.length > 0 ? (
               <CommandGroup>
-                {searchResults.data.map((product) => (
+                {rankedSearchResults.map((product) => (
                   <CommandItem
                     key={product.id}
                     value={String(product.id)}
@@ -381,7 +476,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                       </EmptyMedia>
                       <EmptyTitle>Cari Produk</EmptyTitle>
                       <EmptyDescription>
-                        Scan barcode atau ketik nama produk. Produk yang sering dicari akan tampil di sini.
+                        Scan barcode, ketik nama produk, atau ketik sebagian barcode. Produk yang sering dicari akan tampil di sini.
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
