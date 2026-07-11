@@ -177,6 +177,20 @@ export function PaymentDialog({
 
   const quickAmounts = QUICK_AMOUNT_OPTIONS
 
+  // Jaga agar metode aktif selalu termasuk yang terpilih. Tanpa ini, active bisa
+  // nyasar ke metode yang tidak terpilih lalu "Uang Pas"/keypad malah mengisinya
+  // (mis. QRIS tiba-tiba ke-check).
+  useEffect(() => {
+    if (
+      selectedPaymentSplits.length > 0 &&
+      !selectedPaymentSplits.some(
+        (split) => split.payment_method === activePaymentMethod
+      )
+    ) {
+      setActivePaymentMethod(selectedPaymentSplits[0].payment_method)
+    }
+  }, [selectedPaymentSplits, activePaymentMethod])
+
   // Auto-focus payment input when dialog opens
   useEffect(() => {
     if (open && isSingleCashSelection) {
@@ -272,18 +286,38 @@ export function PaymentDialog({
     )
   }, [])
 
-  const handleMethodButtonClick = useCallback((method: string) => {
+  const handleMethodClick = useCallback((method: string) => {
     const split = paymentSplits.find(
       (current) => current.payment_method === method
     )
 
     if (!split) return
 
+    // Metode sudah dipilih → klik lagi untuk melepas (klik di mana saja pada
+    // tombol, bukan cuma di kotak centang). Kecuali ini satu-satunya metode
+    // aktif: cukup jadikan aktif, jangan sampai tidak ada metode terpilih.
     if (split.selected) {
-      setActivePaymentMethod(method)
+      if (selectedMethodCount <= 1) {
+        setActivePaymentMethod(method)
+        return
+      }
+
+      setPaymentSplits((current) =>
+        current.map((currentSplit) =>
+          currentSplit.payment_method === method
+            ? { ...currentSplit, selected: false, amount: "", bank_name: "" }
+            : currentSplit
+        )
+      )
+      const fallback = paymentSplits.find(
+        (current) => current.payment_method !== method && current.selected
+      )
+      setActivePaymentMethod(fallback?.payment_method ?? "cash")
       return
     }
 
+    // Belum dipilih. Selama masih pilihan tunggal awal → GANTI (radio).
+    // Setelah itu, setiap metode baru → TAMBAH (multi payment).
     if (selectedMethodCount === 1 && !hasChangedPrimaryPaymentMethod) {
       setPaymentSplits((current) =>
         current.map((currentSplit) =>
@@ -299,52 +333,19 @@ export function PaymentDialog({
             : { ...currentSplit, selected: false, amount: "", bank_name: "" }
         )
       )
-      setHasChangedPrimaryPaymentMethod(true)
-      setActivePaymentMethod(method)
-      return
+    } else {
+      setPaymentSplits((current) =>
+        current.map((currentSplit) =>
+          currentSplit.payment_method === method
+            ? { ...currentSplit, selected: true }
+            : currentSplit
+        )
+      )
     }
 
-    handleMethodToggle(method, true)
     setHasChangedPrimaryPaymentMethod(true)
     setActivePaymentMethod(method)
-  }, [
-    handleMethodToggle,
-    hasChangedPrimaryPaymentMethod,
-    paymentSplits,
-    selectedMethodCount,
-    total,
-  ])
-
-  const handleMethodCheckboxClick = useCallback((
-    event: React.MouseEvent<HTMLSpanElement>,
-    method: string
-  ) => {
-    event.stopPropagation()
-
-    const split = paymentSplits.find(
-      (current) => current.payment_method === method
-    )
-
-    if (!split) return
-
-    if (!split.selected) {
-      handleMethodToggle(method, true)
-      setHasChangedPrimaryPaymentMethod(true)
-      setActivePaymentMethod(method)
-      return
-    }
-
-    if (selectedMethodCount <= 1) {
-      setActivePaymentMethod(method)
-      return
-    }
-
-    handleMethodToggle(method, false)
-    const fallback = paymentSplits.find(
-      (current) => current.payment_method !== method && current.selected
-    )
-    setActivePaymentMethod(fallback?.payment_method ?? "cash")
-  }, [handleMethodToggle, paymentSplits, selectedMethodCount])
+  }, [hasChangedPrimaryPaymentMethod, paymentSplits, selectedMethodCount, total])
 
   const ensureActiveMethodSelected = useCallback(() => {
     if (activeSplit?.selected) return
@@ -754,18 +755,16 @@ export function PaymentDialog({
                         isSelected && "border-primary bg-primary/10 text-primary",
                         isActive && "ring-2 ring-primary/20"
                       )}
-                      onClick={() => handleMethodButtonClick(method.value)}
+                      onClick={() => handleMethodClick(method.value)}
                     >
                       <span
+                        aria-hidden="true"
                         className={cn(
-                          "flex h-5 w-5 items-center justify-center rounded border",
+                          "pointer-events-none flex h-5 w-5 items-center justify-center rounded border",
                           isSelected
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-muted-foreground/30"
                         )}
-                        onClick={(event) =>
-                          handleMethodCheckboxClick(event, method.value)
-                        }
                       >
                         {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                       </span>
