@@ -1,6 +1,6 @@
 [package]
 name = "kasir"
-version = "0.4.0"
+version = "0.5.0"
 description = "POS Toko Sembako"
 authors = ["you"]
 edition = "2021"
