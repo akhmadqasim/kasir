@@ -4,6 +4,41 @@ use tauri::State;
 
 use crate::utils::AppError;
 
+// --- Date boundary helpers ---
+//
+// `created_at` columns are stored as UTC `"YYYY-MM-DD HH:MM:SS"` strings, so
+// filtering with `date(created_at,'localtime')` wraps the column and defeats the
+// date indexes. These helpers convert an inclusive local date range into raw
+// UTC boundaries, mirroring the proven approach in `commands/transactions.rs`
+// (`list_transactions`) and `commands/refunds.rs` (`list_refunds`). Comparing
+// the raw column against `>= start AND < end_exclusive` is sargable and
+// reproduces the previous `date(created_at,'localtime') BETWEEN` semantics
+// exactly, independent of timestamp sub-second precision.
+
+/// UTC boundary for 00:00:00 local of `date_str` (the inclusive lower bound).
+fn local_date_start_to_utc(date_str: &str) -> String {
+    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+    match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(d) => (d.and_hms_opt(0, 0, 0).unwrap() - chrono::Duration::seconds(offset_secs))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+        Err(_) => format!("{} 00:00:00", date_str),
+    }
+}
+
+/// UTC boundary for 00:00:00 local of the day AFTER `date_str` (the exclusive
+/// upper bound). `created_at < this` reproduces `date(...) <= date_str`.
+fn local_date_end_exclusive_to_utc(date_str: &str) -> String {
+    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+    match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(d) => ((d + chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap()
+            - chrono::Duration::seconds(offset_secs))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string(),
+        Err(_) => format!("{} 23:59:59", date_str),
+    }
+}
+
 // --- Types ---
 
 #[derive(Debug, Serialize)]
@@ -180,16 +215,19 @@ async fn query_daily_sales(
                 date(t.created_at, 'localtime') as sale_date,
                 COUNT(DISTINCT t.id) as transaction_count,
                 COALESCE(SUM(t.total_amount), 0) as total_revenue,
-                COALESCE(SUM(ti.quantity * COALESCE(p.buy_price, 0)), 0) as total_cost,
-                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(p.buy_price, 0)), 0) as gross_profit
+                COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost,
+                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as gross_profit
             FROM transactions t
             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
             LEFT JOIN products p ON p.id = ti.product_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+            AND t.created_at >= $1 AND t.created_at < $2
             GROUP BY sale_date
             ORDER BY sale_date DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![
+                local_date_start_to_utc(start_date).into(),
+                local_date_end_exclusive_to_utc(end_date).into(),
+            ],
         ))
         .await?;
 
@@ -222,7 +260,10 @@ pub async fn report_sales_monthly(
     year: i32,
 ) -> Result<Vec<MonthlySalesRow>, AppError> {
     let db = db.inner();
-    let year_str = year.to_string();
+    // `strftime('%Y', created_at,'localtime') = year` == local year is `year`,
+    // i.e. created_at in [year-01-01 00:00 local, (year+1)-01-01 00:00 local).
+    let year_start = local_date_start_to_utc(&format!("{:04}-01-01", year));
+    let year_end = local_date_start_to_utc(&format!("{:04}-01-01", year + 1));
 
     let rows = db
         .query_all(Statement::from_sql_and_values(
@@ -231,16 +272,16 @@ pub async fn report_sales_monthly(
                 strftime('%Y-%m', t.created_at, 'localtime') as sale_month,
                 COUNT(DISTINCT t.id) as transaction_count,
                 COALESCE(SUM(t.total_amount), 0) as total_revenue,
-                COALESCE(SUM(ti.quantity * COALESCE(p.buy_price, 0)), 0) as total_cost,
-                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(p.buy_price, 0)), 0) as gross_profit
+                COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost,
+                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as gross_profit
             FROM transactions t
             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
             LEFT JOIN products p ON p.id = ti.product_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND strftime('%Y', t.created_at, 'localtime') = $1
+            AND t.created_at >= $1 AND t.created_at < $2
             GROUP BY sale_month
             ORDER BY sale_month DESC",
-            vec![year_str.into()],
+            vec![year_start.into(), year_end.into()],
         ))
         .await?;
 
@@ -307,11 +348,15 @@ pub async fn report_sales_receipt(
                 t.created_at
             FROM transactions t
             LEFT JOIN users u ON u.id = t.user_id
-            WHERE date(t.created_at, 'localtime') BETWEEN $1 AND $2
+            WHERE t.created_at >= $1 AND t.created_at < $2
             AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
             ORDER BY t.created_at DESC
             LIMIT 500",
-            vec![start_date.into(), end_date.into(), search.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+                search.into(),
+            ],
         ))
         .await?;
 
@@ -349,7 +394,7 @@ pub async fn report_payment_methods(
                 FROM transaction_payments tp
                 JOIN transactions t ON t.id = tp.transaction_id
                 WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+                AND t.created_at >= $1 AND t.created_at < $2
                 UNION ALL
                 SELECT
                     t.payment_method as payment_method,
@@ -357,7 +402,7 @@ pub async fn report_payment_methods(
                     t.id as transaction_id
                 FROM transactions t
                 WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+                AND t.created_at >= $1 AND t.created_at < $2
                 AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
             )
             SELECT
@@ -367,7 +412,10 @@ pub async fn report_payment_methods(
             FROM payment_method_rows
             GROUP BY payment_method
             ORDER BY total_amount DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+            ],
         ))
         .await?;
 
@@ -409,17 +457,20 @@ pub async fn report_product_sales(
                 c.name as category_name,
                 SUM(ti.quantity) as qty_sold,
                 SUM(ti.subtotal) as total_revenue,
-                SUM(ti.quantity * COALESCE(p.buy_price, 0)) as total_cost,
-                SUM(ti.subtotal) - SUM(ti.quantity * COALESCE(p.buy_price, 0)) as profit
+                SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)) as total_cost,
+                SUM(ti.subtotal) - SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)) as profit
             FROM transaction_items ti
             JOIN transactions t ON t.id = ti.transaction_id
             LEFT JOIN products p ON p.id = ti.product_id
             LEFT JOIN categories c ON c.id = p.category_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+            AND t.created_at >= $1 AND t.created_at < $2
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+            ],
         ))
         .await?;
 
@@ -463,11 +514,15 @@ pub async fn report_popular_products(
             LEFT JOIN products p ON p.id = ti.product_id
             LEFT JOIN categories c ON c.id = p.category_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND date(t.created_at, 'localtime') BETWEEN $1 AND $2
+            AND t.created_at >= $1 AND t.created_at < $2
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC
             LIMIT $3",
-            vec![start_date.into(), end_date.into(), limit.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+                limit.into(),
+            ],
         ))
         .await?;
 
@@ -507,9 +562,12 @@ pub async fn report_returns(
             FROM refunds r
             JOIN transactions t ON t.id = r.transaction_id
             LEFT JOIN users u ON u.id = r.user_id
-            WHERE date(r.created_at, 'localtime') BETWEEN $1 AND $2
+            WHERE r.created_at >= $1 AND r.created_at < $2
             ORDER BY r.created_at DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+            ],
         ))
         .await?;
 
@@ -599,6 +657,9 @@ pub async fn report_losses(
 ) -> Result<LossSummary, AppError> {
     let db = db.inner();
 
+    let start_utc = local_date_start_to_utc(&start_date);
+    let end_utc = local_date_end_exclusive_to_utc(&end_date);
+
     // Get items
     let item_rows = db
         .query_all(Statement::from_sql_and_values(
@@ -617,9 +678,9 @@ pub async fn report_losses(
             FROM stock_writeoffs sw
             LEFT JOIN products p ON p.id = sw.product_id
             LEFT JOIN users u ON u.id = sw.user_id
-            WHERE date(sw.created_at, 'localtime') BETWEEN $1 AND $2
+            WHERE sw.created_at >= $1 AND sw.created_at < $2
             ORDER BY sw.created_at DESC",
-            vec![start_date.clone().into(), end_date.clone().into()],
+            vec![start_utc.clone().into(), end_utc.clone().into()],
         ))
         .await?;
 
@@ -648,10 +709,10 @@ pub async fn report_losses(
                 COUNT(*) as count,
                 COALESCE(SUM(loss_value), 0) as total_value
             FROM stock_writeoffs
-            WHERE date(created_at, 'localtime') BETWEEN $1 AND $2
+            WHERE created_at >= $1 AND created_at < $2
             GROUP BY reason
             ORDER BY total_value DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![start_utc.into(), end_utc.into()],
         ))
         .await?;
 
@@ -698,9 +759,12 @@ pub async fn report_cash_flows(
                 cf.created_at
             FROM cash_flows cf
             LEFT JOIN users u ON u.id = cf.user_id
-            WHERE date(cf.created_at, 'localtime') BETWEEN $1 AND $2
+            WHERE cf.created_at >= $1 AND cf.created_at < $2
             ORDER BY cf.created_at DESC",
-            vec![start_date.into(), end_date.into()],
+            vec![
+                local_date_start_to_utc(&start_date).into(),
+                local_date_end_exclusive_to_utc(&end_date).into(),
+            ],
         ))
         .await?;
 

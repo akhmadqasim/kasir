@@ -5,6 +5,25 @@ use tauri::State;
 
 use crate::utils::AppError;
 
+/// Converts a local calendar date (taken at 00:00:00 local time) into the UTC
+/// `"YYYY-MM-DD HH:MM:SS"` string used to compare against the raw `created_at`
+/// column. `created_at` is stored as a UTC timestamp string, so filtering on
+/// the raw column keeps `idx_transactions_date` usable (sargable), unlike
+/// `date(created_at,'localtime')` which forces a full scan.
+///
+/// This mirrors the boundary logic in `commands/transactions.rs`
+/// (`list_transactions`) and `commands/refunds.rs` (`list_refunds`), so the
+/// results are identical to the previous `date(created_at,'localtime')`
+/// filters. Using half-open ranges (`>= start AND < next_day_start`) makes the
+/// translation exact regardless of timestamp sub-second precision.
+fn local_date_start_to_utc(date: chrono::NaiveDate) -> String {
+    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+    let local_start = date.and_hms_opt(0, 0, 0).unwrap();
+    (local_start - chrono::Duration::seconds(offset_secs))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSummary {
@@ -83,24 +102,32 @@ pub async fn get_dashboard_summary(
 ) -> Result<DashboardSummary, AppError> {
     let db = db.inner();
 
+    // Precompute UTC day boundaries (local day -> UTC) so the date filters stay
+    // sargable on idx_transactions_date. Half-open ranges reproduce the old
+    // `date(created_at,'localtime') = date('now','localtime')` semantics exactly.
+    let today = Local::now().date_naive();
+    let yesterday_start = local_date_start_to_utc(today - chrono::Duration::days(1));
+    let today_start = local_date_start_to_utc(today);
+    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+
     let row = db
-        .query_one(Statement::from_string(
+        .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "WITH today_sales AS ( \
                SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as cnt \
                FROM transactions \
-               WHERE date(created_at, 'localtime') = date('now', 'localtime') \
+               WHERE created_at >= $2 AND created_at < $3 \
                AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ), \
              today_refunds AS ( \
                SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
                FROM refunds \
-               WHERE date(created_at, 'localtime') = date('now', 'localtime') \
+               WHERE created_at >= $2 AND created_at < $3 \
              ), \
              yesterday AS ( \
                SELECT COALESCE(SUM(total_amount), 0) as revenue \
                FROM transactions \
-               WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day') \
+               WHERE created_at >= $1 AND created_at < $2 \
                AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ), \
              product_counts AS ( \
@@ -110,11 +137,11 @@ pub async fn get_dashboard_summary(
                FROM products WHERE is_active = 1 \
              ), \
              today_profit AS ( \
-               SELECT COALESCE(SUM(ti.subtotal - (p.buy_price * ti.quantity)), 0) as profit \
+               SELECT COALESCE(SUM(ti.subtotal - (COALESCE(ti.buy_price, p.buy_price, 0) * ti.quantity)), 0) as profit \
                FROM transaction_items ti \
                JOIN transactions t ON ti.transaction_id = t.id \
                JOIN products p ON ti.product_id = p.id \
-               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
+               WHERE t.created_at >= $2 AND t.created_at < $3 \
                AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              ) \
              SELECT \
@@ -123,8 +150,12 @@ pub async fn get_dashboard_summary(
                y.revenue, \
                pc.total, pc.low_stock, \
                tp.profit \
-             FROM today_sales ts, today_refunds tr, yesterday y, product_counts pc, today_profit tp"
-                .to_owned(),
+             FROM today_sales ts, today_refunds tr, yesterday y, product_counts pc, today_profit tp",
+            vec![
+                yesterday_start.into(),
+                today_start.into(),
+                tomorrow_start.into(),
+            ],
         ))
         .await?;
 
@@ -170,7 +201,11 @@ pub async fn get_daily_revenue(
     let db = db.inner();
     let days = days.unwrap_or(7).max(1).min(365);
 
-    let days_param = format!("-{} days", days);
+    // `date('now','localtime','-{days} days')` == local date (today - days).
+    // Keep date(...) in the SELECT/GROUP BY (grouping by local day), but filter
+    // on the raw column via a precomputed UTC boundary so the index is usable.
+    let start_utc =
+        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(days));
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -178,10 +213,10 @@ pub async fn get_daily_revenue(
              COALESCE(SUM(total_amount), 0) as revenue, \
              COUNT(*) as transactions \
              FROM transactions \
-             WHERE date(created_at, 'localtime') >= date('now', 'localtime', $1) AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+             WHERE created_at >= $1 AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              GROUP BY date(created_at, 'localtime') \
              ORDER BY d ASC",
-            vec![Value::String(Some(Box::new(days_param)))],
+            vec![start_utc.into()],
         ))
         .await?;
 
@@ -216,24 +251,28 @@ pub async fn get_payment_method_stats(
 ) -> Result<Vec<PaymentMethodStat>, AppError> {
     let db = db.inner();
 
+    let today = Local::now().date_naive();
+    let today_start = local_date_start_to_utc(today);
+    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "WITH payment_method_rows AS ( \
                SELECT tp.payment_method as payment_method, tp.amount as amount, tp.transaction_id as transaction_id \
                FROM transaction_payments tp \
                JOIN transactions t ON t.id = tp.transaction_id \
-               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+               WHERE t.created_at >= $1 AND t.created_at < $2 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                UNION ALL \
                SELECT t.payment_method as payment_method, t.total_amount as amount, t.id as transaction_id \
                FROM transactions t \
-               WHERE date(t.created_at, 'localtime') = date('now', 'localtime') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+               WHERE t.created_at >= $1 AND t.created_at < $2 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                  AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
              ) \
              SELECT payment_method, COUNT(DISTINCT transaction_id) as cnt, COALESCE(SUM(amount), 0) as total \
              FROM payment_method_rows \
-             GROUP BY payment_method"
-                .to_owned(),
+             GROUP BY payment_method",
+            vec![today_start.into(), tomorrow_start.into()],
         ))
         .await?;
 
@@ -257,6 +296,9 @@ pub async fn get_top_products(
     let db = db.inner();
     let limit = limit.unwrap_or(10).max(1).min(100);
 
+    // `date('now','localtime','-30 days')` == local date (today - 30 days).
+    let start_utc =
+        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(30));
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -265,13 +307,13 @@ pub async fn get_top_products(
              SUM(ti.subtotal) as total_revenue \
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
-             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-30 days') \
+             WHERE t.created_at >= $1 \
                AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                AND ti.product_id IS NOT NULL \
              GROUP BY ti.product_id, ti.product_name \
              ORDER BY total_qty DESC \
-             LIMIT $1",
-            vec![Value::BigInt(Some(limit))],
+             LIMIT $2",
+            vec![start_utc.into(), Value::BigInt(Some(limit))],
         ))
         .await?;
 
@@ -328,8 +370,12 @@ pub async fn get_recent_transactions(
 ) -> Result<Vec<RecentTransaction>, AppError> {
     let db = db.inner();
 
+    let today = Local::now().date_naive();
+    let today_start = local_date_start_to_utc(today);
+    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "SELECT t.id, t.receipt_number, t.total_amount, t.payment_method, \
              t.status, u.full_name as cashier_name, t.created_at, \
@@ -337,11 +383,11 @@ pub async fn get_recent_transactions(
              FROM transactions t \
              JOIN users u ON t.user_id = u.id \
              LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
-             WHERE date(t.created_at, 'localtime') = date('now', 'localtime') \
+             WHERE t.created_at >= $1 AND t.created_at < $2 \
              GROUP BY t.id \
              ORDER BY t.created_at DESC \
-             LIMIT 10"
-                .to_owned(),
+             LIMIT 10",
+            vec![today_start.into(), tomorrow_start.into()],
         ))
         .await?;
 
@@ -366,13 +412,17 @@ pub async fn get_recent_transactions(
 pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<WeeklyStats, AppError> {
     let db = db.inner();
 
+    // `date('now','localtime','-7 days')` == local date (today - 7 days).
+    let start_utc =
+        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(7));
+
     let sales_row = db
-        .query_one(Statement::from_string(
+        .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) \
              FROM transactions \
-             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')"
-                .to_owned(),
+             WHERE created_at >= $1 AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
+            vec![start_utc.clone().into()],
         ))
         .await?;
 
@@ -385,14 +435,14 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
     };
 
     let profit_row = db
-        .query_one(Statement::from_string(
+        .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT COALESCE(SUM(ti.subtotal - (p.buy_price * ti.quantity)), 0) \
+            "SELECT COALESCE(SUM(ti.subtotal - (COALESCE(ti.buy_price, p.buy_price, 0) * ti.quantity)), 0) \
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              JOIN products p ON ti.product_id = p.id \
-             WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')"
-                .to_owned(),
+             WHERE t.created_at >= $1 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
+            vec![start_utc.clone().into()],
         ))
         .await?;
 
@@ -402,16 +452,16 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
     };
 
     let avg_items_row = db
-        .query_one(Statement::from_string(
+        .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "SELECT COALESCE(AVG(item_count), 0) FROM ( \
                SELECT COUNT(*) as item_count \
                FROM transaction_items ti \
                JOIN transactions t ON ti.transaction_id = t.id \
-               WHERE date(t.created_at, 'localtime') >= date('now', 'localtime', '-7 days') AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+               WHERE t.created_at >= $1 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                GROUP BY ti.transaction_id \
-             )"
-                .to_owned(),
+             )",
+            vec![start_utc.into()],
         ))
         .await?;
 

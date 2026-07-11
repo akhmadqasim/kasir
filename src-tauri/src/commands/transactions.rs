@@ -70,6 +70,7 @@ pub struct TransactionResult {
     pub payment_breakdown: Vec<PaymentSplit>,
 }
 
+#[derive(Default)]
 struct ResolvedItem {
     product_id: Option<i64>,
     product_name: String,
@@ -92,7 +93,10 @@ fn now_timestamp() -> String {
 }
 
 async fn generate_receipt_number<C: ConnectionTrait>(db: &C) -> Result<String, AppError> {
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    // Use the same UTC basis as `created_at` (stored via `now_timestamp()` /
+    // `Utc::now()`), so a late-night local sale's receipt date matches the date
+    // recorded in `created_at` and the per-day sequence resets on the same day.
+    let today = chrono::Utc::now().format("%Y%m%d").to_string();
     let prefix = format!("TRX-{}-", today);
 
     let result = db
@@ -418,16 +422,60 @@ fn calculate_payment_amount_with_breakdown(
     ))
 }
 
+/// Validates client-supplied discounts against server-computed subtotals.
+///
+/// Each `item_discount` must sit in `[0, line_subtotal]` where `line_subtotal`
+/// is the server price multiplied by the quantity (`ResolvedItem::subtotal`,
+/// derived from re-fetched prices in `resolve_items`). The
+/// `transaction_discount` must sit in `[0, subtotal_after_item_discounts]`.
+/// Out-of-range discounts are rejected (never silently clamped) to protect
+/// money integrity.
+fn validate_discounts(
+    resolved_items: &[ResolvedItem],
+    transaction_discount: f64,
+) -> Result<(), AppError> {
+    // Small tolerance for floating-point noise on REAL money values.
+    const EPSILON: f64 = 0.01;
+
+    let mut subtotal_after_item_discounts = 0.0_f64;
+
+    for item in resolved_items {
+        let line_subtotal = item.subtotal;
+        if !item.item_discount.is_finite()
+            || item.item_discount < -EPSILON
+            || item.item_discount > line_subtotal + EPSILON
+        {
+            return Err(AppError::Validation(format!(
+                "Diskon item '{}' tidak valid",
+                item.product_name
+            )));
+        }
+        subtotal_after_item_discounts += line_subtotal - item.item_discount;
+    }
+
+    if !transaction_discount.is_finite()
+        || transaction_discount < -EPSILON
+        || transaction_discount > subtotal_after_item_discounts + EPSILON
+    {
+        return Err(AppError::Validation("Diskon tidak valid".into()));
+    }
+
+    Ok(())
+}
+
 async fn persist_transaction<C: ConnectionTrait>(
     db: &C,
     input: &CheckoutTransactionInput,
     resolved_items: &[ResolvedItem],
     status: &str,
     deduct_physical_stock: bool,
+    allow_negative_stock: bool,
 ) -> Result<TransactionResult, AppError> {
     let subtotal_amount: f64 = resolved_items.iter().map(|item| item.subtotal).sum();
-    let item_discounts_total: f64 = resolved_items.iter().map(|item| item.item_discount).sum();
     let transaction_discount = input.transaction_discount.unwrap_or(0.0);
+    // Reject tampered/over-range discounts BEFORE persisting anything.
+    validate_discounts(resolved_items, transaction_discount)?;
+    let item_discounts_total: f64 = resolved_items.iter().map(|item| item.item_discount).sum();
     let discount_amount = item_discounts_total + transaction_discount;
     let total_amount = (subtotal_amount - discount_amount).max(0.0);
     let (payment_method, payment_amount, change_amount, payment_breakdown) =
@@ -488,12 +536,35 @@ async fn persist_transaction<C: ConnectionTrait>(
 
         if deduct_physical_stock {
             if let Some(product_id) = item.product_id {
-                db.execute(Statement::from_sql_and_values(
-                    DbBackend::Sqlite,
-                    "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3",
-                    vec![item.quantity.into(), now.clone().into(), product_id.into()],
-                ))
-                .await?;
+                // Atomic, guarded decrement inside the same DB transaction so we
+                // cannot oversell: the stock is re-read and checked by the UPDATE
+                // itself. When `allow_negative_stock` is false, the row only
+                // matches while `stock >= quantity`; otherwise ($4 = 1) the guard
+                // is bypassed and negative stock is permitted. PPOB items have a
+                // NULL `product_id` and never reach this branch.
+                let allow_negative_flag: i64 = if allow_negative_stock { 1 } else { 0 };
+                let update_result = db
+                    .execute(Statement::from_sql_and_values(
+                        DbBackend::Sqlite,
+                        "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3 AND (stock >= $1 OR $4 = 1)",
+                        vec![
+                            item.quantity.into(),
+                            now.clone().into(),
+                            product_id.into(),
+                            allow_negative_flag.into(),
+                        ],
+                    ))
+                    .await?;
+
+                if update_result.rows_affected() == 0 {
+                    // No row matched the guard => insufficient stock (and not
+                    // allowed to go negative). Returning here aborts before
+                    // commit, rolling back the whole transaction.
+                    return Err(AppError::Validation(format!(
+                        "Stok '{}' tidak cukup",
+                        item.product_name
+                    )));
+                }
             }
         }
     }
@@ -650,8 +721,15 @@ where
 
     // Always create transaction as completed and deduct physical stock
     let txn = db.begin().await?;
-    let result =
-        persist_transaction(&txn, &input, &resolved_items, STATUS_COMPLETED, true).await?;
+    let result = persist_transaction(
+        &txn,
+        &input,
+        &resolved_items,
+        STATUS_COMPLETED,
+        true,
+        allow_negative_stock,
+    )
+    .await?;
     txn.commit().await?;
 
     if !has_ppob {
@@ -707,8 +785,15 @@ pub async fn checkout_transaction(
 
     // Always create as completed and deduct physical stock immediately
     let txn = conn.begin().await?;
-    let result =
-        persist_transaction(&txn, &input, &resolved_items, STATUS_COMPLETED, true).await?;
+    let result = persist_transaction(
+        &txn,
+        &input,
+        &resolved_items,
+        STATUS_COMPLETED,
+        true,
+        allow_negative_stock,
+    )
+    .await?;
     txn.commit().await?;
 
     if has_ppob {
@@ -959,24 +1044,80 @@ pub async fn list_transactions(
         .all(db.inner())
         .await?;
 
+    // Batch-load all children for the page in a fixed number of queries instead
+    // of running items + cashier + payment-breakdown lookups per row (N+1).
+    use std::collections::HashMap;
+
+    let txn_ids: Vec<i64> = txns.iter().map(|txn| txn.id).collect();
+
+    let mut items_map: HashMap<i64, Vec<transaction_items::Model>> = HashMap::new();
+    let mut payments_map: HashMap<i64, Vec<transaction_payments::Model>> = HashMap::new();
+    let mut cashier_names: HashMap<i64, String> = HashMap::new();
+
+    if !txn_ids.is_empty() {
+        let all_items = transaction_items::Entity::find()
+            .filter(transaction_items::Column::TransactionId.is_in(txn_ids.clone()))
+            .order_by_asc(transaction_items::Column::Id)
+            .all(db.inner())
+            .await?;
+        for item in all_items {
+            items_map.entry(item.transaction_id).or_default().push(item);
+        }
+
+        let all_payments = transaction_payments::Entity::find()
+            .filter(transaction_payments::Column::TransactionId.is_in(txn_ids.clone()))
+            .order_by_asc(transaction_payments::Column::Id)
+            .all(db.inner())
+            .await?;
+        for payment in all_payments {
+            payments_map
+                .entry(payment.transaction_id)
+                .or_default()
+                .push(payment);
+        }
+
+        let mut user_ids: Vec<i64> = txns.iter().map(|txn| txn.user_id).collect();
+        user_ids.sort_unstable();
+        user_ids.dedup();
+        let cashiers = users::Entity::find()
+            .filter(users::Column::Id.is_in(user_ids))
+            .all(db.inner())
+            .await?;
+        for cashier in cashiers {
+            cashier_names.insert(cashier.id, cashier.full_name);
+        }
+    }
+
     let mut data = Vec::with_capacity(txns.len());
 
     for txn in txns {
-        let items = transaction_items::Entity::find()
-            .filter(transaction_items::Column::TransactionId.eq(txn.id))
-            .all(db.inner())
-            .await?;
+        let items = items_map.remove(&txn.id).unwrap_or_default();
         let item_count = items.len() as i64;
         let (has_ppob, ppob_status, ppob_message, ppob_serial_number) =
             summarize_ppob_items(&items);
 
-        let cashier = users::Entity::find_by_id(txn.user_id)
-            .one(db.inner())
-            .await?;
-        let cashier_name = cashier
-            .map(|u| u.full_name)
+        let cashier_name = cashier_names
+            .get(&txn.user_id)
+            .cloned()
             .unwrap_or_else(|| "Unknown".into());
-        let payment_breakdown = load_payment_breakdown(db.inner(), txn.id, &txn).await?;
+
+        // Mirror `load_payment_breakdown`: use recorded splits when present,
+        // otherwise fall back to a single split from the transaction itself.
+        let payment_breakdown = match payments_map.remove(&txn.id) {
+            Some(splits) if !splits.is_empty() => splits
+                .into_iter()
+                .map(|split| PaymentSplit {
+                    payment_method: split.payment_method,
+                    bank_name: split.bank_name,
+                    amount: split.amount,
+                })
+                .collect(),
+            _ => vec![PaymentSplit {
+                payment_method: txn.payment_method.clone(),
+                bank_name: None,
+                amount: txn.total_amount,
+            }],
+        };
 
         data.push(TransactionListItem {
             id: txn.id,
@@ -1380,6 +1521,7 @@ mod tests {
                 notes: None,
                 transaction_discount: None,
                 shift_id: None,
+                payment_breakdown: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1425,6 +1567,7 @@ mod tests {
                 notes: None,
                 transaction_discount: None,
                 shift_id: None,
+                payment_breakdown: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1478,6 +1621,7 @@ mod tests {
                 notes: None,
                 transaction_discount: None,
                 shift_id: None,
+                payment_breakdown: None,
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1542,6 +1686,7 @@ mod tests {
                 notes: None,
                 transaction_discount: None,
                 shift_id: None,
+                payment_breakdown: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1626,6 +1771,7 @@ mod tests {
                 notes: None,
                 transaction_discount: None,
                 shift_id: None,
+                payment_breakdown: None,
             },
             |request| async move {
                 let sn = if request.service_type == "pulsa" {
@@ -1671,5 +1817,54 @@ mod tests {
             .unwrap();
         assert_eq!(pln_item.ppob_status.as_deref(), Some("success"));
         assert_eq!(pln_item.ppob_serial_number.as_deref(), Some("SN-PLN"));
+    }
+
+    fn resolved_item(subtotal: f64, item_discount: f64) -> ResolvedItem {
+        ResolvedItem {
+            product_name: "Item".to_string(),
+            subtotal,
+            item_discount,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn validate_discounts_accepts_in_range_values() {
+        // subtotal_after_item_discounts = (20_000 - 2_000) + (10_000 - 0) = 28_000
+        let items = vec![
+            resolved_item(20_000.0, 2_000.0),
+            resolved_item(10_000.0, 0.0),
+        ];
+
+        assert!(validate_discounts(&items, 0.0).is_ok());
+        assert!(validate_discounts(&items, 5_000.0).is_ok());
+        // Transaction discount may consume the full post-item-discount subtotal.
+        assert!(validate_discounts(&items, 28_000.0).is_ok());
+    }
+
+    #[test]
+    fn validate_discounts_rejects_item_discount_above_line_subtotal() {
+        let items = vec![resolved_item(20_000.0, 21_000.0)];
+        assert!(validate_discounts(&items, 0.0).is_err());
+    }
+
+    #[test]
+    fn validate_discounts_rejects_negative_item_discount() {
+        let items = vec![resolved_item(20_000.0, -1.0)];
+        assert!(validate_discounts(&items, 0.0).is_err());
+    }
+
+    #[test]
+    fn validate_discounts_rejects_transaction_discount_above_subtotal() {
+        // subtotal_after_item_discounts = 20_000; a 25_000 transaction discount
+        // would push the total negative, so it must be rejected (not clamped).
+        let items = vec![resolved_item(20_000.0, 0.0)];
+        assert!(validate_discounts(&items, 25_000.0).is_err());
+    }
+
+    #[test]
+    fn validate_discounts_rejects_negative_transaction_discount() {
+        let items = vec![resolved_item(20_000.0, 0.0)];
+        assert!(validate_discounts(&items, -1.0).is_err());
     }
 }

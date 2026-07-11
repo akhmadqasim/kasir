@@ -177,6 +177,21 @@ async fn create_refund_internal(
 
     let txn = db.begin().await?;
 
+    // Acquire the SQLite write lock up front (emulate BEGIN IMMEDIATE) so the
+    // already-refunded tally and exchange stock reads below are consistent and
+    // no concurrent refund of the same transaction can interleave between our
+    // reads and our writes. sea-orm's begin()/begin_with_config() only issue a
+    // DEFERRED `BEGIN` for SQLite (access mode is ignored), which would let two
+    // interleaving refunds each read a stale tally and both pass. Forcing an
+    // early (no-op) write escalates to the reserved write lock; a second refund
+    // then serializes on it (busy_timeout) and re-reads the fresh totals below.
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "UPDATE transactions SET status = status WHERE id = $1",
+        vec![input.transaction_id.into()],
+    ))
+    .await?;
+
     // Get original transaction
     let transaction = transactions::Entity::find_by_id(input.transaction_id)
         .one(&txn)
@@ -238,6 +253,12 @@ async fn create_refund_internal(
     let mut total_refund_amount: f64 = 0.0;
     let mut refund_items_result: Vec<refund_items::Model> = Vec::new();
 
+    // Track quantities requested within THIS refund so multiple lines referring
+    // to the same transaction item are validated cumulatively (defense-in-depth
+    // alongside the up-front write lock, which prevents cross-request races).
+    let mut requested_in_this_refund: std::collections::HashMap<i64, i64> =
+        std::collections::HashMap::new();
+
     for item_input in &input.items {
         // Validate transaction item exists and belongs to this transaction
         let txn_item = txn_items
@@ -250,12 +271,18 @@ async fn create_refund_internal(
                 ))
             })?;
 
-        // Check refund quantity doesn't exceed purchased quantity minus already refunded
+        // Check refund quantity doesn't exceed purchased quantity minus already
+        // refunded (in prior refunds) and minus quantity already claimed by
+        // earlier lines of this same request.
         let already_refunded = existing_refund_qty
             .get(&item_input.transaction_item_id)
             .copied()
             .unwrap_or(0);
-        let available_qty = txn_item.quantity - already_refunded;
+        let claimed_here = requested_in_this_refund
+            .get(&item_input.transaction_item_id)
+            .copied()
+            .unwrap_or(0);
+        let available_qty = txn_item.quantity - already_refunded - claimed_here;
 
         if item_input.quantity > available_qty {
             return Err(AppError::Validation(format!(
@@ -263,6 +290,10 @@ async fn create_refund_internal(
                 item_input.quantity, available_qty, txn_item.product_name
             )));
         }
+
+        *requested_in_this_refund
+            .entry(item_input.transaction_item_id)
+            .or_insert(0) += item_input.quantity;
 
         let subtotal = txn_item.product_price * item_input.quantity as f64;
         total_refund_amount += subtotal;
@@ -405,6 +436,10 @@ async fn create_refund_internal(
                 )));
             }
 
+            // Guard against overselling. product.stock was read above under the
+            // up-front write lock, so this check-then-deduct is consistent: no
+            // concurrent refund/sale can slip a deduction in between, which
+            // would otherwise let stock go negative when it isn't allowed.
             if !allow_negative_stock && product.stock < ei_input.quantity {
                 return Err(AppError::Validation(format!(
                     "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
@@ -513,14 +548,22 @@ pub async fn get_refund_detail(
         .all(db.inner())
         .await?;
 
+    // Batch-fetch the referenced transaction items in one query instead of one
+    // find_by_id per refund line (avoids N+1), then map in memory.
+    let txn_item_ids: Vec<i64> = items.iter().map(|i| i.transaction_item_id).collect();
+    let txn_item_map: std::collections::HashMap<i64, transaction_items::Model> =
+        transaction_items::Entity::find()
+            .filter(transaction_items::Column::Id.is_in(txn_item_ids))
+            .all(db.inner())
+            .await?
+            .into_iter()
+            .map(|ti| (ti.id, ti))
+            .collect();
+
     let mut detail_items: Vec<RefundDetailItem> = Vec::new();
     for item in items {
-        let txn_item = transaction_items::Entity::find_by_id(item.transaction_item_id)
-            .one(db.inner())
-            .await?;
-
-        let (product_name, product_price) = match txn_item {
-            Some(ti) => (ti.product_name, ti.product_price),
+        let (product_name, product_price) = match txn_item_map.get(&item.transaction_item_id) {
+            Some(ti) => (ti.product_name.clone(), ti.product_price),
             None => ("(deleted)".to_string(), 0.0),
         };
 
@@ -827,6 +870,10 @@ mod tests {
             status: Set("completed".to_string()),
             notes: Set(None),
             shift_id: Set(None),
+            deleted_at: Set(None),
+            deleted_by: Set(None),
+            deleted_reason: Set(None),
+            updated_at: Set(None),
             created_at: Set(Some(now_ts())),
         }
         .insert(conn)
@@ -982,6 +1029,10 @@ mod tests {
             status: Set("completed".to_string()),
             notes: Set(None),
             shift_id: Set(None),
+            deleted_at: Set(None),
+            deleted_by: Set(None),
+            deleted_reason: Set(None),
+            updated_at: Set(None),
             created_at: Set(Some(old_date)),
         }
         .insert(&conn)

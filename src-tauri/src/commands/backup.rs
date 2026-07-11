@@ -56,6 +56,43 @@ fn get_backup_dir() -> PathBuf {
     crate::utils::paths::get_backup_dir()
 }
 
+/// Flush committed WAL pages into the main `.db` file before it is copied for a
+/// backup. Without this, a plain file read of `kasir.db` misses everything still
+/// sitting in `kasir.db-wal`. Best-effort: a transient BUSY must not abort the
+/// backup — a PASSIVE checkpoint still lands committed frames in the main file.
+fn checkpoint_wal(db_path: &Path) {
+    match rusqlite::Connection::open(db_path) {
+        Ok(conn) => {
+            if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+                eprintln!("[backup] WAL checkpoint gagal (dilewati): {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("[backup] Gagal membuka DB untuk checkpoint (dilewati): {}", e);
+        }
+    }
+}
+
+/// Remove SQLite sidecar files (`-wal`, `-shm`) next to the main db. After a
+/// restore overwrites `kasir.db`, a stale `kasir.db-wal` would be replayed on
+/// next open and clobber the restored data.
+fn remove_sqlite_sidecars(db_path: &Path) {
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = db_path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        let sidecar = PathBuf::from(sidecar);
+        if sidecar.exists() {
+            if let Err(e) = fs::remove_file(&sidecar) {
+                eprintln!(
+                    "[backup] Gagal menghapus {}: {}",
+                    sidecar.to_string_lossy(),
+                    e
+                );
+            }
+        }
+    }
+}
+
 /// Create a compressed backup of the database
 fn create_backup_file(db_path: &Path, backup_dir: &Path) -> Result<BackupInfo, AppError> {
     fs::create_dir_all(backup_dir)
@@ -64,6 +101,9 @@ fn create_backup_file(db_path: &Path, backup_dir: &Path) -> Result<BackupInfo, A
     let now = Local::now();
     let filename = format!("kasir_{}.db.gz", now.format("%Y-%m-%d"));
     let backup_path = backup_dir.join(&filename);
+
+    // Flush the WAL into the main file so the copy below is complete & consistent.
+    checkpoint_wal(db_path);
 
     // Read the database file
     let mut db_file = fs::File::open(db_path)
@@ -351,6 +391,10 @@ pub async fn restore_backup(db: State<'_, DatabaseConnection>, caller_id: i64, f
     // Write to database file
     fs::write(&db_path, &db_data)
         .map_err(|e| AppError::Internal(format!("Gagal menulis database: {}", e)))?;
+
+    // Drop stale WAL/SHM sidecars — otherwise the old WAL is replayed on next
+    // open and overwrites the freshly restored data.
+    remove_sqlite_sidecars(&db_path);
 
     Ok("Database berhasil dipulihkan dari backup. Silakan restart aplikasi.".into())
 }

@@ -22,11 +22,22 @@ pub struct MitraClient {
 
 impl MitraClient {
     pub fn new() -> Self {
+        // Build the HTTP client without panicking: a reqwest build failure here
+        // must not abort app startup (this is called from setup in lib.rs).
+        // Fall back to a default client and log, rather than `.expect()`.
+        let http = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "[ppob] Gagal membuat HTTP client dengan timeout, memakai default: {}",
+                    e
+                );
+                Client::new()
+            });
+
         Self {
-            http: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
+            http,
             token: None,
             refresh_token: None,
             device_id: String::new(),

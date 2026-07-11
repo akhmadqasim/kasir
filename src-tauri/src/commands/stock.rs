@@ -451,17 +451,22 @@ pub async fn reject_stock_writeoff(
     active.approved_by = Set(Some(caller_id));
     let updated = active.update(&txn).await?;
 
-    // Restore stock since rejection means the write-off was wrong
-    txn.execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
-        vec![
-            (writeoff.quantity as i64).into(),
-            now.into(),
-            writeoff.product_id.into(),
-        ],
-    ))
-    .await?;
+    // Restore stock only for manual write-offs that actually deducted stock at
+    // creation. Refund-originated write-offs (refund_id set) were inserted
+    // WITHOUT deducting stock — the unit was already removed at sale time — so
+    // restoring here would inflate stock. Mirrors delete_stock_writeoff's guard.
+    if writeoff.refund_id.is_none() {
+        txn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
+            vec![
+                (writeoff.quantity as i64).into(),
+                now.into(),
+                writeoff.product_id.into(),
+            ],
+        ))
+        .await?;
+    }
 
     txn.commit().await?;
 

@@ -86,10 +86,13 @@ fn build_search_condition(params: &ProductSearchParams) -> Condition {
     if let Some(ref query) = params.query {
         let trimmed = query.trim();
         if !trimmed.is_empty() {
+            // Name stays a substring match (users search product names by fragment).
+            // Barcode/SKU use prefix match (LIKE 'q%') so SQLite can seek the
+            // idx_products_barcode index — scanning/typing a code is a prefix.
             let mut text_search = Condition::any()
                 .add(products::Column::Name.contains(trimmed))
-                .add(products::Column::Barcode.contains(trimmed))
-                .add(products::Column::Sku.contains(trimmed));
+                .add(products::Column::Barcode.starts_with(trimmed))
+                .add(products::Column::Sku.starts_with(trimmed));
 
             // Also match sell_price if query looks like a number
             if let Ok(price) = trimmed.parse::<f64>() {
@@ -624,6 +627,21 @@ pub async fn bulk_create_products(
 
 #[tauri::command]
 pub fn save_template_file(content: String, filename: String) -> Result<(), AppError> {
+    // Reject anything that could escape the Desktop directory: path separators,
+    // parent-dir components, or absolute paths.
+    let invalid = filename.is_empty()
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains("..")
+        || std::path::Path::new(&filename).is_absolute();
+    let has_known_ext = {
+        let lower = filename.to_lowercase();
+        lower.ends_with(".csv") || lower.ends_with(".xlsx") || lower.ends_with(".xls")
+    };
+    if invalid || !has_known_ext {
+        return Err(AppError::Validation("Nama file tidak valid".into()));
+    }
+
     let desktop = dirs::desktop_dir()
         .ok_or_else(|| AppError::Internal("Tidak dapat menemukan folder Desktop".into()))?;
     let path = desktop.join(&filename);
