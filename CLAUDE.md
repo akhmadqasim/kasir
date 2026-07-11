@@ -12,12 +12,32 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 | Frontend | React 18 + TypeScript |
 | UI Components | [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS |
 | State Management | Zustand |
-| Database | SQLite via `rusqlite` (Rust-side) |
-| ORM/Query | SQLite with raw SQL in Rust, exposed via Tauri commands |
+| Database | SQLite via `sea-orm` (`sqlx-sqlite` backend); `rusqlite` for the backup reader |
+| ORM/Query | sea-orm entities + `sea-query`; migrations via a custom runner in `db/migrations.rs` |
 | Receipt Printing | ESC/POS protocol via serial/USB |
 | Barcode | EAN-13 (standard 2D retail Indonesia) |
 | i18n | Indonesian (primary), English (secondary, later) |
 | Package Manager | Bun |
+
+## Build & Release
+
+- Development: `bun run tauri dev`. Production build: `bun run tauri build`.
+- Releases are built **locally and published to GitHub Releases — there is no CI/CD**
+  (private repo → Windows CI minutes are costly; local build is free). Use the script:
+
+  ```powershell
+  pwsh scripts/release.ps1 -Version X.Y.Z            # bump 3 version files, build, tag, push, gh release
+  pwsh scripts/release.ps1 -Version X.Y.Z -NoPublish # build only
+  ```
+
+  It keeps `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
+  versions in sync, produces the Windows MSI + NSIS installers under
+  `src-tauri/target/release/bundle/`, and only commits/tags/publishes if the build
+  succeeds. Installers are currently **unsigned**.
+- **Build gotcha:** on high-core / low-free-RAM machines, cargo's default job count
+  can OOM `rustc` (`STATUS_STACK_BUFFER_OVERRUN` / `rust_oom`). Use `CARGO_BUILD_JOBS=2`
+  (the release script defaults to `-Jobs 2`). Note `cargo` lives at `~/.cargo/bin`, not
+  always on the Git-Bash PATH.
 
 ## Architecture
 
@@ -345,3 +365,13 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 - Session timeout setelah inactivity
 - SQLite database di-encrypt (opsional, later)
 - No sensitive data in frontend state beyond current session
+
+### Known open issues (from DB audit — not yet fixed)
+
+- **Authorization is bypassable.** Privileged commands trust a client-supplied
+  `caller_id`/`user_id` with no server-side session binding (`utils/auth_guard.rs`),
+  so any webview code can act as admin (id 1). Needs real session tokens issued at
+  login and resolved server-side — do NOT trust caller-supplied ids for authz.
+- **PPOB secrets stored insecurely.** Mitra Indogrosir access/refresh tokens are
+  plaintext and credentials use a reversible hardcoded-XOR (`ppob/auth.rs`,
+  `settings.rs`). Needs an OS keychain (Windows Credential Manager / Stronghold).
