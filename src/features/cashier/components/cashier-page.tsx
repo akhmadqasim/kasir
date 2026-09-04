@@ -42,7 +42,11 @@ export function CashierPage() {
   const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)
     setSuccessResult(result)
-  }, [])
+    // Barang sudah dibayar. Struk dirender dari `result`, bukan dari keranjang,
+    // jadi keranjang (dan salinannya di localStorage) harus langsung kosong
+    // supaya tidak bisa ditagih dua kali.
+    clear()
+  }, [clear])
 
   const requestProductSearchFocus = useCallback(() => {
     setProductSearchFocusKey((prev) => prev + 1)
