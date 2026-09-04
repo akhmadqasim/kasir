@@ -29,14 +29,16 @@ export function CurrentStockPage() {
 
   const { data, isLoading } = useCurrentStock(debouncedSearch, filter)
 
-  const totals = data?.reduce(
+  const totals = data?.items.reduce(
     (acc, r) => ({
-      items: acc.items + 1,
       lowStock: acc.lowStock + (r.stock <= r.minStock && r.minStock > 0 ? 1 : 0),
       value: acc.value + r.stockValue,
     }),
-    { items: 0, lowStock: 0, value: 0 }
+    { lowStock: 0, value: 0 }
   )
+  // Backend membatasi jumlah baris. Kartu di bawah dihitung dari baris yang
+  // terkirim saja, jadi katakan apa adanya saat daftarnya terpotong.
+  const isTruncated = !!data && data.items.length < data.totalCount
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
@@ -63,20 +65,27 @@ export function CurrentStockPage() {
         </Select>
       </div>
 
-      {totals && (
-        <div className="grid grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Produk</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{totals.items}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Produk Stok Menipis</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-red-600">{totals.lowStock}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Nilai Stok</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.value)}</p></CardContent>
-          </Card>
+      {totals && data && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Produk</CardTitle></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{data.totalCount}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Produk Stok Menipis</CardTitle></CardHeader>
+              <CardContent><p className="text-2xl font-bold text-red-600">{totals.lowStock}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Nilai Stok</CardTitle></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.value)}</p></CardContent>
+            </Card>
+          </div>
+          {isTruncated && (
+            <p className="text-sm text-muted-foreground">
+              Menampilkan {data.items.length} dari {data.totalCount} produk. Kartu stok menipis dan nilai stok dihitung dari baris yang tampil saja — persempit pencarian untuk angka yang utuh.
+            </p>
+          )}
         </div>
       )}
 
@@ -100,12 +109,12 @@ export function CurrentStockPage() {
               <TableRow>
                 <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
               </TableRow>
-            ) : !data?.length ? (
+            ) : !data?.items.length ? (
               <TableRow>
                 <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
               </TableRow>
             ) : (
-              data.map((row) => {
+              data.items.map((row) => {
                 const isLow = row.stock <= row.minStock && row.minStock > 0
                 return (
                   <TableRow key={row.productId} className={isLow ? "bg-red-50 dark:bg-red-950/20" : ""}>

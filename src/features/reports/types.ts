@@ -45,6 +45,13 @@ export interface ReceiptRow {
   createdAt: string
 }
 
+/** `items` dibatasi di backend; `totalCount` adalah jumlah baris yang cocok,
+ *  jadi `items.length < totalCount` berarti daftarnya terpotong. */
+export interface ReceiptReport {
+  items: ReceiptRow[]
+  totalCount: number
+}
+
 // Jenis Pembayaran
 export interface PaymentMethodRow {
   paymentMethod: string
@@ -99,6 +106,12 @@ export interface CurrentStockRow {
   buyPrice: number
   sellPrice: number
   stockValue: number
+}
+
+/** Kontrak pemotongan sama seperti {@link ReceiptReport}. */
+export interface CurrentStockReport {
+  items: CurrentStockRow[]
+  totalCount: number
 }
 
 // Laporan Kerugian

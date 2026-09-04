@@ -4,12 +4,12 @@ import type {
   DailySalesRow,
   MonthlySalesRow,
   PeriodSalesSummary,
-  ReceiptRow,
+  ReceiptReport,
   PaymentMethodRow,
   ProductSalesRow,
   PopularProductRow,
   ReturnRow,
-  CurrentStockRow,
+  CurrentStockReport,
   LossSummary,
   CashFlowReportSummary,
 } from "../types"
@@ -36,7 +36,7 @@ export function useSalesPeriod(startDate: string, endDate: string) {
 }
 
 export function useSalesReceipt(startDate: string, endDate: string, search: string) {
-  return useQuery<ReceiptRow[]>({
+  return useQuery<ReceiptReport>({
     queryKey: ["reports", "sales-receipt", startDate, endDate, search],
     queryFn: () => invoke("report_sales_receipt", { startDate, endDate, search }),
   })
@@ -71,7 +71,7 @@ export function useReturns(startDate: string, endDate: string) {
 }
 
 export function useCurrentStock(search: string, filter: "all" | "low") {
-  return useQuery<CurrentStockRow[]>({
+  return useQuery<CurrentStockReport>({
     queryKey: ["reports", "current-stock", search, filter],
     queryFn: () => invoke("report_current_stock", { search, filter }),
   })

@@ -108,6 +108,12 @@ export function SalesReceiptPage() {
         </div>
       </div>
 
+      {data && data.items.length < data.totalCount && (
+        <p className="text-sm text-muted-foreground">
+          Menampilkan {data.items.length} dari {data.totalCount} struk. Persempit rentang tanggal atau pencarian untuk melihat sisanya.
+        </p>
+      )}
+
       <div className="flex-1 overflow-auto rounded-md border">
         <Table>
           <TableHeader>
@@ -126,12 +132,12 @@ export function SalesReceiptPage() {
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
               </TableRow>
-            ) : !data?.length ? (
+            ) : !data?.items.length ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
               </TableRow>
             ) : (
-              data.map((row) => {
+              data.items.map((row) => {
                 const st = statusLabels[row.status] ?? { label: row.status, variant: "outline" as const }
                 return (
                   <TableRow key={row.id}>
