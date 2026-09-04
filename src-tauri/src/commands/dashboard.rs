@@ -206,14 +206,23 @@ pub async fn get_daily_revenue(
     db: State<'_, DatabaseConnection>,
     days: Option<i64>,
 ) -> Result<Vec<DailyRevenue>, AppError> {
-    let db = db.inner();
-    let days = days.unwrap_or(7).max(1).min(365);
+    query_daily_revenue(db.inner(), days).await
+}
 
-    // `date('now','localtime','-{days} days')` == local date (today - days).
-    // Keep date(...) in the SELECT/GROUP BY (grouping by local day), but filter
-    // on the raw column via a precomputed UTC boundary so the index is usable.
-    let start_utc =
-        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(days));
+async fn query_daily_revenue(
+    db: &DatabaseConnection,
+    days: Option<i64>,
+) -> Result<Vec<DailyRevenue>, AppError> {
+    let days = days.unwrap_or(7).clamp(1, 365);
+
+    // The result covers `today-(days-1)..today` inclusive, so the query window
+    // starts at `today-(days-1)` — not `today-days`, which pulled an extra
+    // calendar day the caller then dropped. Keep date(...) in the
+    // SELECT/GROUP BY (grouping by local day), but filter on the raw column via
+    // precomputed UTC boundaries so the index stays usable.
+    let today = Local::now().date_naive();
+    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(days - 1));
+    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -221,10 +230,11 @@ pub async fn get_daily_revenue(
              COALESCE(SUM(total_amount), 0) as revenue, \
              COUNT(*) as transactions \
              FROM transactions \
-             WHERE created_at >= $1 AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+             WHERE created_at >= $1 AND created_at < $2 \
+             AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              GROUP BY date(created_at, 'localtime') \
              ORDER BY d ASC",
-            vec![start_utc.into()],
+            vec![start_utc.into(), end_utc.into()],
         ))
         .await?;
 
@@ -237,7 +247,6 @@ pub async fn get_daily_revenue(
     }
 
     // Fill in missing dates with zero values
-    let today = Local::now().date_naive();
     let mut result = Vec::with_capacity(days as usize);
     for i in (0..days).rev() {
         let date = today - chrono::Duration::days(i);
@@ -425,18 +434,25 @@ async fn query_recent_transactions(
 
 #[tauri::command]
 pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<WeeklyStats, AppError> {
-    let db = db.inner();
+    query_weekly_stats(db.inner()).await
+}
 
-    // `date('now','localtime','-7 days')` == local date (today - 7 days).
-    let start_utc = local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(7));
+async fn query_weekly_stats(db: &DatabaseConnection) -> Result<WeeklyStats, AppError> {
+    // `today - 7 days` with no upper bound spans 8 calendar days, while the
+    // chart `get_daily_revenue` draws next to this card covers `today-6..today`.
+    // Use the same closed 7-day window so the card total matches the chart.
+    let today = Local::now().date_naive();
+    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(6));
+    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
 
     let sales_row = db
         .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) \
              FROM transactions \
-             WHERE created_at >= $1 AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
-            vec![start_utc.clone().into()],
+             WHERE created_at >= $1 AND created_at < $2 \
+             AND status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
+            vec![start_utc.clone().into(), end_utc.clone().into()],
         ))
         .await?;
 
@@ -455,8 +471,9 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
              FROM transaction_items ti \
              JOIN transactions t ON ti.transaction_id = t.id \
              JOIN products p ON ti.product_id = p.id \
-             WHERE t.created_at >= $1 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
-            vec![start_utc.clone().into()],
+             WHERE t.created_at >= $1 AND t.created_at < $2 \
+             AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted')",
+            vec![start_utc.clone().into(), end_utc.clone().into()],
         ))
         .await?;
 
@@ -472,10 +489,11 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
                SELECT COUNT(*) as item_count \
                FROM transaction_items ti \
                JOIN transactions t ON ti.transaction_id = t.id \
-               WHERE t.created_at >= $1 AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+               WHERE t.created_at >= $1 AND t.created_at < $2 \
+               AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
                GROUP BY ti.transaction_id \
              )",
-            vec![start_utc.into()],
+            vec![start_utc.into(), end_utc.into()],
         ))
         .await?;
 
@@ -520,5 +538,45 @@ mod tests {
         let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
         assert_eq!(statuses, vec!["completed", "partial_refund"]);
+    }
+
+    /// The weekly card and the 7-day chart must cover the same window. The card
+    /// used to start at `today - 7` with no upper bound, so it counted 8
+    /// calendar days and could never match the chart.
+    #[tokio::test]
+    async fn weekly_stats_cover_the_same_seven_days_as_the_chart() {
+        let conn = setup_test_db().await;
+        let today = Local::now().date_naive();
+
+        // Outside the 7-day window the chart draws.
+        insert_transaction(
+            &conn,
+            1,
+            999_000.0,
+            "completed",
+            &utc_at_local_noon(today - chrono::Duration::days(7)),
+        )
+        .await;
+        // First and last day of the window.
+        insert_transaction(
+            &conn,
+            1,
+            60_000.0,
+            "completed",
+            &utc_at_local_noon(today - chrono::Duration::days(6)),
+        )
+        .await;
+        insert_transaction(&conn, 1, 40_000.0, "completed", &utc_at_local_noon(today)).await;
+
+        let stats = query_weekly_stats(&conn).await.expect("weekly stats");
+        assert_eq!(stats.total_transactions, 2);
+        assert_eq!(stats.total_revenue, 100_000.0);
+
+        let chart = query_daily_revenue(&conn, Some(7)).await.expect("chart");
+        assert_eq!(chart.len(), 7);
+        let chart_revenue: f64 = chart.iter().map(|d| d.revenue).sum();
+        let chart_transactions: i64 = chart.iter().map(|d| d.transactions).sum();
+        assert_eq!(chart_revenue, stats.total_revenue);
+        assert_eq!(chart_transactions, stats.total_transactions);
     }
 }
