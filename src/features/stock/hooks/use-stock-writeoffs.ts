@@ -1,4 +1,4 @@
-import { useQueryClient, keepPreviousData } from "@tanstack/react-query"
+import { useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import type {
@@ -7,6 +7,17 @@ import type {
   ListWriteoffsParams,
   ListWriteoffsResult,
 } from "../types"
+
+/**
+ * Every write-off mutation moves `products.stock`: creating one decrements it, and
+ * rejecting or deleting one puts it back. Invalidating only the write-off list left the
+ * product picker validating "Maks. stok tersedia" against a stale number.
+ */
+function invalidateWriteoffQueries(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["list_stock_writeoffs"] })
+  queryClient.invalidateQueries({ queryKey: ["search_products"] })
+  queryClient.invalidateQueries({ queryKey: ["get_low_stock_products"] })
+}
 
 export function useListWriteoffs(params: ListWriteoffsParams) {
   return useTauriQuery<ListWriteoffsResult>(
@@ -22,7 +33,7 @@ export function useCreateWriteoff() {
     "create_stock_writeoff",
     {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_stock_writeoffs"] })
+        invalidateWriteoffQueries(queryClient)
         toast.success("Write-off berhasil dibuat")
       },
       onError: (error) => {
@@ -38,7 +49,7 @@ export function useApproveWriteoff() {
     "approve_stock_writeoff",
     {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_stock_writeoffs"] })
+        invalidateWriteoffQueries(queryClient)
         toast.success("Write-off berhasil disetujui")
       },
       onError: (error) => {
@@ -54,7 +65,7 @@ export function useRejectWriteoff() {
     "reject_stock_writeoff",
     {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_stock_writeoffs"] })
+        invalidateWriteoffQueries(queryClient)
         toast.success("Write-off ditolak, stok dikembalikan")
       },
       onError: (error) => {
@@ -70,7 +81,7 @@ export function useDeleteWriteoff() {
     "delete_stock_writeoff",
     {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_stock_writeoffs"] })
+        invalidateWriteoffQueries(queryClient)
         toast.success("Write-off berhasil dihapus")
       },
       onError: (error) => {
