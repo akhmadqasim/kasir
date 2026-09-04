@@ -159,8 +159,16 @@ pub async fn get_dashboard_summary(
         ))
         .await?;
 
-    let (today_revenue, today_transactions, today_refunds, today_refund_amount,
-         yesterday_revenue, total_products, low_stock_count, today_gross_profit) = match &row {
+    let (
+        today_revenue,
+        today_transactions,
+        today_refunds,
+        today_refund_amount,
+        yesterday_revenue,
+        total_products,
+        low_stock_count,
+        today_gross_profit,
+    ) = match &row {
         Some(r) => (
             r.try_get_by_index::<f64>(0).unwrap_or(0.0),
             r.try_get_by_index::<i64>(1).unwrap_or(0),
@@ -297,8 +305,7 @@ pub async fn get_top_products(
     let limit = limit.unwrap_or(10).max(1).min(100);
 
     // `date('now','localtime','-30 days')` == local date (today - 30 days).
-    let start_utc =
-        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(30));
+    let start_utc = local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(30));
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -368,8 +375,15 @@ pub async fn get_low_stock_products(
 pub async fn get_recent_transactions(
     db: State<'_, DatabaseConnection>,
 ) -> Result<Vec<RecentTransaction>, AppError> {
-    let db = db.inner();
+    query_recent_transactions(db.inner()).await
+}
 
+/// The only transaction query in this file that used to omit the status filter
+/// every other one applies, so voided (`deleted`) and unfulfilled PPOB
+/// transactions showed up in "Transaksi Terbaru" at full value.
+async fn query_recent_transactions(
+    db: &DatabaseConnection,
+) -> Result<Vec<RecentTransaction>, AppError> {
     let today = Local::now().date_naive();
     let today_start = local_date_start_to_utc(today);
     let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
@@ -384,6 +398,7 @@ pub async fn get_recent_transactions(
              JOIN users u ON t.user_id = u.id \
              LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
              WHERE t.created_at >= $1 AND t.created_at < $2 \
+             AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
              GROUP BY t.id \
              ORDER BY t.created_at DESC \
              LIMIT 10",
@@ -413,8 +428,7 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
     let db = db.inner();
 
     // `date('now','localtime','-7 days')` == local date (today - 7 days).
-    let start_utc =
-        local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(7));
+    let start_utc = local_date_start_to_utc(Local::now().date_naive() - chrono::Duration::days(7));
 
     let sales_row = db
         .query_one(Statement::from_sql_and_values(
@@ -483,4 +497,28 @@ pub async fn get_weekly_stats(db: State<'_, DatabaseConnection>) -> Result<Weekl
         avg_items_per_transaction,
         avg_value_per_transaction,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{insert_transaction, setup_test_db, utc_at_local_noon};
+
+    #[tokio::test]
+    async fn recent_transactions_exclude_voided_and_unfulfilled() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(Local::now().date_naive());
+        insert_transaction(&conn, 1, 100_000.0, "completed", &created_at).await;
+        insert_transaction(&conn, 1, 30_000.0, "partial_refund", &created_at).await;
+        insert_transaction(&conn, 1, 999_000.0, "deleted", &created_at).await;
+        insert_transaction(&conn, 1, 50_000.0, "pending_ppob", &created_at).await;
+        insert_transaction(&conn, 1, 40_000.0, "ppob_failed", &created_at).await;
+        insert_transaction(&conn, 1, 70_000.0, "refunded", &created_at).await;
+
+        let rows = query_recent_transactions(&conn).await.expect("query");
+
+        let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
+        statuses.sort_unstable();
+        assert_eq!(statuses, vec!["completed", "partial_refund"]);
+    }
 }
