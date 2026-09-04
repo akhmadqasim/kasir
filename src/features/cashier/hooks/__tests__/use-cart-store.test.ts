@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { useCartStore } from "../use-cart-store"
+import { useCartStore, type HeldCart } from "../use-cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -707,6 +707,117 @@ describe("removeHeldCart", () => {
     store().holdCart()
     store().removeHeldCart("nonexistent")
     expect(store().heldCarts).toHaveLength(1)
+  })
+})
+
+// =====================================================================
+// Discounts belong to a single cart
+// =====================================================================
+
+describe("discount scoping between carts", () => {
+  it("stores the discounts together with the held cart", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 1000 })
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+
+    store().holdCart("Pelanggan 1")
+
+    const [held] = store().heldCarts
+    expect(held.itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 1000 })
+    expect(held.transactionDiscount).toEqual({ type: "percentage", value: 50 })
+  })
+
+  it("does not leak the held cart discounts to the next customer", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    expect(store().itemDiscounts).toEqual({})
+    expect(store().transactionDiscount).toBeNull()
+
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    expect(store().getCartTotals().total).toBe(10000)
+  })
+
+  it("counts the discount in the held cart total", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+
+    store().holdCart("Pelanggan 1")
+
+    expect(store().heldCarts[0].total).toBe(5000)
+  })
+
+  it("restores the discounts of the recalled cart", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 1000 })
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    const holdId = store().heldCarts[0].id
+    store().recallCart(holdId)
+
+    expect(store().itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 1000 })
+    expect(store().transactionDiscount).toEqual({ type: "percentage", value: 50 })
+    expect(store().getCartTotals().total).toBe(4500)
+  })
+
+  it("keeps each cart's discounts when two carts are swapped", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+    const holdId = store().heldCarts[0].id
+
+    store().addItem(makeProduct({ id: 2, sell_price: 20000 }))
+    store().setTransactionDiscount({ type: "fixed", value: 2000 })
+
+    store().recallCart(holdId)
+
+    // Cart 1 is active again with its own 50% discount
+    expect(store().transactionDiscount).toEqual({ type: "percentage", value: 50 })
+    expect(store().getCartTotals().total).toBe(5000)
+
+    // Cart 2 kept its own fixed discount while held
+    const swapped = store().heldCarts[0]
+    expect(swapped.transactionDiscount).toEqual({ type: "fixed", value: 2000 })
+    expect(swapped.total).toBe(18000)
+  })
+
+  it("keeps held cart discounts when the active cart is cleared", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    store().addItem(makeProduct({ id: 2, sell_price: 20000 }))
+    store().clear()
+
+    expect(store().heldCarts[0].transactionDiscount).toEqual({
+      type: "percentage",
+      value: 50,
+    })
+  })
+
+  it("recalls a legacy held cart that has no stored discounts", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().holdCart("Legacy")
+    const [held] = store().heldCarts
+    useCartStore.setState({
+      heldCarts: [
+        {
+          id: held.id,
+          label: held.label,
+          items: held.items,
+          total: held.total,
+          heldAt: held.heldAt,
+        } as HeldCart,
+      ],
+    })
+
+    store().recallCart(held.id)
+
+    expect(store().items).toHaveLength(1)
+    expect(store().itemDiscounts).toEqual({})
+    expect(store().transactionDiscount).toBeNull()
   })
 })
 

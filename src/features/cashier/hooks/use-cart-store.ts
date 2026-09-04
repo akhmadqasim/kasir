@@ -2,17 +2,21 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { CartItem } from "../types"
 
+export interface DiscountEntry {
+  type: "fixed" | "percentage"
+  value: number
+}
+
 export interface HeldCart {
   id: string
   label: string
   items: CartItem[]
+  /** Discounts travel with the cart, never with the terminal */
+  itemDiscounts: Record<string, DiscountEntry>
+  transactionDiscount: DiscountEntry | null
+  /** Total after discounts */
   total: number
   heldAt: number
-}
-
-export interface DiscountEntry {
-  type: "fixed" | "percentage"
-  value: number
 }
 
 interface CartStore {
@@ -269,13 +273,10 @@ export const useCartStore = create<CartStore>()(
       clear: () => set({ items: [], itemDiscounts: {}, transactionDiscount: null }),
 
       holdCart: (label?: string) => {
-        const { items, heldCarts } = get()
+        const { items, heldCarts, itemDiscounts, transactionDiscount } = get()
         if (items.length === 0) return
 
-        const total = items.reduce(
-          (sum, item) => sum + item.product_price * item.quantity,
-          0
-        )
+        const { total } = get().getCartTotals()
         const holdId = `hold-${Date.now()}`
         const autoLabel = label?.trim() || `Pelanggan ${heldCarts.length + 1}`
 
@@ -286,25 +287,30 @@ export const useCartStore = create<CartStore>()(
               id: holdId,
               label: autoLabel,
               items: [...items],
+              itemDiscounts: { ...itemDiscounts },
+              transactionDiscount,
               total,
               heldAt: Date.now(),
             },
           ],
           items: [],
+          itemDiscounts: {},
+          transactionDiscount: null,
         })
       },
 
       recallCart: (holdId: string) => {
-        const { heldCarts, items } = get()
+        const { heldCarts, items, itemDiscounts, transactionDiscount } = get()
         const held = heldCarts.find((c) => c.id === holdId)
         if (!held) return
 
+        // Held carts persisted before discounts were scoped have no discounts
+        const heldItemDiscounts = held.itemDiscounts ?? {}
+        const heldTransactionDiscount = held.transactionDiscount ?? null
+
         // If current cart has items, hold them first
         if (items.length > 0) {
-          const total = items.reduce(
-            (sum, item) => sum + item.product_price * item.quantity,
-            0
-          )
+          const { total } = get().getCartTotals()
           const swapId = `hold-${Date.now()}`
           set({
             heldCarts: [
@@ -313,16 +319,22 @@ export const useCartStore = create<CartStore>()(
                 id: swapId,
                 label: `Keranjang Aktif`,
                 items: [...items],
+                itemDiscounts: { ...itemDiscounts },
+                transactionDiscount,
                 total,
                 heldAt: Date.now(),
               },
             ],
             items: held.items,
+            itemDiscounts: heldItemDiscounts,
+            transactionDiscount: heldTransactionDiscount,
           })
         } else {
           set({
             heldCarts: heldCarts.filter((c) => c.id !== holdId),
             items: held.items,
+            itemDiscounts: heldItemDiscounts,
+            transactionDiscount: heldTransactionDiscount,
           })
         }
       },
