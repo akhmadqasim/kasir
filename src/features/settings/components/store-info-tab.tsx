@@ -41,15 +41,23 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
     setInitialized(true)
   }
 
+  // Saving before the query resolves would post the empty initial state over the
+  // stored store info, so the button stays disabled until the form holds real data.
+  const isReady = storeQuery.isSuccess && initialized
+
   const saveMutation = useMutation({
-    mutationFn: () =>
-      invoke("update_store_info", {
+    mutationFn: () => {
+      if (!isReady) {
+        throw new Error("Informasi toko belum dimuat, coba lagi sebentar")
+      }
+      return invoke("update_store_info", {
         name,
         address: address || null,
         phone: phone || null,
         email: email || null,
         callerId: user!.id,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["store-info"] })
       toast.success(id.settings.storeInfoSaved)
@@ -118,7 +126,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin && (
           <Button
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || !name.trim()}
+            disabled={saveMutation.isPending || !isReady || !name.trim()}
           >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}

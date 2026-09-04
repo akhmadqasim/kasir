@@ -80,12 +80,19 @@ export function PrinterSettingsTab() {
     },
   })
 
+  // Saving before the query resolves would write the hardcoded defaults over the
+  // stored settings, so the button stays disabled until the form holds real data.
+  const isReady = settingsQuery.isSuccess && initialized
+
   const handleSave = () => {
+    if (!isReady) return
+    // Send the raw strings: `|| undefined` would drop the key from the JSON and the
+    // Rust `if let Some(...)` would keep the old value, making the field unclearable.
     saveMutation.mutate({
-      printer_id: selectedPrinter || undefined,
+      printer_id: selectedPrinter,
       paper_width: Number(paperWidth) || undefined,
       auto_print: autoPrint,
-      footer_text: footerText || undefined,
+      footer_text: footerText,
     })
   }
 
@@ -187,7 +194,7 @@ export function PrinterSettingsTab() {
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saveMutation.isPending}>
+          <Button onClick={handleSave} disabled={saveMutation.isPending || !isReady}>
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
           </Button>

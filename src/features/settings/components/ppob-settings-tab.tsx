@@ -83,20 +83,17 @@ export function PpobSettingsTab() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      // The backend rewrites all four blocks at once, so posting hardcoded defaults
+      // for the blocks this tab does not own would silently reset them.
       const currentSettings = settingsQuery.data
+      if (!currentSettings) {
+        throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
+      }
       return invoke("update_app_settings", {
         settings: {
-          sales: currentSettings?.sales ?? {
-            allow_negative_stock: true,
-            default_payment_method: "cash",
-          },
-          security: currentSettings?.security ?? {
-            session_timeout_minutes: 30,
-          },
-          backup: currentSettings?.backup ?? {
-            interval_hours: 3,
-            retention_days: 90,
-          },
+          sales: currentSettings.sales,
+          security: currentSettings.security,
+          backup: currentSettings.backup,
           ppob: {
             enabled,
             phone_number: phoneNumber,
@@ -118,6 +115,8 @@ export function PpobSettingsTab() {
       toast.error(String(error))
     },
   })
+
+  const isReady = settingsQuery.isSuccess && initialized
 
   const testMutation = useMutation({
     mutationFn: () => invoke("ppob_login"),
@@ -218,7 +217,7 @@ export function PpobSettingsTab() {
           <div className="flex gap-2">
             <Button
               onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
+              disabled={saveMutation.isPending || !isReady}
             >
               <Save className="mr-2 h-4 w-4" />
               {saveMutation.isPending ? "Menyimpan..." : id.common.save}
@@ -312,7 +311,7 @@ export function PpobSettingsTab() {
 
           <Button
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || !isReady}
           >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : id.common.save}

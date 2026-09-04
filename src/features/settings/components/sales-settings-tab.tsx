@@ -46,28 +46,11 @@ export function SalesSettingsTab() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const currentSecurity = settingsQuery.data?.security ?? {
-        session_timeout_minutes: 30,
-      }
-      const currentPpob = settingsQuery.data?.ppob ?? {
-        enabled: false,
-        phone_number: "",
-        password: "",
-        device_id: "",
-        pin: "",
-        markup: {
-          pulsa: { type: "fixed", value: 0 },
-          data: { type: "fixed", value: 0 },
-          pln: { type: "fixed", value: 0 },
-          pdam: { type: "fixed", value: 0 },
-          bpjs: { type: "fixed", value: 0 },
-          emoney: { type: "fixed", value: 0 },
-          custom_prices: {},
-        },
-      }
-      const currentBackup = settingsQuery.data?.backup ?? {
-        interval_hours: 3,
-        retention_days: 90,
+      // The backend rewrites all four blocks at once. Saving before the query
+      // resolves would post hardcoded defaults and wipe the PPOB credentials.
+      const current = settingsQuery.data
+      if (!current) {
+        throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
       }
       return invoke("update_app_settings", {
         settings: {
@@ -75,9 +58,9 @@ export function SalesSettingsTab() {
             allow_negative_stock: allowNegativeStock,
             default_payment_method: defaultPaymentMethod,
           },
-          security: currentSecurity,
-          ppob: currentPpob,
-          backup: currentBackup,
+          security: current.security,
+          ppob: current.ppob,
+          backup: current.backup,
         },
         callerId: user!.id,
       })
@@ -90,6 +73,8 @@ export function SalesSettingsTab() {
       toast.error(String(error))
     },
   })
+
+  const isReady = settingsQuery.isSuccess && initialized
 
   const paymentOptions = [
     { value: "cash", label: id.payment.cash },
@@ -143,7 +128,7 @@ export function SalesSettingsTab() {
 
         <Button
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || !isReady}
         >
           <Save className="mr-2 h-4 w-4" />
           {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
