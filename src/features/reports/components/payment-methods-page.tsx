@@ -16,11 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { usePaymentMethods } from "../hooks/use-reports"
-import { formatRupiah } from "@/lib/format"
+import { formatRupiah, toLocalDateString } from "@/lib/format"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDefaultRange(): DateRange {
   const to = new Date()
@@ -49,8 +46,8 @@ const paymentColors: Record<string, string> = {
 export function PaymentMethodsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
 
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading } = usePaymentMethods(startDate, endDate)
 

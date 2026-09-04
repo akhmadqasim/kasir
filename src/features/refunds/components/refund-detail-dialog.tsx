@@ -20,22 +20,9 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import type { RefundDetailResult } from "../types"
-
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  return dateFormatter.format(new Date(dateStr.replace(" ", "T") + "Z"))
-}
 
 const CONDITION_CONFIG: Record<string, { label: string; className: string }> = {
   good: {
@@ -119,7 +106,7 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                 </div>
                 <div>
                   <p className="text-muted-foreground">{id.transactions.date}</p>
-                  <p>{formatDate(detail.refund.created_at)}</p>
+                  <p>{formatDateTime(detail.refund.created_at)}</p>
                 </div>
                 {detail.refund.reason && (
                   <div>

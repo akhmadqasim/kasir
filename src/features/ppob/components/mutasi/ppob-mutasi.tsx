@@ -38,7 +38,13 @@ import {
 } from "@/components/ui/select"
 import { id as i18n } from "@/i18n/id"
 import { usePpobMutasi, usePpobSaldo } from "../../hooks"
-import { getDefaultDateRange, normalizeStatus, formatRupiah, formatDateTime } from "../history/history-utils"
+import { formatRupiah, toLocalDateString } from "@/lib/format"
+import {
+  getDefaultDateRange,
+  getDefaultDateRangeDates,
+  normalizeStatus,
+  formatDateTime,
+} from "../history/history-utils"
 import type { MutasiItem } from "../../types"
 
 const TYPE_FILTER_OPTIONS = [
@@ -287,13 +293,13 @@ export function PpobMutasi() {
 
   const [typeFilter, setTypeFilter] = useState("all")
   const [selectedItem, setSelectedItem] = useState<MutasiItem | null>(null)
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(defaults.start),
-    to: new Date(defaults.end),
-  })
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(
+    getDefaultDateRangeDates
+  )
 
-  const startDate = dateRange?.from?.toISOString().slice(0, 10) ?? defaults.start
-  const endDate = dateRange?.to?.toISOString().slice(0, 10) ?? defaults.end
+  // The picker holds local dates; `toISOString()` here would send yesterday.
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : defaults.end
 
   const { data: items, isLoading, error, refetch, isFetching } = usePpobMutasi(startDate, endDate)
 

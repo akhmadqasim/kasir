@@ -16,12 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useProductSales } from "../hooks/use-reports"
-import { formatRupiah } from "@/lib/format"
+import { formatRupiah, toLocalDateString } from "@/lib/format"
 import { useDebounce } from "@/hooks/use-debounce"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDefaultRange(): DateRange {
   const to = new Date()
@@ -35,8 +32,8 @@ export function ProductSalesPage() {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 300)
 
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading } = useProductSales(startDate, endDate)
 

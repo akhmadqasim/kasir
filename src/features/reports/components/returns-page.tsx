@@ -17,11 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useReturns } from "../hooks/use-reports"
-import { formatRupiah } from "@/lib/format"
+import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDefaultRange(): DateRange {
   const to = new Date()
@@ -38,8 +35,8 @@ const typeLabels: Record<string, { label: string; variant: "destructive" | "seco
 export function ReturnsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
 
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading } = useReturns(startDate, endDate)
 
@@ -140,7 +137,7 @@ export function ReturnsPage() {
                     <TableCell className="text-right font-medium text-red-600">{formatRupiah(row.totalRefundAmount)}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">{row.reason ?? "-"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(row.createdAt).toLocaleDateString("id-ID", { weekday: "short", year: "numeric", month: "short", day: "numeric" })}
+                      {formatDayDate(row.createdAt)}
                     </TableCell>
                   </TableRow>
                 )

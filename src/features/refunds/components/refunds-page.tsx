@@ -28,28 +28,11 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
 import { id } from "@/i18n/id"
 import { RefundDetailDialog } from "./refund-detail-dialog"
 import type { ListRefundsResult } from "../types"
 
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  const date = new Date(dateStr.replace(" ", "T") + "Z")
-  return dateFormatter.format(date)
-}
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDifferenceColor(amount: number): string {
   if (amount > 0) return "text-green-600 dark:text-green-400"
@@ -71,8 +54,8 @@ export function RefundsPage() {
       page,
       per_page: 50,
       refund_type: typeFilter || undefined,
-      date_from: dateRange?.from ? toDateStr(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toDateStr(dateRange.to) : undefined,
+      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
     },
   }), [page, typeFilter, dateRange])
 
@@ -88,10 +71,10 @@ export function RefundsPage() {
     setPage(1)
   }, [])
 
-  const today = toDateStr(new Date())
+  const today = toLocalDateString(new Date())
   const hasFilters = typeFilter ||
-    (dateRange?.from && toDateStr(dateRange.from) !== today) ||
-    (dateRange?.to && toDateStr(dateRange.to) !== today)
+    (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
+    (dateRange?.to && toLocalDateString(dateRange.to) !== today)
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
@@ -224,7 +207,7 @@ export function RefundsPage() {
                       : "—"}
                   </TableCell>
                   <TableCell>{item.cashier_name}</TableCell>
-                  <TableCell className="text-sm">{formatDate(item.created_at)}</TableCell>
+                  <TableCell className="text-sm">{formatDateTime(item.created_at)}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

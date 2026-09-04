@@ -16,12 +16,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatRupiah } from "@/lib/format"
+import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useCashFlows } from "../hooks/use-reports"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDefaultRange(): DateRange {
   const to = new Date()
@@ -33,8 +30,8 @@ function getDefaultRange(): DateRange {
 export function CashFlowsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
 
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
   const { data, isLoading } = useCashFlows(startDate, endDate)
 
   return (
@@ -141,12 +138,7 @@ export function CashFlowsPage() {
               data.items.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="text-sm text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleDateString("id-ID", {
-                      weekday: "short",
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    {formatDayDate(row.createdAt)}
                   </TableCell>
                   <TableCell>{row.cashierName}</TableCell>
                   <TableCell>

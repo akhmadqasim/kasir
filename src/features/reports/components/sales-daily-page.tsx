@@ -16,11 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useSalesDaily } from "../hooks/use-reports"
-import { formatRupiah } from "@/lib/format"
+import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 function getDefaultRange(): DateRange {
   const to = new Date()
@@ -32,8 +29,8 @@ function getDefaultRange(): DateRange {
 export function SalesDailyPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
 
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading } = useSalesDaily(startDate, endDate)
 
@@ -134,7 +131,7 @@ export function SalesDailyPage() {
             ) : (
               data.map((row) => (
                 <TableRow key={row.date}>
-                  <TableCell className="font-medium">{new Date(row.date).toLocaleDateString("id-ID", { weekday: "short", year: "numeric", month: "short", day: "numeric" })}</TableCell>
+                  <TableCell className="font-medium">{formatDayDate(row.date)}</TableCell>
                   <TableCell className="text-right">{row.transactionCount}</TableCell>
                   <TableCell className="text-right">{formatRupiah(row.totalRevenue)}</TableCell>
                   <TableCell className="text-right">{formatRupiah(row.totalCost)}</TableCell>

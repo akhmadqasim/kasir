@@ -17,10 +17,10 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useState } from "react"
 import type { HistoryPaymentItem } from "../../types"
+import { formatRupiah } from "@/lib/format"
 import {
   detectServiceType,
   normalizeStatus,
-  formatRupiah,
   formatDateTime,
   buildDescription,
   getNominal,

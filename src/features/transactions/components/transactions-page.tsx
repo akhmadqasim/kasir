@@ -34,24 +34,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useDebounce } from "@/hooks/use-debounce"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
 import { id } from "@/i18n/id"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
 import type { PaginatedTransactions, TransactionListItem } from "../types"
-
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  const date = new Date(dateStr.replace(" ", "T") + "Z")
-  return dateFormatter.format(date)
-}
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: id.payment.cash,
@@ -102,9 +88,6 @@ function getTransactionDescription(txn: TransactionListItem): string {
   return "—"
 }
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
 
 export function TransactionsPage() {
   const navigate = useNavigate()
@@ -126,8 +109,8 @@ export function TransactionsPage() {
       search: debouncedSearch || undefined,
       payment_method: paymentMethod || undefined,
       status: status || undefined,
-      date_from: dateRange?.from ? toDateStr(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toDateStr(dateRange.to) : undefined,
+      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
     },
   }), [page, debouncedSearch, paymentMethod, status, dateRange])
 
@@ -156,10 +139,10 @@ export function TransactionsPage() {
     setPage(1)
   }, [])
 
-  const today = toDateStr(new Date())
+  const today = toLocalDateString(new Date())
   const hasFilters = search || paymentMethod || status ||
-    (dateRange?.from && toDateStr(dateRange.from) !== today) ||
-    (dateRange?.to && toDateStr(dateRange.to) !== today)
+    (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
+    (dateRange?.to && toLocalDateString(dateRange.to) !== today)
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
@@ -309,7 +292,7 @@ export function TransactionsPage() {
                     </div>
                   </TableCell>
                   <TableCell>{txn.cashier_name}</TableCell>
-                  <TableCell className="text-sm">{formatDate(txn.created_at)}</TableCell>
+                  <TableCell className="text-sm">{formatDateTime(txn.created_at)}</TableCell>
                   <TableCell className="text-center">{txn.item_count}</TableCell>
                   <TableCell>
                     <Badge variant="outline">

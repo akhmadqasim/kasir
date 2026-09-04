@@ -63,26 +63,12 @@ import {
   useLowStockProducts,
   useRecentTransactions,
 } from "../hooks/use-dashboard"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 
 // --- Helpers ---
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("id-ID").format(value)
-}
-
-function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) +
-    " " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
 }
 
 // --- Chart Configs ---
@@ -129,7 +115,7 @@ function SectionCards() {
         <CardHeader>
           <CardDescription>{t.dashboard.todayRevenue}</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatCurrency(summary?.todayRevenue ?? 0)}
+            {formatRupiah(summary?.todayRevenue ?? 0)}
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
@@ -160,7 +146,7 @@ function SectionCards() {
         <CardHeader>
           <CardDescription>{t.dashboard.grossProfit}</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatCurrency(summary?.todayGrossProfit ?? 0)}
+            {formatRupiah(summary?.todayGrossProfit ?? 0)}
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
@@ -206,12 +192,12 @@ function SectionCards() {
         <CardHeader>
           <CardDescription>{t.dashboard.avgPerTransaction}</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatCurrency(summary?.todayAvgPerTransaction ?? 0)}
+            {formatRupiah(summary?.todayAvgPerTransaction ?? 0)}
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            {formatCurrency(summary?.todayAvgPerTransaction ?? 0)} {t.dashboard.perTransaction}{" "}
+            {formatRupiah(summary?.todayAvgPerTransaction ?? 0)} {t.dashboard.perTransaction}{" "}
             <TrendingUpIcon className="size-4" />
           </div>
           <div className="text-muted-foreground">
@@ -374,7 +360,7 @@ function ChartRevenueInteractive() {
               {t.dashboard.revenue}
             </span>
             <span className="text-lg leading-none font-bold sm:text-3xl">
-              {formatCurrency(totalRevenue)}
+              {formatRupiah(totalRevenue)}
             </span>
           </div>
           <div className="flex flex-1 flex-col justify-center gap-1 border-t border-l px-6 py-4 sm:border-t-0 sm:px-8 sm:py-6">
@@ -573,7 +559,7 @@ function TopProductsTable() {
                     {formatNumber(p.totalQty)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {formatCurrency(p.totalRevenue)}
+                    {formatRupiah(p.totalRevenue)}
                   </TableCell>
                 </TableRow>
               ))
@@ -679,7 +665,7 @@ function RecentTransactionsTable() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">{formatDateTime(tx.createdAt)}</TableCell>
                   <TableCell className="text-center">{tx.totalItems}</TableCell>
-                  <TableCell className="text-right font-medium">{formatCurrency(tx.totalAmount)}</TableCell>
+                  <TableCell className="text-right font-medium">{formatRupiah(tx.totalAmount)}</TableCell>
                 </TableRow>
               ))
             ) : (

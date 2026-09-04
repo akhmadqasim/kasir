@@ -29,7 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { id } from "@/i18n/id"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import {
   useListWriteoffs,
@@ -91,21 +91,6 @@ function WriteoffStatusBadge({ status }: { status: string }) {
       return <StatusBadge status="error">Ditolak</StatusBadge>
     default:
       return <Badge variant="secondary">{STATUS_LABELS[status] ?? status}</Badge>
-  }
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return dateStr
   }
 }
 
@@ -273,7 +258,7 @@ export function StockWriteoffPage() {
                       </TableCell>
                       <TableCell><WriteoffStatusBadge status={wo.status} /></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(wo.createdAt)}
+                        {formatDateTime(wo.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <WriteoffActions

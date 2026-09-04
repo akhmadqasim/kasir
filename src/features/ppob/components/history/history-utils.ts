@@ -11,6 +11,7 @@ import {
   Package,
   type LucideIcon,
 } from "lucide-react"
+import { toLocalDateString } from "@/lib/format"
 import { PPOB_SERVICE_COLORS, type PpobServiceKey } from "../../constants"
 import type { HistoryPaymentItem } from "../../types"
 
@@ -88,10 +89,6 @@ export function normalizeStatus(status: string | null): NormalizedStatus {
   return "unknown"
 }
 
-export function formatRupiah(n: number): string {
-  return "Rp " + new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(n)
-}
-
 export function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "-"
   try {
@@ -129,13 +126,20 @@ export function getNominal(item: HistoryPaymentItem): number | null {
   return item.total ?? item.sellPrice ?? item.amount ?? null
 }
 
+/** The last seven local days as `Date` objects, for the calendar range picker. */
+export function getDefaultDateRangeDates(): { from: Date; to: Date } {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(from.getDate() - 7)
+  return { from, to }
+}
+
 export function getDefaultDateRange() {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - 7)
+  const { from, to } = getDefaultDateRangeDates()
+  // Local calendar days: `toISOString()` would report yesterday before 07:00 WIB.
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
+    start: toLocalDateString(from),
+    end: toLocalDateString(to),
   }
 }
 

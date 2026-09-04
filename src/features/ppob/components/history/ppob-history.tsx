@@ -5,11 +5,13 @@ import type { DateRange } from "react-day-picker"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { id as i18n } from "@/i18n/id"
+import { toLocalDateString } from "@/lib/format"
 import { usePpobHistory } from "../../hooks"
 import { HistoryFilters } from "./history-filters"
 import { HistoryTable } from "./history-table"
 import {
   getDefaultDateRange,
+  getDefaultDateRangeDates,
   matchesProductFilter,
   normalizeStatus,
 } from "./history-utils"
@@ -20,13 +22,13 @@ export function PpobHistory() {
 
   const [productFilter, setProductFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(defaults.start),
-    to: new Date(defaults.end),
-  })
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(
+    getDefaultDateRangeDates
+  )
 
-  const startDate = dateRange?.from?.toISOString().slice(0, 10) ?? defaults.start
-  const endDate = dateRange?.to?.toISOString().slice(0, 10) ?? defaults.end
+  // The picker holds local dates; `toISOString()` here would send yesterday.
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : defaults.end
 
   const { data: items, isLoading, error } = usePpobHistory(startDate, endDate)
 

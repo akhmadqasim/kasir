@@ -36,23 +36,11 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { id } from "@/i18n/id"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  return dateFormatter.format(new Date(dateStr.replace(" ", "T") + "Z"))
-}
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: id.payment.cash,
@@ -260,7 +248,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     />
                     <SummaryRow
                       label={id.transactions.date}
-                      value={formatDate(detail.transaction.created_at)}
+                      value={formatDateTime(detail.transaction.created_at)}
                     />
                     <SummaryRow
                       label={id.transactions.cashier}

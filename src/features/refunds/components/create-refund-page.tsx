@@ -1,7 +1,5 @@
 import { useState, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
 import { ArrowLeft, Search, Trash2, Plus, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -30,7 +28,7 @@ import {
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useAuthStore } from "@/features/auth"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import type { TransactionItem } from "@/features/transactions/types"
 import type { PaginatedProducts } from "@/features/products/types"
@@ -130,7 +128,7 @@ export function CreateRefundPage() {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              {format(new Date(detail.transaction.created_at!), "dd MMM yyyy HH:mm", { locale: idLocale })}
+              {formatDateTime(detail.transaction.created_at)}
             </p>
             <div className="flex items-center justify-between pt-1">
               <span className="text-xs text-muted-foreground">Total</span>
