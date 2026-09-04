@@ -74,6 +74,11 @@ pub struct PeriodSalesSummary {
     pub daily_breakdown: Vec<DailySalesRow>,
 }
 
+/// Row cap for the two reports that return raw rows instead of aggregates.
+/// The cap is reported back through `total_count` so the caller can tell the
+/// list was cut short instead of silently deriving totals from a partial array.
+const REPORT_ROW_LIMIT: i64 = 500;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceiptRow {
@@ -85,6 +90,15 @@ pub struct ReceiptRow {
     pub status: String,
     pub item_count: i64,
     pub created_at: String,
+}
+
+/// `items` is capped at `REPORT_ROW_LIMIT`; `total_count` is the number of rows
+/// that matched, so `items.len() < total_count` means the list was truncated.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptReport {
+    pub items: Vec<ReceiptRow>,
+    pub total_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +161,14 @@ pub struct CurrentStockRow {
     pub buy_price: f64,
     pub sell_price: f64,
     pub stock_value: f64,
+}
+
+/// See `ReceiptReport` — same truncation contract.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentStockReport {
+    pub items: Vec<CurrentStockRow>,
+    pub total_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -397,8 +419,15 @@ pub async fn report_sales_receipt(
     start_date: String,
     end_date: String,
     search: String,
-) -> Result<Vec<ReceiptRow>, AppError> {
-    query_sales_receipts(db.inner(), &start_date, &end_date, &search).await
+) -> Result<ReceiptReport, AppError> {
+    query_sales_receipts(
+        db.inner(),
+        &start_date,
+        &end_date,
+        &search,
+        REPORT_ROW_LIMIT,
+    )
+    .await
 }
 
 /// Per-receipt drill-down of the same period the summary reports cover, so it
@@ -412,7 +441,10 @@ async fn query_sales_receipts(
     start_date: &str,
     end_date: &str,
     search: &str,
-) -> Result<Vec<ReceiptRow>, AppError> {
+    limit: i64,
+) -> Result<ReceiptReport, AppError> {
+    // `COUNT(*) OVER ()` is evaluated over the full result set before LIMIT, so
+    // it reports how many receipts matched even when only `limit` are returned.
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -424,23 +456,30 @@ async fn query_sales_receipts(
                 t.payment_method,
                 t.status,
                 (SELECT COUNT(*) FROM transaction_items WHERE transaction_id = t.id) as item_count,
-                t.created_at
+                t.created_at,
+                COUNT(*) OVER () as total_count
             FROM transactions t
             LEFT JOIN users u ON u.id = t.user_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND t.created_at >= $1 AND t.created_at < $2
             AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
             ORDER BY t.created_at DESC
-            LIMIT 500",
+            LIMIT $4",
             vec![
                 local_date_start_to_utc(start_date).into(),
                 local_date_end_exclusive_to_utc(end_date).into(),
                 search.into(),
+                limit.into(),
             ],
         ))
         .await?;
 
-    Ok(rows
+    let total_count = rows
+        .first()
+        .and_then(|row| row.try_get_by_index::<i64>(8).ok())
+        .unwrap_or(0);
+
+    let items = rows
         .iter()
         .map(|row| ReceiptRow {
             id: row.try_get_by_index(0).unwrap_or(0),
@@ -452,7 +491,9 @@ async fn query_sales_receipts(
             item_count: row.try_get_by_index(6).unwrap_or(0),
             created_at: row.try_get_by_index(7).unwrap_or_default(),
         })
-        .collect())
+        .collect();
+
+    Ok(ReceiptReport { items, total_count })
 }
 
 #[tauri::command]
@@ -692,9 +733,16 @@ pub async fn report_current_stock(
     db: State<'_, DatabaseConnection>,
     search: String,
     filter: String,
-) -> Result<Vec<CurrentStockRow>, AppError> {
-    let db = db.inner();
+) -> Result<CurrentStockReport, AppError> {
+    query_current_stock(db.inner(), &search, &filter, REPORT_ROW_LIMIT).await
+}
 
+async fn query_current_stock(
+    db: &DatabaseConnection,
+    search: &str,
+    filter: &str,
+    limit: i64,
+) -> Result<CurrentStockReport, AppError> {
     let low_stock_clause = if filter == "low" {
         "AND p.stock <= p.min_stock AND p.min_stock > 0"
     } else if filter == "all" || filter.is_empty() {
@@ -714,14 +762,15 @@ pub async fn report_current_stock(
             p.unit,
             p.buy_price,
             p.sell_price,
-            p.buy_price * p.stock as stock_value
+            p.buy_price * p.stock as stock_value,
+            COUNT(*) OVER () as total_count
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
         WHERE p.is_active = 1
         AND ($1 = '' OR p.name LIKE '%' || $1 || '%' OR p.barcode LIKE '%' || $1 || '%')
         {}
         ORDER BY p.name
-        LIMIT 500",
+        LIMIT $2",
         low_stock_clause
     );
 
@@ -729,11 +778,16 @@ pub async fn report_current_stock(
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             &sql,
-            vec![search.into()],
+            vec![search.into(), limit.into()],
         ))
         .await?;
 
-    Ok(rows
+    let total_count = rows
+        .first()
+        .and_then(|row| row.try_get_by_index::<i64>(10).ok())
+        .unwrap_or(0);
+
+    let items = rows
         .iter()
         .map(|row| CurrentStockRow {
             product_id: row.try_get_by_index(0).unwrap_or(0),
@@ -747,7 +801,9 @@ pub async fn report_current_stock(
             sell_price: row.try_get_by_index(8).unwrap_or(0.0),
             stock_value: row.try_get_by_index(9).unwrap_or(0.0),
         })
-        .collect())
+        .collect();
+
+    Ok(CurrentStockReport { items, total_count })
 }
 
 #[tauri::command]
@@ -1169,18 +1225,64 @@ mod tests {
         insert_transaction(&conn, 1, 70_000.0, "refunded", &created_at).await;
 
         let day = date_str(today());
-        let rows = query_sales_receipts(&conn, &day, &day, "")
+        let report = query_sales_receipts(&conn, &day, &day, "", REPORT_ROW_LIMIT)
             .await
             .expect("query");
 
-        let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
+        let mut statuses: Vec<&str> = report.items.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
         assert_eq!(statuses, vec!["completed", "partial_refund"]);
 
         // The receipt list must sum to the same revenue as the period summary.
-        let receipts_total: f64 = rows.iter().map(|r| r.total_amount).sum();
+        let receipts_total: f64 = report.items.iter().map(|r| r.total_amount).sum();
         let summary = query_sales_period(&conn, &day, &day).await.expect("query");
         assert_eq!(receipts_total, 130_000.0);
         assert_eq!(receipts_total, summary.total_revenue);
+    }
+
+    #[tokio::test]
+    async fn sales_receipts_report_total_count_when_truncated() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        for _ in 0..3 {
+            insert_transaction(&conn, 1, 10_000.0, "completed", &created_at).await;
+        }
+
+        let day = date_str(today());
+        let report = query_sales_receipts(&conn, &day, &day, "", 2)
+            .await
+            .expect("query");
+
+        assert_eq!(report.items.len(), 2);
+        assert_eq!(report.total_count, 3);
+    }
+
+    #[tokio::test]
+    async fn current_stock_reports_total_count_when_truncated() {
+        let conn = setup_test_db().await;
+        insert_product(&conn, "Beras", 30_000.0, 50_000.0, 10).await;
+        insert_product(&conn, "Gula", 20_000.0, 30_000.0, 10).await;
+        insert_product(&conn, "Minyak", 10_000.0, 20_000.0, 10).await;
+
+        let report = query_current_stock(&conn, "", "all", 2)
+            .await
+            .expect("query");
+
+        assert_eq!(report.items.len(), 2);
+        assert_eq!(report.total_count, 3);
+    }
+
+    #[tokio::test]
+    async fn current_stock_total_count_matches_items_when_not_truncated() {
+        let conn = setup_test_db().await;
+        insert_product(&conn, "Beras", 30_000.0, 50_000.0, 10).await;
+        insert_product(&conn, "Gula", 20_000.0, 30_000.0, 10).await;
+
+        let report = query_current_stock(&conn, "", "all", REPORT_ROW_LIMIT)
+            .await
+            .expect("query");
+
+        assert_eq!(report.items.len(), 2);
+        assert_eq!(report.total_count, 2);
     }
 }
