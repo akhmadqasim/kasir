@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react"
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
 import { Loader2 } from "lucide-react"
-import { AppGuard } from "./app-guard"
+import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 import { StartPage } from "./start-page"
 import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
@@ -97,10 +97,6 @@ const router = createHashRouter([
             element: <LazyPage><PpobPage /></LazyPage>,
           },
           {
-            path: "products",
-            element: <LazyPage><ProductsPage /></LazyPage>,
-          },
-          {
             path: "transactions",
             element: <LazyPage><TransactionsPage /></LazyPage>,
           },
@@ -134,12 +130,22 @@ const router = createHashRouter([
             ],
           },
           {
-            path: "settings",
-            element: <LazyPage><SettingsPage /></LazyPage>,
-          },
-          {
-            path: "users",
-            element: <LazyPage><UsersPage /></LazyPage>,
+            // Screens whose commands are admin-only in the Rust layer.
+            element: <AdminRouteGuard />,
+            children: [
+              {
+                path: "products",
+                element: <LazyPage><ProductsPage /></LazyPage>,
+              },
+              {
+                path: "settings",
+                element: <LazyPage><SettingsPage /></LazyPage>,
+              },
+              {
+                path: "users",
+                element: <LazyPage><UsersPage /></LazyPage>,
+              },
+            ],
           },
         ],
       },

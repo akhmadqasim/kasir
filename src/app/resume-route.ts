@@ -18,7 +18,14 @@ const RESUMABLE_PREFIXES = [
   "/ppob",
   "/close-shift",
 ]
-const ADMIN_ONLY_PREFIXES = ["/users"]
+/**
+ * Routes a cashier may not open, mirroring the backend's `require_role(.., "admin")`:
+ * every mutation behind these screens is admin-only — user CRUD in `auth.rs`, product
+ * and category CRUD in `products.rs`/`categories.rs`, and store info, app settings,
+ * database export/import and backups in `settings.rs`/`backup.rs`. Read-only commands a
+ * cashier does need (`search_products`, `get_product_by_barcode`) live on other screens.
+ */
+const ADMIN_ONLY_PREFIXES = ["/users", "/products", "/settings"]
 
 function matchesPath(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -41,15 +48,19 @@ export function isResumableRoute(pathname: string | null | undefined) {
   return RESUMABLE_PREFIXES.some((prefix) => matchesPath(normalized, prefix))
 }
 
+export function isAdminOnlyRoute(pathname: string | null | undefined) {
+  const normalized = normalizePathname(pathname)
+  if (!normalized) return false
+  return ADMIN_ONLY_PREFIXES.some((prefix) => matchesPath(normalized, prefix))
+}
+
 export function isRouteAllowedForRole(
   pathname: string | null | undefined,
   role: UserRole
 ) {
   const normalized = normalizePathname(pathname)
   if (!normalized || !isResumableRoute(normalized)) return false
-  if (role !== "admin" && ADMIN_ONLY_PREFIXES.some((prefix) => matchesPath(normalized, prefix))) {
-    return false
-  }
+  if (role !== "admin" && isAdminOnlyRoute(normalized)) return false
   return true
 }
 

@@ -30,6 +30,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { id } from "@/i18n/id"
+import { isAdminOnlyRoute } from "@/app/resume-route"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
 const navMain = [
@@ -106,6 +107,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const isAdmin = user?.role === "admin"
   const { toggleSidebar, open, hoverExpanded, pinSidebar } = useSidebar()
 
+  // Keep the menu in step with AdminRouteGuard: a cashier should not see an entry
+  // that redirects them straight back out.
+  const visibleNavMain = isAdmin
+    ? navMain
+    : navMain.filter((item) => !isAdminOnlyRoute(item.url))
+
   const handleToggleClick = () => {
     if (hoverExpanded) {
       pinSidebar()
@@ -143,7 +150,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
+        <NavMain items={visibleNavMain} />
         {isAdmin && (
           <NavSecondary items={navAdmin} className="mt-auto" />
         )}

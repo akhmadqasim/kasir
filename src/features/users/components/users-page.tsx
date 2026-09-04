@@ -29,7 +29,7 @@ import type { User } from "@/features/auth/types"
 
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { data: users, isLoading } = useUsers(currentUser!.id)
+  const { data: users, isLoading, isError, error } = useUsers(currentUser!.id)
   const toggleActive = useToggleUserActive()
 
   const [search, setSearch] = useState("")
@@ -89,7 +89,7 @@ export function UsersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{id.users.title}</h1>
-        <Button onClick={handleAdd}>
+        <Button onClick={handleAdd} disabled={isError}>
           <PlusIcon className="mr-2 h-4 w-4" />
           {id.users.addUser}
         </Button>
@@ -122,6 +122,12 @@ export function UsersPage() {
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   Memuat...
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-destructive">
+                  Gagal memuat daftar pengguna: {error?.message ?? id.common.error}
                 </TableCell>
               </TableRow>
             ) : filteredUsers.length === 0 ? (
