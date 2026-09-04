@@ -266,19 +266,29 @@ async fn create_refund_internal(
         ));
     }
 
-    // Check 7-day limit
-    if let Some(ref created_at) = transaction.created_at {
-        let txn_date = chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%d %H:%M:%S")
-            .map_err(|_| AppError::Internal("Format tanggal transaksi tidak valid".into()))?;
+    // Check the 7-day limit.
+    //
+    // A missing timestamp cannot be shown to fall inside the window, and the
+    // old code skipped the check entirely for those rows, so treat it as
+    // non-refundable rather than unlimited.
+    let created_at = transaction.created_at.as_deref().ok_or_else(|| {
+        AppError::Validation("Transaksi tanpa tanggal tidak bisa di-refund".into())
+    })?;
 
-        let now = chrono::Utc::now().naive_utc();
-        let diff = now.signed_duration_since(txn_date).num_days();
-        if diff > REFUND_MAX_DAYS {
-            return Err(AppError::Validation(format!(
-                "Refund hanya bisa dilakukan maksimal {} hari setelah pembelian",
-                REFUND_MAX_DAYS
-            )));
-        }
+    let txn_date = chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%d %H:%M:%S")
+        .map_err(|_| AppError::Internal("Format tanggal transaksi tidak valid".into()))?;
+
+    // Compare durations, not whole days: `num_days()` truncates toward zero, so
+    // `days > 7` stayed false until 7d23h59m and the "7 day" rule really ran for
+    // almost eight.
+    let age = chrono::Utc::now()
+        .naive_utc()
+        .signed_duration_since(txn_date);
+    if age > chrono::Duration::days(REFUND_MAX_DAYS) {
+        return Err(AppError::Validation(format!(
+            "Refund hanya bisa dilakukan maksimal {} hari setelah pembelian",
+            REFUND_MAX_DAYS
+        )));
     }
 
     // Load transaction items for validation
@@ -827,6 +837,89 @@ mod tests {
     /// a field for.
     fn refund_input(value: serde_json::Value) -> CreateRefundInput {
         serde_json::from_value(value).expect("refund input deserializes")
+    }
+
+    /// Builds a one-line sale aged `age` and returns the line to refund.
+    async fn aged_sale(
+        conn: &DatabaseConnection,
+        age: chrono::Duration,
+    ) -> (transactions::Model, transaction_items::Model) {
+        let product = insert_product(conn, "Roti Tawar", 9_000.0, 14_000.0, 20).await;
+        let created_at = (chrono::Utc::now() - age)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let txn = insert_transaction(conn, 1, 14_000.0, "completed", &created_at).await;
+        let item = insert_transaction_item(
+            conn,
+            txn.id,
+            Some(product.id),
+            "Roti Tawar",
+            14_000.0,
+            9_000.0,
+            1,
+        )
+        .await;
+        (txn, item)
+    }
+
+    fn refund_one(txn_id: i64, item_id: i64) -> CreateRefundInput {
+        CreateRefundInput {
+            transaction_id: txn_id,
+            user_id: 1,
+            reason: None,
+            items: vec![RefundItemInput {
+                transaction_item_id: item_id,
+                quantity: 1,
+                condition: "good".to_string(),
+            }],
+            exchange_items: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn refund_rejects_a_sale_past_seven_days_by_an_hour() {
+        let conn = setup().await;
+        let (txn, item) = aged_sale(&conn, chrono::Duration::hours(7 * 24 + 1)).await;
+
+        let result = create_refund_internal(&conn, refund_one(txn.id, item.id)).await;
+
+        match result {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("7"),
+                "Error should mention the 7-day limit, got: {msg}"
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn refund_allows_a_sale_just_inside_seven_days() {
+        let conn = setup().await;
+        let (txn, item) = aged_sale(&conn, chrono::Duration::hours(7 * 24 - 1)).await;
+
+        create_refund_internal(&conn, refund_one(txn.id, item.id))
+            .await
+            .expect("refund inside the window should succeed");
+    }
+
+    #[tokio::test]
+    async fn refund_rejects_a_sale_without_a_timestamp() {
+        let conn = setup().await;
+        let (txn, item) = aged_sale(&conn, chrono::Duration::zero()).await;
+
+        let mut undated: transactions::ActiveModel = txn.clone().into();
+        undated.created_at = Set(None);
+        undated.update(&conn).await.expect("clear created_at");
+
+        let result = create_refund_internal(&conn, refund_one(txn.id, item.id)).await;
+
+        match result {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("tanggal"),
+                "Error should mention the missing date, got: {msg}"
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
     }
 
     #[tokio::test]
