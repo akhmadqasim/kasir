@@ -48,11 +48,16 @@ export function ProductFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
-        <ProductFormBody
-          product={product}
-          onOpenChange={onOpenChange}
-          onCreateSuccess={onCreateSuccess}
-        />
+        {/* Radix keeps the content alive through its exit animation. Without this
+            guard, reopening for another product within that window shows the previous
+            product's values against the new id and saving overwrites the wrong row. */}
+        {open && (
+          <ProductFormBody
+            product={product}
+            onOpenChange={onOpenChange}
+            onCreateSuccess={onCreateSuccess}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -32,7 +32,10 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <UserFormBody user={user} onOpenChange={onOpenChange} />
+        {/* Radix keeps the content alive through its exit animation. Without this
+            guard, reopening for another user within that window shows the previous
+            user's values against the new id and saving overwrites the wrong row. */}
+        {open && <UserFormBody user={user} onOpenChange={onOpenChange} />}
       </DialogContent>
     </Dialog>
   )
