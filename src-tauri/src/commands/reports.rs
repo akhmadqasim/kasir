@@ -511,8 +511,18 @@ pub async fn report_product_sales(
     start_date: String,
     end_date: String,
 ) -> Result<Vec<ProductSalesRow>, AppError> {
-    let db = db.inner();
+    query_product_sales(db.inner(), &start_date, &end_date).await
+}
 
+/// `transaction_items.product_id` is NULL for PPOB lines, so they are excluded
+/// here (as `get_top_products` in `commands/dashboard.rs` already does).
+/// Grouping over the NULL key produced one fabricated `productId: 0` row
+/// carrying an arbitrary PPOB name and every PPOB sale's qty and revenue.
+async fn query_product_sales(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<ProductSalesRow>, AppError> {
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -531,11 +541,12 @@ pub async fn report_product_sales(
             LEFT JOIN categories c ON c.id = p.category_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND t.created_at >= $1 AND t.created_at < $2
+            AND ti.product_id IS NOT NULL
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC",
             vec![
-                local_date_start_to_utc(&start_date).into(),
-                local_date_end_exclusive_to_utc(&end_date).into(),
+                local_date_start_to_utc(start_date).into(),
+                local_date_end_exclusive_to_utc(end_date).into(),
             ],
         ))
         .await?;
@@ -562,8 +573,17 @@ pub async fn report_popular_products(
     end_date: String,
     limit: i32,
 ) -> Result<Vec<PopularProductRow>, AppError> {
-    let db = db.inner();
-    let limit = limit.max(1).min(500);
+    query_popular_products(db.inner(), &start_date, &end_date, limit).await
+}
+
+/// See `query_product_sales` for why PPOB lines (NULL `product_id`) are skipped.
+async fn query_popular_products(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+    limit: i32,
+) -> Result<Vec<PopularProductRow>, AppError> {
+    let limit = limit.clamp(1, 500);
 
     let rows = db
         .query_all(Statement::from_sql_and_values(
@@ -581,12 +601,13 @@ pub async fn report_popular_products(
             LEFT JOIN categories c ON c.id = p.category_id
             WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
             AND t.created_at >= $1 AND t.created_at < $2
+            AND ti.product_id IS NOT NULL
             GROUP BY ti.product_id
             ORDER BY qty_sold DESC
             LIMIT $3",
             vec![
-                local_date_start_to_utc(&start_date).into(),
-                local_date_end_exclusive_to_utc(&end_date).into(),
+                local_date_start_to_utc(start_date).into(),
+                local_date_end_exclusive_to_utc(end_date).into(),
                 limit.into(),
             ],
         ))
@@ -1070,5 +1091,55 @@ mod tests {
         assert_eq!(summary.by_reason[0].reason, "damaged");
         assert_eq!(summary.by_reason[0].count, 1);
         assert_eq!(summary.by_reason[0].total_value, 20_000.0);
+    }
+
+    /// PPOB line items carry `product_id = NULL`. Grouping over them produced a
+    /// single fabricated `productId: 0` row holding every PPOB sale.
+    async fn seed_sale_with_ppob_items(conn: &DatabaseConnection) -> i64 {
+        let created_at = utc_at_local_noon(today());
+        let beras = insert_product(conn, "Beras 5kg", 30_000.0, 50_000.0, 100).await;
+        let txn = insert_transaction(conn, 1, 84_000.0, "completed", &created_at).await;
+        insert_transaction_item(
+            conn,
+            txn.id,
+            Some(beras.id),
+            "Beras 5kg",
+            50_000.0,
+            30_000.0,
+            1,
+        )
+        .await;
+        insert_transaction_item(conn, txn.id, None, "Token PLN 20rb", 22_000.0, 20_000.0, 1).await;
+        insert_transaction_item(conn, txn.id, None, "Pulsa 10rb", 12_000.0, 10_000.0, 1).await;
+        beras.id
+    }
+
+    #[tokio::test]
+    async fn product_sales_skip_items_without_product_id() {
+        let conn = setup_test_db().await;
+        let beras_id = seed_sale_with_ppob_items(&conn).await;
+        let day = date_str(today());
+
+        let rows = query_product_sales(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].product_id, beras_id);
+        assert_eq!(rows[0].product_name, "Beras 5kg");
+        assert_eq!(rows[0].total_revenue, 50_000.0);
+    }
+
+    #[tokio::test]
+    async fn popular_products_skip_items_without_product_id() {
+        let conn = setup_test_db().await;
+        let beras_id = seed_sale_with_ppob_items(&conn).await;
+        let day = date_str(today());
+
+        let rows = query_popular_products(&conn, &day, &day, 10)
+            .await
+            .expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].product_id, beras_id);
+        assert_eq!(rows[0].qty_sold, 1);
     }
 }
