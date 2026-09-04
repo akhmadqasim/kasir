@@ -59,6 +59,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { id } from "@/i18n/id"
+import { formatDateTime } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { BACKUP_LIST_QUERY_KEY, BACKUP_STATUS_QUERY_KEY, useCreateBackupMutation } from "../hooks/use-backup"
 import type { AppSettings, BackupInfo, BackupStatus, DatabaseInfo } from "../types"
@@ -69,17 +70,37 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function formatDate(dateStr: string): string {
+interface FileDialogOptions {
+  defaultPath?: string
+  filters?: { name: string; extensions: string[] }[]
+}
+
+type FileDialogResult =
+  | { outcome: "selected"; path: string }
+  | { outcome: "cancelled" }
+  | { outcome: "failed"; message: string }
+  | { outcome: "unavailable" }
+
+/**
+ * Open the Tauri file dialog, keeping apart the three outcomes a single `try` used to
+ * conflate: the plugin is missing, the dialog itself failed, and the user cancelled.
+ * Only `"unavailable"` may fall back to a manually typed path — otherwise a failed
+ * dialog would silently hand the operation a file the user never chose.
+ */
+async function chooseFilePath(
+  mode: "open" | "save",
+  options: FileDialogOptions
+): Promise<FileDialogResult> {
+  const dialog = await import("@tauri-apps/plugin-dialog").catch(() => null)
+  if (!dialog) return { outcome: "unavailable" }
+
   try {
-    return new Date(dateStr).toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return dateStr
+    const selected =
+      mode === "save" ? await dialog.save(options) : await dialog.open(options)
+    if (typeof selected !== "string" || !selected) return { outcome: "cancelled" }
+    return { outcome: "selected", path: selected }
+  } catch (error) {
+    return { outcome: "failed", message: String(error) }
   }
 }
 
@@ -228,25 +249,31 @@ export function DataTab() {
   const handleExportWithDialog = async () => {
     setIsExporting(true)
     try {
-      const { save } = await import("@tauri-apps/plugin-dialog")
-      const selected = await save({
+      const chosen = await chooseFilePath("save", {
         defaultPath: "kasir-backup.db",
         filters: [{ name: "SQLite Database", extensions: ["db"] }],
       })
-      if (!selected) {
-        setIsExporting(false)
+
+      if (chosen.outcome === "cancelled") return
+      if (chosen.outcome === "failed") {
+        toast.error(`Gagal membuka dialog file: ${chosen.message}`)
         return
       }
-      await invoke<number>("export_database", { exportPath: selected, callerId: user!.id })
-      toast.success(id.settings.exportSuccess)
-    } catch {
-      if (!exportPath.trim()) {
+
+      // The manual textbox is a fallback for builds without the dialog plugin only.
+      // It must never stand in for a dialog the user actually used.
+      const targetPath =
+        chosen.outcome === "selected" ? chosen.path : exportPath.trim()
+      if (!targetPath) {
         toast.error("Masukkan lokasi file export")
-        setIsExporting(false)
         return
       }
+
       try {
-        await invoke<number>("export_database", { exportPath: exportPath.trim(), callerId: user!.id })
+        await invoke<number>("export_database", {
+          exportPath: targetPath,
+          callerId: user!.id,
+        })
         toast.success(id.settings.exportSuccess)
       } catch (error) {
         toast.error(String(error))
@@ -259,25 +286,30 @@ export function DataTab() {
   const handleImportWithDialog = async () => {
     setIsImporting(true)
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog")
-      const selected = await open({
+      const chosen = await chooseFilePath("open", {
         filters: [{ name: "SQLite Database", extensions: ["db"] }],
       })
-      if (!selected) {
-        setIsImporting(false)
+
+      if (chosen.outcome === "cancelled") return
+      if (chosen.outcome === "failed") {
+        toast.error(`Gagal membuka dialog file: ${chosen.message}`)
         return
       }
-      const filePath = selected
-      await invoke<string>("import_database", { importPath: filePath, callerId: user!.id })
-      toast.success(id.settings.importSuccess)
-    } catch {
-      if (!importPath.trim()) {
+
+      // Importing overwrites the production database, so the textbox fallback is
+      // reachable only when the dialog plugin itself is missing.
+      const sourcePath =
+        chosen.outcome === "selected" ? chosen.path : importPath.trim()
+      if (!sourcePath) {
         toast.error("Masukkan lokasi file backup")
-        setIsImporting(false)
         return
       }
+
       try {
-        await invoke<string>("import_database", { importPath: importPath.trim(), callerId: user!.id })
+        await invoke<string>("import_database", {
+          importPath: sourcePath,
+          callerId: user!.id,
+        })
         toast.success(id.settings.importSuccess)
       } catch (error) {
         toast.error(String(error))
@@ -387,7 +419,7 @@ export function DataTab() {
           {status?.last_backup && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="h-4 w-4" />
-              Backup terakhir: {formatDate(status.last_backup.created_at)} —{" "}
+              Backup terakhir: {formatDateTime(status.last_backup.created_at)} —{" "}
               {formatFileSize(status.last_backup.size_bytes)}
             </div>
           )}
