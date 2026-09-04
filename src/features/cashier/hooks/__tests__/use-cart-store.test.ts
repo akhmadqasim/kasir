@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { MAX_CART_QUANTITY, useCartStore, type HeldCart } from "../use-cart-store"
+import {
+  MAX_CART_QUANTITY,
+  migrateCartState,
+  useCartStore,
+  type HeldCart,
+} from "../use-cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -896,5 +901,84 @@ describe("edge cases", () => {
     // 3333 * 33 / 100 = 1099.89 → round → 1100
     const disc = store().getItemDiscountAmount("product-1")
     expect(disc).toBe(Math.round(3333 * 33 / 100))
+  })
+})
+
+describe("persisted cart migration", () => {
+  it("drops PPOB rows whose inquiry has gone stale", () => {
+    const migrated = migrateCartState(
+      {
+        items: [
+          { cart_id: "product-1", product_name: "Beras", quantity: 1 },
+          { cart_id: "ppob-1", product_name: "Token PLN", quantity: 1, is_ppob: true },
+        ],
+        ppobCounter: 1,
+        heldCarts: [],
+        itemDiscounts: {},
+        transactionDiscount: null,
+      },
+      1
+    )
+
+    expect(migrated.items.map((i) => i.cart_id)).toEqual(["product-1"])
+  })
+
+  it("drops PPOB rows inside held carts too", () => {
+    const migrated = migrateCartState(
+      {
+        items: [],
+        heldCarts: [
+          {
+            id: "hold-1",
+            label: "Pak Budi",
+            items: [{ cart_id: "ppob-1", is_ppob: true }, { cart_id: "product-2" }],
+            itemDiscounts: {},
+            transactionDiscount: null,
+            total: 0,
+            heldAt: 0,
+          },
+        ],
+      },
+      1
+    )
+
+    expect(migrated.heldCarts[0].items.map((i) => i.cart_id)).toEqual(["product-2"])
+  })
+
+  it("discards pre-v1 global discounts that used to leak between carts", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        itemDiscounts: { "product-1": { type: "percentage", value: 50 } },
+        transactionDiscount: { type: "fixed", value: 5000 },
+      },
+      0
+    )
+
+    expect(migrated.itemDiscounts).toEqual({})
+    expect(migrated.transactionDiscount).toBeNull()
+  })
+
+  it("keeps discounts once they are already scoped per cart", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        itemDiscounts: { "product-1": { type: "fixed", value: 1000 } },
+        transactionDiscount: null,
+      },
+      1
+    )
+
+    expect(migrated.itemDiscounts).toEqual({
+      "product-1": { type: "fixed", value: 1000 },
+    })
+  })
+
+  it("tolerates a completely empty persisted payload", () => {
+    const migrated = migrateCartState(undefined, 0)
+
+    expect(migrated.items).toEqual([])
+    expect(migrated.heldCarts).toEqual([])
+    expect(migrated.ppobCounter).toBe(0)
   })
 })

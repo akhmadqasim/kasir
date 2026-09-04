@@ -67,6 +67,49 @@ interface CartStore {
   removeHeldCart: (holdId: string) => void
 }
 
+type PersistedCart = Pick<
+  CartStore,
+  "items" | "ppobCounter" | "heldCarts" | "itemDiscounts" | "transactionDiscount"
+>
+
+/**
+ * Baris PPOB membawa `ppob_inquiry_id` yang kedaluwarsa dalam hitungan menit.
+ * Keranjang yang dipulihkan setelah aplikasi ditutup pasti sudah lewat batas itu,
+ * dan checkout dengan inquiry basi berarti pelanggan membayar tapi fulfillment
+ * gagal. Jadi buang baris PPOB saat rehydrate, sisakan barang fisiknya.
+ */
+export function dropStalePpobItems(items: CartItem[]): CartItem[] {
+  return items.filter((item) => !item.is_ppob)
+}
+
+export function migrateCartState(persisted: unknown, version: number): PersistedCart {
+  const state = (persisted ?? {}) as Partial<PersistedCart>
+  const heldCarts = (state.heldCarts ?? []).map((cart) => ({
+    ...cart,
+    items: dropStalePpobItems(cart.items ?? []),
+  }))
+
+  // Sebelum v1, diskon disimpan global dan ikut bocor ke keranjang berikutnya.
+  // Tidak ada cara memetakannya kembali ke keranjang asalnya, jadi dibuang.
+  if (version < 1) {
+    return {
+      items: dropStalePpobItems(state.items ?? []),
+      ppobCounter: state.ppobCounter ?? 0,
+      heldCarts,
+      itemDiscounts: {},
+      transactionDiscount: null,
+    }
+  }
+
+  return {
+    items: dropStalePpobItems(state.items ?? []),
+    ppobCounter: state.ppobCounter ?? 0,
+    heldCarts,
+    itemDiscounts: state.itemDiscounts ?? {},
+    transactionDiscount: state.transactionDiscount ?? null,
+  }
+}
+
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
@@ -353,6 +396,7 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: "kasir-cart",
+      version: 1,
       partialize: (state) => ({
         items: state.items,
         ppobCounter: state.ppobCounter,
@@ -360,6 +404,7 @@ export const useCartStore = create<CartStore>()(
         itemDiscounts: state.itemDiscounts,
         transactionDiscount: state.transactionDiscount,
       }),
+      migrate: migrateCartState,
     }
   )
 )
