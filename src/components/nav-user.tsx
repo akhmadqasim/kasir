@@ -21,6 +21,7 @@ import {
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useCartStore } from "@/features/cashier/hooks/use-cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { UserProfileDialog } from "@/features/users/components/user-profile-dialog"
 
@@ -43,6 +44,9 @@ export function NavUser() {
   const handleLogout = () => {
     logout()
     useShiftStore.getState().clearShift()
+    // The cart is persisted to localStorage, so without this the next cashier
+    // inherits these items and checks them out under their own id.
+    useCartStore.getState().clear()
     navigate("/login")
   }
 

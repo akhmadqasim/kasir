@@ -29,7 +29,9 @@ export const useShiftStore = create<ShiftState>()(
           set({ activeShift: shift, isLoading: false })
           return shift
         } catch {
-          set({ isLoading: false })
+          // Keeping the persisted shift here would send checkout the id of a shift
+          // that is already closed, and the sale would miss every shift report.
+          set({ activeShift: null, isLoading: false })
           return null
         }
       },
@@ -46,6 +48,9 @@ export const useShiftStore = create<ShiftState>()(
     }),
     {
       name: "kasir-shift",
+      // Bump when the persisted shape changes so old localStorage entries are dropped
+      // instead of being rehydrated into a state the code no longer expects.
+      version: 1,
       partialize: (state) => ({ activeShift: state.activeShift }),
     }
   )
