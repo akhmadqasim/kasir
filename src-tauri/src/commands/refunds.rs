@@ -256,6 +256,16 @@ async fn create_refund_internal(
         ));
     }
 
+    // A void already restored the stock and zeroed the total. Refunding on top
+    // would restore that stock a second time, overwrite `deleted` with
+    // `refunded` while deleted_at/deleted_by stay filled in, and print a Rp 0
+    // refund receipt. `delete_transaction` guards the reverse order already.
+    if transaction.status == "deleted" || transaction.deleted_at.is_some() {
+        return Err(AppError::Validation(
+            "Transaksi sudah dibatalkan dan tidak bisa di-refund".into(),
+        ));
+    }
+
     // Check 7-day limit
     if let Some(ref created_at) = transaction.created_at {
         let txn_date = chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%d %H:%M:%S")
@@ -817,6 +827,71 @@ mod tests {
     /// a field for.
     fn refund_input(value: serde_json::Value) -> CreateRefundInput {
         serde_json::from_value(value).expect("refund input deserializes")
+    }
+
+    #[tokio::test]
+    async fn refund_rejects_a_voided_transaction() {
+        let conn = setup().await;
+
+        let product = insert_product(&conn, "Teh Kotak", 4_000.0, 6_000.0, 20).await;
+        let txn = sale(&conn, 6_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Teh Kotak",
+            6_000.0,
+            4_000.0,
+            1,
+        )
+        .await;
+
+        // Exactly what delete_transaction leaves behind: stock already given
+        // back, total zeroed, the void recorded.
+        let mut voided: transactions::ActiveModel = txn.clone().into();
+        voided.status = Set("deleted".to_string());
+        voided.total_amount = Set(0.0);
+        voided.deleted_at = Set(Some(now_ts()));
+        voided.deleted_by = Set(Some(1));
+        voided.deleted_reason = Set(Some("Salah input".to_string()));
+        voided.update(&conn).await.expect("void transaction");
+
+        let stock_before = stock_of(&conn, product.id).await;
+
+        let result = create_refund_internal(
+            &conn,
+            CreateRefundInput {
+                transaction_id: txn.id,
+                user_id: 1,
+                reason: None,
+                items: vec![RefundItemInput {
+                    transaction_item_id: txn_item.id,
+                    quantity: 1,
+                    condition: "good".to_string(),
+                }],
+                exchange_items: None,
+            },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(
+                    msg.contains("dibatalkan"),
+                    "Error should say the sale was voided, got: {msg}"
+                );
+            }
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+
+        // No second stock restore, and the void is still recorded as a void.
+        assert_eq!(stock_of(&conn, product.id).await, stock_before);
+        let reloaded = transactions::Entity::find_by_id(txn.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("transaction exists");
+        assert_eq!(reloaded.status, "deleted");
     }
 
     #[tokio::test]
