@@ -17,10 +17,14 @@ const VALID_CONDITIONS: &[&str] = &["good", "damaged", "expired"];
 
 // --- Input DTOs ---
 
+/// One returned line. The product is deliberately NOT part of this payload:
+/// it is derived from `transaction_item_id`, which is checked to belong to the
+/// transaction being refunded. A client-chosen product id let a refund restore
+/// stock for — and book a write-off loss against — an item that was never sold.
+/// Clients may still send `product_id`; it is ignored.
 #[derive(Debug, Deserialize)]
 pub struct RefundItemInput {
     pub transaction_item_id: i64,
-    pub product_id: i64,
     pub quantity: i64,
     pub condition: String,
 }
@@ -148,6 +152,37 @@ async fn generate_writeoff_number<C: ConnectionTrait>(db: &C) -> Result<String, 
     Ok(format!("{}{:04}", prefix, max_num + 1))
 }
 
+/// Resolves the sold line a refund input points at, together with the product
+/// whose stock it moves. Both come from the transaction itself, never from the
+/// client: `transaction_item_id` is the only thing a caller gets to choose, and
+/// it is checked against the lines of the transaction being refunded.
+///
+/// PPOB lines carry no `product_id` — there is no physical stock to give back —
+/// so they are rejected here rather than failing later on a NOT NULL column.
+fn resolve_refund_line<'a>(
+    txn_items: &'a [transaction_items::Model],
+    item_input: &RefundItemInput,
+) -> Result<(&'a transaction_items::Model, i64), AppError> {
+    let txn_item = txn_items
+        .iter()
+        .find(|ti| ti.id == item_input.transaction_item_id)
+        .ok_or_else(|| {
+            AppError::Validation(format!(
+                "Item transaksi ID {} tidak ditemukan dalam transaksi ini",
+                item_input.transaction_item_id
+            ))
+        })?;
+
+    let product_id = txn_item.product_id.ok_or_else(|| {
+        AppError::Validation(format!(
+            "'{}' bukan produk fisik dan tidak bisa di-refund",
+            txn_item.product_name
+        ))
+    })?;
+
+    Ok((txn_item, product_id))
+}
+
 // --- Commands ---
 
 async fn create_refund_internal(
@@ -261,15 +296,7 @@ async fn create_refund_internal(
 
     for item_input in &input.items {
         // Validate transaction item exists and belongs to this transaction
-        let txn_item = txn_items
-            .iter()
-            .find(|ti| ti.id == item_input.transaction_item_id)
-            .ok_or_else(|| {
-                AppError::Validation(format!(
-                    "Item transaksi ID {} tidak ditemukan dalam transaksi ini",
-                    item_input.transaction_item_id
-                ))
-            })?;
+        let (txn_item, _) = resolve_refund_line(&txn_items, item_input)?;
 
         // Check refund quantity doesn't exceed purchased quantity minus already
         // refunded (in prior refunds) and minus quantity already claimed by
@@ -328,10 +355,7 @@ async fn create_refund_internal(
 
     // Create refund items and handle stock
     for item_input in &input.items {
-        let txn_item = txn_items
-            .iter()
-            .find(|ti| ti.id == item_input.transaction_item_id)
-            .unwrap();
+        let (txn_item, product_id) = resolve_refund_line(&txn_items, item_input)?;
 
         let subtotal = txn_item.product_price * item_input.quantity as f64;
 
@@ -339,7 +363,7 @@ async fn create_refund_internal(
             id: NotSet,
             refund_id: Set(refund.id),
             transaction_item_id: Set(item_input.transaction_item_id),
-            product_id: Set(item_input.product_id),
+            product_id: Set(product_id),
             quantity: Set(item_input.quantity),
             subtotal: Set(subtotal),
             condition: Set(Some(item_input.condition.clone())),
@@ -350,7 +374,7 @@ async fn create_refund_internal(
         refund_items_result.push(refund_item);
 
         // Handle stock based on condition
-        let product = products::Entity::find_by_id(item_input.product_id)
+        let product = products::Entity::find_by_id(product_id)
             .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan".into()))?;
@@ -363,7 +387,7 @@ async fn create_refund_internal(
                 vec![
                     (item_input.quantity as i64).into(),
                     now.clone().into(),
-                    item_input.product_id.into(),
+                    product_id.into(),
                 ],
             ))
             .await?;
@@ -376,7 +400,7 @@ async fn create_refund_internal(
             let new_writeoff = stock_writeoffs::ActiveModel {
                 id: NotSet,
                 writeoff_number: Set(writeoff_number),
-                product_id: Set(item_input.product_id),
+                product_id: Set(product_id),
                 user_id: Set(input.user_id),
                 quantity: Set(item_input.quantity),
                 reason: Set(item_input.condition.clone()),
@@ -761,6 +785,135 @@ mod tests {
         insert_transaction(conn, 1, total, "completed", &now_ts()).await
     }
 
+    async fn stock_of(conn: &DatabaseConnection, product_id: i64) -> i64 {
+        products::Entity::find_by_id(product_id)
+            .one(conn)
+            .await
+            .expect("product query")
+            .expect("product exists")
+            .stock
+    }
+
+    /// Builds the input the way the IPC layer does, from the JSON the client
+    /// sends. Lets a test express a payload that the Rust struct no longer has
+    /// a field for.
+    fn refund_input(value: serde_json::Value) -> CreateRefundInput {
+        serde_json::from_value(value).expect("refund input deserializes")
+    }
+
+    #[tokio::test]
+    async fn refund_ignores_client_supplied_product_id() {
+        let conn = setup().await;
+
+        let soap = insert_product(&conn, "Sabun", 3_000.0, 5_000.0, 10).await;
+        let rice = insert_product(&conn, "Beras 25kg", 250_000.0, 300_000.0, 4).await;
+        let txn = sale(&conn, 5_000.0).await;
+        let txn_item =
+            insert_transaction_item(&conn, txn.id, Some(soap.id), "Sabun", 5_000.0, 3_000.0, 1)
+                .await;
+
+        // A tampered payload refunds a Rp 5.000 soap while naming the 25kg rice
+        // sack, which used to conjure rice stock out of nothing.
+        let result = create_refund_internal(
+            &conn,
+            refund_input(serde_json::json!({
+                "transaction_id": txn.id,
+                "user_id": 1,
+                "reason": "Salah beli",
+                "items": [{
+                    "transaction_item_id": txn_item.id,
+                    "product_id": rice.id,
+                    "quantity": 1,
+                    "condition": "good"
+                }],
+                "exchange_items": null
+            })),
+        )
+        .await
+        .expect("refund should succeed");
+
+        assert_eq!(result.items[0].product_id, soap.id);
+        assert_eq!(stock_of(&conn, soap.id).await, 11);
+        assert_eq!(stock_of(&conn, rice.id).await, 4);
+    }
+
+    #[tokio::test]
+    async fn refund_writeoff_uses_the_sold_product_cost() {
+        let conn = setup().await;
+
+        let soap = insert_product(&conn, "Sabun", 3_000.0, 5_000.0, 10).await;
+        let rice = insert_product(&conn, "Beras 25kg", 250_000.0, 300_000.0, 4).await;
+        let txn = sale(&conn, 5_000.0).await;
+        let txn_item =
+            insert_transaction_item(&conn, txn.id, Some(soap.id), "Sabun", 5_000.0, 3_000.0, 1)
+                .await;
+
+        let result = create_refund_internal(
+            &conn,
+            refund_input(serde_json::json!({
+                "transaction_id": txn.id,
+                "user_id": 1,
+                "reason": "Rusak",
+                "items": [{
+                    "transaction_item_id": txn_item.id,
+                    "product_id": rice.id,
+                    "quantity": 1,
+                    "condition": "damaged"
+                }],
+                "exchange_items": null
+            })),
+        )
+        .await
+        .expect("refund should succeed");
+
+        let writeoffs = stock_writeoffs::Entity::find()
+            .filter(stock_writeoffs::Column::RefundId.eq(result.refund.id))
+            .all(&conn)
+            .await
+            .expect("query writeoffs");
+
+        assert_eq!(writeoffs.len(), 1);
+        // The loss is the soap's cost price, not the rice sack's.
+        assert_eq!(writeoffs[0].product_id, soap.id);
+        assert_eq!(writeoffs[0].loss_value, 3_000.0);
+    }
+
+    #[tokio::test]
+    async fn refund_rejects_transaction_item_without_product() {
+        let conn = setup().await;
+
+        let txn = sale(&conn, 12_000.0).await;
+        // PPOB lines carry no product_id; there is no stock to give back.
+        let txn_item =
+            insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1).await;
+
+        let result = create_refund_internal(
+            &conn,
+            refund_input(serde_json::json!({
+                "transaction_id": txn.id,
+                "user_id": 1,
+                "reason": null,
+                "items": [{
+                    "transaction_item_id": txn_item.id,
+                    "quantity": 1,
+                    "condition": "good"
+                }],
+                "exchange_items": null
+            })),
+        )
+        .await;
+
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(
+                    msg.contains("Pulsa 10K"),
+                    "Error should name the offending line, got: {msg}"
+                );
+            }
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
     #[tokio::test]
     async fn test_refund_writeoff_status_is_pending() {
         let conn = setup().await;
@@ -786,7 +939,6 @@ mod tests {
                 reason: Some("Barang rusak".to_string()),
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "damaged".to_string(),
                 }],
@@ -835,7 +987,6 @@ mod tests {
                 reason: Some("Salah beli".to_string()),
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "good".to_string(),
                 }],
@@ -893,7 +1044,6 @@ mod tests {
                 reason: Some("Mau kembalikan".to_string()),
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "good".to_string(),
                 }],
@@ -974,7 +1124,6 @@ mod tests {
                 reason: None,
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "broken".to_string(), // invalid condition
                 }],
@@ -1021,7 +1170,6 @@ mod tests {
                 reason: None,
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "good".to_string(),
                 }],
@@ -1065,7 +1213,6 @@ mod tests {
                 reason: None,
                 items: vec![RefundItemInput {
                     transaction_item_id: txn_item.id,
-                    product_id: product.id,
                     quantity: 1,
                     condition: "good".to_string(),
                 }],
