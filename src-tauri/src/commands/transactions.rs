@@ -20,6 +20,14 @@ const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "tr
 const STATUS_COMPLETED: &str = "completed";
 const MIXED_PAYMENT_METHOD: &str = "mixed";
 
+/// Fulfilment states of a PPOB line. `pending` is set at checkout and owned by
+/// the background task that follows it; `processing` is owned by a retry. Both
+/// mean "a provider call is in flight", so neither may be retried.
+const PPOB_STATUS_PENDING: &str = "pending";
+const PPOB_STATUS_PROCESSING: &str = "processing";
+const PPOB_STATUS_SUCCESS: &str = "success";
+const PPOB_STATUS_FAILED: &str = "failed";
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionItemInput {
     pub product_id: Option<i64>,
@@ -561,7 +569,11 @@ async fn persist_transaction<C: ConnectionTrait>(
             ppob_inquiry_id: Set(item.ppob_inquiry_id.clone()),
             ppob_payment_code: Set(item.ppob_payment_code.clone()),
             ppob_flag_id: Set(item.ppob_flag_id.clone()),
-            ppob_status: Set(if is_ppob { Some("pending".to_string()) } else { None }),
+            ppob_status: Set(if is_ppob {
+                Some(PPOB_STATUS_PENDING.to_string())
+            } else {
+                None
+            }),
             ppob_message: Set(None),
             ppob_serial_number: Set(None),
             created_at: Set(Some(now.clone())),
@@ -782,7 +794,7 @@ where
                 update_ppob_item_status(
                     db,
                     ppob_item_id,
-                    "success",
+                    PPOB_STATUS_SUCCESS,
                     Some(build_ppob_success_message(&payment_result)),
                     payment_result.serial_number.clone(),
                 )
@@ -792,7 +804,7 @@ where
                 update_ppob_item_status(
                     db,
                     ppob_item_id,
-                    "failed",
+                    PPOB_STATUS_FAILED,
                     Some(error.to_string()),
                     None,
                 )
@@ -846,7 +858,7 @@ pub async fn checkout_transaction(
                         let _ = update_ppob_item_status(
                             &bg_conn,
                             ppob_item_id,
-                            "success",
+                            PPOB_STATUS_SUCCESS,
                             Some(build_ppob_success_message(&payment_result)),
                             payment_result.serial_number.clone(),
                         )
@@ -856,7 +868,7 @@ pub async fn checkout_transaction(
                         let _ = update_ppob_item_status(
                             &bg_conn,
                             ppob_item_id,
-                            "failed",
+                            PPOB_STATUS_FAILED,
                             Some(error.to_string()),
                             None,
                         )
@@ -884,6 +896,68 @@ pub async fn create_transaction(
     .await
 }
 
+/// Claims a failed PPOB line for exactly one more fulfilment attempt.
+///
+/// The claim is a single conditional UPDATE, so of two callers racing on the
+/// same line only one can move it out of `failed` and only that one goes on to
+/// call the provider. The old code read the status, `await`ed, then wrote
+/// `"pending"`: two clicks — or one click while the checkout's own background
+/// task was still in flight — both passed the check and paid the provider twice
+/// for a single sale.
+///
+/// `pending` means the checkout task has not reported back yet and `processing`
+/// means another retry is in flight; neither is retryable. The request is built
+/// before the claim so a malformed line fails without leaving the row stuck in
+/// `processing`.
+async fn claim_ppob_retry(
+    db: &DatabaseConnection,
+    item_id: i64,
+) -> Result<PpobFulfillmentRequest, AppError> {
+    let item = transaction_items::Entity::find_by_id(item_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Item transaksi tidak ditemukan".into()))?;
+
+    match item.ppob_status.as_deref().unwrap_or("") {
+        PPOB_STATUS_FAILED => {}
+        PPOB_STATUS_PENDING | PPOB_STATUS_PROCESSING => {
+            return Err(AppError::Validation(
+                "Fulfillment PPOB masih diproses. Tunggu hasilnya sebelum retry.".into(),
+            ))
+        }
+        _ => {
+            return Err(AppError::Validation(
+                "Hanya item PPOB yang gagal yang bisa di-retry".into(),
+            ))
+        }
+    }
+
+    let request = build_ppob_request(&item)?;
+
+    let claimed = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transaction_items
+             SET ppob_status = $1, ppob_message = $2
+             WHERE id = $3 AND ppob_status = $4",
+            vec![
+                PPOB_STATUS_PROCESSING.into(),
+                "Sedang di-retry...".to_string().into(),
+                item_id.into(),
+                PPOB_STATUS_FAILED.into(),
+            ],
+        ))
+        .await?;
+
+    if claimed.rows_affected() != 1 {
+        return Err(AppError::Validation(
+            "Fulfillment PPOB sedang diproses oleh permintaan lain".into(),
+        ));
+    }
+
+    Ok(request)
+}
+
 #[tauri::command]
 pub async fn retry_ppob_fulfillment(
     db: State<'_, DatabaseConnection>,
@@ -893,25 +967,7 @@ pub async fn retry_ppob_fulfillment(
     let conn = db.inner().clone();
     let mitra = mitra.inner().clone();
 
-    let item = transaction_items::Entity::find_by_id(item_id)
-        .one(&conn)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Item transaksi tidak ditemukan".into()))?;
-
-    let ppob_status = item
-        .ppob_status
-        .as_deref()
-        .unwrap_or("");
-    if ppob_status != "failed" && ppob_status != "pending" {
-        return Err(AppError::Validation(
-            "Hanya item PPOB yang gagal atau pending yang bisa di-retry".into(),
-        ));
-    }
-
-    let request = build_ppob_request(&item)?;
-
-    // Reset to pending before retrying
-    update_ppob_item_status(&conn, item_id, "pending", Some("Sedang di-retry...".into()), None).await?;
+    let request = claim_ppob_retry(&conn, item_id).await?;
 
     let bg_conn = conn.clone();
     tokio::spawn(async move {
@@ -920,7 +976,7 @@ pub async fn retry_ppob_fulfillment(
                 let _ = update_ppob_item_status(
                     &bg_conn,
                     item_id,
-                    "success",
+                    PPOB_STATUS_SUCCESS,
                     Some(build_ppob_success_message(&payment_result)),
                     payment_result.serial_number.clone(),
                 )
@@ -930,7 +986,7 @@ pub async fn retry_ppob_fulfillment(
                 let _ = update_ppob_item_status(
                     &bg_conn,
                     item_id,
-                    "failed",
+                    PPOB_STATUS_FAILED,
                     Some(error.to_string()),
                     None,
                 )
@@ -1906,6 +1962,128 @@ mod tests {
     fn validate_discounts_rejects_negative_transaction_discount() {
         let items = vec![resolved_item(20_000.0, 0.0)];
         assert!(validate_discounts(&items, -1.0).is_err());
+    }
+
+    /// A completed sale with one PPOB line, left in `ppob_status`.
+    async fn seed_ppob_sale(conn: &DatabaseConnection, ppob_status: &str) -> transaction_items::Model {
+        let result = checkout_transaction_with_executor(
+            conn,
+            CheckoutTransactionInput {
+                user_id: 1,
+                items: vec![TransactionItemInput {
+                    product_id: None,
+                    quantity: 1,
+                    product_name: Some("Pulsa Telkomsel 10K".to_string()),
+                    product_price: Some(12_000.0),
+                    buy_price: Some(10_000.0),
+                    service_type: Some("pulsa".to_string()),
+                    service_ref: Some("08123456789".to_string()),
+                    ppob_product_id: Some(101),
+                    ppob_product_code: Some("TS10".to_string()),
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 12_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+            },
+            |_request| async { Err(AppError::Internal("Provider timeout".into())) },
+        )
+        .await
+        .expect("ppob checkout success");
+
+        let item = result
+            .items
+            .into_iter()
+            .find(|item| item.service_type.is_some())
+            .expect("ppob line");
+
+        update_ppob_item_status(conn, item.id, ppob_status, None, None)
+            .await
+            .expect("set ppob status");
+
+        transaction_items::Entity::find_by_id(item.id)
+            .one(conn)
+            .await
+            .expect("query")
+            .expect("item exists")
+    }
+
+    async fn ppob_status_of(conn: &DatabaseConnection, item_id: i64) -> Option<String> {
+        transaction_items::Entity::find_by_id(item_id)
+            .one(conn)
+            .await
+            .expect("query")
+            .expect("item exists")
+            .ppob_status
+    }
+
+    #[tokio::test]
+    async fn ppob_retry_claims_a_failed_line_once() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_FAILED).await;
+
+        claim_ppob_retry(&conn, item.id)
+            .await
+            .expect("first retry claims the line");
+        assert_eq!(
+            ppob_status_of(&conn, item.id).await.as_deref(),
+            Some(PPOB_STATUS_PROCESSING)
+        );
+
+        // A second click, while the first attempt is still in flight, must not
+        // reach the provider again.
+        match claim_ppob_retry(&conn, item.id).await {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("diproses"),
+                "Error should say a call is in flight, got: {msg}"
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn ppob_retry_refuses_a_pending_line() {
+        let conn = setup_test_db().await;
+        // Checkout leaves the line `pending` while its background task runs.
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_PENDING).await;
+
+        match claim_ppob_retry(&conn, item.id).await {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("diproses"),
+                "Error should say a call is in flight, got: {msg}"
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+
+        assert_eq!(
+            ppob_status_of(&conn, item.id).await.as_deref(),
+            Some(PPOB_STATUS_PENDING)
+        );
+    }
+
+    #[tokio::test]
+    async fn ppob_retry_refuses_an_already_fulfilled_line() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_SUCCESS).await;
+
+        match claim_ppob_retry(&conn, item.id).await {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("gagal"),
+                "Error should say only failed lines retry, got: {msg}"
+            ),
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+
+        assert_eq!(
+            ppob_status_of(&conn, item.id).await.as_deref(),
+            Some(PPOB_STATUS_SUCCESS)
+        );
     }
 
     /// A completed one-line cash sale, ready to be voided or amended.
