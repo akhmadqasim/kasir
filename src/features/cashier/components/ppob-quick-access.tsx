@@ -44,32 +44,20 @@ import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import type { AppSettings } from "@/features/settings/types"
 import { useCartStore } from "../hooks/use-cart-store"
+import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../ppob-pricing"
 import { formatRupiah, getAddItemValidationError } from "../utils"
 
 export type ServiceType = QuickAccessServiceKey
 
-function calculateSellPrice(buyPrice: number, config: PpobMarkupConfig): number {
-  if (config.value <= 0) return buyPrice
-  if (config.type === "fixed") return buyPrice + config.value
-  return Math.round(buyPrice * (1 + config.value / 100))
-}
-
-/** Extract nominal value from PPOB product name (e.g., "Pulsa 5000", "5K", "5.000") */
-function extractNominal(name: string): number | null {
-  // Match patterns like "5000", "5.000", "10000", "10.000", "100.000"
-  const numMatch = name.match(/\b(\d{1,3}(?:\.\d{3})*)\b/)
-  if (numMatch) {
-    const val = parseInt(numMatch[1].replace(/\./g, ""), 10)
-    if (val >= 1000 && val <= 1000000) return val
-  }
-  // Match patterns like "5K", "10K", "100K"
-  const kMatch = name.match(/\b(\d+)[kK]\b/)
-  if (kMatch) {
-    const val = parseInt(kMatch[1], 10) * 1000
-    if (val >= 1000 && val <= 1000000) return val
-  }
-  return null
-}
+/**
+ * Resolves the price the customer is charged. The confirmation panel and the
+ * cart both read this same value, so what is shown is what is charged.
+ */
+export type ResolveSellPrice = (input: {
+  name: string
+  serviceType: string
+  vendorCost: number
+}) => number
 
 interface BpjsParticipant {
   number: string
@@ -128,8 +116,6 @@ function parseBpjsParticipants(dataBook: string): BpjsParticipant[] {
   return participants
 }
 
-const DEFAULT_MARKUP: PpobMarkupConfig = { type: "fixed", value: 0 }
-
 interface PpobQuickAccessProps {
   initialService?: ServiceType
   onBack?: () => void
@@ -167,15 +153,26 @@ export function PpobQuickAccess({
   }, [])
 
   const getMarkupConfig = (serviceType: string): PpobMarkupConfig => {
-    if (!markup) return DEFAULT_MARKUP
-    return (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_MARKUP
+    if (!markup) return DEFAULT_PPOB_MARKUP
+    return (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_PPOB_MARKUP
   }
+
+  const resolveSellPrice: ResolveSellPrice = ({ name, serviceType, vendorCost }) =>
+    resolvePpobSellPrice({
+      name,
+      serviceType,
+      vendorCost,
+      markup: getMarkupConfig(serviceType),
+      customPrices,
+    })
 
   const handleAddToCart = (item: {
     name: string
+    /** Final sell price, already resolved by the caller via resolveSellPrice */
     price: number
     service_type: string
     service_ref: string
+    /** What the store pays the vendor — bill plus admin fee for bill payments */
     buy_price?: number
     ppob_product_id?: number
     ppob_product_code?: string
@@ -189,21 +186,13 @@ export function PpobQuickAccess({
       return
     }
 
-    const buyPrice = item.buy_price ?? item.price
-
-    // Priority: 1. Nominal-based custom price (pulsa), 2. Markup config, 3. Raw price
-    let sellPrice: number
-    const nominal = item.service_type === "pulsa" ? extractNominal(item.name) : null
-    if (nominal && customPrices[String(nominal)] > 0) {
-      sellPrice = customPrices[String(nominal)]
-    } else {
-      const markupConfig = getMarkupConfig(item.service_type)
-      sellPrice = calculateSellPrice(buyPrice, markupConfig)
-    }
+    const vendorCost = item.buy_price ?? item.price
+    const sellPrice = Math.max(item.price, vendorCost)
 
     addPpobItem({
       ...item,
-      buy_price: buyPrice,
+      price: sellPrice,
+      buy_price: vendorCost,
       sell_price: sellPrice,
       ppob_product_id: item.ppob_product_id,
       ppob_product_code: item.ppob_product_code,
@@ -250,12 +239,12 @@ export function PpobQuickAccess({
           </div>
         </div>
 
-        {selectedService === "pulsa" && <PulsaInput onAddToCart={handleAddToCart} productType="pulsa" wideLayout={wideLayout} />}
-        {selectedService === "data" && <PulsaInput onAddToCart={handleAddToCart} productType="data" wideLayout={wideLayout} />}
-        {selectedService === "pln" && <PlnInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
-        {selectedService === "pdam" && <PdamInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
-        {selectedService === "bpjs" && <BpjsInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
-        {selectedService === "emoney" && <EmoneyInput onAddToCart={handleAddToCart} wideLayout={wideLayout} />}
+        {selectedService === "pulsa" && <PulsaInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} productType="pulsa" wideLayout={wideLayout} />}
+        {selectedService === "data" && <PulsaInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} productType="data" wideLayout={wideLayout} />}
+        {selectedService === "pln" && <PlnInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
+        {selectedService === "pdam" && <PdamInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
+        {selectedService === "bpjs" && <BpjsInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
+        {selectedService === "emoney" && <EmoneyInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
       </div>
     )
   }
@@ -325,6 +314,7 @@ function SaldoBar() {
 // --- Pulsa / Data Input ---
 function PulsaInput({
   onAddToCart,
+  resolveSellPrice,
   productType,
   wideLayout = false,
 }: {
@@ -337,6 +327,7 @@ function PulsaInput({
     ppob_product_id?: number
     ppob_product_code?: string
   }) => void
+  resolveSellPrice: ResolveSellPrice
   productType: "pulsa" | "data"
   wideLayout?: boolean
 }) {
@@ -351,12 +342,23 @@ function PulsaInput({
     return !p.description.toLowerCase().includes("data") && !p.description.toLowerCase().includes("internet")
   }) ?? []
 
+  const buildItemName = (product: PulsaDetailProduct) =>
+    `${productType === "pulsa" ? "Pulsa" : "Data"} ${data?.provider ?? ""} - ${product.description.replace(/\n/g, " ")}`
+
+  const getSellPrice = (product: PulsaDetailProduct) =>
+    resolveSellPrice({
+      name: buildItemName(product),
+      serviceType: productType,
+      vendorCost: product.vendorPrice,
+    })
+
+  const selectedSellPrice = selected ? getSellPrice(selected) : 0
+
   const handleConfirm = () => {
     if (!selected || !phoneNumber) return
-    const sellPrice = selected.lastPrice ?? selected.basePrice
     onAddToCart({
-      name: `${productType === "pulsa" ? "Pulsa" : "Data"} ${data?.provider ?? ""} - ${selected.description.replace(/\n/g, " ")}`,
-      price: sellPrice,
+      name: buildItemName(selected),
+      price: selectedSellPrice,
       service_type: productType,
       service_ref: phoneNumber,
       buy_price: selected.vendorPrice,
@@ -370,8 +372,9 @@ function PulsaInput({
     { label: "Provider", value: data?.provider ?? "-" },
     { label: "Nomor HP", value: phoneNumber, mono: true },
     { label: "Produk", value: selected.description.replace(/\n/g, " ") },
-    { label: "Harga Jual", value: formatRupiah(selected.lastPrice ?? selected.basePrice), bold: true },
-    { label: "Margin", value: `+${formatRupiah((selected.lastPrice ?? selected.basePrice) - selected.vendorPrice)}`, green: true },
+    { label: "Modal", value: formatRupiah(selected.vendorPrice) },
+    { label: "Harga Jual", value: formatRupiah(selectedSellPrice), bold: true },
+    { label: "Margin", value: `+${formatRupiah(selectedSellPrice - selected.vendorPrice)}`, green: true },
   ] : null
 
   const inputSection = (
@@ -413,7 +416,7 @@ function PulsaInput({
         <div className={`grid gap-2 ${wideLayout ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           {filteredProducts.map((product) => {
             const isSelected = selected?.id === product.id
-            const sellPrice = product.lastPrice ?? product.basePrice
+            const sellPrice = getSellPrice(product)
             return (
               <Card
                 key={product.id}
@@ -466,6 +469,7 @@ function PulsaInput({
 // --- PLN Input ---
 function PlnInput({
   onAddToCart,
+  resolveSellPrice,
   wideLayout = false,
 }: {
   onAddToCart: (item: {
@@ -478,6 +482,7 @@ function PlnInput({
     ppob_payment_code?: string
     ppob_flag_id?: string
   }) => void
+  resolveSellPrice: ResolveSellPrice
   wideLayout?: boolean
 }) {
   const [mode, setMode] = useState<"token" | "postpaid">("token")
@@ -512,19 +517,28 @@ function PlnInput({
     )
   }
 
-  const handleConfirm = () => {
-    if (!inquiryResult) return
+  // Yang dibayar toko ke vendor = tagihan + biaya admin.
+  const vendorCost = inquiryResult?.total ?? 0
+  const itemName = (() => {
     const label = mode === "token" ? "PLN Token" : "PLN Bayar"
-    const customerName = inquiryResult.customerName ?? customerId
+    const customerName = inquiryResult?.customerName ?? customerId
     const denomLabel = mode === "token" && selectedDenom !== null
       ? ` ${formatRupiah(parseFloat(denoms?.find(d => d.id === selectedDenom)?.denom ?? "0"))}`
       : ""
+    return `${label}${denomLabel} - ${customerName}`
+  })()
+  const sellPrice = inquiryResult
+    ? resolveSellPrice({ name: itemName, serviceType: "pln", vendorCost })
+    : 0
+
+  const handleConfirm = () => {
+    if (!inquiryResult) return
     onAddToCart({
-      name: `${label}${denomLabel} - ${customerName}`,
-      price: inquiryResult.total,
+      name: itemName,
+      price: sellPrice,
       service_type: "pln",
       service_ref: customerId,
-      buy_price: inquiryResult.amount,
+      buy_price: vendorCost,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: customerId,
       ppob_flag_id: mode === "token" ? "0" : "1",
@@ -543,7 +557,10 @@ function PlnInput({
     ...(plnInquiryData?.Golongan ? [{ label: "Tarif/Daya", value: `${plnInquiryData.Golongan}/${plnInquiryData.Kategori ?? ""}` }] : []),
     { label: "Harga Token", value: formatRupiah(inquiryResult.amount) },
     { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+    ...(sellPrice > vendorCost
+      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+      : []),
+    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
   ] : null
 
   const inputSection = (
@@ -640,6 +657,7 @@ function PlnInput({
 // --- PDAM Input ---
 function PdamInput({
   onAddToCart,
+  resolveSellPrice,
   wideLayout = false,
 }: {
   onAddToCart: (item: {
@@ -652,6 +670,7 @@ function PdamInput({
     ppob_inquiry_id?: string
     ppob_payment_code?: string
   }) => void
+  resolveSellPrice: ResolveSellPrice
   wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
@@ -672,15 +691,22 @@ function PdamInput({
     )
   }
 
+  // Yang dibayar toko ke vendor = tagihan + biaya admin.
+  const vendorCost = inquiryResult?.total ?? 0
+  const pdamName = pdamProducts?.find(p => p.plu === selectedPdam)?.merchant ?? "PDAM"
+  const itemName = `PDAM ${pdamName} - ${inquiryResult?.customerName ?? customerId}`
+  const sellPrice = inquiryResult
+    ? resolveSellPrice({ name: itemName, serviceType: "pdam", vendorCost })
+    : 0
+
   const handleConfirm = () => {
     if (!inquiryResult) return
-    const pdamName = pdamProducts?.find(p => p.plu === selectedPdam)?.merchant ?? "PDAM"
     onAddToCart({
-      name: `PDAM ${pdamName} - ${inquiryResult.customerName ?? customerId}`,
-      price: inquiryResult.total,
+      name: itemName,
+      price: sellPrice,
       service_type: "pdam",
       service_ref: customerId,
-      buy_price: inquiryResult.amount,
+      buy_price: vendorCost,
       ppob_product_id: pdamProducts?.find(p => p.plu === selectedPdam)?.id,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: selectedPdam,
@@ -693,7 +719,10 @@ function PdamInput({
     { label: "Nama", value: inquiryResult.customerName ?? "-" },
     { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
     { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+    ...(sellPrice > vendorCost
+      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+      : []),
+    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
   ] : null
 
   const inputSection = (
@@ -775,6 +804,7 @@ const BPJS_TYPE_OPTIONS = [
 
 function BpjsInput({
   onAddToCart,
+  resolveSellPrice,
   wideLayout = false,
 }: {
   onAddToCart: (item: {
@@ -788,6 +818,7 @@ function BpjsInput({
     ppob_payment_code?: string
     ppob_flag_id?: string
   }) => void
+  resolveSellPrice: ResolveSellPrice
   wideLayout?: boolean
 }) {
   const [customerId, setCustomerId] = useState("")
@@ -830,14 +861,21 @@ function BpjsInput({
     )
   }
 
+  // Yang dibayar toko ke vendor = tagihan + biaya admin.
+  const vendorCost = inquiryResult?.total ?? 0
+  const itemName = `${selectedBpjsType.serviceLabel} - ${displayCustomerName}${bpjsParticipants.length > 1 ? ` +${bpjsParticipants.length - 1} peserta` : ""}`
+  const sellPrice = inquiryResult
+    ? resolveSellPrice({ name: itemName, serviceType: "bpjs", vendorCost })
+    : 0
+
   const handleConfirm = () => {
     if (!inquiryResult) return
     onAddToCart({
-      name: `${selectedBpjsType.serviceLabel} - ${displayCustomerName}${bpjsParticipants.length > 1 ? ` +${bpjsParticipants.length - 1} peserta` : ""}`,
-      price: inquiryResult.total,
+      name: itemName,
+      price: sellPrice,
       service_type: "bpjs",
       service_ref: customerId,
-      buy_price: inquiryResult.amount,
+      buy_price: vendorCost,
       ppob_product_code: selectedBpjsType.value,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: bpjsPaymentCode,
@@ -856,7 +894,10 @@ function BpjsInput({
     })),
     { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
     { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+    ...(sellPrice > vendorCost
+      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+      : []),
+    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
   ] : null
 
   const inputSection = (
@@ -929,6 +970,7 @@ function BpjsInput({
 // --- E-Money Input ---
 function EmoneyInput({
   onAddToCart,
+  resolveSellPrice,
   wideLayout = false,
 }: {
   onAddToCart: (item: {
@@ -940,6 +982,7 @@ function EmoneyInput({
     ppob_inquiry_id?: string
     ppob_product_code?: string
   }) => void
+  resolveSellPrice: ResolveSellPrice
   wideLayout?: boolean
 }) {
   const [phoneNumber, setPhoneNumber] = useState("")
@@ -959,14 +1002,21 @@ function EmoneyInput({
     )
   }
 
+  // Yang dibayar toko ke vendor = nominal + biaya admin.
+  const vendorCost = inquiryResult?.total ?? 0
+  const itemName = `E-Money ${selectedDenom?.denom ?? ""} - ${phoneNumber}`
+  const sellPrice = inquiryResult
+    ? resolveSellPrice({ name: itemName, serviceType: "emoney", vendorCost })
+    : 0
+
   const handleConfirm = () => {
     if (!inquiryResult || !selectedDenom) return
     onAddToCart({
-      name: `E-Money ${selectedDenom.denom} - ${phoneNumber}`,
-      price: inquiryResult.total,
+      name: itemName,
+      price: sellPrice,
       service_type: "emoney",
       service_ref: phoneNumber,
-      buy_price: inquiryResult.amount,
+      buy_price: vendorCost,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_product_code: selectedDenom.denom,
     })
@@ -976,7 +1026,13 @@ function EmoneyInput({
     { label: "Layanan", value: "E-Money" },
     { label: "Nomor", value: phoneNumber, mono: true },
     { label: "Nominal", value: selectedDenom?.denom ? formatRupiah(parseFloat(selectedDenom.denom)) : "-" },
-    { label: "Total", value: formatRupiah(inquiryResult.total), bold: true },
+    ...(inquiryResult.adminFee > 0
+      ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
+      : []),
+    ...(sellPrice > vendorCost
+      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+      : []),
+    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
   ] : null
 
   const inputSection = (
