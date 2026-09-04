@@ -377,10 +377,19 @@ fn calculate_payment_amount_with_breakdown(
                 let mut effective_splits = splits.clone();
                 effective_splits[cash_index].amount = remaining_due;
 
-                let payment_method = if effective_splits.len() == 1 {
-                    effective_splits[0].payment_method.clone()
-                } else {
-                    MIXED_PAYMENT_METHOD.to_string()
+                // Drop splits that contribute nothing. When the non-cash legs
+                // already cover the total the cash leg lands on 0, and keeping
+                // it recorded the sale as `mixed`, inserted a Rp 0 payment row,
+                // made the sale match a "cash" filter and put a spurious empty
+                // bucket in the payment-method stats.
+                effective_splits.retain(|split| split.amount > 0.0);
+
+                let payment_method = match effective_splits.len() {
+                    // A zero-total sale paid in cash: nothing is left to record,
+                    // so fall back to the method the cashier actually chose.
+                    0 => splits[cash_index].payment_method.clone(),
+                    1 => effective_splits[0].payment_method.clone(),
+                    _ => MIXED_PAYMENT_METHOD.to_string(),
                 };
 
                 return Ok((payment_method, total_paid, change_amount, effective_splits));
@@ -1896,6 +1905,58 @@ mod tests {
     fn validate_discounts_rejects_negative_transaction_discount() {
         let items = vec![resolved_item(20_000.0, 0.0)];
         assert!(validate_discounts(&items, -1.0).is_err());
+    }
+
+    fn breakdown_input(splits: Vec<(&str, f64)>) -> CheckoutTransactionInput {
+        CheckoutTransactionInput {
+            user_id: 1,
+            items: vec![],
+            payment_method: "cash".to_string(),
+            payment_amount: 0.0,
+            payment_breakdown: Some(
+                splits
+                    .into_iter()
+                    .map(|(method, amount)| PaymentSplitInput {
+                        payment_method: method.to_string(),
+                        bank_name: None,
+                        amount,
+                    })
+                    .collect(),
+            ),
+            notes: None,
+            transaction_discount: None,
+            shift_id: None,
+        }
+    }
+
+    #[test]
+    fn fully_non_cash_payment_drops_the_zero_cash_split() {
+        // QRIS already covers the 50.000 total; the 20.000 cash the customer put
+        // on the counter is all change.
+        let input = breakdown_input(vec![("qris", 50_000.0), ("cash", 20_000.0)]);
+
+        let (payment_method, payment_amount, change_amount, splits) =
+            calculate_payment_amount_with_breakdown(&input, 50_000.0).expect("breakdown accepted");
+
+        assert_eq!(payment_method, "qris");
+        assert_eq!(payment_amount, 70_000.0);
+        assert_eq!(change_amount, 20_000.0);
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].payment_method, "qris");
+        assert_eq!(splits[0].amount, 50_000.0);
+    }
+
+    #[test]
+    fn partially_cash_payment_stays_mixed() {
+        let input = breakdown_input(vec![("qris", 30_000.0), ("cash", 25_000.0)]);
+
+        let (payment_method, _, change_amount, splits) =
+            calculate_payment_amount_with_breakdown(&input, 50_000.0).expect("breakdown accepted");
+
+        assert_eq!(payment_method, MIXED_PAYMENT_METHOD);
+        assert_eq!(change_amount, 5_000.0);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(splits[1].amount, 20_000.0);
     }
 
     #[test]
