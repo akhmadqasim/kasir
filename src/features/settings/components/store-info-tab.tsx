@@ -42,8 +42,9 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   }
 
   // Saving before the query resolves would post the empty initial state over the
-  // stored store info, so the button stays disabled until the form holds real data.
-  const isReady = storeQuery.isSuccess && initialized
+  // stored store info. `isSuccess` alone is the right gate here: the query legitimately
+  // resolves to null on a store that has no info yet, and saving then is a create.
+  const isReady = storeQuery.isSuccess
 
   const saveMutation = useMutation({
     mutationFn: () => {
