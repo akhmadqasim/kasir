@@ -546,21 +546,20 @@ async fn create_refund_internal(
         active_refund.update(&txn).await?;
     }
 
-    // Determine transaction status: full or partial refund
-    let total_refunded_qty: i64 = {
-        let mut total = 0i64;
-        for ti in &txn_items {
-            let prev = existing_refund_qty.get(&ti.id).copied().unwrap_or(0);
-            let current = input
-                .items
-                .iter()
-                .find(|ii| ii.transaction_item_id == ti.id)
-                .map(|ii| ii.quantity)
-                .unwrap_or(0);
-            total += prev + current;
-        }
-        total
-    };
+    // Determine transaction status: full or partial refund.
+    //
+    // Reuse the accumulated tally instead of matching the first input line per
+    // item: a mixed-condition return sends the same transaction item twice (one
+    // good, one damaged), and counting only the first line left a fully
+    // refunded sale stuck at `partial_refund` forever -- where shift closing and
+    // the reports keep counting it at full value.
+    let total_refunded_qty: i64 = txn_items
+        .iter()
+        .map(|ti| {
+            existing_refund_qty.get(&ti.id).copied().unwrap_or(0)
+                + requested_in_this_refund.get(&ti.id).copied().unwrap_or(0)
+        })
+        .sum();
 
     let total_original_qty: i64 = txn_items.iter().map(|ti| ti.quantity).sum();
 
@@ -874,6 +873,57 @@ mod tests {
             }],
             exchange_items: None,
         }
+    }
+
+    #[tokio::test]
+    async fn refund_split_across_two_lines_closes_the_sale() {
+        let conn = setup().await;
+
+        let product = insert_product(&conn, "Piring", 6_000.0, 10_000.0, 20).await;
+        let txn = sale(&conn, 20_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Piring",
+            10_000.0,
+            6_000.0,
+            2,
+        )
+        .await;
+
+        // A legitimate mixed-condition return: both units come back, one intact
+        // and one broken, so the customer sends two lines for the same item.
+        create_refund_internal(
+            &conn,
+            CreateRefundInput {
+                transaction_id: txn.id,
+                user_id: 1,
+                reason: Some("Satu pecah".to_string()),
+                items: vec![
+                    RefundItemInput {
+                        transaction_item_id: txn_item.id,
+                        quantity: 1,
+                        condition: "good".to_string(),
+                    },
+                    RefundItemInput {
+                        transaction_item_id: txn_item.id,
+                        quantity: 1,
+                        condition: "damaged".to_string(),
+                    },
+                ],
+                exchange_items: None,
+            },
+        )
+        .await
+        .expect("refund should succeed");
+
+        let updated_txn = transactions::Entity::find_by_id(txn.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("transaction exists");
+        assert_eq!(updated_txn.status, "refunded");
     }
 
     #[tokio::test]
