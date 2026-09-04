@@ -985,6 +985,15 @@ pub struct PaginatedTransactions {
     pub total_pages: u64,
 }
 
+/// Page size to actually use, clamped to `1..=100`.
+///
+/// `per_page = 0` slipped past the old `.min(100)` and then divided the row
+/// count by zero, so `total_pages` came back as `u64::MAX` and the pager
+/// offered billions of empty pages.
+fn clamp_per_page(requested: Option<u64>) -> u64 {
+    requested.unwrap_or(50).clamp(1, 100)
+}
+
 fn summarize_ppob_items(
     items: &[transaction_items::Model],
 ) -> (bool, Option<String>, Option<String>, Option<String>) {
@@ -1007,7 +1016,7 @@ pub async fn list_transactions(
     input: ListTransactionsInput,
 ) -> Result<PaginatedTransactions, AppError> {
     let page = input.page.unwrap_or(1).max(1);
-    let per_page = input.per_page.unwrap_or(50).min(100);
+    let per_page = clamp_per_page(input.per_page);
 
     let mut query =
         transactions::Entity::find().order_by(transactions::Column::CreatedAt, Order::Desc);
@@ -1887,6 +1896,23 @@ mod tests {
     fn validate_discounts_rejects_negative_transaction_discount() {
         let items = vec![resolved_item(20_000.0, 0.0)];
         assert!(validate_discounts(&items, -1.0).is_err());
+    }
+
+    #[test]
+    fn clamp_per_page_bounds_the_requested_page_size() {
+        assert_eq!(clamp_per_page(None), 50);
+        assert_eq!(clamp_per_page(Some(25)), 25);
+        // Zero used to survive `.min(100)` and make total_pages u64::MAX.
+        assert_eq!(clamp_per_page(Some(0)), 1);
+        assert_eq!(clamp_per_page(Some(5_000)), 100);
+    }
+
+    #[test]
+    fn total_pages_stays_finite_for_a_zero_page_size() {
+        let per_page = clamp_per_page(Some(0));
+        let total: u64 = 3;
+        let total_pages = (total as f64 / per_page as f64).ceil() as u64;
+        assert_eq!(total_pages, 3);
     }
 
     #[test]
