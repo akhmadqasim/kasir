@@ -63,7 +63,7 @@ interface ProductSearchPanelProps {
 export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const [selectedProductValue, setSelectedProductValue] = useState<string | undefined>()
+  const [pickedProductValue, setPickedProductValue] = useState<string | undefined>()
   const [holdingPinId, setHoldingPinId] = useState<number | null>(null)
   const [holdProgress, setHoldProgress] = useState(0)
   const commandInputRef = useRef<HTMLDivElement>(null)
@@ -98,20 +98,19 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     [searchResults?.data, debouncedQuery]
   )
 
-  useEffect(() => {
-    if (rankedSearchResults.length === 0) {
-      setSelectedProductValue(undefined)
-      return
-    }
+  // Turunan, bukan state tersinkron: hasil pencarian yang berubah otomatis
+  // memilih baris pertama kecuali kasir sudah memilih baris lain dengan panah.
+  const selectedProductValue = useMemo(() => {
+    if (rankedSearchResults.length === 0) return undefined
 
-    setSelectedProductValue((current) => {
-      if (current && rankedSearchResults.some((product) => String(product.id) === current)) {
-        return current
-      }
+    const isPickedStillListed =
+      pickedProductValue !== undefined &&
+      rankedSearchResults.some((product) => String(product.id) === pickedProductValue)
 
-      return String(rankedSearchResults[0].id)
-    })
-  }, [rankedSearchResults])
+    return isPickedStillListed
+      ? pickedProductValue
+      : String(rankedSearchResults[0].id)
+  }, [pickedProductValue, rankedSearchResults])
 
   const { data: shortcutProducts } = useTauriQuery<ShortcutProduct[]>(
     "get_popular_products",
@@ -134,7 +133,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     resetSearchInputTiming()
     setSearchQuery("")
     setDebouncedQuery("")
-    setSelectedProductValue(undefined)
+    setPickedProductValue(undefined)
   }, [resetSearchInputTiming])
 
   const handleSearchQueryChange = useCallback((value: string) => {
@@ -329,7 +328,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         className={cn("rounded-none border-none border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")}
         shouldFilter={false}
         value={selectedProductValue}
-        onValueChange={setSelectedProductValue}
+        onValueChange={setPickedProductValue}
       >
         <div className="relative" ref={commandInputRef}>
           <CommandInput
