@@ -21,6 +21,14 @@ export function useCompleteOnboarding() {
     "complete_onboarding",
     {
       onSuccess: () => {
+        // AppGuard is not mounted on /onboarding, so this query is inactive and
+        // invalidating it changes nothing: the cached `true` is still served on the
+        // first navigation and bounces the user straight back here. Write the answer
+        // directly, then invalidate so it is reconfirmed once the guard mounts.
+        queryClient.setQueriesData(
+          { queryKey: ["check_onboarding_status"] },
+          false
+        )
         queryClient.invalidateQueries({ queryKey: ["check_onboarding_status"] })
       },
     }
