@@ -24,6 +24,13 @@ import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "../hooks/use-cart-store"
 import { useCheckoutTransaction } from "../hooks/use-cashier"
 import { cn } from "@/lib/utils"
+import {
+  EMPTY_AMOUNT_ENTRY_TIMING,
+  MAX_PAYMENT_AMOUNT,
+  isImplausiblePaymentAmount,
+  isScannerBurstEntry,
+  trackAmountEntry,
+} from "../payment-behavior"
 import { formatRupiah, getCartValidationError } from "../utils"
 import type { PaymentSplitInput, TransactionResult } from "../types"
 
@@ -84,6 +91,7 @@ export function PaymentDialog({
   const [activePaymentMethod, setActivePaymentMethod] = useState("cash")
   const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
+  const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
   const user = useAuthStore((s) => s.user)
   const activeShift = useShiftStore((s) => s.activeShift)
   const items = useCartStore((s) => s.items)
@@ -170,11 +178,16 @@ export function PaymentDialog({
       : Math.abs(splitDifference) < 0.01)
 
   const isCashValid = !isSingleCashSelection || primaryPaymentAmount >= total
+  // Barcode yang nyasar ke kolom nominal selalu jauh di atas batas ini.
+  const hasImplausibleAmount = selectedPaymentSplits.some((split) =>
+    isImplausiblePaymentAmount(Number(split.amount) || 0)
+  )
   const canConfirm =
     items.length > 0 &&
     !cartValidationError &&
     selectedMethodCount > 0 &&
     allTransferMethodsHaveBank &&
+    !hasImplausibleAmount &&
     (isSingleCashSelection
       ? isCashValid
       : allSelectedMethodsHaveAmount && isSplitSelectionValid) &&
@@ -202,13 +215,6 @@ export function PaymentDialog({
       setTimeout(() => paymentInputRef.current?.focus(), 100)
     }
   }, [isSingleCashSelection, open])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && canConfirm) {
-      e.preventDefault()
-      handleConfirm()
-    }
-  }
 
   const formatNumber = (num: number): string => {
     return new Intl.NumberFormat("id-ID").format(num)
@@ -412,6 +418,38 @@ export function PaymentDialog({
     })
   }, [activePaymentMethod, ensureActiveMethodSelected, paymentSplits, total, updateSplit])
 
+  const recordAmountEntry = (at: number) => {
+    amountEntryRef.current = trackAmountEntry(amountEntryRef.current, at)
+  }
+
+  // Scanner adalah keyboard: burst digit + Enter di kolom nominal tidak boleh
+  // menutup transaksi. Enter yang datang dalam satu burst scan diabaikan dan
+  // nominalnya dikosongkan supaya kasir tidak menagih angka barcode.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, method: string) => {
+    if (e.key !== "Enter") return
+    e.preventDefault()
+
+    const typedAmount = e.currentTarget.value.replace(/\D/g, "")
+    if (
+      isScannerBurstEntry({
+        amount: typedAmount,
+        ...amountEntryRef.current,
+        submittedAt: e.timeStamp,
+      })
+    ) {
+      amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
+      updateSplit(method, { amount: "", selected: true })
+      toast.warning(
+        "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang."
+      )
+      return
+    }
+
+    if (canConfirm) {
+      handleConfirm()
+    }
+  }
+
   const handleConfirm = () => {
     if (!user) return
 
@@ -470,6 +508,7 @@ export function PaymentDialog({
   }
 
   const handleOpenChange = (isOpen: boolean) => {
+    amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
     if (!isOpen) {
       setPaymentSplits(createInitialPaymentSplits())
       setActivePaymentMethod("cash")
@@ -549,13 +588,16 @@ export function PaymentDialog({
                         onClick={() => {
                           setActivePaymentMethod(split.payment_method)
                         }}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          recordAmountEntry(event.timeStamp)
                           handleAmountChange(
                             split.payment_method,
                             event.target.value
                           )
+                        }}
+                        onKeyDown={(event) =>
+                          handleKeyDown(event, split.payment_method)
                         }
-                        onKeyDown={handleKeyDown}
                       />
                       {split.payment_method === "transfer" && (
                         <div className="col-span-2 sm:col-start-2 sm:col-span-1">
@@ -635,6 +677,12 @@ export function PaymentDialog({
               {cartValidationError && (
                 <p className="text-sm font-medium text-destructive">
                   {cartValidationError}
+                </p>
+              )}
+              {hasImplausibleAmount && (
+                <p className="text-sm font-medium text-destructive">
+                  Nominal pembayaran melebihi {formatRupiah(MAX_PAYMENT_AMOUNT)}.
+                  Periksa kembali — kemungkinan barcode ikut terbaca.
                 </p>
               )}
               {selectedMethodCount > 1 &&
