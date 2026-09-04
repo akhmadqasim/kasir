@@ -32,7 +32,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useTauriMutation } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useQueryClient } from "@tanstack/react-query"
+import { parseIndonesianInteger, parseIndonesianNumber } from "@/lib/format"
 import type { BulkProductInput, BulkImportResult } from "../types"
+
+interface MappedRows {
+  products: BulkProductInput[]
+  /** 1-based positions of data rows dropped before the backend ever sees them. */
+  skippedRowNumbers: number[]
+}
+
+/** "3, 7, 12 dan 4 lainnya" — keeps the warning readable for large files. */
+function formatRowList(rowNumbers: number[], limit = 10): string {
+  const shown = rowNumbers.slice(0, limit).join(", ")
+  const rest = rowNumbers.length - limit
+  return rest > 0 ? `${shown} dan ${rest} lainnya` : shown
+}
 
 /** Validate EAN/UPC check digit for a barcode string of 8, 12, or 13 digits */
 function isValidCheckDigit(code: string): boolean {
@@ -274,9 +288,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setColumnMap((prev) => ({ ...prev, [colIdx]: value }))
   }
 
-  const getMappedProducts = (): BulkProductInput[] => {
-    const results: BulkProductInput[] = []
-    for (const row of rows) {
+  const getMappedProducts = (): MappedRows => {
+    const products: BulkProductInput[] = []
+    const skippedRowNumbers: number[] = []
+
+    rows.forEach((row, rowIdx) => {
       const product: Record<string, string> = {}
       Object.entries(columnMap).forEach(([colIdxStr, field]) => {
         if (field === "skip") return
@@ -284,24 +300,29 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         product[field] = String(row[colIdx] ?? "").trim()
       })
 
-      if (!product.name) continue
+      if (!product.name) {
+        // Row numbers are 1-based and relative to the data rows shown in the preview.
+        skippedRowNumbers.push(rowIdx + 1)
+        return
+      }
 
-      results.push({
+      products.push({
         name: product.name,
         barcode: fixBarcodeLeadingZero(product.barcode || "") || undefined,
         category_name: product.category_name || undefined,
-        buy_price: parseFloat(String(product.buy_price).replace(/[^\d.-]/g, "")) || 0,
-        sell_price: parseFloat(String(product.sell_price).replace(/[^\d.-]/g, "")) || 0,
-        margin: parseFloat(String(product.margin).replace(/[^\d.-]/g, "")) || 0,
-        stock: parseInt(String(product.stock).replace(/[^\d-]/g, ""), 10) || 0,
+        buy_price: parseIndonesianNumber(product.buy_price) ?? 0,
+        sell_price: parseIndonesianNumber(product.sell_price) ?? 0,
+        margin: parseIndonesianNumber(product.margin) ?? 0,
+        stock: parseIndonesianInteger(product.stock) ?? 0,
         unit: product.unit || "pcs",
       })
-    }
-    return results
+    })
+
+    return { products, skippedRowNumbers }
   }
 
   const handleImport = async () => {
-    const products = getMappedProducts()
+    const { products, skippedRowNumbers } = getMappedProducts()
     if (products.length === 0) {
       toast.error("Tidak ada produk valid untuk diimport")
       return
@@ -309,7 +330,18 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
     try {
       const res = await importMutation.mutateAsync({ products, callerId: user!.id })
-      setResult(res)
+      // Rows dropped here never reach the backend, so its counters cannot see them.
+      // Fold them in so the totals add up to the number of rows in the file.
+      setResult({
+        ...res,
+        skipped: res.skipped + skippedRowNumbers.length,
+        errors: skippedRowNumbers.length
+          ? [
+              ...res.errors,
+              `${skippedRowNumbers.length} baris dilewati karena kolom nama kosong (baris ${formatRowList(skippedRowNumbers)})`,
+            ]
+          : res.errors,
+      })
       setStep("result")
       queryClient.invalidateQueries({ queryKey: ["search_products"] })
       queryClient.invalidateQueries({ queryKey: ["list_categories"] })
@@ -472,7 +504,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
               </Button>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-muted-foreground">
-                  {getMappedProducts().length} produk valid
+                  {getMappedProducts().products.length} produk valid
                 </span>
                 <Button
                   onClick={handleImport}
