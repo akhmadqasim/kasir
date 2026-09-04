@@ -721,10 +721,19 @@ pub async fn report_losses(
     start_date: String,
     end_date: String,
 ) -> Result<LossSummary, AppError> {
-    let db = db.inner();
+    query_losses(db.inner(), &start_date, &end_date).await
+}
 
-    let start_utc = local_date_start_to_utc(&start_date);
-    let end_utc = local_date_end_exclusive_to_utc(&end_date);
+/// Only `approved` write-offs are real losses. A `rejected` write-off has had
+/// its stock restored by `reject_stock_writeoff`, and a `pending` one is not
+/// confirmed yet — counting either inflated the loss total.
+async fn query_losses(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+) -> Result<LossSummary, AppError> {
+    let start_utc = local_date_start_to_utc(start_date);
+    let end_utc = local_date_end_exclusive_to_utc(end_date);
 
     // Get items
     let item_rows = db
@@ -745,6 +754,7 @@ pub async fn report_losses(
             LEFT JOIN products p ON p.id = sw.product_id
             LEFT JOIN users u ON u.id = sw.user_id
             WHERE sw.created_at >= $1 AND sw.created_at < $2
+            AND sw.status = 'approved'
             ORDER BY sw.created_at DESC",
             vec![start_utc.clone().into(), end_utc.clone().into()],
         ))
@@ -776,6 +786,7 @@ pub async fn report_losses(
                 COALESCE(SUM(loss_value), 0) as total_value
             FROM stock_writeoffs
             WHERE created_at >= $1 AND created_at < $2
+            AND status = 'approved'
             GROUP BY reason
             ORDER BY total_value DESC",
             vec![start_utc.into(), end_utc.into()],
@@ -870,8 +881,8 @@ pub async fn report_cash_flows(
 mod tests {
     use super::*;
     use crate::test_support::{
-        date_str, insert_product, insert_transaction, insert_transaction_item, setup_test_db,
-        today, utc_at_local_noon,
+        date_str, insert_product, insert_transaction, insert_transaction_item, insert_writeoff,
+        setup_test_db, today, utc_at_local_noon, WriteoffSpec,
     };
 
     /// One Rp 100.000 sale with three line items plus one Rp 50.000 sale with a
@@ -996,5 +1007,68 @@ mod tests {
         assert_eq!(rows[0].total_revenue, 25_000.0);
         assert_eq!(rows[0].total_cost, 0.0);
         assert_eq!(rows[0].gross_profit, 25_000.0);
+    }
+
+    #[tokio::test]
+    async fn losses_count_only_approved_writeoffs() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let product = insert_product(&conn, "Telur", 10_000.0, 14_000.0, 100).await;
+
+        insert_writeoff(
+            &conn,
+            WriteoffSpec {
+                product_id: product.id,
+                user_id: 1,
+                quantity: 2,
+                reason: "damaged",
+                loss_value: 20_000.0,
+                status: "approved",
+                created_at: &created_at,
+            },
+        )
+        .await;
+        // Rejected: `reject_stock_writeoff` already restored the stock, so this
+        // is not a loss.
+        insert_writeoff(
+            &conn,
+            WriteoffSpec {
+                product_id: product.id,
+                user_id: 1,
+                quantity: 5,
+                reason: "lost",
+                loss_value: 50_000.0,
+                status: "rejected",
+                created_at: &created_at,
+            },
+        )
+        .await;
+        // Pending: not confirmed as a loss yet.
+        insert_writeoff(
+            &conn,
+            WriteoffSpec {
+                product_id: product.id,
+                user_id: 1,
+                quantity: 3,
+                reason: "expired",
+                loss_value: 30_000.0,
+                status: "pending",
+                created_at: &created_at,
+            },
+        )
+        .await;
+
+        let day = date_str(today());
+        let summary = query_losses(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(summary.total_writeoffs, 1);
+        assert_eq!(summary.total_quantity, 2);
+        assert_eq!(summary.total_loss_value, 20_000.0);
+        assert_eq!(summary.items.len(), 1);
+        assert_eq!(summary.items[0].status, "approved");
+        assert_eq!(summary.by_reason.len(), 1);
+        assert_eq!(summary.by_reason[0].reason, "damaged");
+        assert_eq!(summary.by_reason[0].count, 1);
+        assert_eq!(summary.by_reason[0].total_value, 20_000.0);
     }
 }

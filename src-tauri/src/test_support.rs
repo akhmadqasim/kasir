@@ -12,7 +12,7 @@ use chrono::{Duration, Local, NaiveDate};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, NotSet, Set};
 
 use crate::db;
-use crate::entity::{products, transaction_items, transactions, users};
+use crate::entity::{products, stock_writeoffs, transaction_items, transactions, users};
 
 /// Current UTC timestamp in the `"YYYY-MM-DD HH:MM:SS"` shape used by every
 /// `created_at` column.
@@ -166,4 +166,37 @@ pub async fn insert_transaction_item(
     .insert(conn)
     .await
     .expect("transaction item insert")
+}
+
+pub struct WriteoffSpec<'a> {
+    pub product_id: i64,
+    pub user_id: i64,
+    pub quantity: i64,
+    pub reason: &'a str,
+    pub loss_value: f64,
+    pub status: &'a str,
+    pub created_at: &'a str,
+}
+
+pub async fn insert_writeoff(
+    conn: &DatabaseConnection,
+    spec: WriteoffSpec<'_>,
+) -> stock_writeoffs::Model {
+    stock_writeoffs::ActiveModel {
+        id: NotSet,
+        writeoff_number: Set(format!("WO-TEST-{}", uuid::Uuid::new_v4())),
+        product_id: Set(spec.product_id),
+        user_id: Set(spec.user_id),
+        quantity: Set(spec.quantity),
+        reason: Set(spec.reason.to_string()),
+        loss_value: Set(spec.loss_value),
+        notes: Set(None),
+        approved_by: Set(None),
+        status: Set(spec.status.to_string()),
+        refund_id: Set(None),
+        created_at: Set(Some(spec.created_at.to_string())),
+    }
+    .insert(conn)
+    .await
+    .expect("writeoff insert")
 }
