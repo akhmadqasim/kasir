@@ -49,6 +49,8 @@ import type { CartItem } from "../types"
 interface CartPanelProps {
   onPay: () => void
   disabled?: boolean
+  /** Matikan shortcut saat dialog milik CashierPage sedang terbuka */
+  shortcutsDisabled?: boolean
   onRequestProductSearchFocus?: () => void
 }
 
@@ -58,7 +60,12 @@ function formatHeldDate(timestamp: number): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: CartPanelProps) {
+export function CartPanel({
+  onPay,
+  disabled,
+  shortcutsDisabled = false,
+  onRequestProductSearchFocus,
+}: CartPanelProps) {
   const navigate = useNavigate()
   const items = useCartStore((s) => s.items)
   const removeItem = useCartStore((s) => s.removeItem)
@@ -120,6 +127,11 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
   const anyDialogOpen = holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Dialog pembayaran / struk sukses milik CashierPage: F3 di sana akan
+      // menyimpan keranjang yang sudah dibayar, F9 menukar keranjang di tengah
+      // pembayaran.
+      if (shortcutsDisabled) return
+
       if (e.key === "F10") {
         e.preventDefault()
         if (editItem) {
@@ -158,7 +170,7 @@ export function CartPanel({ onPay, disabled, onRequestProductSearchFocus }: Cart
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items, heldCarts.length, anyDialogOpen, activeShift, navigate, editItem, closeEditDialog])
+  }, [items, heldCarts.length, anyDialogOpen, shortcutsDisabled, activeShift, navigate, editItem, closeEditDialog])
 
   return (
     <div className="flex h-full flex-col">

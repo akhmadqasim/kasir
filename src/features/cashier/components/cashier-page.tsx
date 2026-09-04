@@ -32,6 +32,8 @@ export function CashierPage() {
   }, [user, fetchActiveShift])
 
   const needsShift = !activeShift
+  // Dialog milik halaman ini menutupi CartPanel, jadi shortcut-nya harus mati.
+  const pageDialogOpen = paymentOpen || successResult !== null || shiftDialogOpen
 
   useEffect(() => {
     if (needsShift) {
@@ -111,6 +113,7 @@ export function CashierPage() {
           <CartPanel
             onPay={openPayment}
             disabled={needsShift}
+            shortcutsDisabled={pageDialogOpen}
             onRequestProductSearchFocus={requestProductSearchFocus}
           />
         </div>
