@@ -183,6 +183,22 @@ fn resolve_refund_line<'a>(
     Ok((txn_item, product_id))
 }
 
+/// Rupiah to hand back for `quantity` units of a sold line.
+///
+/// This is the money that actually changed hands, not the list price:
+/// `transaction_items.net_subtotal` already has the line's own discount and its
+/// share of the transaction-level discount taken off (see migration 018), so a
+/// single unit is worth `net_subtotal / quantity`. Refunding at
+/// `product_price * quantity` instead handed the customer back every discount
+/// they were given, at the shop's expense, on every single return.
+fn refund_amount_for(txn_item: &transaction_items::Model, quantity: i64) -> f64 {
+    if txn_item.quantity <= 0 {
+        return 0.0;
+    }
+
+    txn_item.net_subtotal / txn_item.quantity as f64 * quantity as f64
+}
+
 // --- Commands ---
 
 async fn create_refund_internal(
@@ -322,8 +338,7 @@ async fn create_refund_internal(
             .entry(item_input.transaction_item_id)
             .or_insert(0) += item_input.quantity;
 
-        let subtotal = txn_item.product_price * item_input.quantity as f64;
-        total_refund_amount += subtotal;
+        total_refund_amount += refund_amount_for(txn_item, item_input.quantity);
 
         // Create refund item (will set refund_id after refund is created)
     }
@@ -357,7 +372,7 @@ async fn create_refund_internal(
     for item_input in &input.items {
         let (txn_item, product_id) = resolve_refund_line(&txn_items, item_input)?;
 
-        let subtotal = txn_item.product_price * item_input.quantity as f64;
+        let subtotal = refund_amount_for(txn_item, item_input.quantity);
 
         let new_refund_item = refund_items::ActiveModel {
             id: NotSet,
@@ -586,8 +601,11 @@ pub async fn get_refund_detail(
 
     let mut detail_items: Vec<RefundDetailItem> = Vec::new();
     for item in items {
+        // Show the unit price the customer actually paid, so the line reads
+        // `price x qty = subtotal`. The list price would not reconcile with the
+        // refunded subtotal on any discounted sale.
         let (product_name, product_price) = match txn_item_map.get(&item.transaction_item_id) {
-            Some(ti) => (ti.product_name.clone(), ti.product_price),
+            Some(ti) => (ti.product_name.clone(), refund_amount_for(ti, 1)),
             None => ("(deleted)".to_string(), 0.0),
         };
 
@@ -768,8 +786,8 @@ pub async fn list_refunds(
 mod tests {
     use super::*;
     use crate::test_support::{
-        insert_product, insert_store_info, insert_transaction, insert_transaction_item, now_ts,
-        setup_test_db,
+        insert_product, insert_store_info, insert_transaction, insert_transaction_item,
+        insert_transaction_item_spec, now_ts, setup_test_db, TransactionItemSpec,
     };
 
     /// In-memory database with the singleton store row seeded, so the exchange
@@ -799,6 +817,93 @@ mod tests {
     /// a field for.
     fn refund_input(value: serde_json::Value) -> CreateRefundInput {
         serde_json::from_value(value).expect("refund input deserializes")
+    }
+
+    #[tokio::test]
+    async fn refund_returns_the_price_paid_after_the_item_discount() {
+        let conn = setup().await;
+
+        let product = insert_product(&conn, "Minyak 2L", 30_000.0, 50_000.0, 5).await;
+        // Bought at 50.000 with a 10.000 line discount, so 40.000 changed hands.
+        let txn = sale(&conn, 40_000.0).await;
+        let txn_item = insert_transaction_item_spec(
+            &conn,
+            TransactionItemSpec {
+                transaction_id: txn.id,
+                product_id: Some(product.id),
+                product_name: "Minyak 2L",
+                product_price: 50_000.0,
+                buy_price: 30_000.0,
+                quantity: 1,
+                item_discount: 10_000.0,
+                net_subtotal: None,
+            },
+        )
+        .await;
+
+        let result = create_refund_internal(
+            &conn,
+            CreateRefundInput {
+                transaction_id: txn.id,
+                user_id: 1,
+                reason: None,
+                items: vec![RefundItemInput {
+                    transaction_item_id: txn_item.id,
+                    quantity: 1,
+                    condition: "good".to_string(),
+                }],
+                exchange_items: None,
+            },
+        )
+        .await
+        .expect("refund should succeed");
+
+        assert_eq!(result.refund.total_refund_amount, 40_000.0);
+        assert_eq!(result.items[0].subtotal, 40_000.0);
+    }
+
+    #[tokio::test]
+    async fn refund_prorates_the_transaction_discount_per_unit() {
+        let conn = setup().await;
+
+        let product = insert_product(&conn, "Susu Kaleng", 12_000.0, 20_000.0, 10).await;
+        // 3 x 20.000 = 60.000, minus a 6.000 line discount = 54.000, minus this
+        // line's share of the transaction discount = 45.000 paid, 15.000 a unit.
+        let txn = sale(&conn, 45_000.0).await;
+        let txn_item = insert_transaction_item_spec(
+            &conn,
+            TransactionItemSpec {
+                transaction_id: txn.id,
+                product_id: Some(product.id),
+                product_name: "Susu Kaleng",
+                product_price: 20_000.0,
+                buy_price: 12_000.0,
+                quantity: 3,
+                item_discount: 6_000.0,
+                net_subtotal: Some(45_000.0),
+            },
+        )
+        .await;
+
+        let result = create_refund_internal(
+            &conn,
+            CreateRefundInput {
+                transaction_id: txn.id,
+                user_id: 1,
+                reason: None,
+                items: vec![RefundItemInput {
+                    transaction_item_id: txn_item.id,
+                    quantity: 2,
+                    condition: "good".to_string(),
+                }],
+                exchange_items: None,
+            },
+        )
+        .await
+        .expect("refund should succeed");
+
+        assert_eq!(result.refund.total_refund_amount, 30_000.0);
+        assert_eq!(result.items[0].subtotal, 30_000.0);
     }
 
     #[tokio::test]
