@@ -12,6 +12,9 @@ import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
 import { toast } from "sonner"
 
+/** Jeda sebelum dialog menutup sendiri setelah struk tercetak otomatis */
+const AUTO_CLOSE_DELAY_MS = 1500
+
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Tunai",
   qris: "QRIS",
@@ -53,26 +56,47 @@ export function TransactionSuccessDialog({
     if (!open || !transaction) return
     if (autoPrintedRef.current === transaction.id) return
 
-    const tryAutoPrint = async () => {
-      try {
-        const settings = await invoke<{
-          printer_id: string | null
-          auto_print: boolean | null
-        }>("get_printer_settings_cmd")
+    let cancelled = false
+    let closeTimer: ReturnType<typeof setTimeout> | undefined
 
-        if (settings.auto_print && settings.printer_id) {
-          autoPrintedRef.current = transaction.id
-          setIsPrinting(true)
-          await invoke("print_receipt", { transactionId: transaction.id })
-          toast.success("Struk otomatis dicetak!")
-          setIsPrinting(false)
-          setTimeout(() => onNewTransaction(), 1500)
-        }
+    const tryAutoPrint = async () => {
+      let settings: { printer_id: string | null; auto_print: boolean | null }
+      try {
+        settings = await invoke("get_printer_settings_cmd")
       } catch {
-        setIsPrinting(false)
+        // Printer belum diatur — cetak manual saja, tidak perlu diributkan
+        return
+      }
+
+      if (cancelled) return
+      if (!settings.auto_print || !settings.printer_id) return
+
+      autoPrintedRef.current = transaction.id
+      setIsPrinting(true)
+      try {
+        await invoke("print_receipt", { transactionId: transaction.id })
+        if (cancelled) return
+        toast.success("Struk otomatis dicetak!")
+        closeTimer = setTimeout(() => onNewTransaction(), AUTO_CLOSE_DELAY_MS)
+      } catch (error) {
+        if (cancelled) return
+        // Biarkan kasir mencoba lagi lewat tombol "Cetak Struk"
+        autoPrintedRef.current = null
+        const message = error instanceof Error ? error.message : String(error)
+        toast.error(
+          `Struk gagal dicetak otomatis: ${message}. Gunakan tombol "Cetak Struk".`
+        )
+      } finally {
+        if (!cancelled) setIsPrinting(false)
       }
     }
     tryAutoPrint()
+
+    return () => {
+      cancelled = true
+      // Timer yang tidak dibatalkan akan menghapus keranjang pelanggan berikutnya
+      if (closeTimer) clearTimeout(closeTimer)
+    }
   }, [onNewTransaction, open, transaction])
 
   if (!result || !transaction) return null
