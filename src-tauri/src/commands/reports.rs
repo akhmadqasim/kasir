@@ -398,8 +398,21 @@ pub async fn report_sales_receipt(
     end_date: String,
     search: String,
 ) -> Result<Vec<ReceiptRow>, AppError> {
-    let db = db.inner();
+    query_sales_receipts(db.inner(), &start_date, &end_date, &search).await
+}
 
+/// Per-receipt drill-down of the same period the summary reports cover, so it
+/// applies the same status filter as `query_daily_sales`. Without it, this was
+/// the only sales report that counted voided (`deleted`) and unfulfilled PPOB
+/// transactions at full value, and the receipt list never summed to the period
+/// total shown above it. `status` stays on the row so `partial_refund` remains
+/// visible.
+async fn query_sales_receipts(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+    search: &str,
+) -> Result<Vec<ReceiptRow>, AppError> {
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -414,13 +427,14 @@ pub async fn report_sales_receipt(
                 t.created_at
             FROM transactions t
             LEFT JOIN users u ON u.id = t.user_id
-            WHERE t.created_at >= $1 AND t.created_at < $2
+            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
+            AND t.created_at >= $1 AND t.created_at < $2
             AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
             ORDER BY t.created_at DESC
             LIMIT 500",
             vec![
-                local_date_start_to_utc(&start_date).into(),
-                local_date_end_exclusive_to_utc(&end_date).into(),
+                local_date_start_to_utc(start_date).into(),
+                local_date_end_exclusive_to_utc(end_date).into(),
                 search.into(),
             ],
         ))
@@ -1141,5 +1155,32 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].product_id, beras_id);
         assert_eq!(rows[0].qty_sold, 1);
+    }
+
+    #[tokio::test]
+    async fn sales_receipts_exclude_non_sale_statuses() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        insert_transaction(&conn, 1, 100_000.0, "completed", &created_at).await;
+        insert_transaction(&conn, 1, 30_000.0, "partial_refund", &created_at).await;
+        insert_transaction(&conn, 1, 999_000.0, "deleted", &created_at).await;
+        insert_transaction(&conn, 1, 50_000.0, "pending_ppob", &created_at).await;
+        insert_transaction(&conn, 1, 40_000.0, "ppob_failed", &created_at).await;
+        insert_transaction(&conn, 1, 70_000.0, "refunded", &created_at).await;
+
+        let day = date_str(today());
+        let rows = query_sales_receipts(&conn, &day, &day, "")
+            .await
+            .expect("query");
+
+        let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
+        statuses.sort_unstable();
+        assert_eq!(statuses, vec!["completed", "partial_refund"]);
+
+        // The receipt list must sum to the same revenue as the period summary.
+        let receipts_total: f64 = rows.iter().map(|r| r.total_amount).sum();
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+        assert_eq!(receipts_total, 130_000.0);
+        assert_eq!(receipts_total, summary.total_revenue);
     }
 }
