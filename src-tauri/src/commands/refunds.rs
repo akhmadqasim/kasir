@@ -743,189 +743,40 @@ pub async fn list_refunds(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db;
-    use crate::entity::users;
-    use sea_orm::ActiveModelTrait;
-    use std::path::PathBuf;
-    use uuid::Uuid;
+    use crate::test_support::{
+        insert_product, insert_store_info, insert_transaction, insert_transaction_item, now_ts,
+        setup_test_db,
+    };
 
-    fn test_db_path() -> PathBuf {
-        std::env::temp_dir().join(format!("kasir-test-{}.db", Uuid::new_v4()))
-    }
-
-    fn now_ts() -> String {
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-    }
-
-    async fn setup_test_db() -> DatabaseConnection {
-        let db_path = test_db_path();
-        let conn = db::setup_database(db_path.to_string_lossy().as_ref())
-            .await
-            .expect("db setup");
-
-        store_info::ActiveModel {
-            id: Set(1),
-            name: Set("Toko Test".to_string()),
-            address: Set(None),
-            phone: Set(None),
-            email: Set(None),
-            logo_path: Set(None),
-            additional_info: Set(Some(
-                serde_json::json!({
-                    "sales": {
-                        "allow_negative_stock": false,
-                        "default_payment_method": "cash"
-                    },
-                    "ppob": {
-                        "enabled": false,
-                        "phone_number": "",
-                        "password": "",
-                        "device_id": "",
-                        "pin": "",
-                        "markup": {
-                            "pulsa": { "type": "fixed", "value": 0 },
-                            "data": { "type": "fixed", "value": 0 },
-                            "pln": { "type": "fixed", "value": 0 },
-                            "pdam": { "type": "fixed", "value": 0 },
-                            "bpjs": { "type": "fixed", "value": 0 },
-                            "emoney": { "type": "fixed", "value": 0 },
-                            "custom_prices": {}
-                        }
-                    },
-                    "backup": {
-                        "interval_hours": 3,
-                        "retention_days": 90
-                    }
-                })
-                .to_string(),
-            )),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(&conn)
-        .await
-        .expect("store insert");
-
-        // Admin user (id=1)
-        users::ActiveModel {
-            id: NotSet,
-            username: Set("admin".to_string()),
-            pin_hash: Set("hash".to_string()),
-            full_name: Set("Admin Test".to_string()),
-            role: Set("admin".to_string()),
-            is_active: Set(true),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(&conn)
-        .await
-        .expect("admin user insert");
-
+    /// In-memory database with the singleton store row seeded, so the exchange
+    /// path can read `allow_negative_stock` instead of falling back to its
+    /// permissive default.
+    async fn setup() -> DatabaseConnection {
+        let conn = setup_test_db().await;
+        insert_store_info(&conn, false).await;
         conn
     }
 
-    async fn insert_product(
-        conn: &DatabaseConnection,
-        name: &str,
-        sell_price: f64,
-        buy_price: f64,
-        stock: i64,
-    ) -> products::Model {
-        products::ActiveModel {
-            id: NotSet,
-            barcode: Set(None),
-            sku: Set(None),
-            name: Set(name.to_string()),
-            category_id: Set(None),
-            buy_price: Set(buy_price),
-            sell_price: Set(sell_price),
-            margin: Set(0.0),
-            stock: Set(stock),
-            unit: Set("pcs".to_string()),
-            min_stock: Set(Some(0)),
-            is_active: Set(true),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(conn)
-        .await
-        .expect("product insert")
-    }
-
-    async fn insert_transaction(
-        conn: &DatabaseConnection,
-        user_id: i64,
-        total: f64,
-    ) -> transactions::Model {
-        transactions::ActiveModel {
-            id: NotSet,
-            receipt_number: Set(format!("TRX-TEST-{}", Uuid::new_v4())),
-            user_id: Set(user_id),
-            total_amount: Set(total),
-            subtotal_amount: Set(total),
-            discount_amount: Set(0.0),
-            payment_method: Set("cash".to_string()),
-            payment_amount: Set(total),
-            change_amount: Set(Some(0.0)),
-            status: Set("completed".to_string()),
-            notes: Set(None),
-            shift_id: Set(None),
-            deleted_at: Set(None),
-            deleted_by: Set(None),
-            deleted_reason: Set(None),
-            updated_at: Set(None),
-            created_at: Set(Some(now_ts())),
-        }
-        .insert(conn)
-        .await
-        .expect("transaction insert")
-    }
-
-    async fn insert_transaction_item(
-        conn: &DatabaseConnection,
-        transaction_id: i64,
-        product_id: i64,
-        name: &str,
-        price: f64,
-        buy_price: f64,
-        qty: i64,
-    ) -> transaction_items::Model {
-        transaction_items::ActiveModel {
-            id: NotSet,
-            transaction_id: Set(transaction_id),
-            product_id: Set(Some(product_id)),
-            product_name: Set(name.to_string()),
-            product_price: Set(price),
-            buy_price: Set(Some(buy_price)),
-            quantity: Set(qty),
-            subtotal: Set(price * qty as f64),
-            item_discount: Set(0.0),
-            service_type: Set(None),
-            service_ref: Set(None),
-            ppob_product_id: Set(None),
-            ppob_product_code: Set(None),
-            ppob_inquiry_id: Set(None),
-            ppob_payment_code: Set(None),
-            ppob_flag_id: Set(None),
-            ppob_status: Set(None),
-            ppob_message: Set(None),
-            ppob_serial_number: Set(None),
-            created_at: Set(Some(now_ts())),
-        }
-        .insert(conn)
-        .await
-        .expect("transaction item insert")
+    async fn sale(conn: &DatabaseConnection, total: f64) -> transactions::Model {
+        insert_transaction(conn, 1, total, "completed", &now_ts()).await
     }
 
     #[tokio::test]
     async fn test_refund_writeoff_status_is_pending() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Beras 5kg", 65_000.0, 50_000.0, 100).await;
-        let txn = insert_transaction(&conn, 1, 130_000.0).await;
-        let txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Beras 5kg", 65_000.0, 50_000.0, 2)
-                .await;
+        let product = insert_product(&conn, "Beras 5kg", 50_000.0, 65_000.0, 100).await;
+        let txn = sale(&conn, 130_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Beras 5kg",
+            65_000.0,
+            50_000.0,
+            2,
+        )
+        .await;
 
         let result = create_refund_internal(
             &conn,
@@ -945,7 +796,6 @@ mod tests {
         .await
         .expect("refund should succeed");
 
-        // Verify write-off was created with pending status
         let writeoffs = stock_writeoffs::Entity::find()
             .filter(stock_writeoffs::Column::RefundId.eq(result.refund.id))
             .all(&conn)
@@ -962,13 +812,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_refund_good_condition_restores_stock() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Gula Pasir", 15_000.0, 10_000.0, 50).await;
-        let txn = insert_transaction(&conn, 1, 30_000.0).await;
-        let txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Gula Pasir", 15_000.0, 10_000.0, 2)
-                .await;
+        let product = insert_product(&conn, "Gula Pasir", 10_000.0, 15_000.0, 50).await;
+        let txn = sale(&conn, 30_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Gula Pasir",
+            15_000.0,
+            10_000.0,
+            2,
+        )
+        .await;
 
         create_refund_internal(
             &conn,
@@ -1007,42 +864,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_refund_expired_transaction_rejected() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Minyak Goreng", 20_000.0, 15_000.0, 30).await;
+        let product = insert_product(&conn, "Minyak Goreng", 15_000.0, 20_000.0, 30).await;
 
-        // Create a transaction dated 8 days ago (beyond 7-day limit)
+        // Sale dated 8 days ago, beyond the 7-day window.
         let old_date = (chrono::Utc::now() - chrono::Duration::days(8))
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
-
-        let txn = transactions::ActiveModel {
-            id: NotSet,
-            receipt_number: Set(format!("TRX-OLD-{}", Uuid::new_v4())),
-            user_id: Set(1),
-            total_amount: Set(20_000.0),
-            subtotal_amount: Set(20_000.0),
-            discount_amount: Set(0.0),
-            payment_method: Set("cash".to_string()),
-            payment_amount: Set(20_000.0),
-            change_amount: Set(Some(0.0)),
-            status: Set("completed".to_string()),
-            notes: Set(None),
-            shift_id: Set(None),
-            deleted_at: Set(None),
-            deleted_by: Set(None),
-            deleted_reason: Set(None),
-            updated_at: Set(None),
-            created_at: Set(Some(old_date)),
-        }
-        .insert(&conn)
-        .await
-        .expect("old transaction insert");
+        let txn = insert_transaction(&conn, 1, 20_000.0, "completed", &old_date).await;
 
         let txn_item = insert_transaction_item(
             &conn,
             txn.id,
-            product.id,
+            Some(product.id),
             "Minyak Goreng",
             20_000.0,
             15_000.0,
@@ -1078,13 +913,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_refund_empty_items_rejected() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Tepung", 12_000.0, 8_000.0, 20).await;
-        let txn = insert_transaction(&conn, 1, 12_000.0).await;
-        let _txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Tepung", 12_000.0, 8_000.0, 1)
-                .await;
+        let product = insert_product(&conn, "Tepung", 8_000.0, 12_000.0, 20).await;
+        let txn = sale(&conn, 12_000.0).await;
+        insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Tepung",
+            12_000.0,
+            8_000.0,
+            1,
+        )
+        .await;
 
         let result = create_refund_internal(
             &conn,
@@ -1109,13 +951,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_refund_invalid_condition_rejected() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Sabun", 5_000.0, 3_000.0, 40).await;
-        let txn = insert_transaction(&conn, 1, 5_000.0).await;
-        let txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Sabun", 5_000.0, 3_000.0, 1)
-                .await;
+        let product = insert_product(&conn, "Sabun", 3_000.0, 5_000.0, 40).await;
+        let txn = sale(&conn, 5_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Sabun",
+            5_000.0,
+            3_000.0,
+            1,
+        )
+        .await;
 
         let result = create_refund_internal(
             &conn,
@@ -1137,7 +986,10 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             AppError::Validation(msg) => {
-                assert!(msg.contains("tidak valid"), "Error should mention invalid condition");
+                assert!(
+                    msg.contains("tidak valid"),
+                    "Error should mention invalid condition"
+                );
             }
             other => panic!("Expected Validation error, got: {:?}", other),
         }
@@ -1145,15 +997,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_refund_sets_transaction_status_to_partial() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Kecap", 8_000.0, 5_000.0, 50).await;
-        let txn = insert_transaction(&conn, 1, 16_000.0).await;
-        let txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Kecap", 8_000.0, 5_000.0, 2)
-                .await;
+        let product = insert_product(&conn, "Kecap", 5_000.0, 8_000.0, 50).await;
+        let txn = sale(&conn, 16_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Kecap",
+            8_000.0,
+            5_000.0,
+            2,
+        )
+        .await;
 
-        // Refund only 1 of 2 items → partial_refund
+        // Refund only 1 of 2 items -> partial_refund
         create_refund_internal(
             &conn,
             CreateRefundInput {
@@ -1182,15 +1041,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_refund_sets_transaction_status_to_refunded() {
-        let conn = setup_test_db().await;
+        let conn = setup().await;
 
-        let product = insert_product(&conn, "Sambal", 10_000.0, 7_000.0, 30).await;
-        let txn = insert_transaction(&conn, 1, 10_000.0).await;
-        let txn_item =
-            insert_transaction_item(&conn, txn.id, product.id, "Sambal", 10_000.0, 7_000.0, 1)
-                .await;
+        let product = insert_product(&conn, "Sambal", 7_000.0, 10_000.0, 30).await;
+        let txn = sale(&conn, 10_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Sambal",
+            10_000.0,
+            7_000.0,
+            1,
+        )
+        .await;
 
-        // Refund all items → refunded
+        // Refund all items -> refunded
         create_refund_internal(
             &conn,
             CreateRefundInput {

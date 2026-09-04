@@ -1392,18 +1392,12 @@ mod tests {
     use super::*;
     use crate::db;
     use crate::entity::{products, store_info, users};
-    use std::path::PathBuf;
-    use uuid::Uuid;
 
-    fn test_db_path() -> PathBuf {
-        std::env::temp_dir().join(format!("kasir-test-{}.db", Uuid::new_v4()))
-    }
-
+    /// In-memory database, so a test run leaves no temp files behind. The pool
+    /// is pinned to a single connection, which is what keeps an in-memory
+    /// database alive across queries.
     async fn setup_test_db() -> DatabaseConnection {
-        let db_path = test_db_path();
-        let conn = db::setup_database(db_path.to_string_lossy().as_ref())
-            .await
-            .expect("db setup");
+        let conn = db::setup_database(":memory:").await.expect("db setup");
 
         store_info::ActiveModel {
             id: Set(1),

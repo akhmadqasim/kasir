@@ -12,7 +12,9 @@ use chrono::{Duration, Local, NaiveDate};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, NotSet, Set};
 
 use crate::db;
-use crate::entity::{products, stock_writeoffs, transaction_items, transactions, users};
+use crate::entity::{
+    products, stock_writeoffs, store_info, transaction_items, transactions, users,
+};
 
 /// Current UTC timestamp in the `"YYYY-MM-DD HH:MM:SS"` shape used by every
 /// `created_at` column.
@@ -48,6 +50,38 @@ pub async fn setup_test_db() -> DatabaseConnection {
     let conn = db::setup_database(":memory:").await.expect("db setup");
     insert_user(&conn, "admin", "Admin Test", "admin").await;
     conn
+}
+
+/// Seeds the singleton `store_info` row so `parse_app_settings` reads real
+/// settings instead of falling back to its defaults. Only the sales flags
+/// matter to the transaction and refund paths; the PPOB block is left empty
+/// because tests drive fulfilment through an injected executor.
+pub async fn insert_store_info(
+    conn: &DatabaseConnection,
+    allow_negative_stock: bool,
+) -> store_info::Model {
+    store_info::ActiveModel {
+        id: Set(1),
+        name: Set("Toko Test".to_string()),
+        address: Set(None),
+        phone: Set(None),
+        email: Set(None),
+        logo_path: Set(None),
+        additional_info: Set(Some(
+            serde_json::json!({
+                "sales": {
+                    "allow_negative_stock": allow_negative_stock,
+                    "default_payment_method": "cash"
+                }
+            })
+            .to_string(),
+        )),
+        created_at: Set(Some(now_ts())),
+        updated_at: Set(Some(now_ts())),
+    }
+    .insert(conn)
+    .await
+    .expect("store info insert")
 }
 
 pub async fn insert_user(
@@ -130,27 +164,35 @@ pub async fn insert_transaction(
     .expect("transaction insert")
 }
 
-/// A line item. `product_id` is `None` for PPOB rows, which is exactly the case
-/// the product reports used to collapse into a single fake product.
-pub async fn insert_transaction_item(
+/// Everything a `transaction_items` row needs that the shorthand
+/// [`insert_transaction_item`] pins to a default. `product_id` is `None` for
+/// PPOB rows, which is exactly the case the product reports used to collapse
+/// into a single fake product.
+pub struct TransactionItemSpec<'a> {
+    pub transaction_id: i64,
+    pub product_id: Option<i64>,
+    pub product_name: &'a str,
+    pub product_price: f64,
+    pub buy_price: f64,
+    pub quantity: i64,
+    pub item_discount: f64,
+}
+
+pub async fn insert_transaction_item_spec(
     conn: &DatabaseConnection,
-    transaction_id: i64,
-    product_id: Option<i64>,
-    product_name: &str,
-    product_price: f64,
-    buy_price: f64,
-    quantity: i64,
+    spec: TransactionItemSpec<'_>,
 ) -> transaction_items::Model {
+    let subtotal = spec.product_price * spec.quantity as f64;
     transaction_items::ActiveModel {
         id: NotSet,
-        transaction_id: Set(transaction_id),
-        product_id: Set(product_id),
-        product_name: Set(product_name.to_string()),
-        product_price: Set(product_price),
-        buy_price: Set(Some(buy_price)),
-        quantity: Set(quantity),
-        subtotal: Set(product_price * quantity as f64),
-        item_discount: Set(0.0),
+        transaction_id: Set(spec.transaction_id),
+        product_id: Set(spec.product_id),
+        product_name: Set(spec.product_name.to_string()),
+        product_price: Set(spec.product_price),
+        buy_price: Set(Some(spec.buy_price)),
+        quantity: Set(spec.quantity),
+        subtotal: Set(subtotal),
+        item_discount: Set(spec.item_discount),
         service_type: Set(None),
         service_ref: Set(None),
         ppob_product_id: Set(None),
@@ -166,6 +208,31 @@ pub async fn insert_transaction_item(
     .insert(conn)
     .await
     .expect("transaction item insert")
+}
+
+/// A line item without discounts.
+pub async fn insert_transaction_item(
+    conn: &DatabaseConnection,
+    transaction_id: i64,
+    product_id: Option<i64>,
+    product_name: &str,
+    product_price: f64,
+    buy_price: f64,
+    quantity: i64,
+) -> transaction_items::Model {
+    insert_transaction_item_spec(
+        conn,
+        TransactionItemSpec {
+            transaction_id,
+            product_id,
+            product_name,
+            product_price,
+            buy_price,
+            quantity,
+            item_discount: 0.0,
+        },
+    )
+    .await
 }
 
 pub struct WriteoffSpec<'a> {
