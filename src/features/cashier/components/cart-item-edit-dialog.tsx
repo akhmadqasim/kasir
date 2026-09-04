@@ -18,9 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useCartStore } from "../hooks/use-cart-store"
+import { MAX_CART_QUANTITY, useCartStore } from "../hooks/use-cart-store"
 import type { CartItem } from "../types"
-import { formatRupiah } from "../utils"
+import { formatRupiah, getQuantityWarning } from "../utils"
 
 interface CartItemEditDialogProps {
   open: boolean
@@ -65,6 +65,7 @@ function CartItemEditBody({
 
   const lineTotal = item.product_price * qty
   const qtyInputId = `cart-item-edit-qty-${item.cart_id}`
+  const quantityWarning = getQuantityWarning(item, qty)
   const discValue = Number(discRaw) || 0
   const discAmount =
     discType === "percentage"
@@ -72,21 +73,25 @@ function CartItemEditBody({
       : Math.min(discValue, lineTotal)
   const finalTotal = Math.max(0, lineTotal - discAmount)
 
+  const clampQty = (value: number) =>
+    Math.min(Math.max(1, value), MAX_CART_QUANTITY)
+
   const handleQtyChange = (newQty: number) => {
-    const validated = Math.max(1, newQty)
+    const validated = clampQty(newQty)
     setQty(validated)
     setQtyRaw(String(validated))
   }
 
   const handleQtyInputChange = (value: string) => {
-    const cleaned = value.replace(/[^\d]/g, "")
+    // Batasi panjang input agar barcode 13 digit tidak bisa jadi jumlah
+    const cleaned = value.replace(/[^\d]/g, "").slice(0, String(MAX_CART_QUANTITY).length)
     setQtyRaw(cleaned)
 
     if (!cleaned) return
 
     const parsed = parseInt(cleaned, 10)
     if (!isNaN(parsed)) {
-      setQty(Math.max(1, parsed))
+      setQty(clampQty(parsed))
     }
   }
 
@@ -108,7 +113,7 @@ function CartItemEditBody({
   }
 
   const handleSave = () => {
-    const normalizedQty = Math.max(1, parseInt(qtyRaw || String(qty), 10) || qty)
+    const normalizedQty = clampQty(parseInt(qtyRaw || String(qty), 10) || qty)
     setQty(normalizedQty)
     setQtyRaw(String(normalizedQty))
 
@@ -198,10 +203,16 @@ function CartItemEditBody({
                 size="icon"
                 className="h-9 w-9"
                 onClick={() => handleQtyChange(qty + 1)}
+                disabled={qty >= MAX_CART_QUANTITY}
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            {quantityWarning && (
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                {quantityWarning}
+              </p>
+            )}
           </div>
         )}
 

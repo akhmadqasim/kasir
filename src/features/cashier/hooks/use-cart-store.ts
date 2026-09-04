@@ -2,6 +2,9 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { CartItem } from "../types"
 
+/** Guards against a barcode landing in a quantity field */
+export const MAX_CART_QUANTITY = 9999
+
 export interface DiscountEntry {
   type: "fixed" | "percentage"
   value: number
@@ -81,7 +84,10 @@ export const useCartStore = create<CartStore>()(
 
         if (existing) {
           // Move to top and increment quantity
-          const updated = { ...existing, quantity: existing.quantity + 1 }
+          const updated = {
+            ...existing,
+            quantity: Math.min(existing.quantity + 1, MAX_CART_QUANTITY),
+          }
           set({
             items: [updated, ...items.filter((item) => item.cart_id !== existing.cart_id)],
           })
@@ -148,7 +154,7 @@ export const useCartStore = create<CartStore>()(
         if (!item) return
         if (item.is_ppob) return
 
-        const validQty = Math.max(1, qty)
+        const validQty = Math.min(Math.max(1, Math.trunc(qty) || 1), MAX_CART_QUANTITY)
         set({
           items: items.map((i) =>
             i.cart_id === cartId ? { ...i, quantity: validQty } : i

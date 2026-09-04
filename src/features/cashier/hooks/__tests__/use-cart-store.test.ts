@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { useCartStore, type HeldCart } from "../use-cart-store"
+import { MAX_CART_QUANTITY, useCartStore, type HeldCart } from "../use-cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -199,6 +199,19 @@ describe("updateQuantity", () => {
     store().addItem(makeProduct())
     store().updateQuantity("nonexistent", 10)
     expect(store().items[0].quantity).toBe(1)
+  })
+
+  it("caps the quantity at the maximum", () => {
+    store().addItem(makeProduct())
+    store().updateQuantity("product-1", 8991002103011)
+    expect(store().items[0].quantity).toBe(MAX_CART_QUANTITY)
+  })
+
+  it("caps the quantity when the same product keeps being scanned", () => {
+    store().addItem(makeProduct())
+    store().updateQuantity("product-1", MAX_CART_QUANTITY)
+    store().addItem(makeProduct())
+    expect(store().items[0].quantity).toBe(MAX_CART_QUANTITY)
   })
 
   it("does not update quantity for PPOB items", () => {
