@@ -14,7 +14,7 @@ use crate::commands::ppob::executor::{execute_fulfillment_request, PpobFulfillme
 use crate::commands::ppob::{MitraClient, PaymentResult};
 use crate::commands::settings::parse_app_settings;
 use crate::entity::{products, store_info, transaction_items, transaction_payments, transactions, users};
-use crate::utils::AppError;
+use crate::utils::{require_role, AppError};
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "transfer"];
 const STATUS_COMPLETED: &str = "completed";
@@ -1258,23 +1258,24 @@ pub async fn delete_transaction(
     db: State<'_, DatabaseConnection>,
     input: DeleteTransactionInput,
 ) -> Result<(), AppError> {
-    let user = users::Entity::find_by_id(input.user_id)
-        .one(db.inner())
-        .await?
-        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+    delete_transaction_internal(db.inner(), input).await
+}
 
-    if user.role != "admin" {
-        return Err(AppError::Forbidden(
-            "Hanya admin yang dapat menghapus transaksi".into(),
-        ));
-    }
+async fn delete_transaction_internal(
+    db: &DatabaseConnection,
+    input: DeleteTransactionInput,
+) -> Result<(), AppError> {
+    // Voiding a sale is an admin action. Use the shared guard rather than a
+    // hand-rolled role check: only the guard also filters on `is_active`, so a
+    // deactivated admin could keep voiding transactions.
+    require_role(db, input.user_id, "admin").await?;
 
     if input.reason.trim().is_empty() {
         return Err(AppError::Validation("Alasan penghapusan wajib diisi".into()));
     }
 
     let transaction = transactions::Entity::find_by_id(input.transaction_id)
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
 
@@ -1286,7 +1287,7 @@ pub async fn delete_transaction(
     use crate::entity::refunds;
     let refund_count = refunds::Entity::find()
         .filter(refunds::Column::TransactionId.eq(input.transaction_id))
-        .count(db.inner())
+        .count(db)
         .await?;
 
     if refund_count > 0 {
@@ -1297,14 +1298,14 @@ pub async fn delete_transaction(
 
     let items = transaction_items::Entity::find()
         .filter(transaction_items::Column::TransactionId.eq(input.transaction_id))
-        .all(db.inner())
+        .all(db)
         .await?;
 
     let now = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
-    let txn = db.inner().begin().await?;
+    let txn = db.begin().await?;
 
     // Restore stock for regular items (not PPOB)
     for item in &items {
@@ -1358,16 +1359,16 @@ pub async fn update_payment_method(
     db: State<'_, DatabaseConnection>,
     input: UpdatePaymentMethodInput,
 ) -> Result<transactions::Model, AppError> {
-    let user = users::Entity::find_by_id(input.user_id)
-        .one(db.inner())
-        .await?
-        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+    update_payment_method_internal(db.inner(), input).await
+}
 
-    if user.role != "admin" {
-        return Err(AppError::Forbidden(
-            "Hanya admin yang dapat mengubah metode pembayaran".into(),
-        ));
-    }
+async fn update_payment_method_internal(
+    db: &DatabaseConnection,
+    input: UpdatePaymentMethodInput,
+) -> Result<transactions::Model, AppError> {
+    // Same reasoning as `delete_transaction_internal`: the shared guard is the
+    // only role check that also requires the account to still be active.
+    require_role(db, input.user_id, "admin").await?;
 
     if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
         return Err(AppError::Validation(format!(
@@ -1381,7 +1382,7 @@ pub async fn update_payment_method(
     }
 
     let transaction = transactions::Entity::find_by_id(input.transaction_id)
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
 
@@ -1396,7 +1397,7 @@ pub async fn update_payment_method(
         .to_string();
 
     let payment_amount = transaction.total_amount;
-    let txn = db.inner().begin().await?;
+    let txn = db.begin().await?;
 
     // Changing payment method should also rewrite the payment breakdown
     // so shift closing and reports read the same source of truth.
@@ -1905,6 +1906,147 @@ mod tests {
     fn validate_discounts_rejects_negative_transaction_discount() {
         let items = vec![resolved_item(20_000.0, 0.0)];
         assert!(validate_discounts(&items, -1.0).is_err());
+    }
+
+    /// A completed one-line cash sale, ready to be voided or amended.
+    async fn seed_sale(conn: &DatabaseConnection) -> TransactionResult {
+        let product = insert_product(&conn, "Kopi Sachet", 2_000.0, 10).await;
+        checkout_transaction_with_executor(
+            conn,
+            CheckoutTransactionInput {
+                user_id: 1,
+                items: vec![TransactionItemInput {
+                    product_id: Some(product.id),
+                    quantity: 1,
+                    product_name: None,
+                    product_price: None,
+                    buy_price: None,
+                    service_type: None,
+                    service_ref: None,
+                    ppob_product_id: None,
+                    ppob_product_code: None,
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 2_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await
+        .expect("checkout success")
+    }
+
+    #[tokio::test]
+    async fn deactivated_admin_cannot_void_a_transaction() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+
+        let ghost = crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
+        let mut deactivated: users::ActiveModel = ghost.clone().into();
+        deactivated.is_active = Set(false);
+        deactivated.update(&conn).await.expect("deactivate user");
+
+        let result = delete_transaction_internal(
+            &conn,
+            DeleteTransactionInput {
+                transaction_id: sale.transaction.id,
+                user_id: ghost.id,
+                reason: "Salah input".to_string(),
+            },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Auth(_)) => {}
+            other => panic!("Expected Auth error, got: {:?}", other),
+        }
+
+        let reloaded = transactions::Entity::find_by_id(sale.transaction.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("transaction exists");
+        assert_eq!(reloaded.status, STATUS_COMPLETED);
+    }
+
+    #[tokio::test]
+    async fn deactivated_admin_cannot_change_the_payment_method() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+
+        let ghost = crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
+        let mut deactivated: users::ActiveModel = ghost.clone().into();
+        deactivated.is_active = Set(false);
+        deactivated.update(&conn).await.expect("deactivate user");
+
+        let result = update_payment_method_internal(
+            &conn,
+            UpdatePaymentMethodInput {
+                transaction_id: sale.transaction.id,
+                user_id: ghost.id,
+                payment_method: "qris".to_string(),
+                reason: "Salah pilih".to_string(),
+            },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Auth(_)) => {}
+            other => panic!("Expected Auth error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn kasir_cannot_void_a_transaction() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+        let kasir = crate::test_support::insert_user(&conn, "kasir1", "Kasir", "kasir").await;
+
+        let result = delete_transaction_internal(
+            &conn,
+            DeleteTransactionInput {
+                transaction_id: sale.transaction.id,
+                user_id: kasir.id,
+                reason: "Salah input".to_string(),
+            },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Forbidden(_)) => {}
+            other => panic!("Expected Forbidden error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn active_admin_can_still_void_a_transaction() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+
+        delete_transaction_internal(
+            &conn,
+            DeleteTransactionInput {
+                transaction_id: sale.transaction.id,
+                user_id: 1,
+                reason: "Salah input".to_string(),
+            },
+        )
+        .await
+        .expect("active admin may void");
+
+        let reloaded = transactions::Entity::find_by_id(sale.transaction.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("transaction exists");
+        assert_eq!(reloaded.status, "deleted");
     }
 
     fn breakdown_input(splits: Vec<(&str, f64)>) -> CheckoutTransactionInput {
