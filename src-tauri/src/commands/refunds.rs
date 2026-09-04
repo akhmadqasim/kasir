@@ -199,6 +199,14 @@ fn refund_amount_for(txn_item: &transaction_items::Model, quantity: i64) -> f64 
     txn_item.net_subtotal / txn_item.quantity as f64 * quantity as f64
 }
 
+/// Page size to actually use, clamped to `1..=100`.
+///
+/// Zero would make `total_pages` meaningless, and an uncapped upper end let a
+/// single request pull the whole refund history into memory.
+fn clamp_per_page(requested: Option<i64>) -> i64 {
+    requested.unwrap_or(50).clamp(1, 100)
+}
+
 // --- Commands ---
 
 async fn create_refund_internal(
@@ -689,7 +697,7 @@ pub async fn list_refunds(
     input: ListRefundsInput,
 ) -> Result<ListRefundsResult, AppError> {
     let page = input.page.unwrap_or(1).max(1);
-    let per_page = input.per_page.unwrap_or(50).max(1);
+    let per_page = clamp_per_page(input.per_page);
     let offset = (page - 1) * per_page;
 
     let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
@@ -878,6 +886,15 @@ mod tests {
             }],
             exchange_items: None,
         }
+    }
+
+    #[test]
+    fn clamp_per_page_bounds_the_requested_page_size() {
+        assert_eq!(clamp_per_page(None), 50);
+        assert_eq!(clamp_per_page(Some(25)), 25);
+        assert_eq!(clamp_per_page(Some(0)), 1);
+        assert_eq!(clamp_per_page(Some(-10)), 1);
+        assert_eq!(clamp_per_page(Some(5_000)), 100);
     }
 
     #[tokio::test]
