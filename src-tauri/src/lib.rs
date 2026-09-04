@@ -2,6 +2,8 @@ mod commands;
 mod db;
 pub mod entity;
 mod printing;
+#[cfg(test)]
+mod test_support;
 mod utils;
 
 use std::fs;

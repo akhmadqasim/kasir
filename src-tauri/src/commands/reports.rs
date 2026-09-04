@@ -31,7 +31,9 @@ fn local_date_start_to_utc(date_str: &str) -> String {
 fn local_date_end_exclusive_to_utc(date_str: &str) -> String {
     let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
     match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        Ok(d) => ((d + chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap()
+        Ok(d) => ((d + chrono::Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             - chrono::Duration::seconds(offset_secs))
         .format("%Y-%m-%d %H:%M:%S")
         .to_string(),
@@ -211,19 +213,46 @@ async fn query_daily_sales(
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
-                date(t.created_at, 'localtime') as sale_date,
-                COUNT(DISTINCT t.id) as transaction_count,
-                COALESCE(SUM(t.total_amount), 0) as total_revenue,
-                COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost,
-                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as gross_profit
-            FROM transactions t
-            LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-            LEFT JOIN products p ON p.id = ti.product_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND t.created_at >= $1 AND t.created_at < $2
-            GROUP BY sale_date
-            ORDER BY sale_date DESC",
+            // Revenue is per transaction, cost is per line item, so the two are
+            // aggregated separately and joined on the day. Summing
+            // `t.total_amount` over a join against `transaction_items` counted
+            // each transaction once per item, inflating revenue by the item
+            // count.
+            "WITH tx AS (
+                SELECT
+                    t.id as id,
+                    date(t.created_at, 'localtime') as sale_date,
+                    t.total_amount as total_amount
+                FROM transactions t
+                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
+                AND t.created_at >= $1 AND t.created_at < $2
+            ),
+            revenue AS (
+                SELECT
+                    sale_date,
+                    COUNT(*) as transaction_count,
+                    COALESCE(SUM(total_amount), 0) as total_revenue
+                FROM tx
+                GROUP BY sale_date
+            ),
+            cost AS (
+                SELECT
+                    tx.sale_date as sale_date,
+                    COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost
+                FROM tx
+                JOIN transaction_items ti ON ti.transaction_id = tx.id
+                LEFT JOIN products p ON p.id = ti.product_id
+                GROUP BY tx.sale_date
+            )
+            SELECT
+                r.sale_date,
+                r.transaction_count,
+                r.total_revenue,
+                COALESCE(c.total_cost, 0) as total_cost,
+                r.total_revenue - COALESCE(c.total_cost, 0) as gross_profit
+            FROM revenue r
+            LEFT JOIN cost c ON c.sale_date = r.sale_date
+            ORDER BY r.sale_date DESC",
             vec![
                 local_date_start_to_utc(start_date).into(),
                 local_date_end_exclusive_to_utc(end_date).into(),
@@ -259,7 +288,13 @@ pub async fn report_sales_monthly(
     db: State<'_, DatabaseConnection>,
     year: i32,
 ) -> Result<Vec<MonthlySalesRow>, AppError> {
-    let db = db.inner();
+    query_monthly_sales(db.inner(), year).await
+}
+
+async fn query_monthly_sales(
+    db: &DatabaseConnection,
+    year: i32,
+) -> Result<Vec<MonthlySalesRow>, AppError> {
     // `strftime('%Y', created_at,'localtime') = year` == local year is `year`,
     // i.e. created_at in [year-01-01 00:00 local, (year+1)-01-01 00:00 local).
     let year_start = local_date_start_to_utc(&format!("{:04}-01-01", year));
@@ -268,19 +303,42 @@ pub async fn report_sales_monthly(
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
-                strftime('%Y-%m', t.created_at, 'localtime') as sale_month,
-                COUNT(DISTINCT t.id) as transaction_count,
-                COALESCE(SUM(t.total_amount), 0) as total_revenue,
-                COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost,
-                COALESCE(SUM(t.total_amount), 0) - COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as gross_profit
-            FROM transactions t
-            LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-            LEFT JOIN products p ON p.id = ti.product_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND t.created_at >= $1 AND t.created_at < $2
-            GROUP BY sale_month
-            ORDER BY sale_month DESC",
+            // Same per-transaction / per-item split as `query_daily_sales`.
+            "WITH tx AS (
+                SELECT
+                    t.id as id,
+                    strftime('%Y-%m', t.created_at, 'localtime') as sale_month,
+                    t.total_amount as total_amount
+                FROM transactions t
+                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
+                AND t.created_at >= $1 AND t.created_at < $2
+            ),
+            revenue AS (
+                SELECT
+                    sale_month,
+                    COUNT(*) as transaction_count,
+                    COALESCE(SUM(total_amount), 0) as total_revenue
+                FROM tx
+                GROUP BY sale_month
+            ),
+            cost AS (
+                SELECT
+                    tx.sale_month as sale_month,
+                    COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost
+                FROM tx
+                JOIN transaction_items ti ON ti.transaction_id = tx.id
+                LEFT JOIN products p ON p.id = ti.product_id
+                GROUP BY tx.sale_month
+            )
+            SELECT
+                r.sale_month,
+                r.transaction_count,
+                r.total_revenue,
+                COALESCE(c.total_cost, 0) as total_cost,
+                r.total_revenue - COALESCE(c.total_cost, 0) as gross_profit
+            FROM revenue r
+            LEFT JOIN cost c ON c.sale_month = r.sale_month
+            ORDER BY r.sale_month DESC",
             vec![year_start.into(), year_end.into()],
         ))
         .await?;
@@ -303,7 +361,15 @@ pub async fn report_sales_period(
     start_date: String,
     end_date: String,
 ) -> Result<PeriodSalesSummary, AppError> {
-    let daily = query_daily_sales(db.inner(), &start_date, &end_date).await?;
+    query_sales_period(db.inner(), &start_date, &end_date).await
+}
+
+async fn query_sales_period(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+) -> Result<PeriodSalesSummary, AppError> {
+    let daily = query_daily_sales(db, start_date, end_date).await?;
 
     let total_transactions: i64 = daily.iter().map(|r| r.transaction_count).sum();
     let total_revenue: f64 = daily.iter().map(|r| r.total_revenue).sum();
@@ -798,4 +864,137 @@ pub async fn report_cash_flows(
         net_total: total_in - total_out,
         items,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        date_str, insert_product, insert_transaction, insert_transaction_item, setup_test_db,
+        today, utc_at_local_noon,
+    };
+
+    /// One Rp 100.000 sale with three line items plus one Rp 50.000 sale with a
+    /// single line item. Revenue must stay per-transaction (Rp 150.000); the
+    /// fan-out bug reported Rp 350.000 because `SUM(t.total_amount)` was
+    /// aggregated over the joined line items.
+    async fn seed_two_sales_today(conn: &DatabaseConnection) {
+        let created_at = utc_at_local_noon(today());
+
+        let beras = insert_product(conn, "Beras 5kg", 30_000.0, 50_000.0, 100).await;
+        let gula = insert_product(conn, "Gula 1kg", 20_000.0, 30_000.0, 100).await;
+        let minyak = insert_product(conn, "Minyak 1L", 10_000.0, 20_000.0, 100).await;
+
+        let txn = insert_transaction(conn, 1, 100_000.0, "completed", &created_at).await;
+        insert_transaction_item(
+            conn,
+            txn.id,
+            Some(beras.id),
+            "Beras 5kg",
+            50_000.0,
+            30_000.0,
+            1,
+        )
+        .await;
+        insert_transaction_item(
+            conn,
+            txn.id,
+            Some(gula.id),
+            "Gula 1kg",
+            30_000.0,
+            20_000.0,
+            1,
+        )
+        .await;
+        insert_transaction_item(
+            conn,
+            txn.id,
+            Some(minyak.id),
+            "Minyak 1L",
+            20_000.0,
+            10_000.0,
+            1,
+        )
+        .await;
+
+        let txn2 = insert_transaction(conn, 1, 50_000.0, "completed", &created_at).await;
+        insert_transaction_item(
+            conn,
+            txn2.id,
+            Some(beras.id),
+            "Beras 5kg",
+            50_000.0,
+            20_000.0,
+            1,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn daily_sales_revenue_counts_each_transaction_once() {
+        let conn = setup_test_db().await;
+        seed_two_sales_today(&conn).await;
+        let day = date_str(today());
+
+        let rows = query_daily_sales(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].transaction_count, 2);
+        assert_eq!(rows[0].total_revenue, 150_000.0);
+        assert_eq!(rows[0].total_cost, 80_000.0);
+        assert_eq!(rows[0].gross_profit, 70_000.0);
+    }
+
+    #[tokio::test]
+    async fn monthly_sales_revenue_counts_each_transaction_once() {
+        let conn = setup_test_db().await;
+        seed_two_sales_today(&conn).await;
+        let now = today();
+
+        let year: i32 = now.format("%Y").to_string().parse().expect("year");
+        let rows = query_monthly_sales(&conn, year).await.expect("query");
+
+        let month = now.format("%Y-%m").to_string();
+        let row = rows
+            .iter()
+            .find(|r| r.month == month)
+            .expect("current month present");
+        assert_eq!(row.transaction_count, 2);
+        assert_eq!(row.total_revenue, 150_000.0);
+        assert_eq!(row.total_cost, 80_000.0);
+        assert_eq!(row.gross_profit, 70_000.0);
+    }
+
+    #[tokio::test]
+    async fn period_summary_average_uses_per_transaction_revenue() {
+        let conn = setup_test_db().await;
+        seed_two_sales_today(&conn).await;
+        let day = date_str(today());
+
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(summary.total_transactions, 2);
+        assert_eq!(summary.total_revenue, 150_000.0);
+        assert_eq!(summary.total_cost, 80_000.0);
+        assert_eq!(summary.gross_profit, 70_000.0);
+        assert_eq!(summary.avg_per_transaction, 75_000.0);
+    }
+
+    /// The cost aggregate is an inner join now, so a sale without line items
+    /// must still contribute its revenue.
+    #[tokio::test]
+    async fn daily_sales_include_transaction_without_items() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        insert_transaction(&conn, 1, 25_000.0, "completed", &created_at).await;
+        let day = date_str(today());
+
+        let rows = query_daily_sales(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].transaction_count, 1);
+        assert_eq!(rows[0].total_revenue, 25_000.0);
+        assert_eq!(rows[0].total_cost, 0.0);
+        assert_eq!(rows[0].gross_profit, 25_000.0);
+    }
 }
