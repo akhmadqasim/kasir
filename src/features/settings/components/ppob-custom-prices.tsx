@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { formatRupiah, parseIndonesianInteger } from "@/lib/format"
 
 interface PpobCustomPricesProps {
   customPrices: Record<string, number>
@@ -13,13 +14,6 @@ interface PpobCustomPricesProps {
 
 const PRESET_NOMINALS = [5000, 10000, 15000, 20000, 25000, 50000, 100000, 150000, 200000]
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
 export function PpobCustomPrices({
   customPrices,
   onCustomPricesChange,
@@ -27,14 +21,35 @@ export function PpobCustomPrices({
 }: PpobCustomPricesProps) {
   const [newNominal, setNewNominal] = useState("")
 
-  const allNominals = Array.from(
-    new Set([...PRESET_NOMINALS, ...Object.keys(customPrices).map(Number).filter((n) => !isNaN(n))])
-  ).sort((a, b) => a - b)
+  // Which rows exist is tracked separately from what they are priced at. Deriving the
+  // list from `customPrices` alone meant a nominal without a price had no row, so the
+  // add button did nothing and clearing a price mid-typing unmounted the input.
+  const [extraNominals, setExtraNominals] = useState<number[]>([])
+
+  const allNominals = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...PRESET_NOMINALS,
+          ...Object.keys(customPrices)
+            .map(Number)
+            .filter((n) => Number.isFinite(n) && n > 0),
+          ...extraNominals,
+        ])
+      ).sort((a, b) => a - b),
+    [customPrices, extraNominals]
+  )
+
+  const rememberNominal = (nominal: number) => {
+    setExtraNominals((prev) => (prev.includes(nominal) ? prev : [...prev, nominal]))
+  }
 
   const handlePriceChange = (nominal: number, sellPrice: number | undefined) => {
     const updated = { ...customPrices }
     if (sellPrice === undefined || sellPrice <= 0) {
       delete updated[String(nominal)]
+      // Keep the row while the field is empty so the input holds focus.
+      if (!PRESET_NOMINALS.includes(nominal)) rememberNominal(nominal)
     } else {
       updated[String(nominal)] = sellPrice
     }
@@ -42,21 +57,19 @@ export function PpobCustomPrices({
   }
 
   const handleAddNominal = () => {
-    const parsed = parseInt(newNominal.replace(/\./g, ""), 10)
-    if (isNaN(parsed) || parsed <= 0) return
-    if (!allNominals.includes(parsed)) {
-      handlePriceChange(parsed, 0)
-    }
+    const parsed = parseIndonesianInteger(newNominal)
+    if (parsed === null || parsed <= 0) return
+    rememberNominal(parsed)
     setNewNominal("")
   }
 
   const handleRemoveCustom = (nominal: number) => {
-    if (PRESET_NOMINALS.includes(nominal)) {
-      handlePriceChange(nominal, undefined)
-    } else {
-      const updated = { ...customPrices }
-      delete updated[String(nominal)]
-      onCustomPricesChange(updated)
+    const updated = { ...customPrices }
+    delete updated[String(nominal)]
+    onCustomPricesChange(updated)
+    // Presets always keep their row; only a custom nominal leaves the list.
+    if (!PRESET_NOMINALS.includes(nominal)) {
+      setExtraNominals((prev) => prev.filter((n) => n !== nominal))
     }
   }
 
@@ -84,7 +97,7 @@ export function PpobCustomPrices({
             <div key={nominal} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium tabular-nums">
-                  Rp {formatRupiah(nominal)}
+                  {formatRupiah(nominal)}
                 </span>
                 {isCustomNominal && (
                   <Badge variant="outline" className="text-[10px] h-4 px-1">custom</Badge>
