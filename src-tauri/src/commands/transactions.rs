@@ -463,6 +463,31 @@ fn validate_discounts(
     Ok(())
 }
 
+/// The rupiah actually paid for each line, in the order the lines were given.
+///
+/// A line starts at `subtotal - item_discount`, then gives up its share of the
+/// transaction-level discount, weighted by that post-item-discount amount. The
+/// result sums to `subtotal_amount - discount_amount`, i.e. the transaction
+/// total, so refunds, reports and receipts can all read one stored number
+/// instead of each re-deriving money from prices and two discount columns.
+///
+/// A fully discounted cart (`net_total == 0`) has nothing to spread, so every
+/// line is zero.
+fn prorated_line_nets(resolved_items: &[ResolvedItem], transaction_discount: f64) -> Vec<f64> {
+    let line_nets: Vec<f64> = resolved_items
+        .iter()
+        .map(|item| item.subtotal - item.item_discount)
+        .collect();
+    let net_total: f64 = line_nets.iter().sum();
+
+    if net_total <= 0.0 {
+        return vec![0.0; line_nets.len()];
+    }
+
+    let kept_ratio = (1.0 - transaction_discount / net_total).max(0.0);
+    line_nets.into_iter().map(|net| net * kept_ratio).collect()
+}
+
 async fn persist_transaction<C: ConnectionTrait>(
     db: &C,
     input: &CheckoutTransactionInput,
@@ -505,8 +530,9 @@ async fn persist_transaction<C: ConnectionTrait>(
 
     let transaction = new_transaction.insert(db).await?;
     let mut items = Vec::with_capacity(resolved_items.len());
+    let line_nets = prorated_line_nets(resolved_items, transaction_discount);
 
-    for item in resolved_items {
+    for (index, item) in resolved_items.iter().enumerate() {
         let is_ppob = item.service_type.is_some();
         let new_item = transaction_items::ActiveModel {
             id: NotSet,
@@ -518,6 +544,7 @@ async fn persist_transaction<C: ConnectionTrait>(
             quantity: Set(item.quantity),
             subtotal: Set(item.subtotal),
             item_discount: Set(item.item_discount),
+            net_subtotal: Set(line_nets[index]),
             service_type: Set(item.service_type.clone()),
             service_ref: Set(item.service_ref.clone()),
             ppob_product_id: Set(item.ppob_product_id),
@@ -1860,5 +1887,104 @@ mod tests {
     fn validate_discounts_rejects_negative_transaction_discount() {
         let items = vec![resolved_item(20_000.0, 0.0)];
         assert!(validate_discounts(&items, -1.0).is_err());
+    }
+
+    #[test]
+    fn prorated_line_nets_split_the_transaction_discount_by_weight() {
+        // Lines net 18_000 and 6_000 after item discounts; a 6_000 transaction
+        // discount is 25% of the 24_000 that is left, so each line gives up 25%.
+        let items = vec![
+            resolved_item(20_000.0, 2_000.0),
+            resolved_item(6_000.0, 0.0),
+        ];
+
+        let nets = prorated_line_nets(&items, 6_000.0);
+
+        assert_eq!(nets, vec![13_500.0, 4_500.0]);
+        assert_eq!(nets.iter().sum::<f64>(), 18_000.0);
+    }
+
+    #[test]
+    fn prorated_line_nets_are_zero_for_a_fully_discounted_cart() {
+        let items = vec![resolved_item(20_000.0, 20_000.0)];
+        assert_eq!(prorated_line_nets(&items, 0.0), vec![0.0]);
+    }
+
+    #[tokio::test]
+    async fn checkout_persists_the_net_amount_paid_per_line() {
+        let conn = setup_test_db().await;
+        let soap = insert_product(&conn, "Sabun", 5_000.0, 10).await;
+        let rice = insert_product(&conn, "Beras", 50_000.0, 10).await;
+
+        // Soap 2 x 5.000 = 10.000, rice 1 x 50.000 with a 10.000 line discount
+        // => line nets 10.000 + 40.000 = 50.000, minus a 5.000 transaction
+        // discount split 20%/80% => 9.000 and 36.000, total 45.000.
+        let result = checkout_transaction_with_executor(
+            &conn,
+            CheckoutTransactionInput {
+                user_id: 1,
+                items: vec![
+                    TransactionItemInput {
+                        product_id: Some(soap.id),
+                        quantity: 2,
+                        product_name: None,
+                        product_price: None,
+                        buy_price: None,
+                        service_type: None,
+                        service_ref: None,
+                        ppob_product_id: None,
+                        ppob_product_code: None,
+                        ppob_inquiry_id: None,
+                        ppob_payment_code: None,
+                        ppob_flag_id: None,
+                        item_discount: None,
+                    },
+                    TransactionItemInput {
+                        product_id: Some(rice.id),
+                        quantity: 1,
+                        product_name: None,
+                        product_price: None,
+                        buy_price: None,
+                        service_type: None,
+                        service_ref: None,
+                        ppob_product_id: None,
+                        ppob_product_code: None,
+                        ppob_inquiry_id: None,
+                        ppob_payment_code: None,
+                        ppob_flag_id: None,
+                        item_discount: Some(10_000.0),
+                    },
+                ],
+                payment_method: "cash".to_string(),
+                payment_amount: 45_000.0,
+                notes: None,
+                transaction_discount: Some(5_000.0),
+                shift_id: None,
+                payment_breakdown: None,
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await
+        .expect("checkout success");
+
+        assert_eq!(result.transaction.total_amount, 45_000.0);
+
+        let soap_line = result
+            .items
+            .iter()
+            .find(|item| item.product_id == Some(soap.id))
+            .expect("soap line");
+        let rice_line = result
+            .items
+            .iter()
+            .find(|item| item.product_id == Some(rice.id))
+            .expect("rice line");
+
+        assert_eq!(soap_line.net_subtotal, 9_000.0);
+        assert_eq!(rice_line.net_subtotal, 36_000.0);
+        assert_eq!(
+            soap_line.net_subtotal + rice_line.net_subtotal,
+            result.transaction.total_amount
+        );
     }
 }

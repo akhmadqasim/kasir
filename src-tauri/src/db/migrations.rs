@@ -68,6 +68,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "017_drop_redundant_indexes",
         include_str!("../../migrations/017_drop_redundant_indexes.sql"),
     ),
+    (
+        "018_transaction_item_net_subtotal",
+        include_str!("../../migrations/018_transaction_item_net_subtotal.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

@@ -176,6 +176,9 @@ pub struct TransactionItemSpec<'a> {
     pub buy_price: f64,
     pub quantity: i64,
     pub item_discount: f64,
+    /// Rupiah paid for the line. `None` means "no transaction-level discount",
+    /// i.e. `subtotal - item_discount`.
+    pub net_subtotal: Option<f64>,
 }
 
 pub async fn insert_transaction_item_spec(
@@ -183,6 +186,7 @@ pub async fn insert_transaction_item_spec(
     spec: TransactionItemSpec<'_>,
 ) -> transaction_items::Model {
     let subtotal = spec.product_price * spec.quantity as f64;
+    let net_subtotal = spec.net_subtotal.unwrap_or(subtotal - spec.item_discount);
     transaction_items::ActiveModel {
         id: NotSet,
         transaction_id: Set(spec.transaction_id),
@@ -193,6 +197,7 @@ pub async fn insert_transaction_item_spec(
         quantity: Set(spec.quantity),
         subtotal: Set(subtotal),
         item_discount: Set(spec.item_discount),
+        net_subtotal: Set(net_subtotal),
         service_type: Set(None),
         service_ref: Set(None),
         ppob_product_id: Set(None),
@@ -230,6 +235,7 @@ pub async fn insert_transaction_item(
             buy_price,
             quantity,
             item_discount: 0.0,
+            net_subtotal: None,
         },
     )
     .await
