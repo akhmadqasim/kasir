@@ -537,14 +537,19 @@ async fn create_refund_internal(
         }
     }
 
-    // Update refund with exchange amounts if applicable
-    if has_exchange {
+    // Update refund with exchange amounts if applicable. Keep the updated model:
+    // the previous code updated a clone and dropped the result, so every
+    // exchange reported total_exchange_amount 0 and difference_amount 0 back to
+    // the caller even though the database row was correct.
+    let refund = if has_exchange {
         let difference_amount = total_refund_amount - total_exchange_amount;
-        let mut active_refund: refunds::ActiveModel = refund.clone().into();
+        let mut active_refund: refunds::ActiveModel = refund.into();
         active_refund.total_exchange_amount = Set(Some(total_exchange_amount));
         active_refund.difference_amount = Set(Some(difference_amount));
-        active_refund.update(&txn).await?;
-    }
+        active_refund.update(&txn).await?
+    } else {
+        refund
+    };
 
     // Determine transaction status: full or partial refund.
     //
@@ -873,6 +878,59 @@ mod tests {
             }],
             exchange_items: None,
         }
+    }
+
+    #[tokio::test]
+    async fn exchange_returns_the_updated_amounts() {
+        let conn = setup().await;
+
+        let returned = insert_product(&conn, "Sarung", 40_000.0, 60_000.0, 10).await;
+        let replacement = insert_product(&conn, "Peci", 25_000.0, 45_000.0, 10).await;
+        let txn = sale(&conn, 60_000.0).await;
+        let txn_item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(returned.id),
+            "Sarung",
+            60_000.0,
+            40_000.0,
+            1,
+        )
+        .await;
+
+        let result = create_refund_internal(
+            &conn,
+            CreateRefundInput {
+                transaction_id: txn.id,
+                user_id: 1,
+                reason: Some("Tukar model".to_string()),
+                items: vec![RefundItemInput {
+                    transaction_item_id: txn_item.id,
+                    quantity: 1,
+                    condition: "good".to_string(),
+                }],
+                exchange_items: Some(vec![ExchangeItemInput {
+                    product_id: replacement.id,
+                    quantity: 1,
+                }]),
+            },
+        )
+        .await
+        .expect("exchange should succeed");
+
+        assert_eq!(result.refund.refund_type, "exchange");
+        assert_eq!(result.refund.total_refund_amount, 60_000.0);
+        assert_eq!(result.refund.total_exchange_amount, Some(45_000.0));
+        assert_eq!(result.refund.difference_amount, Some(15_000.0));
+
+        // The persisted row and the returned model agree.
+        let stored = refunds::Entity::find_by_id(result.refund.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("refund exists");
+        assert_eq!(stored.total_exchange_amount, Some(45_000.0));
+        assert_eq!(stored.difference_amount, Some(15_000.0));
     }
 
     #[tokio::test]
