@@ -6,6 +6,8 @@ export interface ReceiptData {
   date_time: string
   cashier_name: string
   items: ReceiptItem[]
+  subtotal_amount: number
+  discount_amount: number
   total_amount: number
   payment_method: string
   payment_amount: number

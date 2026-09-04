@@ -15,19 +15,33 @@ function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null
   return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }
 
+/**
+ * Nama produk, catatan dan data toko berasal dari input pengguna dan berakhir di
+ * `document.write` pada iframe same-origin. Tanpa escaping, `<script>` di nama
+ * produk berjalan dengan akses penuh ke seluruh Tauri command.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 function formatRupiah(amount: number): string {
   const rounded = Math.round(amount)
   return rounded.toLocaleString("id-ID")
 }
 
-function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
+export function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
   const width = paperWidth === 80 ? "72mm" : "48mm"
 
   const itemsHtml = data.items
     .map(
       (item) => `
       <tr>
-        <td colspan="3" class="item-name">${item.name}</td>
+        <td colspan="3" class="item-name">${escapeHtml(item.name)}</td>
       </tr>
       <tr>
         <td class="item-qty">${item.quantity} x ${formatRupiah(item.price)}</td>
@@ -50,7 +64,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
           .map(
             (split) => `
     <tr>
-      <td>Bayar (${formatPaymentSplitLabel(split.payment_method, split.bank_name)})</td>
+      <td>Bayar (${escapeHtml(formatPaymentSplitLabel(split.payment_method, split.bank_name))})</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(split.amount)}</td>
     </tr>`
@@ -73,7 +87,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
         }`
       : `
     <tr>
-      <td>Bayar (${paymentLabel})</td>
+      <td>Bayar (${escapeHtml(paymentLabel)})</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
     </tr>
@@ -90,7 +104,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
   const footerLines = data.footer_text
     ? data.footer_text
         .split("\n")
-        .map((line: string) => `<div>${line}</div>`)
+        .map((line: string) => `<div>${escapeHtml(line)}</div>`)
         .join("")
     : `<div>Terima kasih!</div><div>Barang yang sudah dibeli</div><div>tidak dapat dikembalikan</div>`
 
@@ -98,15 +112,31 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
   const voidInfoHtml = data.is_deleted
     ? `
   <div class="divider"></div>
-  ${data.deleted_by_name ? `<div class="info-row"><span class="info-label">Void By:</span><span class="info-value">${data.deleted_by_name}</span></div>` : ""}
-  ${data.deleted_reason ? `<div style="font-size: 11px;">Alasan Void: ${data.deleted_reason}</div>` : ""}`
+  ${data.deleted_by_name ? `<div class="info-row"><span class="info-label">Void By:</span><span class="info-value">${escapeHtml(data.deleted_by_name)}</span></div>` : ""}
+  ${data.deleted_reason ? `<div style="font-size: 11px;">Alasan Void: ${escapeHtml(data.deleted_reason)}</div>` : ""}`
     : ""
+
+  // Samakan dengan struk ESC/POS: subtotal dan diskon sebelum baris TOTAL.
+  const discountRowsHtml =
+    data.discount_amount > 0
+      ? `
+    <tr>
+      <td>Subtotal</td>
+      <td></td>
+      <td style="text-align:right">${formatRupiah(data.subtotal_amount)}</td>
+    </tr>
+    <tr>
+      <td>Diskon</td>
+      <td></td>
+      <td style="text-align:right">-${formatRupiah(data.discount_amount)}</td>
+    </tr>`
+      : ""
 
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Struk ${data.receipt_number}${titleSuffix}</title>
+<title>Struk ${escapeHtml(data.receipt_number)}${titleSuffix}</title>
 <style>
   @page {
     size: ${width} auto;
@@ -185,17 +215,17 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
 </head>
 <body>
   <div class="header">
-    <div class="store-name">${data.store_name}</div>
-    ${data.store_address ? `<div>${data.store_address}</div>` : ""}
-    ${data.store_phone ? `<div>Telp: ${data.store_phone}</div>` : ""}
+    <div class="store-name">${escapeHtml(data.store_name)}</div>
+    ${data.store_address ? `<div>${escapeHtml(data.store_address)}</div>` : ""}
+    ${data.store_phone ? `<div>Telp: ${escapeHtml(data.store_phone)}</div>` : ""}
     ${data.is_deleted ? `<div style="margin-top:4px;font-weight:bold;">Receipt Salinan (Void)</div>` : ""}
   </div>
 
   <div class="divider-double"></div>
 
-  <div class="info-row"><span class="info-label">No:</span><span class="info-value">${data.receipt_number}</span></div>
-  <div class="info-row"><span class="info-label">Tanggal:</span><span class="info-value">${data.date_time}</span></div>
-  <div class="info-row"><span class="info-label">Kasir:</span><span class="info-value">${data.cashier_name}</span></div>
+  <div class="info-row"><span class="info-label">No:</span><span class="info-value">${escapeHtml(data.receipt_number)}</span></div>
+  <div class="info-row"><span class="info-label">Tanggal:</span><span class="info-value">${escapeHtml(data.date_time)}</span></div>
+  <div class="info-row"><span class="info-label">Kasir:</span><span class="info-value">${escapeHtml(data.cashier_name)}</span></div>
 
   <div class="divider"></div>
 
@@ -206,6 +236,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
   <div class="divider"></div>
 
   <table>
+    ${discountRowsHtml}
     <tr class="total-row">
       <td>TOTAL</td>
       <td></td>
@@ -215,7 +246,7 @@ function generateReceiptHtml(data: ReceiptData, paperWidth: number): string {
   </table>
 
   ${data.notes ? `<div class="divider"></div>
-  <div style="font-size: 11px;">Catatan: ${data.notes}</div>` : ""}
+  <div style="font-size: 11px;">Catatan: ${escapeHtml(data.notes)}</div>` : ""}
   ${voidInfoHtml}
 
   <div class="divider-double"></div>
