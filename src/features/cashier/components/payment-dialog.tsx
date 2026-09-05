@@ -3,22 +3,17 @@ import { Check, Delete, RotateCcw } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
+  Button,
+  Input,
+  Label,
+  ListBox,
+  Modal,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
+  TextArea,
+  TextField,
+  ToggleButton,
+} from "@heroui/react"
+import { selectedText } from "@/components/selected-text"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "../hooks/use-cart-store"
@@ -513,23 +508,27 @@ export function PaymentDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[min(92svh,720px)] overflow-hidden p-0 sm:max-w-[min(82vw,52rem)]">
-        <DialogHeader>
-          <DialogTitle className="px-6 pt-6 text-lg font-semibold">
-            Pembayaran
-          </DialogTitle>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
+      <Modal.Container
+        className="max-h-[min(92svh,720px)] sm:max-w-[min(82vw,52rem)]"
+        size="lg"
+      >
+        <Modal.Dialog aria-label="Pembayaran">
+          <Modal.Header>
+            <Modal.Heading className="text-lg font-semibold">Pembayaran</Modal.Heading>
+            <Modal.CloseTrigger />
+          </Modal.Header>
+          <Modal.Body className="p-0">
         <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
           <div className="min-h-0 overflow-y-auto border-b p-3.5 sm:p-4 md:border-b-0 md:border-r">
             <div className="rounded-xl border bg-default/40 p-3.5 sm:p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                     Total Transaksi
                   </p>
                   {totalDiscount > 0 && (
-                    <p className="mt-3 text-sm text-muted-foreground">
+                    <p className="mt-3 text-sm text-muted">
                       Diskon: {formatRupiah(totalDiscount)}
                     </p>
                   )}
@@ -539,7 +538,7 @@ export function PaymentDialog({
                     {formatRupiah(total)}
                   </p>
                   {subtotal !== total && (
-                    <p className="mt-2 text-sm text-muted-foreground">
+                    <p className="mt-2 text-sm text-muted">
                       Subtotal {formatRupiah(subtotal)}
                     </p>
                   )}
@@ -560,24 +559,28 @@ export function PaymentDialog({
                     <div
                       key={split.payment_method}
                       className={cn(
-                        "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-card p-2.5 sm:grid-cols-[120px_minmax(0,1fr)]",
+                        "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-surface p-2.5 sm:grid-cols-[120px_minmax(0,1fr)]",
                         activePaymentMethod === split.payment_method &&
-                          "border-primary ring-2 ring-primary/20"
+                          "border-accent ring-2 ring-accent/20"
                       )}
                     >
-                      <div className="text-sm font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      <div className="text-sm font-medium uppercase tracking-[0.14em] text-muted">
                         {label}
                       </div>
+                      {/* `Input` telanjang, bukan `TextField`: penjaga scan membaca
+                          `event.timeStamp` dari event perubahan dan Enter, dan
+                          `TextField` hanya meneruskan nilainya. */}
                       <Input
                         ref={
                           split.payment_method === "cash"
                             ? paymentInputRef
                             : undefined
                         }
+                        aria-label={`Nominal ${label}`}
                         id={amountInputId}
                         type="text"
                         inputMode="numeric"
-                        className="h-11 border-0 bg-transparent pr-0 text-right text-2xl font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-12 sm:text-[2rem] md:text-[2rem]"
+                        className="h-11 border-0 bg-transparent pr-0 text-right text-2xl font-semibold tabular-nums shadow-none sm:h-12 sm:text-[2rem] md:text-[2rem]"
                         placeholder="0"
                         value={formatAmountDisplay(split.amount)}
                         onClick={() => {
@@ -596,16 +599,15 @@ export function PaymentDialog({
                       />
                       {split.payment_method === "transfer" && (
                         <div className="col-span-2 sm:col-start-2 sm:col-span-1">
-                          <Label
-                            htmlFor={`payment-bank-${split.payment_method}`}
-                            className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
-                          >
-                            Bank
-                          </Label>
                           <Select
-                            value={split.bank_name}
-                            onValueChange={(value) =>
-                              handleBankNameChange(split.payment_method, value)
+                            fullWidth
+                            placeholder="Pilih bank"
+                            value={split.bank_name || null}
+                            onChange={(value) =>
+                              handleBankNameChange(
+                                split.payment_method,
+                                value === null ? "" : String(value)
+                              )
                             }
                             onOpenChange={(isOpen) => {
                               if (isOpen) {
@@ -613,19 +615,23 @@ export function PaymentDialog({
                               }
                             }}
                           >
-                            <SelectTrigger
-                              id={`payment-bank-${split.payment_method}`}
-                              className="h-10 w-full"
-                            >
-                              <SelectValue placeholder="Pilih bank" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {BANK_OPTIONS.map((bank) => (
-                                <SelectItem key={bank} value={bank}>
-                                  {bank}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
+                            <Label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
+                              Bank
+                            </Label>
+                            <Select.Trigger className="h-10 w-full">
+                              <Select.Value>{selectedText}</Select.Value>
+                              <Select.Indicator />
+                            </Select.Trigger>
+                            <Select.Popover>
+                              <ListBox>
+                                {BANK_OPTIONS.map((bank) => (
+                                  <ListBox.Item key={bank} id={bank} textValue={bank}>
+                                    <Label>{bank}</Label>
+                                    <ListBox.ItemIndicator />
+                                  </ListBox.Item>
+                                ))}
+                              </ListBox>
+                            </Select.Popover>
                           </Select>
                         </div>
                       )}
@@ -633,36 +639,30 @@ export function PaymentDialog({
                   )
                 })
               ) : (
-                <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed p-6 text-sm text-muted">
                   Pilih metode pembayaran di panel kanan untuk mulai mengisi nominal.
                 </div>
               )}
             </div>
 
             <div className="mt-3.5 space-y-2.5">
-              <div className="space-y-2">
-                <Label
-                  htmlFor="transaction-notes"
-                  className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
-                >
+              <TextField fullWidth value={notes} onChange={setNotes}>
+                <Label className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                   Catatan
                 </Label>
-                <Textarea
-                  id="transaction-notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                <TextArea
+                  className="resize-none"
                   placeholder="Tambahkan catatan untuk transaksi ini..."
                   rows={2}
-                  className="resize-none"
                 />
-              </div>
+              </TextField>
               {isSingleCashSelection && primaryPaymentAmount > 0 && (
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">Kembalian</span>
+                  <span className="text-muted">Kembalian</span>
                   <span
                     className={cn(
                       "font-semibold tabular-nums",
-                      changeAmount < 0 ? "text-destructive" : "text-green-600"
+                      changeAmount < 0 ? "text-danger" : "text-success"
                     )}
                   >
                     {formatRupiah(Math.max(0, changeAmount))}
@@ -670,7 +670,7 @@ export function PaymentDialog({
                 </div>
               )}
               {hasImplausibleAmount && (
-                <p className="text-sm font-medium text-destructive">
+                <p className="text-sm font-medium text-danger">
                   Nominal pembayaran melebihi {formatRupiah(MAX_PAYMENT_AMOUNT)}.
                   Periksa kembali — kemungkinan barcode ikut terbaca.
                 </p>
@@ -680,7 +680,7 @@ export function PaymentDialog({
                   (hasCashInSplit &&
                     (nonCashSplitAmount > total + 0.01 ||
                       cashSplitAmount + 0.01 < Math.max(total - nonCashSplitAmount, 0)))) && (
-                <p className="text-sm font-medium text-destructive">
+                <p className="text-sm font-medium text-danger">
                   {hasCashInSplit
                     ? nonCashSplitAmount > total + 0.01
                       ? "Nominal non-tunai melebihi total transaksi."
@@ -697,12 +697,12 @@ export function PaymentDialog({
                 nonCashSplitAmount <= total + 0.01 &&
                 cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0) &&
                 totalSplitAmount - total > 0.01 && (
-                <p className="text-sm font-medium text-green-600">
+                <p className="text-sm font-medium text-success">
                   Kembalian tunai: {formatRupiah(totalSplitAmount - total)}
                 </p>
               )}
               {!allTransferMethodsHaveBank && (
-                <p className="text-sm font-medium text-destructive">
+                <p className="text-sm font-medium text-danger">
                   Isi nama bank untuk pembayaran transfer bank.
                 </p>
               )}
@@ -728,10 +728,9 @@ export function PaymentDialog({
                 ].map((key) => (
                   <Button
                     key={key}
-                    type="button"
                     variant="outline"
                     className="h-9 text-base font-medium tabular-nums sm:h-9.5 sm:text-[1rem]"
-                    onClick={() => handleKeypadInput(key)}
+                    onPress={() => handleKeypadInput(key)}
                   >
                     {key}
                   </Button>
@@ -739,19 +738,17 @@ export function PaymentDialog({
               </div>
               <div className="grid grid-rows-2 gap-2">
                 <Button
-                  type="button"
                   variant="outline"
                   className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
-                  onClick={handleKeypadDelete}
+                  onPress={handleKeypadDelete}
                 >
                   <Delete className="mr-2 h-5 w-5" />
                   Delete
                 </Button>
                 <Button
-                  type="button"
                   variant="outline"
                   className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
-                  onClick={handleKeypadClear}
+                  onPress={handleKeypadClear}
                 >
                   <RotateCcw className="mr-2 h-5 w-5" />
                   Clear
@@ -763,10 +760,9 @@ export function PaymentDialog({
               {quickAmounts.map((amount) => (
                 <Button
                   key={amount}
-                  type="button"
                   variant="outline"
                   className="h-8 text-xs font-medium tabular-nums sm:h-8.5 sm:text-xs"
-                  onClick={() => handleSetExactAmount(amount)}
+                  onPress={() => handleSetExactAmount(amount)}
                 >
                   {formatQuickAmountLabel(amount)}
                 </Button>
@@ -774,18 +770,17 @@ export function PaymentDialog({
             </div>
 
             <Button
-              type="button"
               variant="outline"
               className="h-9 w-full text-base font-semibold sm:h-9.5 sm:text-lg"
-              onClick={handleSetRemainingAmount}
+              onPress={handleSetRemainingAmount}
             >
               Uang Pas
             </Button>
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <Label className="mb-3 block text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                 Metode Pembayaran
-              </Label>
+              </p>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 {PAYMENT_METHODS.map((method) => {
                   const split = paymentSplits.find(
@@ -798,30 +793,33 @@ export function PaymentDialog({
                   const isActive = activePaymentMethod === method.value
 
                   return (
-                    <Button
+                    // `ToggleButton`, bukan tombol biasa: metode yang tercentang
+                    // adalah keadaan, dan `aria-pressed` satu-satunya cara pembaca
+                    // layar tahu mana yang aktif. Klik tetap lewat
+                    // `handleMethodClick` — aturan radio-lalu-tambah ada di sana.
+                    <ToggleButton
                       key={method.value}
-                      type="button"
-                      variant="outline"
                       className={cn(
                         "h-9 justify-start gap-2.5 px-3 text-left text-sm font-medium",
-                        isSelected && "border-primary bg-primary/10 text-primary",
-                        isActive && "ring-2 ring-primary/20"
+                        isSelected && "border-accent bg-accent/10 text-accent",
+                        isActive && "ring-2 ring-accent/20"
                       )}
-                      onClick={() => handleMethodClick(method.value)}
+                      isSelected={isSelected}
+                      onChange={() => handleMethodClick(method.value)}
                     >
                       <span
                         aria-hidden="true"
                         className={cn(
                           "pointer-events-none flex h-5 w-5 items-center justify-center rounded border",
                           isSelected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-muted-foreground/30"
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-muted/30"
                         )}
                       >
                         {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                       </span>
                       <span className="flex-1">{method.label}</span>
-                    </Button>
+                    </ToggleButton>
                   )
                 })}
               </div>
@@ -829,15 +827,17 @@ export function PaymentDialog({
 
             <Button
               className="sticky bottom-0 h-10 w-full shrink-0 text-base font-semibold sm:h-10.5 sm:text-lg"
-              disabled={!canConfirm}
-              onClick={handleConfirm}
+              isDisabled={!canConfirm}
+              onPress={handleConfirm}
             >
               {checkoutTransaction.isPending ? "Memproses..." : "Bayar"}
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+          </Modal.Body>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
