@@ -16,6 +16,7 @@ import {
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
@@ -206,7 +207,7 @@ export function TransactionsPage() {
           }}
         >
           <Select.Trigger>
-            <Select.Value />
+            <Select.Value>{selectedText}</Select.Value>
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
@@ -232,7 +233,7 @@ export function TransactionsPage() {
           }}
         >
           <Select.Trigger>
-            <Select.Value />
+            <Select.Value>{selectedText}</Select.Value>
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>

@@ -19,6 +19,7 @@ import {
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
@@ -582,7 +583,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 onChange={(value) => setNewPaymentMethod(value === null ? "" : String(value))}
               >
                 <Select.Trigger>
-                  <Select.Value />
+                  <Select.Value>{selectedText}</Select.Value>
                   <Select.Indicator />
                 </Select.Trigger>
                 <Select.Popover>
