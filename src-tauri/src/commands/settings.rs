@@ -5,8 +5,8 @@ use tauri::State;
 use tokio::sync::Mutex;
 
 use crate::entity::{store_info, users};
-use crate::utils::AppError;
 use crate::utils::require_role;
+use crate::utils::AppError;
 
 use super::ppob::auth::clear_tokens;
 use super::ppob::client::MitraClient;
@@ -24,7 +24,13 @@ fn obfuscate(input: &str) -> String {
         .enumerate()
         .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
         .collect();
-    format!("OBF:{}", bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+    format!(
+        "OBF:{}",
+        bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    )
 }
 
 fn deobfuscate(input: &str) -> String {
@@ -282,6 +288,12 @@ pub async fn update_app_settings(
 ) -> Result<(), AppError> {
     require_role(db.inner(), caller_id, "admin").await?;
 
+    // Write boundary for the backup scheduler's inputs. An interval of zero
+    // panics `tokio::time::interval` inside the scheduler's spawned task, and a
+    // negative retention makes cleanup delete the backup that was just written —
+    // both fail silently, so they are refused here rather than discovered later.
+    settings.backup.validate()?;
+
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db.inner())
         .await?
@@ -293,13 +305,12 @@ pub async fn update_app_settings(
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(serde_json::json!({}));
     let current_settings = parse_app_settings(&store.additional_info);
-    let should_reset_ppob_session =
-        !settings.ppob.enabled
-            || current_settings.ppob.enabled != settings.ppob.enabled
-            || current_settings.ppob.phone_number != settings.ppob.phone_number
-            || current_settings.ppob.password != settings.ppob.password
-            || current_settings.ppob.device_id != settings.ppob.device_id
-            || current_settings.ppob.pin != settings.ppob.pin;
+    let should_reset_ppob_session = !settings.ppob.enabled
+        || current_settings.ppob.enabled != settings.ppob.enabled
+        || current_settings.ppob.phone_number != settings.ppob.phone_number
+        || current_settings.ppob.password != settings.ppob.password
+        || current_settings.ppob.device_id != settings.ppob.device_id
+        || current_settings.ppob.pin != settings.ppob.pin;
 
     // Obfuscate sensitive PPOB credentials before storing
     let mut ppob_to_store = settings.ppob.clone();
@@ -377,7 +388,11 @@ pub async fn change_user_pin(
 }
 
 #[tauri::command]
-pub async fn export_database(db: State<'_, DatabaseConnection>, caller_id: i64, export_path: String) -> Result<u64, AppError> {
+pub async fn export_database(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
+    export_path: String,
+) -> Result<u64, AppError> {
     require_role(db.inner(), caller_id, "admin").await?;
 
     let db_path = get_db_path();
@@ -391,7 +406,11 @@ pub async fn export_database(db: State<'_, DatabaseConnection>, caller_id: i64, 
 }
 
 #[tauri::command]
-pub async fn import_database(db: State<'_, DatabaseConnection>, caller_id: i64, import_path: String) -> Result<String, AppError> {
+pub async fn import_database(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
+    import_path: String,
+) -> Result<String, AppError> {
     require_role(db.inner(), caller_id, "admin").await?;
 
     let import = std::path::Path::new(&import_path);

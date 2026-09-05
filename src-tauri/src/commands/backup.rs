@@ -17,6 +17,16 @@ use crate::utils::AppError;
 const DEFAULT_INTERVAL_HOURS: u64 = 3;
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
+/// A zero interval panics `tokio::time::interval`; a week is already far longer
+/// than the longest option the UI offers.
+const MIN_INTERVAL_HOURS: u64 = 1;
+const MAX_INTERVAL_HOURS: u64 = 24 * 7;
+
+/// A retention below one day (in particular zero or negative) puts the cleanup
+/// cutoff at or after "now", so a backup is deleted on the tick that created it.
+const MIN_RETENTION_DAYS: i64 = 1;
+const MAX_RETENTION_DAYS: i64 = 3650;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BackupSettings {
     pub interval_hours: u64,
@@ -28,6 +38,47 @@ impl Default for BackupSettings {
         Self {
             interval_hours: DEFAULT_INTERVAL_HOURS,
             retention_days: DEFAULT_RETENTION_DAYS,
+        }
+    }
+}
+
+impl BackupSettings {
+    /// Reject values the scheduler cannot survive. Called from
+    /// `update_app_settings`, the only write boundary for these fields.
+    pub fn validate(&self) -> Result<(), AppError> {
+        if !(MIN_INTERVAL_HOURS..=MAX_INTERVAL_HOURS).contains(&self.interval_hours) {
+            return Err(AppError::Validation(format!(
+                "Interval backup harus antara {} dan {} jam",
+                MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS
+            )));
+        }
+        if !(MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&self.retention_days) {
+            return Err(AppError::Validation(format!(
+                "Retensi backup harus antara {} dan {} hari",
+                MIN_RETENTION_DAYS, MAX_RETENTION_DAYS
+            )));
+        }
+        Ok(())
+    }
+
+    /// The same bounds applied by clamping instead of rejecting.
+    ///
+    /// Validating at the write boundary is not enough on its own: the settings
+    /// live in a free-form JSON blob in `store_info.additional_info` that can be
+    /// hand-edited or written by an older build, and the consequences of a bad
+    /// value are silent. `interval_hours = 0` makes
+    /// `tokio::time::interval(Duration::ZERO)` panic inside the scheduler's
+    /// spawned task, which kills every future automatic backup with nothing
+    /// logged anywhere; `retention_days <= 0` makes `cleanup_old_backups` delete
+    /// the backup `run_backup` just created.
+    pub fn sanitized(&self) -> Self {
+        Self {
+            interval_hours: self
+                .interval_hours
+                .clamp(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS),
+            retention_days: self
+                .retention_days
+                .clamp(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS),
         }
     }
 }
@@ -315,6 +366,7 @@ fn collect_backups(backup_dir: &Path) -> Result<Vec<BackupInfo>, AppError> {
 
 /// Delete backups older than retention period
 fn cleanup_old_backups(backup_dir: &Path, retention_days: i64) -> Result<usize, AppError> {
+    let retention_days = retention_days.clamp(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS);
     let cutoff = (Local::now() - chrono::Duration::days(retention_days)).date_naive();
     let mut deleted = 0;
 
@@ -375,7 +427,12 @@ impl BackupScheduler {
     }
 }
 
-/// Read backup settings from the database
+/// Read backup settings from the database.
+///
+/// Always returns `sanitized()` values: this is the single choke point every
+/// caller goes through, so nothing downstream has to defend itself against a
+/// zero interval or a negative retention that was written by an older build or
+/// edited into the JSON blob by hand.
 fn read_backup_settings_from_db() -> BackupSettings {
     let db_path = get_db_path();
     if !db_path.exists() {
@@ -407,15 +464,15 @@ fn read_backup_settings_from_db() -> BackupSettings {
     json.get("backup")
         .and_then(|v| serde_json::from_value::<BackupSettings>(v.clone()).ok())
         .unwrap_or_default()
+        .sanitized()
 }
 
 /// Start the background backup scheduler
 pub fn start_backup_scheduler(scheduler: Arc<Mutex<BackupScheduler>>) {
     tauri::async_runtime::spawn(async move {
-        // Read settings from DB
+        // Already sanitized by read_backup_settings_from_db().
         let settings = read_backup_settings_from_db();
         let retention_days = settings.retention_days;
-        let interval_secs = settings.interval_hours * 3600;
 
         {
             let mut s = scheduler.lock().await;
@@ -425,30 +482,27 @@ pub fn start_backup_scheduler(scheduler: Arc<Mutex<BackupScheduler>>) {
         // Initial backup on startup (skip if today's backup already exists)
         let backup_dir = get_backup_dir();
         if !has_todays_backup(&backup_dir) {
-            match run_backup(retention_days) {
-                Ok(info) => {
-                    let mut s = scheduler.lock().await;
-                    s.last_backup = Some(info);
-                }
-                Err(_) => {}
+            if let Ok(info) = run_backup(retention_days) {
+                let mut s = scheduler.lock().await;
+                s.last_backup = Some(info);
             }
         }
 
-        // Run at configured interval
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
-        interval.tick().await; // Skip first tick (already ran above)
-
         loop {
-            interval.tick().await;
-            // Re-read settings each cycle in case they changed
+            // Re-read (and re-clamp) the settings every cycle: this both picks
+            // up an interval the admin changed since launch and keeps a bad
+            // stored value from reaching the timer. `sleep` is used rather than
+            // `tokio::time::interval`, which PANICS on a zero period — and a
+            // panic here happens inside this spawned task, so automatic backups
+            // would simply stop with nothing logged and nothing shown in the UI.
             let current_settings = read_backup_settings_from_db();
-            match run_backup(current_settings.retention_days) {
-                Ok(info) => {
-                    let mut s = scheduler.lock().await;
-                    s.last_backup = Some(info);
-                    s.settings = current_settings;
-                }
-                Err(_) => {}
+            let period = std::time::Duration::from_secs(current_settings.interval_hours * 3600);
+            tokio::time::sleep(period).await;
+
+            if let Ok(info) = run_backup(current_settings.retention_days) {
+                let mut s = scheduler.lock().await;
+                s.last_backup = Some(info);
+                s.settings = current_settings;
             }
         }
     });
@@ -631,6 +685,76 @@ mod tests {
         let dir = Path::new("C:\\data\\backups");
         let resolved = resolve_backup_path(dir, "kasir_2026-09-05.db.gz").expect("valid name");
         assert_eq!(resolved, dir.join("kasir_2026-09-05.db.gz"));
+    }
+
+    /// A zero interval reaches `tokio::time::interval`, which panics, and the
+    /// panic is invisible because it happens in a spawned task.
+    #[test]
+    fn sanitize_lifts_a_zero_interval_off_the_panic() {
+        let s = BackupSettings {
+            interval_hours: 0,
+            retention_days: 90,
+        }
+        .sanitized();
+        assert_eq!(s.interval_hours, MIN_INTERVAL_HOURS);
+        assert!(s.interval_hours * 3600 > 0);
+    }
+
+    /// A negative retention put the cleanup cutoff in the future, so the backup
+    /// `run_backup` had just created was deleted by `cleanup_old_backups`.
+    #[test]
+    fn sanitize_lifts_a_negative_retention() {
+        let s = BackupSettings {
+            interval_hours: 3,
+            retention_days: -7,
+        }
+        .sanitized();
+        assert_eq!(s.retention_days, MIN_RETENTION_DAYS);
+    }
+
+    #[test]
+    fn sanitize_leaves_usable_values_alone_and_caps_absurd_ones() {
+        let ok = BackupSettings {
+            interval_hours: 6,
+            retention_days: 30,
+        };
+        assert_eq!(ok.sanitized().interval_hours, 6);
+        assert_eq!(ok.sanitized().retention_days, 30);
+
+        let huge = BackupSettings {
+            interval_hours: u64::MAX,
+            retention_days: i64::MAX,
+        }
+        .sanitized();
+        assert_eq!(huge.interval_hours, MAX_INTERVAL_HOURS);
+        assert_eq!(huge.retention_days, MAX_RETENTION_DAYS);
+        // Would have overflowed `interval_hours * 3600` before clamping.
+        assert!(huge.interval_hours.checked_mul(3600).is_some());
+    }
+
+    #[test]
+    fn validate_rejects_what_sanitize_would_have_had_to_clamp() {
+        for (interval, retention) in [(0, 90), (u64::MAX, 90), (3, 0), (3, -1), (3, i64::MAX)] {
+            let s = BackupSettings {
+                interval_hours: interval,
+                retention_days: retention,
+            };
+            assert!(
+                s.validate().is_err(),
+                "should reject interval={interval} retention={retention}"
+            );
+        }
+        // Every option the settings UI offers must pass.
+        for interval in [1, 2, 3, 6, 12, 24] {
+            for retention in [30, 60, 90, 180, 365] {
+                assert!(BackupSettings {
+                    interval_hours: interval,
+                    retention_days: retention,
+                }
+                .validate()
+                .is_ok());
+            }
+        }
     }
 
     #[test]
