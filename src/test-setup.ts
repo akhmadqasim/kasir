@@ -57,3 +57,17 @@ window.matchMedia = (query: string): MediaQueryList => {
 window.addEventListener("resize", () => {
   notifyAll.forEach((notify) => notify())
 })
+
+/**
+ * jsdom tidak punya `ResizeObserver`, dan beberapa komponen HeroUI membuatnya
+ * langsung — `ScrollShadow` melempar saat render tanpa ini, sehingga seluruh
+ * layar yang memakainya gagal dirender di test. Stub ini sengaja diam: jsdom
+ * tidak melakukan layout, jadi tidak ada ukuran yang bisa dilaporkan.
+ */
+class ResizeObserverStub implements ResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+window.ResizeObserver ??= ResizeObserverStub

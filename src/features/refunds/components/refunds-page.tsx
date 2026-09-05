@@ -1,37 +1,29 @@
 import { useState, useCallback, useMemo } from "react"
 import { Eye, X } from "lucide-react"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
+
+import { selectedText } from "@/components/selected-text"
+import { StatusBadge } from "@/components/status-badge"
+import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { getTodayRange, type DateRange } from "@/lib/date-range"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
 import { id } from "@/i18n/id"
+import { differenceToneClass, refundTypeLabel, refundTypeVariant } from "../labels"
 import { RefundDetailDialog } from "./refund-detail-dialog"
 import type { ListRefundsResult } from "../types"
 
+/** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
+const ALL = "all"
 
-function getDifferenceColor(amount: number): string {
-  if (amount > 0) return "text-green-600 dark:text-green-400"
-  if (amount < 0) return "text-red-600 dark:text-red-400"
-  return "text-muted-foreground"
-}
+const TYPE_FILTERS = [
+  { key: ALL, label: id.refund.allTypes },
+  { key: "refund", label: id.refund.typeRefund },
+  { key: "exchange", label: id.refund.typeExchange },
+] as const
+
+const COLUMN_COUNT = 9
 
 export function RefundsPage() {
   const [page, setPage] = useState(1)
@@ -66,25 +58,49 @@ export function RefundsPage() {
     (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
     (dateRange?.to && toLocalDateString(dateRange.to) !== today)
 
+  const refunds = data?.items ?? []
+
+  const renderEmptyState = () => {
+    if (error) {
+      return <p className="py-10 text-center text-danger">Error: {error.message}</p>
+    }
+    return <p className="py-10 text-center text-muted">{id.refund.noRefunds}</p>
+  }
+
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <h1 className="text-2xl font-bold">{id.refund.history}</h1>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v === "all" ? "" : v); setPage(1) }}>
-          <SelectTrigger className="w-full max-w-48">
-            <SelectValue placeholder={id.refund.allTypes} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{id.refund.allTypes}</SelectItem>
-            <SelectItem value="refund">{id.refund.typeRefund}</SelectItem>
-            <SelectItem value="exchange">{id.refund.typeExchange}</SelectItem>
-          </SelectContent>
+        <Select
+          aria-label={id.refund.allTypes}
+          className="w-48"
+          placeholder={id.refund.allTypes}
+          value={typeFilter || ALL}
+          onChange={(value) => {
+            setTypeFilter(value === ALL ? "" : String(value))
+            setPage(1)
+          }}
+        >
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {TYPE_FILTERS.map((option) => (
+                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
+                  <Label>{option.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
         </Select>
 
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={resetFilters}>
+          <Button size="sm" variant="ghost" onPress={resetFilters}>
             <X className="mr-1 h-4 w-4" />
             {id.transactions.resetFilter}
           </Button>
@@ -100,117 +116,89 @@ export function RefundsPage() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{id.refund.refundNumber}</TableHead>
-              <TableHead>{id.refund.transactionReceipt}</TableHead>
-              <TableHead>{id.refund.type}</TableHead>
-              <TableHead className="text-right">{id.refund.totalRefund}</TableHead>
-              <TableHead className="text-right">{id.refund.totalExchange}</TableHead>
-              <TableHead className="text-right">{id.refund.difference}</TableHead>
-              <TableHead>{id.refund.cashier}</TableHead>
-              <TableHead>{id.transactions.date}</TableHead>
-              <TableHead className="text-right w-24" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((_, j) => (
-                    <TableCell key={j}>
-                      <Skeleton className="h-5 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : error ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-destructive">
-                  Error: {error.message}
-                </TableCell>
-              </TableRow>
-            ) : !data?.items?.length ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
-                  {id.refund.noRefunds}
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.items.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer" onClick={() => setDetailRefundId(item.id)}>
-                  <TableCell className="font-mono text-sm">{item.refund_number}</TableCell>
-                  <TableCell className="font-mono text-sm">{item.transaction_receipt}</TableCell>
-                  <TableCell>
-                    {item.refund_type === "exchange" ? (
-                      <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                        {id.refund.typeExchange}
-                      </Badge>
-                    ) : (
-                      <Badge variant="default">
-                        {id.refund.typeRefund}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatRupiah(item.total_refund_amount)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.refund_type === "exchange"
-                      ? formatRupiah(item.total_exchange_amount)
-                      : "—"}
-                  </TableCell>
-                  <TableCell className={`text-right tabular-nums ${getDifferenceColor(item.difference_amount)}`}>
-                    {item.refund_type === "exchange"
-                      ? formatRupiah(item.difference_amount)
-                      : "—"}
-                  </TableCell>
-                  <TableCell>{item.cashier_name}</TableCell>
-                  <TableCell className="text-sm">{formatDateTime(item.created_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={(e) => { e.stopPropagation(); setDetailRefundId(item.id) }}
-                      title={id.refund.detail}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label={id.refund.history}>
+              <Table.Header>
+                <Table.Column isRowHeader>{id.refund.refundNumber}</Table.Column>
+                <Table.Column>{id.refund.transactionReceipt}</Table.Column>
+                <Table.Column>{id.refund.type}</Table.Column>
+                <Table.Column className="text-right">{id.refund.totalRefund}</Table.Column>
+                <Table.Column className="text-right">{id.refund.totalExchange}</Table.Column>
+                <Table.Column className="text-right">{id.refund.difference}</Table.Column>
+                <Table.Column>{id.refund.cashier}</Table.Column>
+                <Table.Column>{id.transactions.date}</Table.Column>
+                <Table.Column className="w-24 text-right">
+                  <span className="sr-only">Aksi</span>
+                </Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={renderEmptyState}>
+                {isLoading
+                  ? Array.from({ length: 5 }).map((_, rowIndex) => (
+                      <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
+                        {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                          <Table.Cell key={cellIndex}>
+                            <Skeleton className="h-5 w-full" />
+                          </Table.Cell>
+                        ))}
+                      </Table.Row>
+                    ))
+                  : refunds.map((item) => (
+                      <Table.Row
+                        key={item.id}
+                        id={item.id}
+                        textValue={item.refund_number}
+                        onAction={() => setDetailRefundId(item.id)}
+                      >
+                        <Table.Cell className="font-mono text-sm">{item.refund_number}</Table.Cell>
+                        <Table.Cell className="font-mono text-sm">{item.transaction_receipt}</Table.Cell>
+                        <Table.Cell>
+                          <StatusBadge status={refundTypeVariant(item.refund_type)}>
+                            {refundTypeLabel(item.refund_type)}
+                          </StatusBadge>
+                        </Table.Cell>
+                        <Table.Cell className="text-right tabular-nums">
+                          {formatRupiah(item.total_refund_amount)}
+                        </Table.Cell>
+                        <Table.Cell className="text-right tabular-nums">
+                          {item.refund_type === "exchange"
+                            ? formatRupiah(item.total_exchange_amount)
+                            : "—"}
+                        </Table.Cell>
+                        <Table.Cell
+                          className={`text-right tabular-nums ${differenceToneClass(item.difference_amount)}`}
+                        >
+                          {item.refund_type === "exchange"
+                            ? formatRupiah(item.difference_amount)
+                            : "—"}
+                        </Table.Cell>
+                        <Table.Cell>{item.cashier_name}</Table.Cell>
+                        <Table.Cell className="text-sm">{formatDateTime(item.created_at)}</Table.Cell>
+                        <Table.Cell className="text-right">
+                          <Button
+                            aria-label={id.refund.detail}
+                            isIconOnly
+                            size="sm"
+                            variant="ghost"
+                            onPress={() => setDetailRefundId(item.id)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
         </Table>
       </div>
 
-      {/* Pagination */}
-      {data && data.total_pages > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-sm text-muted-foreground">
-            {id.transactions.page} {data.page} {id.transactions.of} {data.total_pages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            {id.transactions.prev}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= data.total_pages}
-            onClick={() => setPage(page + 1)}
-          >
-            {id.transactions.next}
-          </Button>
-        </div>
-      )}
+      <TablePagination
+        page={page}
+        totalPages={data?.total_pages ?? 1}
+        onPageChange={setPage}
+      />
 
       <RefundDetailDialog
         refundId={detailRefundId}
