@@ -8,8 +8,8 @@ use crate::entity::{store_info, users};
 use crate::utils::require_role;
 use crate::utils::AppError;
 
-use super::ppob::auth::clear_tokens;
-use super::ppob::client::MitraClient;
+use crate::services::ppob::auth::clear_tokens;
+use crate::services::ppob::client::MitraClient;
 
 fn get_db_path() -> std::path::PathBuf {
     crate::utils::paths::get_db_path()

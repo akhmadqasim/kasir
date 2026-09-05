@@ -297,8 +297,8 @@ pub struct NotificationItem {
     pub inbox_id: String,
     pub title: String,
     pub message: String,
-    pub category: String,      // "INFORMASI", "TRANSAKSI", etc.
-    pub status: String,        // "read" or "unread"
+    pub category: String, // "INFORMASI", "TRANSAKSI", etc.
+    pub status: String,   // "read" or "unread"
     pub created_at: Option<String>,
     pub raw_data: Value,
 }

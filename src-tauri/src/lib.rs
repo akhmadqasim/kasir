@@ -65,7 +65,7 @@ pub fn run() {
             }
         };
 
-    let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
+    let mitra_client = Arc::new(Mutex::new(services::ppob::MitraClient::new()));
 
     let backup_scheduler = Arc::new(Mutex::new(services::backup::BackupScheduler::new()));
 

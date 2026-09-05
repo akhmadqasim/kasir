@@ -11,12 +11,13 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use crate::commands::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
-use crate::commands::ppob::{MitraClient, PaymentResult};
+use crate::domain::ppob::PaymentResult;
 use crate::domain::settings::parse_app_settings;
 use crate::entity::{
     products, store_info, transaction_items, transaction_payments, transactions, users,
 };
+use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
+use crate::services::ppob::MitraClient;
 use crate::utils::{require_role, AppError};
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "transfer"];

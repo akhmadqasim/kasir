@@ -1,45 +1,19 @@
 use sea_orm::DatabaseConnection;
-use serde_json::json;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use super::auth::{get_mitra_request_context, get_mitra_session_context};
-use super::client::MitraClient;
-use super::models::*;
+use crate::domain::ppob::*;
+use crate::services;
+use crate::services::ppob::client::MitraClient;
 use crate::utils::AppError;
-
-async fn fetch_menu_saldo_payload(
-    db: State<'_, DatabaseConnection>,
-    mitra: State<'_, Arc<Mutex<MitraClient>>>,
-) -> Result<serde_json::Value, AppError> {
-    let session = get_mitra_session_context(db.inner(), mitra.inner()).await?;
-    if let Some(payload) = session.menu_saldo_payload {
-        Ok(payload)
-    } else {
-        session.request.post("get-menu-saldo", json!({})).await
-    }
-}
 
 #[tauri::command]
 pub async fn ppob_login(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<PpobSaldoResponse, AppError> {
-    let result = fetch_menu_saldo_payload(db, mitra).await?;
-
-    Ok(PpobSaldoResponse {
-        saldo: result["saldo"].as_f64().unwrap_or(0.0),
-        username: result["detail_member"]["username"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        store_name: result["detail_member"]["store_name"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        flag_member: result["flag_member"].as_str().unwrap_or("").to_string(),
-    })
+    services::ppob::menu::saldo(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -47,20 +21,7 @@ pub async fn ppob_get_saldo(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<PpobSaldoResponse, AppError> {
-    let result = fetch_menu_saldo_payload(db, mitra).await?;
-
-    Ok(PpobSaldoResponse {
-        saldo: result["saldo"].as_f64().unwrap_or(0.0),
-        username: result["detail_member"]["username"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        store_name: result["detail_member"]["store_name"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
-        flag_member: result["flag_member"].as_str().unwrap_or("").to_string(),
-    })
+    services::ppob::menu::saldo(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -68,21 +29,7 @@ pub async fn ppob_get_menu(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PpobMenuGroup>, AppError> {
-    let result = fetch_menu_saldo_payload(db, mitra).await?;
-
-    let menu_groups: Vec<PpobMenuGroup> = result["menu"]
-        .as_array()
-        .and_then(|menus| menus.first())
-        .and_then(|m| m["list_menu"].as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(menu_groups)
+    services::ppob::menu::menu(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -90,20 +37,7 @@ pub async fn ppob_get_providers(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PulsaProvider>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client.get("pulsa/get-providers").await?;
-
-    let providers: Vec<PulsaProvider> = result["providers"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(providers)
+    services::ppob::menu::providers(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -112,29 +46,7 @@ pub async fn ppob_get_pulsa_details(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     phone_number: String,
 ) -> Result<PulsaDetailsResponse, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client
-        .post(
-            "pulsa/v2/get-details",
-            json!({ "phone_number": phone_number }),
-        )
-        .await?;
-
-    let products: Vec<PulsaDetailProduct> = result["pulsa"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(PulsaDetailsResponse {
-        provider: result["provider"].as_str().unwrap_or("").to_string(),
-        image: result["image"].as_str().unwrap_or("").to_string(),
-        products,
-    })
+    services::ppob::menu::pulsa_details(db.inner(), mitra.inner(), phone_number).await
 }
 
 #[tauri::command]
@@ -143,25 +55,7 @@ pub async fn ppob_get_pulsa_price_list(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     provider_uid: String,
 ) -> Result<Vec<PulsaProduct>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client
-        .post(
-            "pulsa/get-pulsa-price-list",
-            json!({ "provider_uid": provider_uid }),
-        )
-        .await?;
-
-    let products: Vec<PulsaProduct> = result["pulsa_options"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(products)
+    services::ppob::menu::pulsa_price_list(db.inner(), mitra.inner(), provider_uid).await
 }
 
 #[tauri::command]
@@ -170,25 +64,7 @@ pub async fn ppob_get_data_price_list(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     provider_uid: String,
 ) -> Result<Vec<PulsaProduct>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client
-        .post(
-            "pulsa/get-data-price-list",
-            json!({ "provider_uid": provider_uid }),
-        )
-        .await?;
-
-    let products: Vec<PulsaProduct> = result["data_options"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(products)
+    services::ppob::menu::data_price_list(db.inner(), mitra.inner(), provider_uid).await
 }
 
 #[tauri::command]
@@ -196,20 +72,7 @@ pub async fn ppob_get_pln_denom(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PlnDenom>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client.post("pln/get-denom", json!({})).await?;
-
-    let denoms: Vec<PlnDenom> = result["pln"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(denoms)
+    services::ppob::menu::pln_denom(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -217,20 +80,7 @@ pub async fn ppob_get_pdam_products(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<PdamProduct>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client.post("pdam/get-product", json!({})).await?;
-
-    let products: Vec<PdamProduct> = result["list_product"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(products)
+    services::ppob::menu::pdam_products(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -239,22 +89,7 @@ pub async fn ppob_get_emoney_denom(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     product_id: i64,
 ) -> Result<Vec<EmoneyDenom>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client
-        .post("emoney/get-denom", json!({ "product_id": product_id }))
-        .await?;
-
-    let denoms: Vec<EmoneyDenom> = result["emoney"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(denoms)
+    services::ppob::menu::emoney_denom(db.inner(), mitra.inner(), product_id).await
 }
 
 #[tauri::command]
@@ -263,22 +98,7 @@ pub async fn ppob_get_pp_sub_menu(
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
     pp_id: i64,
 ) -> Result<Vec<PpSubMenuItem>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client
-        .post("pp/get-sub-menu", json!({ "pp_id": pp_id }))
-        .await?;
-
-    let items: Vec<PpSubMenuItem> = result["sub_menu"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(items)
+    services::ppob::menu::pp_sub_menu(db.inner(), mitra.inner(), pp_id).await
 }
 
 #[tauri::command]
@@ -286,20 +106,7 @@ pub async fn ppob_get_transfer_channels(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<TransferChannelGroup>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client.get("transfer-uang/channel-group").await?;
-
-    let channels: Vec<TransferChannelGroup> = result["channelList"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(channels)
+    services::ppob::menu::transfer_channels(db.inner(), mitra.inner()).await
 }
 
 #[tauri::command]
@@ -307,18 +114,5 @@ pub async fn ppob_get_voucher_groups(
     db: State<'_, DatabaseConnection>,
     mitra: State<'_, Arc<Mutex<MitraClient>>>,
 ) -> Result<Vec<VoucherGroup>, AppError> {
-    let client = get_mitra_request_context(db.inner(), mitra.inner()).await?;
-    let result = client.get("voucher-prepaid/get/group").await?;
-
-    let groups: Vec<VoucherGroup> = result["group_list"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(groups)
+    services::ppob::menu::voucher_groups(db.inner(), mitra.inner()).await
 }

@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use super::models::PpobSaldoResponse;
+use crate::domain::ppob::PpobSaldoResponse;
 use crate::utils::AppError;
 
 const BASE_URL: &str = "https://v2.mitraindogrosir.co.id/api";
@@ -124,9 +124,7 @@ impl MitraClient {
                 }
                 Ok(false)
             }
-            Err(_) => {
-                Ok(false)
-            }
+            Err(_) => Ok(false),
         }
     }
 
@@ -135,10 +133,9 @@ impl MitraClient {
     }
 
     pub fn request_context(&self) -> Result<MitraRequestContext, AppError> {
-        let token = self
-            .token
-            .clone()
-            .ok_or_else(|| AppError::Auth("Belum login ke Mitra. Atur kredensial di Pengaturan PPOB".into()))?;
+        let token = self.token.clone().ok_or_else(|| {
+            AppError::Auth("Belum login ke Mitra. Atur kredensial di Pengaturan PPOB".into())
+        })?;
 
         Ok(MitraRequestContext {
             http: self.http.clone(),
@@ -151,7 +148,6 @@ impl MitraClient {
         self.token = None;
         self.refresh_token = None;
     }
-
 }
 
 impl MitraRequestContext {
@@ -205,7 +201,9 @@ fn validate_mitra_response(result: Value) -> Result<Value, AppError> {
             .unwrap_or("Unknown error");
 
         if err_msg.contains("Unauthenticated") || err_msg.contains("unauthenticated") {
-            return Err(AppError::Auth("Sesi Mitra expired. Silakan coba lagi.".into()));
+            return Err(AppError::Auth(
+                "Sesi Mitra expired. Silakan coba lagi.".into(),
+            ));
         }
 
         let detail = if let Some(errors) = result["errors"].as_object() {

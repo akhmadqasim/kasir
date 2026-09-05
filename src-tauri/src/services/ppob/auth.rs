@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::settings::parse_app_settings;
-use super::client::{MitraClient, MitraRequestContext};
 use crate::entity::store_info;
+use crate::services::ppob::client::{MitraClient, MitraRequestContext};
 use crate::utils::AppError;
 use sea_orm::EntityTrait;
 

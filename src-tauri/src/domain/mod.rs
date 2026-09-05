@@ -10,6 +10,7 @@ pub mod auth;
 pub mod backup;
 pub mod categories;
 pub mod onboarding;
+pub mod ppob;
 pub mod products;
 pub mod settings;
 pub mod shifts;
