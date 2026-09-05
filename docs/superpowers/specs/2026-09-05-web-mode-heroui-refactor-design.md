@@ -173,6 +173,22 @@ Dependency yang dicabut setelah migrasi: seluruh `@radix-ui/*`, `radix-ui`, `@ba
 
 Per-halaman, bukan per-komponen, supaya setiap commit menghasilkan layar yang benar-benar bisa dipakai. Urutan: shell (layout+sidebar+toast) → login/onboarding → kasir → produk → transaksi → refund → stok → shift → laporan → dashboard → pengaturan → PPOB.
 
+### 5.4 Keputusan gelombang pertama (fondasi + login/onboarding)
+
+| Keputusan | Isi |
+|---|---|
+| Ikon | **`lucide-react` tetap dipakai.** HeroUI v3 tidak membawa set ikon dan tidak mensyaratkan satu pun; ikon internalnya (chevron, check) sudah menyatu di komponen. Contoh di dokumentasi memakai `@gravity-ui/icons`, itu hanya pilihan penulis dokumen. Menambah set ikon kedua tidak memberi apa-apa selain ukuran bundle |
+| `tw-animate-css` | Import di `src/index.css` dihapus, `@heroui/styles` sudah membawanya. Paketnya tetap terpasang sebagai dependency `@heroui/styles` |
+| `shadcn/tailwind.css` | **Tetap.** Satu-satunya sumber custom variant `data-open`, `data-closed`, `data-checked`, `data-selected`, `data-disabled`, `data-active`, `data-horizontal`, `data-vertical`, plus utility `no-scrollbar`, yang masih dipakai layar-layar yang belum dimigrasi |
+| `@custom-variant dark` lokal | Dihapus. `@heroui/styles` mendefinisikan versi yang lebih luas (`.dark`, `[data-theme="dark"]`, elemen itu sendiri maupun turunannya) |
+| Tabrakan token | shadcn dan HeroUI memberi arti berbeda pada `--muted`, `--accent`, dan `--accent-foreground`. Nama-nama itu diserahkan ke HeroUI; sisi shadcn dipindahkan ke kosakata HeroUI: `bg-muted` dan `bg-accent` → `bg-default`, `text-accent-foreground` → `text-default-foreground`. `--muted-foreground` tidak diutak-atik karena HeroUI tidak pernah membacanya |
+| `--chart-1..5` | Tetap ada di `:root`/`.dark`; `components/ui/chart.tsx` (recharts) membacanya langsung dan recharts tidak diganti |
+| Tema gelap | Lewat class `dark` + `data-theme="dark"` di `<html>`. `index.html` mengirim `class="light" data-theme="light"` sebagai bawaan. Belum ada tombol pengalih; kalau nanti dibutuhkan pakai `useTheme` dari `@heroui/react` (versi React biasa, bukan `next-themes`) |
+| `sonner` | Dicabut. `src/lib/toast.ts` sekarang membungkus `toast` HeroUI (`error` → varian `danger`), `Toast.Provider` dipasang sekali di `App.tsx` dengan `placement="bottom end"` |
+| `components/ui/field.tsx` | Dihapus. Padanannya di HeroUI adalah komposisi `TextField` + `Label` + `Description` + `FieldError`; hanya login dan onboarding yang memakainya |
+| Validasi form | `Form` HeroUI memakai validasi native React Aria secara bawaan. Field dengan `isInvalid` memanggil `setCustomValidity`, sehingga browser menolak submit berikutnya — termasuk submit yang seharusnya menghapus error itu. Layar yang memvalidasi sendiri **wajib** memakai `validationBehavior="aria"` pada `Form` |
+| `Description` HeroUI | Hanya merender kalau ada text slot `description` dari field induknya. Keterangan yang berdiri sendiri tetap memakai `<p>` biasa |
+
 ## 6. Rencana fase
 
 | Fase | Isi | Gerbang lulus |
