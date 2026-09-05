@@ -5,6 +5,7 @@ use sea_orm::{
 };
 use sea_orm::sea_query::Expr;
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use std::future::Future;
 use std::sync::Arc;
 use tauri::State;
@@ -637,6 +638,7 @@ async fn persist_transaction<C: ConnectionTrait>(
     })
 }
 
+#[cfg(test)]
 async fn fetch_transaction_result(
     db: &DatabaseConnection,
     transaction_id: i64,
@@ -752,6 +754,14 @@ async fn update_ppob_item_status(
     Ok(())
 }
 
+/// Test seam for [`checkout_transaction`]: the same flow with the PPOB provider
+/// call injected, so a test can drive fulfilment without a network.
+///
+/// It used to back a `create_transaction` IPC command whose injected executor
+/// always failed, so a checkout routed through it took the money, deducted the
+/// stock, marked the sale completed and marked every PPOB line failed. Nothing
+/// called it, and it is no longer registered.
+#[cfg(test)]
 async fn checkout_transaction_with_executor<F, Fut>(
     db: &DatabaseConnection,
     input: CheckoutTransactionInput,
@@ -880,20 +890,6 @@ pub async fn checkout_transaction(
     }
 
     Ok(result)
-}
-
-#[tauri::command]
-pub async fn create_transaction(
-    db: State<'_, DatabaseConnection>,
-    input: CheckoutTransactionInput,
-) -> Result<TransactionResult, AppError> {
-    let conn = db.inner().clone();
-    checkout_transaction_with_executor(&conn, input, |_request| async {
-        Err(AppError::Validation(
-            "Executor PPOB tidak boleh terpanggil untuk transaksi non-PPOB".into(),
-        ))
-    })
-    .await
 }
 
 /// Claims a failed PPOB line for exactly one more fulfilment attempt.
