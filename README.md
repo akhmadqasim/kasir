@@ -14,7 +14,7 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v18+
-- [Bun](https://bun.sh/) v1.3+
+- [Bun](https://bun.sh/) v1.4+
 - [Rust](https://rustup.rs/) v1.70+
 - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (Windows, "Desktop development with C++")
 
