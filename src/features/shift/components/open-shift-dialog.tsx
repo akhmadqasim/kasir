@@ -1,64 +1,43 @@
-import { useEffect, useRef, useState } from "react"
-import { toast } from "@/lib/toast"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { useState } from "react"
+import type { FormEvent } from "react"
+import { Button, Description, Form, Input, Label, Modal, TextField } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
-import { useShiftStore } from "../hooks/use-shift-store"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+
 import { formatDateTime, formatRupiah } from "@/lib/format"
+import { toast } from "@/lib/toast"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useShiftStore } from "../hooks/use-shift-store"
+import { groupDigits, toDigits } from "../utils"
 
 interface OpenShiftDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-/** `opened_at` is a UTC backend timestamp, so it needs the shared parser. */
-function formatOpenedAt(openedAt: string): string {
-  return formatDateTime(openedAt)
+export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
+  return (
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label="Buka Kasir">
+          {/* React Aria unmounts the dialog as it closes, so the state inside the
+              body is rebuilt on every open. The effect that used to clear the
+              amount field on `open` is no longer needed. */}
+          <OpenShiftForm onOpenChange={onOpenChange} />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  )
 }
 
-export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
+function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const [openingCash, setOpeningCash] = useState("")
-  const [displayCash, setDisplayCash] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
   const openShift = useShiftStore((s) => s.openShift)
   const user = useAuthStore((s) => s.user)
 
-  useEffect(() => {
-    if (open) {
-      setOpeningCash("")
-      setDisplayCash("")
-      setTimeout(() => inputRef.current?.focus(), 100)
-    }
-  }, [open])
-
-  const formatNumber = (num: number): string =>
-    new Intl.NumberFormat("id-ID").format(num)
-
-  const handleCashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "")
-    if (raw === "") {
-      setOpeningCash("")
-      setDisplayCash("")
-      return
-    }
-    const num = Number(raw)
-    setOpeningCash(String(num))
-    setDisplayCash(formatNumber(num))
-  }
-
-  const handleSubmit = async () => {
-    if (!user) return
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!user || isSubmitting) return
     setIsSubmitting(true)
     try {
       const cash = openingCash ? Number(openingCash) : undefined
@@ -67,7 +46,7 @@ export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
         // The backend hands back the running shift instead of opening a new one,
         // and the modal awal typed in here is never stored. Say so.
         toast.warning(
-          `Shift sudah terbuka sejak ${formatOpenedAt(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`
+          `Shift sudah terbuka sejak ${formatDateTime(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`
         )
       } else {
         toast.success("Shift dibuka")
@@ -80,55 +59,50 @@ export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" onKeyDown={handleKeyDown}>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <DoorOpen className="h-5 w-5" />
-            Buka Kasir
-          </DialogTitle>
-          <DialogDescription>
-            Masukkan jumlah uang awal di laci kasir (opsional), lalu klik Mulai Shift.
-          </DialogDescription>
-        </DialogHeader>
+    // validationBehavior="aria" keeps validation out of the browser. With React
+    // Aria's default ("native") an invalid field calls setCustomValidity, and the
+    // browser then blocks every later submit.
+    <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.Header>
+        <Modal.Heading className="flex items-center gap-2">
+          <DoorOpen className="h-5 w-5" />
+          Buka Kasir
+        </Modal.Heading>
+        <Modal.CloseTrigger />
+      </Modal.Header>
 
-        <div className="space-y-3">
-          <div>
-            <Label htmlFor="opening-cash">Modal Awal (Opsional)</Label>
-            <Input
-              ref={inputRef}
-              id="opening-cash"
-              type="text"
-              inputMode="numeric"
-              className="mt-1 !h-12 !text-lg !font-bold text-right tabular-nums"
-              placeholder="0"
-              value={displayCash}
-              onChange={handleCashChange}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Jumlah uang tunai di laci sebelum mulai berjualan
-            </p>
-          </div>
-        </div>
+      <Modal.Body className="space-y-3">
+        <p className="text-sm text-muted">
+          Masukkan jumlah uang awal di laci kasir (opsional), lalu klik Mulai Shift.
+        </p>
 
-        <DialogFooter>
-          <Button
-            className="h-12 w-full text-lg font-semibold"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
-          >
-            {isSubmitting ? "Membuka..." : "Mulai Shift"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <TextField
+          autoFocus
+          fullWidth
+          isDisabled={isSubmitting}
+          value={groupDigits(openingCash)}
+          onChange={(value) => setOpeningCash(toDigits(value))}
+        >
+          <Label>Modal Awal (Opsional)</Label>
+          <Input
+            className="h-12 text-right text-lg font-bold tabular-nums"
+            inputMode="numeric"
+            placeholder="0"
+          />
+          <Description>Jumlah uang tunai di laci sebelum mulai berjualan</Description>
+        </TextField>
+      </Modal.Body>
+
+      <Modal.Footer>
+        <Button
+          className="h-12 w-full text-lg font-semibold"
+          isDisabled={isSubmitting}
+          type="submit"
+        >
+          {isSubmitting ? "Membuka..." : "Mulai Shift"}
+        </Button>
+      </Modal.Footer>
+    </Form>
   )
 }
