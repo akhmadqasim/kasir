@@ -5,6 +5,7 @@ pub mod product_shortcuts;
 pub mod products;
 pub mod refund_items;
 pub mod refunds;
+pub mod sessions;
 pub mod shifts;
 pub mod stock_writeoffs;
 pub mod store_info;

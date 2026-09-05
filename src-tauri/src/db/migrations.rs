@@ -76,6 +76,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "019_stock_writeoff_created_at_utc",
         include_str!("../../migrations/019_stock_writeoff_created_at_utc.sql"),
     ),
+    (
+        "020_sessions",
+        include_str!("../../migrations/020_sessions.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {
