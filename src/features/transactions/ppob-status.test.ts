@@ -20,6 +20,14 @@ describe("ppobStatusConfig", () => {
     expect(ppobStatusConfig("processing")?.label).toBe("Sedang Diproses")
   })
 
+  // Warna badge dipilih `StatusBadge`, jadi di sini hanya artinya yang dijaga.
+  it("names the meaning of each state instead of a colour class", () => {
+    expect(ppobStatusConfig("pending")?.variant).toBe("warning")
+    expect(ppobStatusConfig("processing")?.variant).toBe("info")
+    expect(ppobStatusConfig("success")?.variant).toBe("success")
+    expect(ppobStatusConfig("failed")?.variant).toBe("error")
+  })
+
   it("returns nothing for a line that is not PPOB", () => {
     expect(ppobStatusConfig(null)).toBeNull()
     expect(ppobStatusConfig(undefined)).toBeNull()

@@ -1,3 +1,5 @@
+import type { StatusVariant } from "@/components/status-badge"
+
 /**
  * Fulfilment states of a PPOB line, mirroring `PPOB_STATUS_*` in
  * `src-tauri/src/commands/transactions.rs`.
@@ -11,7 +13,12 @@ export type PpobItemStatus = "pending" | "processing" | "success" | "failed"
 
 export interface PpobStatusConfig {
   label: string
-  className: string
+  /**
+   * What the state *means*, in the vocabulary of `components/status-badge.tsx`.
+   * The colour itself is that component's business: a `bg-amber-50` written here
+   * carries no dark-mode story of its own and drifts away from every other badge.
+   */
+  variant: StatusVariant
   /** A provider call is still running, so the row is not final yet. */
   inFlight: boolean
 }
@@ -19,22 +26,22 @@ export interface PpobStatusConfig {
 export const PPOB_STATUS_CONFIG: Record<string, PpobStatusConfig> = {
   pending: {
     label: "Menunggu",
-    className: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    variant: "warning",
     inFlight: true,
   },
   processing: {
     label: "Sedang Diproses",
-    className: "bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    variant: "info",
     inFlight: true,
   },
   success: {
     label: "Berhasil",
-    className: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
+    variant: "success",
     inFlight: false,
   },
   failed: {
     label: "Gagal",
-    className: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
+    variant: "error",
     inFlight: false,
   },
 }

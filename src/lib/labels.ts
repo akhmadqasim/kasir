@@ -1,3 +1,4 @@
+import type { StatusVariant } from "@/components/status-badge"
 import { id } from "@/i18n/id"
 
 /**
@@ -69,7 +70,33 @@ export function transactionStatusLabel(status: string): string {
   return TRANSACTION_STATUS_LABELS[status] ?? status
 }
 
-/** Varian `Badge` untuk status transaksi di riwayat transaksi dan dialog detailnya. */
+/**
+ * Status transaksi diterjemahkan ke kosakata {@link StatusBadge}: layar menyebut
+ * *artinya*, bukan warnanya, dan `status-badge.tsx` yang memutuskan tampilannya.
+ *
+ * Status yang tidak dikenal jatuh ke `neutral` — sama seperti label-nya yang
+ * ditampilkan apa adanya, bukan disembunyikan.
+ */
+export const TRANSACTION_STATUS_VARIANT: Record<string, StatusVariant> = {
+  completed: "success",
+  pending_ppob: "warning",
+  ppob_failed: "error",
+  refunded: "error",
+  partial_refund: "neutral",
+  deleted: "error",
+}
+
+export function transactionStatusVariant(status: string): StatusVariant {
+  return TRANSACTION_STATUS_VARIANT[status] ?? "neutral"
+}
+
+/**
+ * Varian `Badge` shadcn untuk status transaksi.
+ *
+ * @deprecated Dipakai hanya oleh dashboard, layar terakhir yang belum pindah ke
+ * HeroUI. Hapus bersama {@link TRANSACTION_STATUS_CLASSNAMES} begitu dashboard
+ * memakai {@link transactionStatusVariant}.
+ */
 export const TRANSACTION_STATUS_VARIANTS: Record<
   string,
   "default" | "destructive" | "secondary"
@@ -82,7 +109,11 @@ export const TRANSACTION_STATUS_VARIANTS: Record<
   deleted: "destructive",
 }
 
-/** Warna tambahan di atas varian `Badge`, untuk status yang perlu dibedakan sekilas. */
+/**
+ * Warna tambahan di atas varian `Badge`.
+ *
+ * @deprecated Lihat {@link TRANSACTION_STATUS_VARIANTS}.
+ */
 export const TRANSACTION_STATUS_CLASSNAMES: Record<string, string> = {
   completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
   pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",

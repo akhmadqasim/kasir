@@ -1,56 +1,36 @@
 import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Textarea } from "@/components/ui/textarea"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import {
+  Alert,
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
+  Button,
+  Label,
+  ListBox,
+  Modal,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
-import {
+  Separator,
+  Skeleton,
+  TextArea,
+  TextField,
   Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { StatusBadge } from "@/components/status-badge"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import {
   SELECTABLE_PAYMENT_METHODS,
-  TRANSACTION_STATUS_CLASSNAMES,
-  TRANSACTION_STATUS_VARIANTS,
   isSelectablePaymentMethod,
   paymentMethodLabel,
   paymentSplitLabel,
   transactionStatusLabel,
+  transactionStatusVariant,
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
 import {
@@ -82,7 +62,7 @@ function SummaryRow({
 }) {
   return (
     <div className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm", rowClassName)}>
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-muted">{label}</span>
       <span className={cn("min-w-0 text-right font-medium", mono && "font-mono", valueClassName)}>{value}</span>
     </div>
   )
@@ -91,7 +71,9 @@ function SummaryRow({
 /**
  * Refund entry point. Past the seven-day window the backend rejects the refund
  * outright, so the button is disabled here with the reason attached — a disabled
- * button eats pointer events, hence the wrapper the tooltip hangs off.
+ * button eats pointer events, hence the wrapper the tooltip hangs off. HeroUI
+ * renders that wrapper as `div[role=button][tabindex=0]`, so unlike the old
+ * `<span>` the reason is now reachable without a mouse.
  */
 function RefundAction({
   blockedReason,
@@ -101,12 +83,7 @@ function RefundAction({
   onRefund: () => void
 }) {
   const button = (
-    <Button
-      size="sm"
-      variant="outline"
-      disabled={blockedReason !== null}
-      onClick={onRefund}
-    >
+    <Button isDisabled={blockedReason !== null} size="sm" variant="outline" onPress={onRefund}>
       <RotateCcw className="mr-2 h-4 w-4" />
       {id.refund.title}
     </Button>
@@ -116,10 +93,8 @@ function RefundAction({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex">{button}</span>
-      </TooltipTrigger>
-      <TooltipContent>{blockedReason}</TooltipContent>
+      <Tooltip.Trigger className="inline-flex">{button}</Tooltip.Trigger>
+      <Tooltip.Content>{blockedReason}</Tooltip.Content>
     </Tooltip>
   )
 }
@@ -236,383 +211,429 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   }
 
   return (
-    <Dialog open={!!transaction} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0 sm:max-w-md" aria-describedby={undefined}>
-        <DialogHeader className="border-b px-4 py-4">
-          <DialogTitle>{id.transactions.detail}</DialogTitle>
-        </DialogHeader>
+    <>
+      <Modal.Backdrop isOpen={!!transaction} onOpenChange={(open) => !open && onClose()}>
+        <Modal.Container scroll="inside" size="md">
+          <Modal.Dialog aria-label={id.transactions.detail}>
+            <Modal.Header className="border-b">
+              <Modal.Heading>{id.transactions.detail}</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
 
-        {isLoading || !detail ? (
-          <div className="space-y-3 px-4 py-4">
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-3/4" />
-            <Skeleton className="h-5 w-1/2" />
-          </div>
-        ) : (
-          <>
-            <ScrollArea className="max-h-[min(78svh,680px)]">
-              <div className="space-y-4 px-4 py-4">
-                <section className="space-y-2.5">
-                  <h3 className="text-sm font-semibold">Ringkasan Transaksi</h3>
-                  <div className="space-y-1.5">
-                    <SummaryRow
-                      label={id.transactions.receiptNumber}
-                      value={detail.transaction.receipt_number}
-                      mono
-                    />
-                    <SummaryRow
-                      label={id.transactions.date}
-                      value={formatDateTime(detail.transaction.created_at)}
-                    />
-                    <SummaryRow
-                      label={id.transactions.cashier}
-                      value={detail.cashier_name}
-                    />
-                    <SummaryRow
-                      label={id.transactions.status}
-                      value={(
-                        <Badge
-                          variant={TRANSACTION_STATUS_VARIANTS[detail.transaction.status] || "secondary"}
-                          className={TRANSACTION_STATUS_CLASSNAMES[detail.transaction.status]}
-                        >
-                          {transactionStatusLabel(detail.transaction.status)}
-                        </Badge>
-                      )}
-                      rowClassName="items-center"
-                    />
-                  </div>
-                </section>
-
-                <Separator />
-
-                <section className="space-y-2.5">
-                  <h3 className="text-sm font-semibold">{id.transactions.itemList}</h3>
-                  <div className="rounded-lg border">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-default/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      <span>Item</span>
-                      <span className="text-right">Subtotal</span>
+            {isLoading || !detail ? (
+              <Modal.Body className="space-y-3">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-5 w-1/2" />
+              </Modal.Body>
+            ) : (
+              <>
+                <Modal.Body className="space-y-4">
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm font-semibold">Ringkasan Transaksi</h3>
+                    <div className="space-y-1.5">
+                      <SummaryRow
+                        label={id.transactions.receiptNumber}
+                        value={detail.transaction.receipt_number}
+                        mono
+                      />
+                      <SummaryRow
+                        label={id.transactions.date}
+                        value={formatDateTime(detail.transaction.created_at)}
+                      />
+                      <SummaryRow
+                        label={id.transactions.cashier}
+                        value={detail.cashier_name}
+                      />
+                      <SummaryRow
+                        label={id.transactions.status}
+                        value={(
+                          <StatusBadge status={transactionStatusVariant(detail.transaction.status)}>
+                            {transactionStatusLabel(detail.transaction.status)}
+                          </StatusBadge>
+                        )}
+                        rowClassName="items-center"
+                      />
                     </div>
-                    <div className="divide-y">
-                      {detail.items.map((item) => {
-                        const ppobStatus = ppobStatusConfig(item.ppob_status)
-                        return (
-                          <div
-                            key={item.id}
-                            className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5 text-sm"
-                          >
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium break-words">{item.product_name}</span>
-                                <span className="text-muted-foreground">× {item.quantity}</span>
-                                {ppobStatus && (
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${ppobStatus.className}`}
-                                  >
-                                    {isPpobInFlight(item.ppob_status) && (
-                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                    )}
-                                    {ppobStatus.label}
-                                  </Badge>
+                  </section>
+
+                  <Separator />
+
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm font-semibold">{id.transactions.itemList}</h3>
+                    <div className="rounded-lg border">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-default/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted">
+                        <span>Item</span>
+                        <span className="text-right">Subtotal</span>
+                      </div>
+                      <div className="divide-y">
+                        {detail.items.map((item) => {
+                          const ppobStatus = ppobStatusConfig(item.ppob_status)
+                          return (
+                            <div
+                              key={item.id}
+                              className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5 text-sm"
+                            >
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium break-words">{item.product_name}</span>
+                                  <span className="text-muted">× {item.quantity}</span>
+                                  {ppobStatus && (
+                                    <StatusBadge size="sm" status={ppobStatus.variant}>
+                                      {isPpobInFlight(item.ppob_status) && (
+                                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                      )}
+                                      {ppobStatus.label}
+                                    </StatusBadge>
+                                  )}
+                                </div>
+                                {isDiscountedLine(item) && (
+                                  <p className="text-xs text-danger">
+                                    Diskon: -{formatRupiah(lineDiscountAmount(item))}
+                                  </p>
                                 )}
                               </div>
-                              {isDiscountedLine(item) && (
-                                <p className="text-xs text-destructive">
-                                  Diskon: -{formatRupiah(lineDiscountAmount(item))}
+                              <div className="text-right tabular-nums">
+                                {isDiscountedLine(item) && (
+                                  <div className="text-xs text-muted line-through">
+                                    {formatRupiah(item.subtotal)}
+                                  </div>
+                                )}
+                                <div className="font-medium">
+                                  {formatRupiah(netLineAmount(item))}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </section>
+
+                  <Separator />
+
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm font-semibold">Ringkasan Pembayaran</h3>
+                    <div className="rounded-lg border bg-default/20 p-4">
+                      <div className="space-y-1.5">
+                        {detail.transaction.discount_amount > 0 && (
+                          <>
+                            <SummaryRow
+                              label="Subtotal"
+                              value={formatRupiah(detail.transaction.subtotal_amount)}
+                              valueClassName="tabular-nums"
+                            />
+                            <SummaryRow
+                              label="Diskon"
+                              value={`-${formatRupiah(detail.transaction.discount_amount)}`}
+                              valueClassName="tabular-nums text-danger"
+                            />
+                          </>
+                        )}
+                        <SummaryRow
+                          label={id.transactions.totalAmount}
+                          value={formatRupiah(detail.transaction.total_amount)}
+                          valueClassName="tabular-nums text-base font-semibold text-foreground"
+                        />
+                        {isDeleted && (
+                          <SummaryRow
+                            label="Total sebelum hapus"
+                            value={formatRupiah(originalTotalAmount)}
+                            valueClassName="tabular-nums"
+                          />
+                        )}
+                        <SummaryRow
+                          label={id.transactions.paymentMethod}
+                          value={paymentSplitLabel(
+                            detail.transaction.payment_method,
+                            detail.payment_breakdown[0]?.bank_name
+                          )}
+                          valueClassName="text-foreground"
+                        />
+                        {detail.payment_breakdown.length > 1 && (
+                          <div className="rounded-md border bg-background px-3 py-2">
+                            <div className="space-y-1.5">
+                              {detail.payment_breakdown.map((split) => (
+                                <SummaryRow
+                                  key={`${split.payment_method}-${split.bank_name ?? "default"}`}
+                                  label={paymentSplitLabel(split.payment_method, split.bank_name)}
+                                  value={formatRupiah(split.amount)}
+                                  valueClassName="tabular-nums"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <SummaryRow
+                          label={id.transactions.paymentAmount}
+                          value={formatRupiah(detail.transaction.payment_amount)}
+                          valueClassName="tabular-nums"
+                        />
+                        {(detail.transaction.change_amount ?? 0) > 0 && (
+                          <SummaryRow
+                            label={id.transactions.changeAmount}
+                            value={formatRupiah(detail.transaction.change_amount ?? 0)}
+                            valueClassName="tabular-nums"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </section>
+
+                  {(detail.transaction.notes || detail.transaction.deleted_reason || ppobItem) && (
+                    <>
+                      <Separator />
+                      <section className="space-y-2.5">
+                        <h3 className="text-sm font-semibold">Info Tambahan</h3>
+                        <div className="space-y-2.5">
+                          {detail.transaction.notes && (
+                            <div className="rounded-lg border p-4">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                                {id.transactions.notes}
+                              </p>
+                              <p className="mt-2 text-sm leading-relaxed">{detail.transaction.notes}</p>
+                            </div>
+                          )}
+                          {detail.transaction.deleted_reason && (
+                            <Alert status="danger">
+                              <Alert.Indicator />
+                              <Alert.Content>
+                                <Alert.Title>Alasan Penghapusan</Alert.Title>
+                                <Alert.Description>
+                                  {detail.transaction.deleted_reason}
+                                </Alert.Description>
+                              </Alert.Content>
+                            </Alert>
+                          )}
+                          {ppobItem && (
+                            <div className="rounded-lg border p-4">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                                Status PPOB
+                              </p>
+                              {ppobItem.ppob_message && (
+                                <p className="mt-2 text-sm leading-relaxed">{ppobItem.ppob_message}</p>
+                              )}
+                              {ppobItem.ppob_serial_number && (
+                                <p className="mt-2 font-mono text-xs text-muted">
+                                  SN: {ppobItem.ppob_serial_number}
+                                </p>
+                              )}
+                              {isPpobInFlight(ppobItem.ppob_status) && (
+                                <p className="mt-2 text-xs text-muted">
+                                  Masih diproses ke penyedia. Tunggu hasilnya — retry
+                                  baru bisa dilakukan kalau statusnya gagal.
                                 </p>
                               )}
                             </div>
-                            <div className="text-right tabular-nums">
-                              {isDiscountedLine(item) && (
-                                <div className="text-xs text-muted-foreground line-through">
-                                  {formatRupiah(item.subtotal)}
-                                </div>
-                              )}
-                              <div className="font-medium">
-                                {formatRupiah(netLineAmount(item))}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </section>
-
-                <Separator />
-
-                <section className="space-y-2.5">
-                  <h3 className="text-sm font-semibold">Ringkasan Pembayaran</h3>
-                  <div className="rounded-lg border bg-default/20 p-4">
-                    <div className="space-y-1.5">
-                      {detail.transaction.discount_amount > 0 && (
-                        <>
-                          <SummaryRow
-                            label="Subtotal"
-                            value={formatRupiah(detail.transaction.subtotal_amount)}
-                            valueClassName="tabular-nums"
-                          />
-                          <SummaryRow
-                            label="Diskon"
-                            value={`-${formatRupiah(detail.transaction.discount_amount)}`}
-                            valueClassName="tabular-nums text-destructive"
-                          />
-                        </>
-                      )}
-                      <SummaryRow
-                        label={id.transactions.totalAmount}
-                        value={formatRupiah(detail.transaction.total_amount)}
-                        valueClassName="tabular-nums text-base font-semibold text-foreground"
-                      />
-                      {isDeleted && (
-                        <SummaryRow
-                          label="Total sebelum hapus"
-                          value={formatRupiah(originalTotalAmount)}
-                          valueClassName="tabular-nums"
-                        />
-                      )}
-                      <SummaryRow
-                        label={id.transactions.paymentMethod}
-                        value={paymentSplitLabel(
-                          detail.transaction.payment_method,
-                          detail.payment_breakdown[0]?.bank_name
-                        )}
-                        valueClassName="text-foreground"
-                      />
-                      {detail.payment_breakdown.length > 1 && (
-                        <div className="rounded-md border bg-background px-3 py-2">
-                          <div className="space-y-1.5">
-                            {detail.payment_breakdown.map((split) => (
-                              <SummaryRow
-                                key={`${split.payment_method}-${split.bank_name ?? "default"}`}
-                                label={paymentSplitLabel(split.payment_method, split.bank_name)}
-                                value={formatRupiah(split.amount)}
-                                valueClassName="tabular-nums"
-                              />
-                            ))}
-                          </div>
+                          )}
                         </div>
-                      )}
-                      <SummaryRow
-                        label={id.transactions.paymentAmount}
-                        value={formatRupiah(detail.transaction.payment_amount)}
-                        valueClassName="tabular-nums"
-                      />
-                      {(detail.transaction.change_amount ?? 0) > 0 && (
-                        <SummaryRow
-                          label={id.transactions.changeAmount}
-                          value={formatRupiah(detail.transaction.change_amount ?? 0)}
-                          valueClassName="tabular-nums"
-                        />
-                      )}
-                    </div>
+                      </section>
+                    </>
+                  )}
+                </Modal.Body>
+
+                <Modal.Footer className="flex-col items-stretch gap-3 border-t bg-default/30 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    {isAdmin && !isDeleted && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onPress={() => setShowDeleteConfirm(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {id.common.delete}
+                      </Button>
+                    )}
+                    {isAdmin && !isDeleted && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onPress={() => {
+                          // `mixed` is not one of the options and the backend rejects
+                          // it, so leave the select empty and make the admin pick a
+                          // real method instead of pre-filling an invalid one.
+                          setNewPaymentMethod(
+                            isSelectablePaymentMethod(detail.transaction.payment_method)
+                              ? detail.transaction.payment_method
+                              : ""
+                          )
+                          setShowEditPayment(true)
+                        }}
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {id.transactions.editPaymentMethod}
+                      </Button>
+                    )}
                   </div>
-                </section>
-
-                {(detail.transaction.notes || detail.transaction.deleted_reason || ppobItem) && (
-                  <>
-                    <Separator />
-                    <section className="space-y-2.5">
-                      <h3 className="text-sm font-semibold">Info Tambahan</h3>
-                      <div className="space-y-2.5">
-                        {detail.transaction.notes && (
-                          <div className="rounded-lg border p-4">
-                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                              {id.transactions.notes}
-                            </p>
-                            <p className="mt-2 text-sm leading-relaxed">{detail.transaction.notes}</p>
-                          </div>
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
+                    {ppobCanRetry && (
+                      <Button
+                        isDisabled={isRetrying}
+                        size="sm"
+                        variant="outline"
+                        onPress={handleRetryPpob}
+                      >
+                        {isRetrying ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCcw className="mr-2 h-4 w-4" />
                         )}
-                        {detail.transaction.deleted_reason && (
-                          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-                            <p className="text-xs font-medium uppercase tracking-wide text-destructive">
-                              Alasan Penghapusan
-                            </p>
-                            <p className="mt-2 text-sm leading-relaxed text-destructive">
-                              {detail.transaction.deleted_reason}
-                            </p>
-                          </div>
-                        )}
-                        {ppobItem && (
-                          <div className="rounded-lg border p-4">
-                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                              Status PPOB
-                            </p>
-                            {ppobItem.ppob_message && (
-                              <p className="mt-2 text-sm leading-relaxed">{ppobItem.ppob_message}</p>
-                            )}
-                            {ppobItem.ppob_serial_number && (
-                              <p className="mt-2 font-mono text-xs text-muted-foreground">
-                                SN: {ppobItem.ppob_serial_number}
-                              </p>
-                            )}
-                            {isPpobInFlight(ppobItem.ppob_status) && (
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                Masih diproses ke penyedia. Tunggu hasilnya — retry
-                                baru bisa dilakukan kalau statusnya gagal.
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </section>
-                  </>
-                )}
-              </div>
-            </ScrollArea>
-
-            <div className="border-t bg-default/30 px-4 py-4">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap gap-2">
-                  {isAdmin && !isDeleted && (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {id.common.delete}
+                        Retry PPOB
+                      </Button>
+                    )}
+                    {hasRefundAction && (
+                      <RefundAction
+                        blockedReason={refundBlocked}
+                        onRefund={() => {
+                          onClose()
+                          navigate(`/refund/${detail.transaction.id}`)
+                        }}
+                      />
+                    )}
+                    <Button size="sm" onPress={handlePrint}>
+                      <Printer className="mr-2 h-4 w-4" />
+                      {id.transactions.printReceipt}
                     </Button>
-                  )}
-                  {isAdmin && !isDeleted && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        // `mixed` is not one of the options and the backend rejects
-                        // it, so leave the select empty and make the admin pick a
-                        // real method instead of pre-filling an invalid one.
-                        setNewPaymentMethod(
-                          isSelectablePaymentMethod(detail.transaction.payment_method)
-                            ? detail.transaction.payment_method
-                            : ""
-                        )
-                        setShowEditPayment(true)
-                      }}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      {id.transactions.editPaymentMethod}
-                    </Button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2 xl:justify-end">
-                  {ppobCanRetry && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRetryPpob}
-                      disabled={isRetrying}
-                    >
-                      {isRetrying ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCcw className="mr-2 h-4 w-4" />
-                      )}
-                      Retry PPOB
-                    </Button>
-                  )}
-                  {hasRefundAction && (
-                    <RefundAction
-                      blockedReason={refundBlocked}
-                      onRefund={() => {
-                        onClose()
-                        navigate(`/refund/${detail.transaction.id}`)
-                      }}
-                    />
-                  )}
-                  <Button size="sm" onClick={handlePrint}>
-                    <Printer className="mr-2 h-4 w-4" />
-                    {id.transactions.printReceipt}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </DialogContent>
+                  </div>
+                </Modal.Footer>
+              </>
+            )}
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{id.transactions.deleteTransaction}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {id.transactions.deleteConfirm}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea
-            placeholder={id.transactions.deleteReasonPlaceholder}
-            value={deleteReason}
-            onChange={(e) => setDeleteReason(e.target.value)}
-            className="min-h-[80px]"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setDeleteReason(""); setShowDeleteConfirm(false) }}>
-              {id.common.cancel}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={isDeleting || !deleteReason.trim()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {id.common.delete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop
+        isOpen={showDeleteConfirm}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteReason("")
+            setShowDeleteConfirm(false)
+          }
+        }}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label={id.transactions.deleteTransaction}>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{id.transactions.deleteTransaction}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body className="space-y-3">
+              <p className="text-sm text-muted">{id.transactions.deleteConfirm}</p>
+              <TextField
+                aria-label={id.transactions.deleteReason}
+                fullWidth
+                value={deleteReason}
+                onChange={setDeleteReason}
+              >
+                <TextArea
+                  placeholder={id.transactions.deleteReasonPlaceholder}
+                  rows={3}
+                />
+              </TextField>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button
+                isDisabled={isDeleting}
+                variant="outline"
+                onPress={() => { setDeleteReason(""); setShowDeleteConfirm(false) }}
+              >
+                {id.common.cancel}
+              </Button>
+              <Button
+                isDisabled={isDeleting || !deleteReason.trim()}
+                variant="danger"
+                onPress={handleDelete}
+              >
+                {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {id.common.delete}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
 
       {/* Edit Payment Method Dialog */}
-      <Dialog open={showEditPayment} onOpenChange={setShowEditPayment}>
-        <DialogContent className="max-w-sm" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{id.transactions.editPaymentMethod}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {isSplitPayment && (
-              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-                Transaksi ini dibayar dengan beberapa metode. Menyimpan metode
-                tunggal akan mengganti seluruh rincian pembayarannya menjadi satu
-                baris sebesar total transaksi.
-              </p>
-            )}
-            <Select value={newPaymentMethod} onValueChange={setNewPaymentMethod}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih metode pembayaran" />
-              </SelectTrigger>
-              <SelectContent>
-                {SELECTABLE_PAYMENT_METHODS.map((method) => (
-                  <SelectItem key={method} value={method}>
-                    {paymentMethodLabel(method)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Textarea
-              placeholder={id.transactions.editPaymentReasonPlaceholder}
-              value={editPaymentReason}
-              onChange={(e) => setEditPaymentReason(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditPaymentReason(""); setShowEditPayment(false) }}>
-              {id.common.cancel}
-            </Button>
-            <Button
-              onClick={handleUpdatePaymentMethod}
-              disabled={
-                isUpdatingPayment ||
-                !editPaymentReason.trim() ||
-                !isSelectablePaymentMethod(newPaymentMethod)
-              }
-            >
-              {isUpdatingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {id.common.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Dialog>
+      <Modal.Backdrop isOpen={showEditPayment} onOpenChange={setShowEditPayment}>
+        <Modal.Container size="sm">
+          <Modal.Dialog aria-label={id.transactions.editPaymentMethod}>
+            <Modal.Header>
+              <Modal.Heading>{id.transactions.editPaymentMethod}</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              {isSplitPayment && (
+                <Alert status="warning">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Description>
+                      Transaksi ini dibayar dengan beberapa metode. Menyimpan metode
+                      tunggal akan mengganti seluruh rincian pembayarannya menjadi satu
+                      baris sebesar total transaksi.
+                    </Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <Select
+                aria-label={id.transactions.paymentMethod}
+                fullWidth
+                placeholder="Pilih metode pembayaran"
+                value={newPaymentMethod || null}
+                onChange={(value) => setNewPaymentMethod(value === null ? "" : String(value))}
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {SELECTABLE_PAYMENT_METHODS.map((method) => (
+                      <ListBox.Item
+                        key={method}
+                        id={method}
+                        textValue={paymentMethodLabel(method)}
+                      >
+                        <Label>{paymentMethodLabel(method)}</Label>
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <TextField
+                aria-label={id.transactions.editPaymentReason}
+                fullWidth
+                value={editPaymentReason}
+                onChange={setEditPaymentReason}
+              >
+                <TextArea
+                  placeholder={id.transactions.editPaymentReasonPlaceholder}
+                  rows={3}
+                />
+              </TextField>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                variant="outline"
+                onPress={() => { setEditPaymentReason(""); setShowEditPayment(false) }}
+              >
+                {id.common.cancel}
+              </Button>
+              <Button
+                isDisabled={
+                  isUpdatingPayment ||
+                  !editPaymentReason.trim() ||
+                  !isSelectablePaymentMethod(newPaymentMethod)
+                }
+                onPress={handleUpdatePaymentMethod}
+              >
+                {isUpdatingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {id.common.save}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </>
   )
 }
