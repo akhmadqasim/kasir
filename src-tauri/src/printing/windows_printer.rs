@@ -1,11 +1,13 @@
 /// Windows printer API for GDI-based text printing
 /// Uses GDI pipeline (through printer driver) for reliable USB thermal printing
 use std::ffi::OsStr;
+use std::mem::{align_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Printing::{
-    EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_LOCAL, PRINTER_INFO_2W,
+    EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL,
+    PRINTER_INFO_2W,
 };
 
 /// Printer information returned to frontend
@@ -21,10 +23,45 @@ fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-/// List all available Windows printers
+/// A byte buffer with the alignment `PRINTER_INFO_2W` requires.
+///
+/// `EnumPrintersW` writes an array of `PRINTER_INFO_2W` into a caller-supplied
+/// byte buffer and appends the strings those structs point at. Reading it back
+/// through `slice::from_raw_parts::<PRINTER_INFO_2W>` requires a pointer aligned
+/// to `align_of::<PRINTER_INFO_2W>()` — 8, because the struct is full of
+/// pointers — and a `Vec<u8>` only guarantees alignment 1. That the allocator
+/// usually returns an aligned block does not make it defined behaviour.
+/// Allocating `u64`s and viewing them as bytes gives the guarantee for real.
+struct AlignedBuffer {
+    words: Vec<u64>,
+    len: usize,
+}
+
+impl AlignedBuffer {
+    fn new(len: usize) -> Self {
+        const _: () = assert!(align_of::<PRINTER_INFO_2W>() <= align_of::<u64>());
+        let words = vec![0u64; len.div_ceil(size_of::<u64>()).max(1)];
+        Self { words, len }
+    }
+
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: `words` owns at least `len` bytes and `u8` has no alignment or
+        // validity requirement that `u64` does not already satisfy.
+        unsafe { std::slice::from_raw_parts_mut(self.words.as_mut_ptr().cast::<u8>(), self.len) }
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.words.as_ptr().cast()
+    }
+}
+
+/// List all available Windows printers, local and network.
 pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     unsafe {
-        let flags = PRINTER_ENUM_LOCAL;
+        // PRINTER_ENUM_CONNECTIONS adds the printers this machine is connected to
+        // over the network. Without it a shared thermal printer — the obvious
+        // setup for a multi-terminal shop — never appeared in the list at all.
+        let flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
         let mut bytes_needed: u32 = 0;
         let mut count: u32 = 0;
 
@@ -35,13 +72,13 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
             return Ok(vec![]);
         }
 
-        let mut buffer = vec![0u8; bytes_needed as usize];
+        let mut buffer = AlignedBuffer::new(bytes_needed as usize);
 
         let result = EnumPrintersW(
             flags,
             None,
             2,
-            Some(&mut buffer),
+            Some(buffer.as_bytes_mut()),
             &mut bytes_needed,
             &mut count,
         );
@@ -58,7 +95,7 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         let mut result_list = Vec::new();
         for printer in printers {
             let name = pwstr_to_string(printer.pPrinterName);
-            let is_default = default_printer.as_ref().map_or(false, |d| d == &name);
+            let is_default = default_printer.as_ref().is_some_and(|d| d == &name);
             result_list.push(PrinterInfo {
                 name,
                 is_default,
@@ -253,4 +290,22 @@ unsafe fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
     let len = (0..).take_while(|&i| *ptr.0.add(i) != 0).count();
     let slice = std::slice::from_raw_parts(ptr.0, len);
     String::from_utf16_lossy(slice)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aligned_buffer_is_aligned_for_printer_info() {
+        for len in [1usize, 7, 8, 9, 1024, 4095] {
+            let mut buffer = AlignedBuffer::new(len);
+            assert_eq!(buffer.as_bytes_mut().len(), len);
+            assert_eq!(
+                buffer.as_ptr() as usize % align_of::<PRINTER_INFO_2W>(),
+                0,
+                "buffer of {len} bytes is misaligned"
+            );
+        }
+    }
 }
