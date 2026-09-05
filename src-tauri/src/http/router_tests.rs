@@ -1996,6 +1996,100 @@ async fn the_printer_routes_need_a_session() {
 }
 
 // ---------------------------------------------------------------------------
+// PPOB
+// ---------------------------------------------------------------------------
+
+/// Everything past these checks talks to a third party over the network, so
+/// what is worth asserting in-process is that the guards fire *before* it does.
+
+/// Opening the upstream session acts on the shop's own credentials, so it is a
+/// configuration action rather than a selling one.
+#[tokio::test]
+async fn opening_the_ppob_session_is_closed_to_a_cashier() {
+    let db = setup_test_db().await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::POST, "/api/ppob/session")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// The two PPOB routes that spend money refuse to run without a key, and they
+/// refuse before anything is sent upstream.
+#[tokio::test]
+async fn the_ppob_money_routes_refuse_to_run_without_an_idempotency_key() {
+    let db = setup_test_db().await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    let payment = router(&state)
+        .oneshot(
+            same_origin(Method::POST, "/api/ppob/payments")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({
+                    "serviceType": "pln",
+                    "inquiryId": "INQ-1",
+                })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(payment.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_json(payment).await["code"], json!("bad_request"));
+
+    let topup = router(&state)
+        .oneshot(
+            same_origin(Method::POST, "/api/ppob/topups")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({
+                    "phoneNumber": "081200001111",
+                    "productCode": "TSEL10",
+                    "productId": 1,
+                    "productType": "pulsa",
+                })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(topup.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn the_ppob_routes_need_a_session() {
+    let db = setup_test_db().await;
+    let state = state(db);
+
+    for (method, uri) in [
+        (Method::GET, "/api/ppob/balance"),
+        (Method::GET, "/api/ppob/catalog/providers"),
+        (Method::GET, "/api/ppob/history"),
+        (Method::GET, "/api/ppob/notifications"),
+    ] {
+        let response = router(&state)
+            .oneshot(
+                same_origin(method, uri)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{uri}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The real listener
 // ---------------------------------------------------------------------------
 
