@@ -37,19 +37,26 @@ export function CartItemEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        <CartItemEditBody open={open} item={item} onOpenChange={onOpenChange} />
+      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+        {/* Body hanya hidup selama dialog terbuka dan di-key per baris keranjang,
+            jadi state form-nya lahir dari item yang benar tanpa perlu efek
+            penyelaras yang bisa menimpa ketikan kasir. */}
+        {open && (
+          <CartItemEditBody
+            key={item.cart_id}
+            item={item}
+            onOpenChange={onOpenChange}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
 }
 
 function CartItemEditBody({
-  open,
   item,
   onOpenChange,
 }: {
-  open: boolean
   item: CartItem
   onOpenChange: (open: boolean) => void
 }) {
@@ -141,13 +148,9 @@ function CartItemEditBody({
     setItemDiscount(item.cart_id, null)
   }
 
+  // Baris PPOB tidak punya jumlah yang bisa diubah, jadi tidak ada yang difokuskan.
   useEffect(() => {
-    if (!open || item.is_ppob) return
-
-    setQty(item.quantity)
-    setQtyRaw(String(item.quantity))
-    setDiscType(disc?.type ?? "fixed")
-    setDiscRaw(disc ? String(disc.value) : "")
+    if (item.is_ppob) return
 
     const timer = setTimeout(() => {
       const input = document.getElementById(qtyInputId) as HTMLInputElement | null
@@ -156,7 +159,7 @@ function CartItemEditBody({
     }, 50)
 
     return () => clearTimeout(timer)
-  }, [disc, item.is_ppob, item.quantity, open, qtyInputId])
+  }, [item.is_ppob, qtyInputId])
 
   return (
     <>
