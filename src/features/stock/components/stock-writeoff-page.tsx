@@ -159,18 +159,27 @@ export function StockWriteoffPage() {
   const writeoffs = data?.items ?? []
   const totalPages = data?.totalPages ?? 1
 
+  // Stock moves when a write-off is *created*, not when it is approved:
+  // `create_stock_writeoff` decrements it in the same transaction as the insert,
+  // `approve_stock_writeoff` only flips the status, and `reject`/`delete` put the
+  // stock back — except for refund-originated rows, which never deducted any.
+  const isFromRefund = confirmAction?.writeoff.refundId != null
   const confirmMessages: Record<string, { title: string; description: string }> = {
     approve: {
       title: "Setujui Write-off",
-      description: "Yakin ingin menyetujui write-off ini? Stok akan dikurangi secara permanen.",
+      description:
+        "Stok sudah dikurangi sejak write-off ini dibuat. Menyetujui hanya mengesahkan kerugiannya, stok tidak berubah lagi.",
     },
     reject: {
       title: "Tolak Write-off",
-      description: "Yakin ingin menolak write-off ini? Stok akan dikembalikan.",
+      description: isFromRefund
+        ? "Write-off ini berasal dari refund, jadi stoknya tidak pernah dikurangi dan tidak akan dikembalikan. Kerugiannya dibatalkan."
+        : "Stok yang dikurangi saat write-off ini dibuat akan dikembalikan.",
     },
     delete: {
       title: "Hapus Write-off",
-      description: "Yakin ingin menghapus write-off ini? Data akan dihapus permanen.",
+      description:
+        "Data write-off dihapus permanen dan stok yang dikurangi saat pembuatan dikembalikan.",
     },
   }
 

@@ -32,9 +32,17 @@ export function useCreateWriteoff() {
   return useTauriMutation<StockWriteoff, { input: CreateStockWriteoffInput; callerId: number }>(
     "create_stock_writeoff",
     {
-      onSuccess: () => {
+      // `create_stock_writeoff` deducts the stock straight away and only then
+      // decides the status: an admin's write-off lands `approved`, a cashier's
+      // lands `pending` and waits for one. A flat "berhasil dibuat" told the
+      // cashier the job was done while it was still sitting in a queue.
+      onSuccess: (writeoff) => {
         invalidateWriteoffQueries(queryClient)
-        toast.success("Write-off berhasil dibuat")
+        toast.success(
+          writeoff.status === "pending"
+            ? "Write-off dibuat dan stok sudah dikurangi. Menunggu persetujuan admin."
+            : "Write-off dibuat dan disetujui, stok sudah dikurangi"
+        )
       },
       onError: (error) => {
         toast.error(error.message || "Gagal membuat write-off")
@@ -48,9 +56,12 @@ export function useApproveWriteoff() {
   return useTauriMutation<StockWriteoff, { writeoffId: number; callerId: number }>(
     "approve_stock_writeoff",
     {
+      // Approval only flips the status. The stock left the shelf when the
+      // write-off was created and `approve_stock_writeoff` deliberately does not
+      // touch it again.
       onSuccess: () => {
         invalidateWriteoffQueries(queryClient)
-        toast.success("Write-off berhasil disetujui")
+        toast.success("Write-off disetujui, stok tidak berubah lagi")
       },
       onError: (error) => {
         toast.error(error.message || "Gagal menyetujui write-off")
@@ -64,9 +75,15 @@ export function useRejectWriteoff() {
   return useTauriMutation<StockWriteoff, { writeoffId: number; callerId: number }>(
     "reject_stock_writeoff",
     {
-      onSuccess: () => {
+      // A refund-originated write-off never deducted stock — the unit left at sale
+      // time — so `reject_stock_writeoff` skips the restore for those rows.
+      onSuccess: (writeoff) => {
         invalidateWriteoffQueries(queryClient)
-        toast.success("Write-off ditolak, stok dikembalikan")
+        toast.success(
+          writeoff.refundId === null
+            ? "Write-off ditolak, stok dikembalikan"
+            : "Write-off ditolak. Stok tidak dikembalikan karena berasal dari refund"
+        )
       },
       onError: (error) => {
         toast.error(error.message || "Gagal menolak write-off")
@@ -82,7 +99,7 @@ export function useDeleteWriteoff() {
     {
       onSuccess: () => {
         invalidateWriteoffQueries(queryClient)
-        toast.success("Write-off berhasil dihapus")
+        toast.success("Write-off dihapus, stok dikembalikan")
       },
       onError: (error) => {
         toast.error(error.message || "Gagal menghapus write-off")
