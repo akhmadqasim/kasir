@@ -219,6 +219,71 @@ fn pre_restore_path(db_path: &Path) -> PathBuf {
     PathBuf::from(p)
 }
 
+/// Half-written staging file, renamed onto [`pending_restore_path`] once
+/// complete so a crash mid-write can never leave a partial "pending restore".
+fn staging_restore_path(db_path: &Path) -> PathBuf {
+    let mut p = pending_restore_path(db_path).as_os_str().to_os_string();
+    p.push(".tmp");
+    PathBuf::from(p)
+}
+
+/// Publish a fully written staging file as the pending restore.
+fn publish_staged_restore(db_path: &Path, staging: &Path) -> Result<(), AppError> {
+    fs::rename(staging, pending_restore_path(db_path)).map_err(|e| {
+        let _ = fs::remove_file(staging);
+        AppError::Internal(format!("Gagal menyiapkan file restore: {}", e))
+    })
+}
+
+/// Stage an in-memory database image to replace `db_path` at the next launch.
+pub fn stage_restore_bytes(db_path: &Path, data: &[u8]) -> Result<(), AppError> {
+    if !is_sqlite_database(data) {
+        return Err(AppError::Validation(
+            "File bukan database SQLite yang valid".to_string(),
+        ));
+    }
+
+    let staging = staging_restore_path(db_path);
+    fs::write(&staging, data)
+        .map_err(|e| AppError::Internal(format!("Gagal menulis file restore: {}", e)))?;
+    publish_staged_restore(db_path, &staging)
+}
+
+/// Stage an on-disk database file to replace `db_path` at the next launch.
+///
+/// Used by `import_database`, which used to `fs::copy` straight over the live
+/// `kasir.db`: that raced the open sea-orm pool and left the old `-wal` next to
+/// the new database, so the previous WAL was replayed over the import on the
+/// next start. Going through the staging path fixes both, and rejects a file
+/// that is not a SQLite database before anything is replaced.
+pub fn stage_restore_from_file(db_path: &Path, source: &Path) -> Result<(), AppError> {
+    let mut header = [0u8; 16];
+    let readable = fs::File::open(source)
+        .and_then(|mut f| f.read_exact(&mut header))
+        .is_ok();
+
+    if !readable || !is_sqlite_database(&header) {
+        return Err(AppError::Validation(
+            "File bukan database SQLite yang valid".to_string(),
+        ));
+    }
+
+    let staging = staging_restore_path(db_path);
+    fs::copy(source, &staging)
+        .map_err(|e| AppError::Internal(format!("Gagal menyalin file import: {}", e)))?;
+    publish_staged_restore(db_path, &staging)
+}
+
+/// Flush committed WAL pages into the main `.db` file.
+///
+/// Exposed for `settings::export_database`, which used to `fs::copy` the file
+/// with WAL on and therefore silently dropped every transaction committed since
+/// the last checkpoint — the day's sales, in an export the UI banner tells
+/// admins to use when moving versions.
+pub fn checkpoint_database_wal(db_path: &Path) {
+    checkpoint_wal(db_path);
+}
+
 /// Install a staged restore over the live database. Called from `run()` BEFORE
 /// `db::setup_database`, which is the only moment no connection holds the file.
 ///
@@ -677,29 +742,11 @@ pub async fn restore_backup(
         .read_to_end(&mut db_data)
         .map_err(|e| AppError::Internal(format!("Gagal dekompresi backup: {}", e)))?;
 
-    if !is_sqlite_database(&db_data) {
-        return Err(AppError::Validation(
-            "File backup bukan database SQLite yang valid".to_string(),
-        ));
-    }
-
     // Stage next to the live database instead of writing over it. The sea-orm
     // pool still holds `kasir.db` open, so an in-process overwrite races SQLite's
     // page cache; `apply_pending_restore` performs the swap at the next launch,
     // before the pool is created.
-    let pending = pending_restore_path(&db_path);
-    let staging = {
-        let mut p = pending.as_os_str().to_os_string();
-        p.push(".tmp");
-        PathBuf::from(p)
-    };
-
-    fs::write(&staging, &db_data)
-        .map_err(|e| AppError::Internal(format!("Gagal menulis file restore: {}", e)))?;
-    fs::rename(&staging, &pending).map_err(|e| {
-        let _ = fs::remove_file(&staging);
-        AppError::Internal(format!("Gagal menyiapkan file restore: {}", e))
-    })?;
+    stage_restore_bytes(&db_path, &db_data)?;
 
     Ok("Backup siap dipulihkan. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
 }

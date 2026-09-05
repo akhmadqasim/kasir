@@ -33,19 +33,49 @@ fn obfuscate(input: &str) -> String {
     )
 }
 
-fn deobfuscate(input: &str) -> String {
-    if let Some(hex) = input.strip_prefix("OBF:") {
-        let bytes: Vec<u8> = (0..hex.len())
-            .step_by(2)
-            .filter_map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-            .enumerate()
-            .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
-            .collect();
-        String::from_utf8(bytes).unwrap_or_else(|_| input.to_string())
-    } else {
-        // Not obfuscated (legacy data) — return as-is
-        input.to_string()
+/// Decode an even-length ASCII hex string, or `None` if it is not one.
+///
+/// The caller used to index `&hex[i..i + 2]` for every `i` in
+/// `(0..hex.len()).step_by(2)`, which panics on the last pair of an odd-length
+/// payload and on any non-ASCII byte that a 2-byte window splits. Checking the
+/// shape up front makes both impossible.
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) || !hex.is_ascii() {
+        return None;
     }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+        .collect()
+}
+
+/// Reverse [`obfuscate`]. Values without the marker are legacy plaintext and are
+/// returned unchanged.
+///
+/// A corrupt `OBF:` payload yields an empty string rather than a panic.
+/// `parse_app_settings` is on the path of `get_app_settings`,
+/// `update_app_settings`, `ppob/executor.rs` and `ppob/inquiry.rs`, so a single
+/// truncated character in `store_info.additional_info` used to take out PPOB and
+/// the entire Settings page. Empty (rather than the raw ciphertext) is returned
+/// so the admin sees a blank field to re-enter instead of garbage they might
+/// save back and obfuscate a second time.
+fn deobfuscate(input: &str) -> String {
+    let Some(hex) = input.strip_prefix("OBF:") else {
+        // Not obfuscated (legacy data) — return as-is
+        return input.to_string();
+    };
+
+    let Some(bytes) = hex_to_bytes(hex) else {
+        return String::new();
+    };
+
+    let plain: Vec<u8> = bytes
+        .into_iter()
+        .enumerate()
+        .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
+        .collect();
+
+    String::from_utf8(plain).unwrap_or_default()
 }
 
 // --- App Settings structs ---
@@ -401,6 +431,12 @@ pub async fn export_database(
         return Err(AppError::NotFound("File database tidak ditemukan".into()));
     }
 
+    // B18: WAL is on, so everything committed since the last checkpoint lives in
+    // `kasir.db-wal` and a bare copy of `kasir.db` leaves it behind — silently
+    // losing the day's sales in the very flow the UI banner recommends for
+    // moving between versions. `create_backup_file` already did this correctly.
+    super::backup::checkpoint_database_wal(&db_path);
+
     std::fs::copy(&db_path, &export_path)
         .map_err(|e| AppError::Internal(format!("Gagal mengekspor database: {}", e)))
 }
@@ -421,10 +457,15 @@ pub async fn import_database(
 
     let db_path = get_db_path();
 
-    std::fs::copy(import, &db_path)
-        .map_err(|e| AppError::Internal(format!("Gagal mengimpor database: {}", e)))?;
+    // B19: this used to `fs::copy` straight over the live `kasir.db`. The
+    // sea-orm pool still holds that file open, and the old `-wal`/`-shm`
+    // survived, so the previous WAL was replayed over the import on the next
+    // start. Staging the file makes the swap happen in `run()` before the pool
+    // exists, with the sidecars removed; the header is checked first so a file
+    // that is not a database is refused instead of bricking the app.
+    super::backup::stage_restore_from_file(&db_path, import)?;
 
-    Ok("Database berhasil diimpor. Silakan restart aplikasi.".into())
+    Ok("Database berhasil diimpor. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
 }
 
 #[tauri::command]
@@ -442,4 +483,81 @@ pub async fn get_database_info() -> Result<DatabaseInfo, AppError> {
         size_bytes: metadata.len(),
         path: db_path.to_string_lossy().to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn obfuscation_round_trips() {
+        for value in [
+            "",
+            "0812345678",
+            "rahasia123",
+            "p@ssw0rd!",
+            "081-\u{e9}\u{2014}",
+        ] {
+            assert_eq!(deobfuscate(&obfuscate(value)), value);
+        }
+    }
+
+    /// An odd number of hex characters made `&hex[i..i + 2]` run past the end of
+    /// the string. `parse_app_settings` is called from `get_app_settings`,
+    /// `update_app_settings`, `ppob/executor.rs` and `ppob/inquiry.rs`, so this
+    /// panic disabled PPOB and the whole Settings page at once.
+    #[test]
+    fn deobfuscate_survives_an_odd_length_payload() {
+        assert_eq!(deobfuscate("OBF:1b2c3"), "");
+        assert_eq!(deobfuscate("OBF:a"), "");
+    }
+
+    #[test]
+    fn deobfuscate_survives_junk_payloads() {
+        assert_eq!(deobfuscate("OBF:zzzz"), "");
+        assert_eq!(deobfuscate("OBF:\u{e9}\u{e9}"), "");
+        assert_eq!(deobfuscate("OBF:"), "");
+    }
+
+    /// Values stored before obfuscation existed have no marker and must come
+    /// back untouched.
+    #[test]
+    fn deobfuscate_passes_legacy_plaintext_through() {
+        assert_eq!(deobfuscate("rahasia123"), "rahasia123");
+        assert_eq!(deobfuscate(""), "");
+    }
+
+    /// A corrupt PPOB block must not take the rest of the settings with it.
+    #[test]
+    fn parse_app_settings_survives_a_corrupt_credential() {
+        let json = serde_json::json!({
+            "sales": { "allow_negative_stock": false, "default_payment_method": "qris" },
+            "ppob": {
+                "enabled": true,
+                "phone_number": "0812",
+                "password": "OBF:1b2c3",
+                "device_id": "dev",
+                "pin": "OBF:zzz"
+            },
+            "backup": { "interval_hours": 6, "retention_days": 30 }
+        })
+        .to_string();
+
+        let settings = parse_app_settings(&Some(json));
+        assert_eq!(settings.sales.default_payment_method, "qris");
+        assert!(!settings.sales.allow_negative_stock);
+        assert_eq!(settings.backup.interval_hours, 6);
+        assert_eq!(settings.ppob.phone_number, "0812");
+        assert_eq!(settings.ppob.password, "");
+        assert_eq!(settings.ppob.pin, "");
+    }
+
+    #[test]
+    fn hex_to_bytes_only_accepts_even_length_ascii_hex() {
+        assert_eq!(hex_to_bytes("0a1b"), Some(vec![0x0a, 0x1b]));
+        assert_eq!(hex_to_bytes(""), Some(vec![]));
+        assert_eq!(hex_to_bytes("0a1"), None);
+        assert_eq!(hex_to_bytes("0g"), None);
+        assert_eq!(hex_to_bytes("\u{e9}\u{e9}"), None);
+    }
 }
