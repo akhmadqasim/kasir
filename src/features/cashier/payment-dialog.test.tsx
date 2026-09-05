@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 const invoke = vi.fn()
@@ -56,17 +56,30 @@ function renderDialog() {
   )
 }
 
+/**
+ * Penjaga scan membaca `event.timeStamp`, jadi test-nya harus mengarangnya sendiri.
+ * Kalau jaraknya dibiarkan ikut waktu nyata, satu worker yang sedang sibuk sudah
+ * cukup untuk membuat semburan 13 karakter terbaca sebagai ketikan manusia.
+ */
+function fireWithTimeStamp(field: HTMLElement, event: Event, timeStamp: number) {
+  Object.defineProperty(event, "timeStamp", { value: timeStamp })
+  fireEvent(field, event)
+}
+
+function typeAmount(field: HTMLElement, value: string, timeStamp: number) {
+  fireWithTimeStamp(field, createEvent.change(field, { target: { value } }), timeStamp)
+}
+
+function pressEnter(field: HTMLElement, timeStamp: number) {
+  fireWithTimeStamp(field, createEvent.keyDown(field, { key: "Enter" }), timeStamp)
+}
+
 /** Scanner mengetik seluruh payload-nya dalam satu semburan, lalu Enter. */
 function scanIntoField(field: HTMLElement, barcode: string) {
   for (let length = 1; length <= barcode.length; length++) {
-    fireEvent.change(field, { target: { value: barcode.slice(0, length) } })
+    typeAmount(field, barcode.slice(0, length), 1000 + length * 10)
   }
-  fireEvent.keyDown(field, { key: "Enter" })
-}
-
-/** Menunggu lebih lama dari jarak Enter sebuah scanner (120 ms). */
-function pause(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  pressEnter(field, 1000 + barcode.length * 10 + 20)
 }
 
 beforeEach(() => {
@@ -109,9 +122,10 @@ describe("payment dialog", () => {
     renderDialog()
     const field = await screen.findByLabelText("Nominal Tunai")
 
-    fireEvent.change(field, { target: { value: "50000" } })
-    await pause(200)
-    fireEvent.keyDown(field, { key: "Enter" })
+    // Kasir mengetik, lalu berhenti sejenak sebelum Enter — jauh di luar jarak
+    // Enter sebuah scanner.
+    typeAmount(field, "50000", 1000)
+    pressEnter(field, 3000)
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("checkout_transaction", expect.anything())
