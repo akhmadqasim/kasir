@@ -72,6 +72,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "018_transaction_item_net_subtotal",
         include_str!("../../migrations/018_transaction_item_net_subtotal.sql"),
     ),
+    (
+        "019_stock_writeoff_created_at_utc",
+        include_str!("../../migrations/019_stock_writeoff_created_at_utc.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {
@@ -176,10 +180,9 @@ async fn apply_migration(
 
     match run_migration_body(&mut *conn, name, sql).await {
         Ok(()) => {
-            (&mut *conn)
-                .execute("COMMIT;")
-                .await
-                .map_err(|e| AppError::Internal(format!("failed to commit migration '{name}': {e}")))?;
+            (&mut *conn).execute("COMMIT;").await.map_err(|e| {
+                AppError::Internal(format!("failed to commit migration '{name}': {e}"))
+            })?;
             Ok(())
         }
         Err(err) => {

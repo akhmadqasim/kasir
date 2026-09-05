@@ -66,13 +66,22 @@ pub struct ListWriteoffsResult {
 
 // --- Helpers ---
 
+/// Timestamp for every `created_at`/`updated_at` this module writes.
+///
+/// MUST stay UTC. Every reader of `stock_writeoffs.created_at`
+/// (`list_stock_writeoffs` below, `reports::query_losses`) converts a local
+/// calendar date into a UTC boundary before comparing, and the refund path
+/// writes `Utc::now()` into the same column. This used to be `Local::now()`,
+/// which put a WIB write-off made after 17:00 into the next day's report;
+/// migration 019 shifts the rows that were written that way.
 fn now_timestamp() -> String {
-    chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string()
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 async fn generate_writeoff_number<C: ConnectionTrait>(db: &C) -> Result<String, AppError> {
+    // Deliberately local: `WO-YYYYMMDD-XXXX` is a human-facing document number
+    // keyed to the shop's business day, not an instant. `refunds.rs` numbers
+    // `RFD-` the same way.
     let today = chrono::Local::now().format("%Y%m%d").to_string();
     let prefix = format!("WO-{}-", today);
 
@@ -123,9 +132,7 @@ pub async fn list_stock_writeoffs(
 
     if let Some(ref date_from) = input.date_from {
         let local_start = format!("{} 00:00:00", date_from);
-        if let Ok(ndt) =
-            chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S")
-        {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
             let utc_start = ndt - chrono::Duration::seconds(offset_secs);
             conditions.push_str(" AND w.created_at >= ?");
             params.push(utc_start.format("%Y-%m-%d %H:%M:%S").to_string().into());
@@ -134,9 +141,7 @@ pub async fn list_stock_writeoffs(
 
     if let Some(ref date_to) = input.date_to {
         let local_end = format!("{} 23:59:59", date_to);
-        if let Ok(ndt) =
-            chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S")
-        {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
             let utc_end = ndt - chrono::Duration::seconds(offset_secs);
             conditions.push_str(" AND w.created_at <= ?");
             params.push(utc_end.format("%Y-%m-%d %H:%M:%S").to_string().into());
@@ -221,9 +226,7 @@ pub async fn list_stock_writeoffs(
             approver_name: row.try_get::<String>("", "approver_name").ok(),
             status: row.try_get::<String>("", "status").unwrap_or_default(),
             refund_id: row.try_get::<i64>("", "refund_id").ok(),
-            created_at: row
-                .try_get::<String>("", "created_at")
-                .unwrap_or_default(),
+            created_at: row.try_get::<String>("", "created_at").unwrap_or_default(),
         });
     }
 
@@ -273,9 +276,7 @@ pub async fn create_stock_writeoff(
         .filter(products::Column::IsActive.eq(true))
         .one(&txn)
         .await?
-        .ok_or_else(|| {
-            AppError::NotFound("Produk tidak ditemukan atau tidak aktif".into())
-        })?;
+        .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan atau tidak aktif".into()))?;
 
     // Validate quantity does not exceed stock
     if input.quantity > product.stock {
@@ -605,8 +606,113 @@ pub async fn get_stock_writeoff_detail(
         approver_name: row.try_get::<String>("", "approver_name").ok(),
         status: row.try_get::<String>("", "status").unwrap_or_default(),
         refund_id: row.try_get::<i64>("", "refund_id").ok(),
-        created_at: row
-            .try_get::<String>("", "created_at")
-            .unwrap_or_default(),
+        created_at: row.try_get::<String>("", "created_at").unwrap_or_default(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        insert_product, insert_transaction, insert_writeoff, now_ts, setup_test_db, WriteoffSpec,
+    };
+    use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+
+    /// The exact SQL shipped as migration 019, so the test exercises the file
+    /// that actually runs on a user's database rather than a copy of it.
+    const MIGRATION_019: &str =
+        include_str!("../../migrations/019_stock_writeoff_created_at_utc.sql");
+
+    /// B22: `stock_writeoffs.created_at` is filtered as UTC by
+    /// `list_stock_writeoffs` and `reports::query_losses`, and the refund path
+    /// writes UTC into the same column, so the manual path must too.
+    #[test]
+    fn now_timestamp_is_utc() {
+        let parsed = NaiveDateTime::parse_from_str(&now_timestamp(), "%Y-%m-%d %H:%M:%S")
+            .expect("timestamp is in the stored format");
+        let drift = (Utc::now().naive_utc() - parsed).num_seconds().abs();
+        assert!(
+            drift <= 5,
+            "now_timestamp() drifted {}s from UTC — it is writing local time",
+            drift
+        );
+    }
+
+    /// Migration 019 must shift the rows the manual path wrote in local time and
+    /// leave the refund-originated rows, which were always UTC, exactly as they
+    /// are. Noon is used so the expectation is unambiguous even in a timezone
+    /// with DST.
+    #[tokio::test]
+    async fn migration_019_shifts_manual_writeoffs_only() {
+        let conn = setup_test_db().await;
+        let product = insert_product(&conn, "Beras 5kg", 10_000.0, 12_000.0, 10).await;
+        let txn = insert_transaction(&conn, 1, 12_000.0, "completed", &now_ts()).await;
+
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO refunds (id, refund_number, transaction_id, user_id, type, \
+             total_refund_amount, created_at) VALUES (1, 'RFD-TEST-019', $1, 1, 'refund', 12000, $2)",
+            vec![txn.id.into(), now_ts().into()],
+        ))
+        .await
+        .expect("refund insert");
+
+        let stored = "2026-09-05 12:00:00";
+
+        let manual = insert_writeoff(
+            &conn,
+            WriteoffSpec {
+                product_id: product.id,
+                user_id: 1,
+                quantity: 1,
+                reason: "damaged",
+                loss_value: 10_000.0,
+                status: "approved",
+                created_at: stored,
+            },
+        )
+        .await;
+
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO stock_writeoffs (writeoff_number, product_id, user_id, quantity, reason, \
+             loss_value, status, refund_id, created_at) \
+             VALUES ('WO-TEST-019-R', $1, 1, 1, 'damaged', 10000, 'pending', 1, $2)",
+            vec![product.id.into(), stored.into()],
+        ))
+        .await
+        .expect("refund-originated writeoff insert");
+
+        conn.execute_unprepared(MIGRATION_019)
+            .await
+            .expect("migration 019 runs");
+
+        let naive = NaiveDateTime::parse_from_str(stored, "%Y-%m-%d %H:%M:%S").unwrap();
+        let expected = Local
+            .from_local_datetime(&naive)
+            .single()
+            .expect("noon is never ambiguous")
+            .naive_utc()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+
+        let shifted = stock_writeoffs::Entity::find_by_id(manual.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("manual row");
+        assert_eq!(shifted.created_at.as_deref(), Some(expected.as_str()));
+
+        let untouched = stock_writeoffs::Entity::find()
+            .filter(stock_writeoffs::Column::RefundId.eq(1_i64))
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("refund row");
+        assert_eq!(
+            untouched.created_at.as_deref(),
+            Some(stored),
+            "refund-originated rows were already UTC and must not be shifted"
+        );
+    }
 }
