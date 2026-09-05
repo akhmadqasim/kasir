@@ -395,7 +395,11 @@ function PulsaInput({
         </div>
       </div>
 
-      {isLoading && phoneNumber.length >= 10 && (
+      {/*
+        Also covers the 300 ms debounce before the lookup starts: without it the
+        panel is blank between the last digit and the first skeleton.
+      */}
+      {phoneNumber.length >= 10 && !data && !error && (
         <div className={`grid gap-2 ${wideLayout ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
@@ -403,6 +407,25 @@ function PulsaInput({
 
       {error && phoneNumber.length >= 10 && (
         <p className="text-sm text-destructive">{error.message}</p>
+      )}
+
+      {/*
+        A lookup that comes back with nothing to sell — every product flagged as
+        trouble, or none matching this tab — used to render literally nothing, so
+        the screen looked stuck on the last skeleton frame.
+      */}
+      {data && !isLoading && filteredProducts.length === 0 && (
+        <div className="rounded-lg border border-dashed p-6 text-center">
+          <p className="text-sm font-medium">
+            Tidak ada produk {productType === "pulsa" ? "pulsa" : "paket data"} untuk
+            nomor ini
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.provider
+              ? `Provider terdeteksi: ${data.provider}. Coba tab lain atau ulangi beberapa saat lagi.`
+              : "Periksa kembali nomornya, atau coba lagi beberapa saat lagi."}
+          </p>
+        </div>
       )}
 
       {filteredProducts.length > 0 && (
