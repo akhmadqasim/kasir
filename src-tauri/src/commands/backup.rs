@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -120,7 +121,11 @@ pub struct BackupName {
     pub time: Option<chrono::NaiveTime>,
 }
 
-/// Parse `kasir_YYYY-MM-DD.db.gz`, returning `None` for anything else.
+/// Parse `kasir_YYYY-MM-DD_HHMMSS.db.gz` or the legacy `kasir_YYYY-MM-DD.db.gz`,
+/// returning `None` for anything else.
+///
+/// The legacy date-only shape is still accepted because a database that has been
+/// running for a while has a backup folder full of them.
 ///
 /// This replaces three copies of `&name[6..16]` that were guarded only by
 /// `starts_with("kasir_") && ends_with(".db.gz")`. That guard admits
@@ -137,8 +142,24 @@ pub fn parse_backup_filename(name: &str) -> Option<BackupName> {
     let stem = name
         .strip_prefix(BACKUP_PREFIX)?
         .strip_suffix(BACKUP_SUFFIX)?;
-    let date = chrono::NaiveDate::parse_from_str(stem, "%Y-%m-%d").ok()?;
-    Some(BackupName { date, time: None })
+
+    match stem.split_once('_') {
+        None => Some(BackupName {
+            date: chrono::NaiveDate::parse_from_str(stem, "%Y-%m-%d").ok()?,
+            time: None,
+        }),
+        Some((date_part, time_part)) => {
+            // chrono's `%H%M%S` is not fixed-width — it happily reads "18300"
+            // as 18:30:00 — so the shape is checked before parsing.
+            if time_part.len() != 6 || !time_part.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            Some(BackupName {
+                date: chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d").ok()?,
+                time: Some(chrono::NaiveTime::parse_from_str(time_part, "%H%M%S").ok()?),
+            })
+        }
+    }
 }
 
 /// Resolve a client-supplied backup filename to a path inside `backup_dir`.
@@ -289,13 +310,35 @@ fn remove_sqlite_sidecars(db_path: &Path) {
     }
 }
 
+/// Name for a backup taken at local time `now`.
+///
+/// The time used to be omitted, so a 3-hour interval wrote the same
+/// `kasir_YYYY-MM-DD.db.gz` eight times a day: a database that broke at 10:00
+/// had its healthy 09:00 snapshot overwritten at 12:00 by a copy of the broken
+/// one, and the best recovery point silently moved back to yesterday. The name
+/// is in local time because it is what the shop owner reads in the file list.
+fn backup_filename_for(now: chrono::DateTime<Local>) -> String {
+    format!(
+        "{}{}{}",
+        BACKUP_PREFIX,
+        now.format("%Y-%m-%d_%H%M%S"),
+        BACKUP_SUFFIX
+    )
+}
+
 /// Create a compressed backup of the database
 fn create_backup_file(db_path: &Path, backup_dir: &Path) -> Result<BackupInfo, AppError> {
     fs::create_dir_all(backup_dir)
         .map_err(|e| AppError::Internal(format!("Gagal membuat folder backup: {}", e)))?;
 
-    let now = Local::now();
-    let filename = format!("kasir_{}.db.gz", now.format("%Y-%m-%d"));
+    // Two backups in the same second (a manual one racing the scheduler) would
+    // otherwise still collide on the name.
+    let mut now = Local::now();
+    let mut filename = backup_filename_for(now);
+    while backup_dir.join(&filename).exists() {
+        now += chrono::Duration::seconds(1);
+        filename = backup_filename_for(now);
+    }
     let backup_path = backup_dir.join(&filename);
 
     // Flush the WAL into the main file so the copy below is complete & consistent.
@@ -326,68 +369,120 @@ fn create_backup_file(db_path: &Path, backup_dir: &Path) -> Result<BackupInfo, A
     Ok(BackupInfo {
         filename,
         size_bytes: metadata.len(),
-        created_at: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+        created_at: system_time_to_utc_string(metadata.modified().ok()),
     })
 }
 
-/// Every backup in `backup_dir`, newest first.
+/// One file in the backup folder.
+struct BackupEntry {
+    path: PathBuf,
+    filename: String,
+    size_bytes: u64,
+    modified: SystemTime,
+}
+
+/// Render a file timestamp in the `"YYYY-MM-DD HH:MM:SS"` UTC shape the rest of
+/// the API uses, which is what the frontend's `parseBackendDate` assumes.
+fn system_time_to_utc_string(t: Option<SystemTime>) -> String {
+    chrono::DateTime::<chrono::Utc>::from(t.unwrap_or(SystemTime::UNIX_EPOCH))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+/// Every backup in `backup_dir`, newest first, with its real modified time.
 ///
-/// The single place that turns directory entries into `BackupInfo`; both
-/// `list_backups` and `get_backup_status` used to carry their own copy of this
-/// loop, complete with their own copy of the panicking name slice. A missing
-/// directory is an empty list, not an error — it just means no backup has run
-/// yet.
-fn collect_backups(backup_dir: &Path) -> Result<Vec<BackupInfo>, AppError> {
-    let mut backups: Vec<BackupInfo> = Vec::new();
+/// The single directory walk behind `list_backups`, `get_backup_status` and
+/// `cleanup_old_backups`. A missing directory is an empty list, not an error —
+/// it just means no backup has run yet.
+fn read_backup_entries(backup_dir: &Path) -> Result<Vec<BackupEntry>, AppError> {
+    let mut entries_out: Vec<BackupEntry> = Vec::new();
 
     if !backup_dir.exists() {
-        return Ok(backups);
+        return Ok(entries_out);
     }
 
     let entries = fs::read_dir(backup_dir)
         .map_err(|e| AppError::Internal(format!("Gagal membaca folder backup: {}", e)))?;
 
     for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        let Some(parsed) = parse_backup_filename(&name) else {
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if parse_backup_filename(&filename).is_none() {
             continue;
-        };
+        }
         let Ok(meta) = entry.metadata() else { continue };
-        backups.push(BackupInfo {
-            filename: name,
+        entries_out.push(BackupEntry {
+            path: entry.path(),
+            filename,
             size_bytes: meta.len(),
-            created_at: format!("{} 00:00:00", parsed.date.format("%Y-%m-%d")),
+            modified: meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
         });
     }
 
-    backups.sort_by(|a, b| b.filename.cmp(&a.filename));
-    Ok(backups)
+    entries_out.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| b.filename.cmp(&a.filename))
+    });
+    Ok(entries_out)
 }
 
-/// Delete backups older than retention period
+fn collect_backups(backup_dir: &Path) -> Result<Vec<BackupInfo>, AppError> {
+    Ok(read_backup_entries(backup_dir)?
+        .into_iter()
+        .map(|e| BackupInfo {
+            filename: e.filename,
+            size_bytes: e.size_bytes,
+            created_at: system_time_to_utc_string(Some(e.modified)),
+        })
+        .collect())
+}
+
+/// Backups kept regardless of age.
+///
+/// Age alone is not a safe retention rule: a shop that leaves the app closed for
+/// longer than `retention_days` would come back to an empty folder, and the very
+/// first thing the app does on launch is take a backup — of the database it is
+/// about to be asked to restore.
+const MIN_BACKUPS_KEPT: usize = 5;
+
+/// Delete backups that are both older than the retention window and outside the
+/// most recent [`MIN_BACKUPS_KEPT`].
+///
+/// Age is taken from the file's own modified time rather than from its name: the
+/// name only ever carried a date, so before the filename gained a time this
+/// could not distinguish two snapshots taken on the same day.
 fn cleanup_old_backups(backup_dir: &Path, retention_days: i64) -> Result<usize, AppError> {
-    let retention_days = retention_days.clamp(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS);
-    let cutoff = (Local::now() - chrono::Duration::days(retention_days)).date_naive();
+    let cutoff = retention_cutoff(retention_days, SystemTime::now());
+    let entries = read_backup_entries(backup_dir)?;
+
     let mut deleted = 0;
-
-    if !backup_dir.exists() {
-        return Ok(0);
-    }
-
-    let entries = fs::read_dir(backup_dir)
-        .map_err(|e| AppError::Internal(format!("Gagal membaca folder backup: {}", e)))?;
-
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        let Some(parsed) = parse_backup_filename(&name) else {
-            continue;
-        };
-        if parsed.date < cutoff && fs::remove_file(entry.path()).is_ok() {
+    for entry in expired_backups(&entries, cutoff) {
+        if fs::remove_file(&entry.path).is_ok() {
             deleted += 1;
         }
     }
 
     Ok(deleted)
+}
+
+/// The instant before which a backup is old enough to drop.
+///
+/// `retention_days` is clamped first: a negative value put this cutoff in the
+/// *future*, so `run_backup` created a backup and `cleanup_old_backups` deleted
+/// it again on the same tick.
+fn retention_cutoff(retention_days: i64, now: SystemTime) -> SystemTime {
+    let days = retention_days.clamp(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS);
+    now.checked_sub(Duration::from_secs(days as u64 * 24 * 60 * 60))
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// The entries the retention policy deletes, given `entries` newest first.
+fn expired_backups(entries: &[BackupEntry], cutoff: SystemTime) -> Vec<&BackupEntry> {
+    entries
+        .iter()
+        .skip(MIN_BACKUPS_KEPT)
+        .filter(|entry| entry.modified < cutoff)
+        .collect()
 }
 
 /// Run backup and cleanup — used by both manual trigger and scheduler
@@ -403,11 +498,19 @@ pub fn run_backup(retention_days: i64) -> Result<BackupInfo, AppError> {
     Ok(info)
 }
 
-/// Check if today's backup already exists
+/// Check if a backup was already taken today (local calendar day).
+///
+/// Used only to skip the launch-time backup. Since the filename now carries a
+/// time this can no longer be a single `exists()` check.
 fn has_todays_backup(backup_dir: &Path) -> bool {
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    let filename = format!("kasir_{}.db.gz", today);
-    backup_dir.join(filename).exists()
+    let today = Local::now().date_naive();
+    let Ok(entries) = fs::read_dir(backup_dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        parse_backup_filename(&entry.file_name().to_string_lossy())
+            .is_some_and(|parsed| parsed.date == today)
+    })
 }
 
 // --- Background scheduler ---
@@ -625,7 +728,73 @@ pub async fn delete_backup(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, TimeZone};
+
+    fn entry(name: &str, age_days: u64) -> BackupEntry {
+        BackupEntry {
+            path: PathBuf::from(name),
+            filename: name.to_string(),
+            size_bytes: 1,
+            modified: SystemTime::UNIX_EPOCH + Duration::from_secs(365 * 86_400)
+                - Duration::from_secs(age_days * 86_400),
+        }
+    }
+
+    /// `now` for the retention tests: one year after the epoch, so ages can be
+    /// subtracted without underflow.
+    fn fixed_now() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(365 * 86_400)
+    }
+
+    #[test]
+    fn retention_deletes_only_what_is_both_old_and_surplus() {
+        let entries: Vec<BackupEntry> = (0..8)
+            .map(|i| entry(&format!("kasir_backup_{i}"), i * 10))
+            .collect();
+        let cutoff = retention_cutoff(30, fixed_now());
+
+        let doomed: Vec<&str> = expired_backups(&entries, cutoff)
+            .iter()
+            .map(|e| e.filename.as_str())
+            .collect();
+
+        // Ages are 0,10,...,70 days. The first MIN_BACKUPS_KEPT are kept
+        // whatever their age; of the rest only those past 30 days go.
+        assert_eq!(
+            doomed,
+            vec!["kasir_backup_5", "kasir_backup_6", "kasir_backup_7"]
+        );
+    }
+
+    #[test]
+    fn retention_keeps_the_newest_backups_even_when_all_are_stale() {
+        let entries: Vec<BackupEntry> = (0..7)
+            .map(|i| entry(&format!("kasir_backup_{i}"), 400 + i))
+            .collect();
+        let cutoff = retention_cutoff(30, fixed_now());
+
+        assert_eq!(
+            expired_backups(&entries, cutoff).len(),
+            7 - MIN_BACKUPS_KEPT
+        );
+    }
+
+    /// A negative retention put the cutoff in the future, so every backup —
+    /// including the one just written — was expired.
+    #[test]
+    fn retention_cutoff_is_never_in_the_future() {
+        let now = fixed_now();
+        for days in [-365, -1, 0] {
+            assert!(
+                retention_cutoff(days, now) < now,
+                "cutoff for {days} days must be in the past"
+            );
+        }
+        assert_eq!(
+            retention_cutoff(-1, now),
+            retention_cutoff(MIN_RETENTION_DAYS, now)
+        );
+    }
 
     /// The name the old `&name[6..16]` slice panicked on: it passes
     /// `starts_with("kasir_") && ends_with(".db.gz")` but is only 12 bytes long.
@@ -650,6 +819,45 @@ mod tests {
         let parsed = parse_backup_filename("kasir_2026-09-05.db.gz").expect("valid name");
         assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2026, 9, 5).unwrap());
         assert_eq!(parsed.time, None);
+    }
+
+    /// The timestamped shape written since a date-only name was found to let a
+    /// 3-hour interval overwrite the same file eight times a day.
+    #[test]
+    fn parse_accepts_a_timestamped_name() {
+        let parsed = parse_backup_filename("kasir_2026-09-05_183000.db.gz").expect("valid name");
+        assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2026, 9, 5).unwrap());
+        assert_eq!(parsed.time, chrono::NaiveTime::from_hms_opt(18, 30, 0));
+    }
+
+    #[test]
+    fn generated_names_round_trip_and_differ_within_a_day() {
+        let nine = Local.with_ymd_and_hms(2026, 9, 5, 9, 0, 0).unwrap();
+        let noon = Local.with_ymd_and_hms(2026, 9, 5, 12, 0, 0).unwrap();
+
+        let early = backup_filename_for(nine);
+        let later = backup_filename_for(noon);
+        assert_ne!(
+            early, later,
+            "two snapshots on the same day must not share a name"
+        );
+        assert!(early < later, "names must sort chronologically");
+
+        let parsed = parse_backup_filename(&early).expect("generated names parse");
+        assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2026, 9, 5).unwrap());
+        assert_eq!(parsed.time, chrono::NaiveTime::from_hms_opt(9, 0, 0));
+    }
+
+    #[test]
+    fn parse_rejects_a_malformed_time_part() {
+        for name in [
+            "kasir_2026-09-05_.db.gz",
+            "kasir_2026-09-05_18300.db.gz",
+            "kasir_2026-09-05_996100.db.gz",
+            "kasir_2026-09-05_1830_00.db.gz",
+        ] {
+            assert_eq!(parse_backup_filename(name), None, "should reject {name:?}");
+        }
     }
 
     /// B04: every one of these used to resolve outside the backup folder,
