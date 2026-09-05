@@ -11,52 +11,63 @@ bersinggungan: jalur Rust menyentuh `src-tauri/`, jalur frontend menyentuh `src/
 **Tidak pernah ada dua build pada toolchain yang sama sekaligus**, dan setiap commit
 memakai path eksplisit (`git commit -- <paths>`) supaya tidak menyapu berkas jalur lain.
 
-Nomor migrasi berikutnya yang bebas: **019**.
+Nomor migrasi berikutnya yang bebas: **023**.
 
-## Baseline dan posisi sekarang
+## Gerbang
 
 | Gerbang | Awal | Sekarang |
 |---|---|---|
-| `cargo test --lib` | 39 | 78 |
-| `bun run test` | 123 | 209 |
+| `cargo test --lib` | 39 | 268 |
+| `bun run test` | 123 | 357+ |
 | `bunx tsc -b` | bersih | bersih |
-| `bun run lint` | 5 error, 2 warning | 4 error, 2 warning |
-| `cargo clippy --lib` | 21 warning | 21 warning |
+| `bun run lint` | 5 error, 2 warning | **0 error, 0 warning** |
+| `cargo clippy --lib` | 21 warning | 10 warning, semuanya pre-existing |
 
-Empat error lint yang tersisa semuanya `react-hooks/set-state-in-effect` di
-`src/features/cashier/**`; memperbaikinya perlu restrukturisasi efek dan dijadwalkan
-di fase pembersihan.
+Vitest dibatasi `maxWorkers: "50%"`. Satu worker per core membuat file test berebut CPU
+sampai `findBy*` kehabisan waktu, dan file yang gagal berpindah tiap run. Setengah core
+justru lebih cepat karena tidak ada waktu terbuang untuk saling menunggu.
 
 ## Fase
 
 | Fase | Isi | Status |
 |---|---|---|
-| P0 | Perbaikan bug dari audit | berjalan |
-| P1 | Ekstrak `domain/` + `services/` dari `commands/` | belum |
-| P2 | axum, session server-side, seluruh route, static embed | belum |
-| P3 | Frontend: API client, browser router, auth lewat `/me` | belum |
-| P4 | Migrasi HeroUI per halaman | persiapan berjalan |
+| P0 | Perbaikan bug dari audit | selesai |
+| P1 | Ekstrak `domain/` + `services/` dari `commands/` | selesai |
+| P2 | axum, session server-side, seluruh route, static embed | selesai |
+| P3 | Frontend: API client, browser router, auth lewat `/me` | **belum** |
+| P4 | Migrasi HeroUI per halaman | gelombang terakhir berjalan |
 | P5 | Pembersihan menyeluruh, dokumentasi, gerbang hijau serentak | belum |
+
+Setelah P3, layer `commands/` dan 113 Tauri command dihapus seluruhnya.
+
+## Kondisi backend
+
+`services/` memegang seluruh business logic dan terbukti bersih dari `tauri` maupun
+`axum`. Seluruh API tersedia di `src-tauri/src/http/` dengan sesi server-side; identitas
+selalu datang dari cookie, tidak pernah dari isi request. `Actor::unverified` tinggal ada
+di `commands/`, dan hilang bersama layer itu di P3.
+
+Mode web masih opt-in lewat `KASIR_WEB_MODE=1` karena frontend belum memakai `fetch`.
+Menyalakannya sekarang memberi server yang jalan dan jendela kosong — berguna untuk
+menguji API dengan `curl`, belum untuk kasir.
 
 ## Sisa yang harus dikerjakan jalur frontend
 
-Berasal dari perubahan backend yang sudah masuk. Belum dikerjakan.
+Semua berasal dari perubahan backend yang sudah masuk.
 
-1. **Status PPOB `processing`.** `transaction-detail-dialog.tsx:95` perlu entri baru di
-   `PPOB_STATUS_CONFIG`, dan `:148` `ppobCanRetry` harus jadi `ppob_status === "failed"`
-   saja. Status `pending` kini ditolak backend, jadi tombol retry yang masih menampilkannya
-   akan memunculkan pesan validasi.
-2. **`net_subtotal`** ditambahkan ke item transaksi di backend. Tambahkan ke
-   `cashier/types.ts` dan `transactions/types.ts`, dan pakai untuk menampilkan baris
-   berdiskon alih-alih `product_price * quantity`.
-3. **`payment_breakdown` bisa tanpa baris tunai.** Pembayaran yang seluruhnya ditutup
-   non-tunai kini bermetode metode itu sendiri, bukan `mixed`, dengan satu entri saja.
-   Kode yang mengasumsikan entri tunai selalu ada harus menangani ketiadaannya.
-4. **`product_id` di `use-refund-form.ts:151`** sudah diabaikan backend; non-null
-   assertion-nya bisa dihapus.
-5. **Harga di detail refund berubah makna** — kini harga satuan yang benar-benar dibayar,
-   bukan harga daftar. Tidak ada perubahan tipe, tapi angkanya berbeda untuk penjualan
-   berdiskon.
+1. **Status PPOB `processing`** perlu entri di `PPOB_STATUS_CONFIG`, dan `ppobCanRetry`
+   harus jadi `failed` saja — `pending` kini ditolak backend.
+2. **`net_subtotal`** ada di item transaksi; pakai untuk menampilkan baris berdiskon.
+3. **`payment_breakdown` bisa tanpa baris tunai** kalau pembayarannya seluruhnya non-tunai.
+4. **`ShiftSummaryResponse.cashRefunds`** baru; `expectedCash` sudah dikurangi angka itu.
+5. **`ReceiptRow.refundAmount` dan `netAmount`** baru. Daftar struk kini **menampilkan
+   struk berstatus `refunded`**; kalau UI menjumlahkan kolom, jumlahkan `netAmount`.
+6. **`refunds.shift_id`** baru di model refund.
+7. **Angka laporan berubah jadi bersih.** `PaymentMethodRow` bisa muncul dengan
+   `transactionCount: 0` dan nominal negatif untuk metode yang periode itu hanya kena
+   retur; `ProductSalesRow.qtySold` bisa nol atau negatif.
+8. **`GET /api/settings` tidak lagi mengirim kredensial PPOB** — hanya `hasCredentials`.
+   Tulis kredensial lewat `PUT /api/settings/ppob/credentials`.
 
 ## Keputusan yang sudah diambil dan alasannya
 
@@ -65,30 +76,55 @@ lokal. Dua commit lokal 23 Juni sudah di-cherry-pick; konfliknya di `payment-dia
 diselesaikan dengan mengambil `isSingleCashSelection` dari sisi lokal, karena sisi origin
 sudah menghapus deklarasi `hasChangedPrimaryPaymentMethod` sehingga tidak akan compile.
 
-**Bug auth ditunda ke P2.** Semua temuan yang berakar pada identitas dari client tidak
-ditambal di P0. Menghapus `caller_id` dari signature saat session masuk akan membuat
-kompiler menunjukkan setiap tempat yang perlu diperbaiki — jauh lebih aman daripada
-menambal satu per satu dan berisiko terlewat.
+**Laporan memakai angka bersih** atas permintaan pemilik toko. Retur dipotong di **hari
+retur itu sendiri**, bukan hari penjualan, supaya laporan hari yang sudah dicetak tidak
+berubah belakangan dan angkanya cocok dengan isi laci. Konsekuensinya status `refunded`
+tidak lagi disembunyikan dari laporan penjualan — kalau disembunyikan sekaligus dipotong,
+uangnya terhitung hilang dua kali.
 
-**Idempotency key ke Mitra tidak mungkin.** Kontrak API-nya tidak punya parameter itu;
-menambah field karangan berarti mengarang kontrak upstream. Yang dipakai: state
-`processing` dengan conditional update, sehingga satu baris hanya bisa diklaim sekali di
-sisi kita. Untuk layanan tagihan, `inquiry_id` sudah jadi dedupe alami di sisi provider;
-untuk pulsa dan data tidak ada. Akibatnya baris `pending` yang yatim karena aplikasi
-ditutup di tengah fulfillment belum bisa di-retry — itu butuh outbox, dicatat sebagai
-pekerjaan tersendiri.
+**Bug auth tidak ditambal satu per satu di P0.** Menghapus `caller_id` dari signature saat
+session masuk membuat kompiler menunjukkan setiap tempat yang perlu diperbaiki.
 
-**Backfill `net_subtotal` tidak bisa sempurna.** `discount_amount` mencampur diskon item
-dan diskon transaksi tanpa jejak pembagiannya, dan baris sebelum migrasi 007 tidak punya
-kolom diskon sama sekali. Backfill memakai `subtotal - COALESCE(item_discount, 0)`: tepat
-untuk transaksi tanpa diskon level transaksi, dan untuk sisanya masih jauh lebih dekat
-daripada perilaku lama yang mengabaikan seluruh diskon.
+**Idempotency key ke Mitra tidak mungkin** — kontrak API-nya tidak punya parameter itu.
+Yang dipakai: state `processing` dengan conditional update. Untuk layanan tagihan
+`inquiry_id` sudah jadi dedupe alami di sisi provider; untuk pulsa dan data tidak ada.
+
+**ESC menutup dialog di semua tempat.** HeroUI mematikannya secara default di sebagian
+overlay, sedangkan Radix dulu mengaktifkannya dan kasir terbiasa memakainya.
+
+**Token `--muted` dan `--accent` diserahkan ke HeroUI.** Kedua sistem memakai nama yang
+sama untuk arti yang berbeda, jadi sisi shadcn dipindah ke `bg-default`.
+
+**`shadcn` tetap jadi dependency.** Bukan CLI murni — `src/index.css` mengimpor
+`shadcn/tailwind.css`, dan mencabutnya mematikan build CSS. Dipindah ke `devDependencies`.
+
+## Batasan yang diketahui, bukan bug
+
+**Cara refund dibayarkan tidak tercatat.** `refunds.payment_method` disalin dari transaksi
+asal, jadi refund tunai atas penjualan QRIS tidak terlihat sebagai kas keluar, dan
+sebaliknya. `mixed` sengaja tidak dihitung sebagai tunai karena porsi tunainya tidak ada
+datanya — menebak berarti menaruh angka karangan di laporan tutup kasir.
+
+**Backfill `refunds.shift_id`** tidak bisa memulihkan refund yang diambil tanpa shift
+terbuka, refund oleh kasir lain atas laci yang sama, atau shift yang tidak pernah ditutup.
+
+**Backfill `net_subtotal`** tidak bisa memisahkan diskon item dari diskon transaksi untuk
+baris lama, karena `discount_amount` mencampur keduanya tanpa jejak pembagiannya.
+
+**Barang pengganti exchange tidak ditulis ke `transaction_items`.** Laporan menanganinya
+dengan menjumlahkan balik dari `exchange_items`; menuliskannya sebagai penjualan sungguhan
+adalah keputusan produk yang belum diambil.
+
+**Verifikasi visual belum pernah dilakukan.** Aplikasi masih boot lewat Tauri command, dan
+ekstensi Chrome meminta manusia memilih di antara dua browser yang terhubung. Semua bukti
+sejauh ini berasal dari test, bukan dari mata. Setelah P3 aplikasi jalan di
+`http://127.0.0.1:17720` dan pengecekan visual jadi mudah.
 
 ## Koreksi terhadap dokumen lain
 
-`CLAUDE.md` menulis "Selisih positif → pelanggan bayar", padahal `refunds.rs` menghitung
+`CLAUDE.md` menulis "Selisih positif → pelanggan bayar", padahal kodenya menghitung
 `total_refund_amount - total_exchange_amount` sehingga selisih positif berarti toko yang
-membayar. Kodenya konsisten dengan dirinya sendiri dan sudah dikunci test. **Dokumennya
-yang terbalik** dan diperbaiki di P5, bukan perilakunya.
+membayar. Kodenya konsisten dan sudah dikunci test; **dokumennya yang terbalik**, dan
+diperbaiki di P5.
 
-Jumlah Tauri command yang benar adalah **114**, bukan 117 seperti tertulis di catatan awal.
+Jumlah Tauri command yang benar adalah **113** setelah `create_transaction` dicabut.
