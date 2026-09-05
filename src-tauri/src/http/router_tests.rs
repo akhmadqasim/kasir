@@ -1941,6 +1941,61 @@ async fn a_backup_filename_that_leaves_the_backup_directory_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
+// Printers
+// ---------------------------------------------------------------------------
+
+/// `update_printer_settings` had no role check of any kind. The admin group is
+/// where it gets one, so a cashier changing the paper width is now a 403 rather
+/// than a silent write.
+#[tokio::test]
+async fn a_cashier_may_read_the_printer_settings_but_not_change_them() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    let read = router(&state)
+        .oneshot(
+            same_origin(Method::GET, "/api/printers/settings")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(read.status(), StatusCode::OK);
+
+    let write = router(&state)
+        .oneshot(
+            same_origin(Method::PUT, "/api/printers/settings")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({ "paper_width": 58 })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(write.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_printer_routes_need_a_session() {
+    let db = setup_test_db().await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/printers")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
 // The real listener
 // ---------------------------------------------------------------------------
 
