@@ -30,6 +30,13 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
+import {
+  isDiscountedLine,
+  lineDiscountAmount,
+  netAmountForQuantity,
+  netLineAmount,
+  netUnitAmount,
+} from "@/features/transactions/line-amounts"
 import type { TransactionItem } from "@/features/transactions/types"
 import type { PaginatedProducts } from "@/features/products/types"
 import {
@@ -428,12 +435,19 @@ function RefundItemCard({
           <div className="grid gap-0.5">
             <span className="text-sm font-medium leading-none">{item.product_name}</span>
             <span className="text-xs text-muted-foreground">
-              {formatRupiah(item.product_price)} × {item.quantity} = {formatRupiah(item.subtotal)}
+              {formatRupiah(netUnitAmount(item))} × {item.quantity} ={" "}
+              {formatRupiah(netLineAmount(item))}
             </span>
+            {isDiscountedLine(item) && (
+              <span className="text-xs text-muted-foreground">
+                Harga daftar {formatRupiah(item.product_price)}, sudah dipotong diskon{" "}
+                {formatRupiah(lineDiscountAmount(item))}
+              </span>
+            )}
           </div>
           {state.checked && (
             <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
-              {formatRupiah(item.product_price * state.quantity)}
+              {formatRupiah(netAmountForQuantity(item, state.quantity))}
             </span>
           )}
         </div>

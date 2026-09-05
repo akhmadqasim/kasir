@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { id } from "@/i18n/id"
+import { netAmountForQuantity } from "@/features/transactions/line-amounts"
 import type { TransactionDetail } from "@/features/transactions/types"
 import type { Product } from "@/features/products/types"
 import type { CreateRefundInput, RefundResult } from "../types"
@@ -114,10 +115,13 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     return detail.items.filter((item) => itemStates[item.id]?.checked)
   }, [detail, itemStates])
 
+  // Money handed back is what the customer paid, not the list price. Mirrors
+  // `refund_amount_for` in `commands/refunds.rs`; using `product_price` here gave
+  // every discount back on top of the refund, at the shop's expense.
   const totalRefund = useMemo(() => {
     return selectedItems.reduce((sum, item) => {
       const state = itemStates[item.id]
-      return sum + item.product_price * (state?.quantity ?? 0)
+      return sum + netAmountForQuantity(item, state?.quantity ?? 0)
     }, 0)
   }, [selectedItems, itemStates])
 

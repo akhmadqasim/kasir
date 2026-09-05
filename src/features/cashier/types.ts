@@ -1,3 +1,9 @@
+// One sold line has a single declaration, in the feature that owns transaction
+// history. Re-exported here so checkout keeps its own import surface.
+import type { TransactionItem } from "@/features/transactions/types"
+
+export type { TransactionItem }
+
 export interface CartItem {
   cart_id: string
   product_id?: number
@@ -74,29 +80,6 @@ export interface Transaction {
   deleted_reason: string | null
   updated_at: string | null
   created_at: string
-}
-
-export interface TransactionItem {
-  id: number
-  transaction_id: number
-  product_id: number | null
-  product_name: string
-  product_price: number
-  buy_price: number | null
-  quantity: number
-  subtotal: number
-  item_discount: number
-  service_type: string | null
-  service_ref: string | null
-  ppob_product_id: number | null
-  ppob_product_code: string | null
-  ppob_inquiry_id: string | null
-  ppob_payment_code: string | null
-  ppob_flag_id: string | null
-  ppob_status: string | null
-  ppob_message: string | null
-  ppob_serial_number: string | null
-  created_at: string | null
 }
 
 export interface TransactionResult {

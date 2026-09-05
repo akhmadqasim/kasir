@@ -45,6 +45,11 @@ import {
   transactionStatusLabel,
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
+import {
+  isDiscountedLine,
+  lineDiscountAmount,
+  netLineAmount,
+} from "../line-amounts"
 import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-status"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
@@ -264,14 +269,21 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                                   </Badge>
                                 )}
                               </div>
-                              {item.item_discount > 0 && (
+                              {isDiscountedLine(item) && (
                                 <p className="text-xs text-destructive">
-                                  Diskon item: -{formatRupiah(item.item_discount)}
+                                  Diskon: -{formatRupiah(lineDiscountAmount(item))}
                                 </p>
                               )}
                             </div>
-                            <div className="text-right font-medium tabular-nums">
-                              {formatRupiah(item.subtotal)}
+                            <div className="text-right tabular-nums">
+                              {isDiscountedLine(item) && (
+                                <div className="text-xs text-muted-foreground line-through">
+                                  {formatRupiah(item.subtotal)}
+                                </div>
+                              )}
+                              <div className="font-medium">
+                                {formatRupiah(netLineAmount(item))}
+                              </div>
                             </div>
                           </div>
                         )
