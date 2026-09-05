@@ -42,9 +42,11 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
     data.payment_method,
     data.payment_breakdown[0]?.bank_name
   )
-  const hasCashPayment =
-    data.payment_method === "cash" ||
-    data.payment_breakdown.some((split) => split.payment_method === "cash")
+  // `change_amount` alone decides whether there is money to hand back. A split
+  // whose non-cash legs already cover the total drops its cash leg entirely, so
+  // the sale carries a single non-cash entry while the cash on the counter comes
+  // back as change; requiring a cash entry left that off the receipt.
+  const hasChange = data.change_amount > 0
   const paymentRowsHtml =
     data.payment_breakdown.length > 1
       ? data.payment_breakdown
@@ -58,7 +60,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
           )
           .join("") +
         `${
-          data.change_amount > 0
+          hasChange
             ? `
     <tr>
       <td>Dibayar</td>
@@ -79,7 +81,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
       <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
     </tr>
     ${
-      hasCashPayment && data.change_amount > 0
+      hasChange
         ? `<tr>
       <td>Kembalian</td>
       <td></td>

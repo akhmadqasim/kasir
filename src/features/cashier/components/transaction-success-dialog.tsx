@@ -45,9 +45,13 @@ export function TransactionSuccessDialog({
 
   const transaction = result?.transaction
   const paymentBreakdown = result?.payment_breakdown ?? []
-  const hasCashPayment =
-    transaction?.payment_method === "cash" ||
-    paymentBreakdown.some((split) => split.payment_method === "cash")
+  // `change_amount` alone decides whether there is money to hand back.
+  //
+  // A split whose non-cash legs already cover the total drops its cash leg: the
+  // sale is recorded as that single method with no cash entry at all, while the
+  // cash the customer put on the counter comes straight back as change. Gating
+  // this on "a cash entry exists" hid the whole amount from the cashier.
+  const changeAmount = transaction?.change_amount ?? 0
   const ppobItem = result?.items.find((item) => item.service_type)
   const hasPpob = !!ppobItem
 
@@ -176,7 +180,7 @@ export function TransactionSuccessDialog({
             </>
           )}
 
-          {hasCashPayment && (transaction.change_amount ?? 0) > 0 && (
+          {changeAmount > 0 && (
             <>
               <Separator />
               <div className="flex justify-between items-center">
@@ -189,7 +193,7 @@ export function TransactionSuccessDialog({
               <div className="text-center py-3">
                 <p className="text-sm text-muted-foreground mb-1">Kembalian</p>
                 <p className="text-5xl font-extrabold tabular-nums tracking-tight text-green-600">
-                  {formatRupiah(transaction.change_amount ?? 0)}
+                  {formatRupiah(changeAmount)}
                 </p>
               </div>
             </>

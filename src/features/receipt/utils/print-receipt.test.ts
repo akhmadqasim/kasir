@@ -113,4 +113,36 @@ describe("generateReceiptHtml", () => {
     expect(html).not.toContain("<td>Subtotal</td>")
     expect(html).not.toContain("<td>Diskon</td>")
   })
+
+  // A split fully covered by QRIS drops its cash leg, so the sale is recorded as
+  // plain "qris" with a single entry — while the cash on the counter still has to
+  // be handed back. Keying the change row off "a cash entry exists" hid it.
+  it("prints the change row for a sale with no cash entry left", () => {
+    const html = generateReceiptHtml(
+      makeReceiptData({
+        payment_method: "qris",
+        payment_amount: 6000,
+        change_amount: 20000,
+        payment_breakdown: [{ payment_method: "qris", bank_name: null, amount: 6000 }],
+      }),
+      58
+    )
+
+    expect(html).toContain("<td>Kembalian</td>")
+    expect(html).toContain("20.000")
+  })
+
+  it("omits the change row when there is nothing to hand back", () => {
+    const html = generateReceiptHtml(
+      makeReceiptData({
+        payment_method: "qris",
+        payment_amount: 6000,
+        change_amount: 0,
+        payment_breakdown: [{ payment_method: "qris", bank_name: null, amount: 6000 }],
+      }),
+      58
+    )
+
+    expect(html).not.toContain("<td>Kembalian</td>")
+  })
 })
