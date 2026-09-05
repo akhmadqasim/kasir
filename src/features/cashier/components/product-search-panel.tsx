@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { cn } from "@/lib/utils"
 import { Kbd } from "@/components/ui/kbd"

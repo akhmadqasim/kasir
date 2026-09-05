@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
 import { useCompleteOnboarding } from "../hooks/use-onboarding"
 import { StoreInfoForm } from "./store-info-form"

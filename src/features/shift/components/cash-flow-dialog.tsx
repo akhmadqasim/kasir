@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import {
   Dialog,

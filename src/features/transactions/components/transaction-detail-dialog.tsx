@@ -1,6 +1,6 @@
 import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"

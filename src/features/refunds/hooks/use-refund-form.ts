@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { useTauriQuery } from "@/hooks/use-tauri-command"

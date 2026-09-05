@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 /** Jeda sebelum dialog menutup sendiri setelah struk tercetak otomatis */
 const AUTO_CLOSE_DELAY_MS = 1500

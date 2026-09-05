@@ -1,5 +1,5 @@
 import { useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import type {
   StockWriteoff,

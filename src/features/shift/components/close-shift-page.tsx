@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/features/auth"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Eye, Printer, RotateCcw, Search, X } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { keepPreviousData } from "@tanstack/react-query"
 import {

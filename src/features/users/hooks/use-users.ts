@@ -1,6 +1,6 @@
 import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import { useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
 import type { User } from "@/features/auth/types"
 import type { CreateUserInput, UpdateUserInput, ToggleUserActiveInput } from "../types"

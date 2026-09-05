@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, Delete, RotateCcw } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Dialog,

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useTauriMutation } from "@/hooks/use-tauri-command"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "./use-auth-store"

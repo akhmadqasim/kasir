@@ -11,7 +11,7 @@ import {
   History,
   Wallet,
 } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
