@@ -13,6 +13,7 @@ pub mod dashboard;
 pub mod onboarding;
 pub mod ppob;
 pub mod products;
+pub mod reports;
 pub mod settings;
 pub mod shifts;
 pub mod stock;
