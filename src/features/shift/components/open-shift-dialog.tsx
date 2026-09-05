@@ -14,10 +14,16 @@ import { Label } from "@/components/ui/label"
 import { DoorOpen } from "lucide-react"
 import { useShiftStore } from "../hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 
 interface OpenShiftDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+/** `opened_at` is a UTC backend timestamp, so it needs the shared parser. */
+function formatOpenedAt(openedAt: string): string {
+  return formatDateTime(openedAt)
 }
 
 export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
@@ -56,8 +62,16 @@ export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
     setIsSubmitting(true)
     try {
       const cash = openingCash ? Number(openingCash) : undefined
-      await openShift(user.id, cash)
-      toast.success("Shift dibuka")
+      const { shift, alreadyOpen } = await openShift(user.id, cash)
+      if (alreadyOpen) {
+        // The backend hands back the running shift instead of opening a new one,
+        // and the modal awal typed in here is never stored. Say so.
+        toast.warning(
+          `Shift sudah terbuka sejak ${formatOpenedAt(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`
+        )
+      } else {
+        toast.success("Shift dibuka")
+      }
       onOpenChange(false)
     } catch (err) {
       toast.error(`Gagal membuka shift: ${err}`)
