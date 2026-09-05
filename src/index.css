@@ -1,10 +1,12 @@
 /* Tailwind first, then HeroUI — this order is required by @heroui/styles.
  *
  * `@heroui/styles` already pulls in `tw-animate-css`, so this file no longer
- * imports it separately. `shadcn/tailwind.css` stays: it is the only source of
- * the `data-open` / `data-checked` / `data-active` custom variants and the
- * `no-scrollbar` utility that the not-yet-migrated shadcn screens rely on.
- * The `dark` custom variant also comes from HeroUI now — its definition matches
+ * imports it separately. `shadcn/tailwind.css` stays for two leftovers, and only
+ * those two: the `--sidebar-*` utilities the app shell still uses, and the
+ * `--card` / `--background` / `--muted-foreground` utilities inside
+ * `components/ui/chart.tsx` — the one shadcn component kept on purpose, because
+ * HeroUI has no chart and recharts needs a wrapper.
+ * The `dark` custom variant comes from HeroUI now — its definition matches
  * both `.dark` and `[data-theme="dark"]`, on the element itself and on
  * descendants, which is what the theme switch on <html> needs.
  */
