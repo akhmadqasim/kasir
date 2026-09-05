@@ -1,4 +1,4 @@
-/// Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
+//! Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
 
 /// All data needed to generate a receipt
 pub struct ReceiptData {

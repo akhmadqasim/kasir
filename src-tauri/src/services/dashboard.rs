@@ -302,7 +302,7 @@ pub async fn top_products(
     db: &DatabaseConnection,
     limit: Option<i64>,
 ) -> Result<Vec<TopProduct>, AppError> {
-    let limit = limit.unwrap_or(10).max(1).min(100);
+    let limit = limit.unwrap_or(10).clamp(1, 100);
 
     // `date('now','localtime','-30 days')` == local date (today - 30 days). The
     // window is closed at the top so the refund side covers exactly the same

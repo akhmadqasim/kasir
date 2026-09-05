@@ -255,7 +255,7 @@ pub async fn create(
                 DbBackend::Sqlite,
                 "UPDATE products SET stock = stock + $1, updated_at = $2 WHERE id = $3",
                 vec![
-                    (item_input.quantity as i64).into(),
+                    item_input.quantity.into(),
                     now.clone().into(),
                     product_id.into(),
                 ],
@@ -371,7 +371,7 @@ pub async fn create(
                 DbBackend::Sqlite,
                 "UPDATE products SET stock = stock - $1, updated_at = $2 WHERE id = $3",
                 vec![
-                    (ei_input.quantity as i64).into(),
+                    ei_input.quantity.into(),
                     now.clone().into(),
                     ei_input.product_id.into(),
                 ],

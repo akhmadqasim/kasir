@@ -389,7 +389,7 @@ pub async fn popular(
     db: &DatabaseConnection,
     limit: Option<i64>,
 ) -> Result<Vec<ShortcutProduct>, AppError> {
-    let limit = limit.unwrap_or(20).max(1).min(200);
+    let limit = limit.unwrap_or(20).clamp(1, 200);
 
     // Get shortcuts with product data: pinned first, then by select_count
     let rows = products::Entity::find()
@@ -422,7 +422,7 @@ pub async fn popular(
             let shortcut = shortcuts.iter().find(|s| s.product_id == p.id);
             ShortcutProduct {
                 product: p,
-                is_pinned: shortcut.map_or(false, |s| s.is_pinned),
+                is_pinned: shortcut.is_some_and(|s| s.is_pinned),
                 select_count: shortcut.map_or(0, |s| s.select_count),
             }
         })

@@ -218,7 +218,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
         .await
         .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     Ok(())
 }
@@ -242,7 +242,7 @@ pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
         .await
         .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     Ok(())
 }
