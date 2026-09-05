@@ -1658,6 +1658,38 @@ async fn a_report_needs_a_session() {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn every_dashboard_panel_answers_a_session() {
+    let db = setup_test_db().await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    for uri in [
+        "/api/dashboard/summary",
+        "/api/dashboard/revenue/daily?days=7",
+        "/api/dashboard/payment-methods",
+        "/api/dashboard/products/top?limit=5",
+        "/api/dashboard/products/low-stock",
+        "/api/dashboard/transactions/recent",
+    ] {
+        let response = router(&state)
+            .oneshot(
+                same_origin(Method::GET, uri)
+                    .header(header::COOKIE, cookie(&token))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The real listener
 // ---------------------------------------------------------------------------
 
