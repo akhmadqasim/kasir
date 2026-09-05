@@ -165,6 +165,22 @@ pub struct DatabaseInfo {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateStoreInfoInput {
+    pub name: String,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+}
+
+/// Changing one's own PIN. The account is the actor's, never a field here.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePinInput {
+    pub current_pin: String,
+    pub new_pin: String,
+}
+
 /// Read the settings blob, falling back to the defaults for every section that
 /// is missing or unreadable. A corrupt block never takes the others with it.
 pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
