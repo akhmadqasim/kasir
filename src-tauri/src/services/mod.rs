@@ -2,8 +2,8 @@
 //!
 //! Every function here has the shape `(&DatabaseConnection, Actor, Input) ->
 //! Result<Output, AppError>`; the `Actor` is omitted where the operation needs
-//! no identity. Modules in here must never `use tauri::` or `use axum::` — that
-//! is what lets `cargo test --lib` exercise the rules without a running app.
+//! no identity. Modules in here must never import the `tauri` or `axum` crates —
+//! that is what lets `cargo test --lib` exercise the rules without a running app.
 
 pub mod auth;
 pub mod backup;
