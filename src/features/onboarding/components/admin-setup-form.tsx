@@ -73,7 +73,15 @@ export function AdminSetupForm({
 
   return (
     <Card className="grid gap-0 overflow-hidden p-0 md:grid-cols-2">
-      <Form className="flex flex-col gap-5 p-6 md:p-8" onSubmit={handleSubmit}>
+      {/* validationBehavior="aria" keeps validation in this component. With
+          React Aria's default ("native") an `isInvalid` field calls
+          setCustomValidity, and the browser then blocks every later submit —
+          including the one that would clear the error. */}
+      <Form
+        className="flex flex-col gap-5 p-6 md:p-8"
+        validationBehavior="aria"
+        onSubmit={handleSubmit}
+      >
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="text-2xl font-bold">{t.adminSetup}</h1>
           <p className="text-sm text-balance text-muted">
