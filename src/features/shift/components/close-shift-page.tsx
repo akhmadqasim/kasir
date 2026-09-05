@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/features/auth"
+import { getDefaultRouteForRole } from "@/app/resume-route"
 import { toast } from "@/lib/toast"
 import { paymentMethodLabel } from "@/lib/labels"
 import { invoke } from "@tauri-apps/api/core"
@@ -95,7 +96,9 @@ export function CloseShiftPage() {
   useEffect(() => {
     if (!activeShift) {
       if (!closedSummary) {
-        navigate("/cashier", { replace: true })
+        // An admin has no business being dropped on the cashier screen; send
+        // everyone to the same landing route the router picks after login.
+        navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })
       }
       return
     }
@@ -108,7 +111,7 @@ export function CloseShiftPage() {
         setIsLoading(false)
         toast.error("Gagal memuat ringkasan shift")
       })
-  }, [activeShift, closedSummary, navigate, loadSummary])
+  }, [activeShift, closedSummary, navigate, loadSummary, user?.role])
 
   const handleDeleteCashFlow = async () => {
     if (!cashFlowToDelete || !user) return
@@ -205,7 +208,9 @@ export function CloseShiftPage() {
       <ShiftCloseReport
         summary={closedSummary}
         storeName={storeName}
-        onBack={() => navigate("/dashboard", { replace: true })}
+        onBack={() =>
+          navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })
+        }
         onLogout={() => {
           useAuthStore.getState().logout()
           navigate("/login", { replace: true })
