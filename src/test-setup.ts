@@ -71,3 +71,17 @@ class ResizeObserverStub implements ResizeObserver {
 }
 
 window.ResizeObserver ??= ResizeObserverStub
+
+/**
+ * jsdom tidak mengimplementasikan Web Animations API. React Aria memakai
+ * `element.getAnimations()` untuk menunggu transisi selesai — `Tabs.Indicator`
+ * lewat `SharedElementTransition`, dan komponen lain yang beranimasi ikut jalur
+ * yang sama. Tanpa stub ini, test yang benar-benar *berpindah* tab melempar
+ * `TypeError` dari dalam React Aria, jadi perpindahan tab tidak bisa diuji sama
+ * sekali.
+ *
+ * Mengembalikan array kosong berarti "tidak ada animasi berjalan", sehingga
+ * React Aria langsung menganggap transisinya selesai — perilaku yang tepat di
+ * lingkungan tanpa layout dan tanpa animasi.
+ */
+Element.prototype.getAnimations ??= () => []

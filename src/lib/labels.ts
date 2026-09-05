@@ -89,33 +89,3 @@ export const TRANSACTION_STATUS_VARIANT: Record<string, StatusVariant> = {
 export function transactionStatusVariant(status: string): StatusVariant {
   return TRANSACTION_STATUS_VARIANT[status] ?? "neutral"
 }
-
-/**
- * Varian `Badge` shadcn untuk status transaksi.
- *
- * @deprecated Dipakai hanya oleh dashboard, layar terakhir yang belum pindah ke
- * HeroUI. Hapus bersama {@link TRANSACTION_STATUS_CLASSNAMES} begitu dashboard
- * memakai {@link transactionStatusVariant}.
- */
-export const TRANSACTION_STATUS_VARIANTS: Record<
-  string,
-  "default" | "destructive" | "secondary"
-> = {
-  completed: "default",
-  pending_ppob: "secondary",
-  ppob_failed: "destructive",
-  refunded: "destructive",
-  partial_refund: "secondary",
-  deleted: "destructive",
-}
-
-/**
- * Warna tambahan di atas varian `Badge`.
- *
- * @deprecated Lihat {@link TRANSACTION_STATUS_VARIANTS}.
- */
-export const TRANSACTION_STATUS_CLASSNAMES: Record<string, string> = {
-  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
-  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
-}
