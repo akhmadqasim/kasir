@@ -9,3 +9,4 @@ pub mod auth;
 pub mod categories;
 pub mod guard;
 pub mod onboarding;
+pub mod products;

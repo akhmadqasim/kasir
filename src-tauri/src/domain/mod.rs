@@ -9,5 +9,6 @@ pub mod actor;
 pub mod auth;
 pub mod categories;
 pub mod onboarding;
+pub mod products;
 
 pub use actor::Actor;
