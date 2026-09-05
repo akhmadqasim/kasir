@@ -10,10 +10,12 @@ use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+#[cfg(test)]
+use super::load_payment_breakdown;
 use super::{
-    generate_receipt_number, load_allow_negative_stock, load_payment_breakdown, now_timestamp,
-    validate_cart_composition, MIXED_PAYMENT_METHOD, PPOB_STATUS_FAILED, PPOB_STATUS_PENDING,
-    PPOB_STATUS_PROCESSING, PPOB_STATUS_SUCCESS, STATUS_COMPLETED, VALID_PAYMENT_METHODS,
+    generate_receipt_number, load_allow_negative_stock, now_timestamp, validate_cart_composition,
+    MIXED_PAYMENT_METHOD, PPOB_STATUS_FAILED, PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING,
+    PPOB_STATUS_SUCCESS, STATUS_COMPLETED, VALID_PAYMENT_METHODS,
 };
 use crate::domain::ppob::PaymentResult;
 use crate::domain::transactions::{

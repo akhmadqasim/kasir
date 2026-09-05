@@ -10,6 +10,7 @@ pub mod backup;
 pub mod categories;
 pub mod dashboard;
 pub mod guard;
+pub mod logging;
 pub mod onboarding;
 pub mod ppob;
 pub mod products;

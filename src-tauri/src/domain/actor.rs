@@ -32,10 +32,7 @@ impl Actor {
     /// empty, so every role check on such an actor fails closed. Only the Tauri
     /// command layer may build one, and it disappears together with it.
     pub fn unverified(user_id: i64) -> Self {
-        Self {
-            user_id,
-            role: String::new(),
-        }
+        Self::new(user_id, "")
     }
 
     pub fn is_admin(&self) -> bool {
