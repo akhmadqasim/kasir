@@ -103,7 +103,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
               id="currentPin"
               value={currentPin}
               onChange={setCurrentPin}
-              disabled={changePin.isPending}
+              isDisabled={changePin.isPending}
             />
             {errors.currentPin && (
               <p className="text-sm font-medium text-destructive">{errors.currentPin}</p>
@@ -116,7 +116,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
               id="newPin"
               value={newPin}
               onChange={setNewPin}
-              disabled={changePin.isPending}
+              isDisabled={changePin.isPending}
             />
             {errors.newPin && (
               <p className="text-sm font-medium text-destructive">{errors.newPin}</p>
@@ -129,7 +129,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
               id="confirmNewPin"
               value={confirmPin}
               onChange={setConfirmPin}
-              disabled={changePin.isPending}
+              isDisabled={changePin.isPending}
             />
             {errors.confirmPin && (
               <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>

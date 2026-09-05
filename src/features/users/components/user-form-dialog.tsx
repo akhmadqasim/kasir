@@ -172,7 +172,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
             value={pin}
             onChange={setPin}
             placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
-            disabled={isPending}
+            isDisabled={isPending}
           />
           {errors.pin && (
             <p className="text-sm font-medium text-destructive">{errors.pin}</p>
@@ -187,7 +187,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
               value={confirmPin}
               onChange={setConfirmPin}
               placeholder="Ulangi PIN"
-              disabled={isPending}
+              isDisabled={isPending}
             />
             {errors.confirmPin && (
               <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>
