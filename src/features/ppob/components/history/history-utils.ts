@@ -89,19 +89,87 @@ export function normalizeStatus(status: string | null): NormalizedStatus {
   return "unknown"
 }
 
-export function formatDateTime(dateStr: string | null): string {
-  if (!dateStr) return "-"
-  try {
-    return new Date(dateStr).toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return dateStr
+/**
+ * Parse a timestamp as it arrives from Mitra.
+ *
+ * `ppob_get_mutasi` forwards the vendor's own strings untouched, and the vendor
+ * is not consistent: payment history reports `created_at` as `YYYY-MM-DD HH:MM:SS`
+ * while `formatted_date` on other endpoints is `DD-MM-YYYY HH:MM:SS`. `new Date()`
+ * reads the second one as an invalid date, so anything that has to *compare*
+ * timestamps — not just print them — needs this.
+ *
+ * Both are read as local time: the vendor reports WIB and the shop runs in it.
+ */
+export function parseMutasiDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const trimmed = String(value).trim()
+  if (!trimmed) return null
+
+  const dayFirst =
+    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(trimmed)
+  if (dayFirst) {
+    const [, day, month, year, hour, minute, second] = dayFirst
+    return buildLocalDate(year, month, day, hour, minute, second)
   }
+
+  const yearFirst =
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(trimmed)
+  if (yearFirst) {
+    const [, year, month, day, hour, minute, second] = yearFirst
+    return buildLocalDate(year, month, day, hour, minute, second)
+  }
+
+  const fallback = new Date(trimmed)
+  return Number.isNaN(fallback.getTime()) ? null : fallback
+}
+
+function buildLocalDate(
+  year: string,
+  month: string,
+  day: string,
+  hour = "0",
+  minute = "0",
+  second = "0"
+): Date | null {
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour ?? 0),
+    Number(minute ?? 0),
+    Number(second ?? 0)
+  )
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/**
+ * Whether a vendor timestamp falls inside a `YYYY-MM-DD` range, inclusive.
+ * Returns `false` when the timestamp cannot be read at all — callers decide what
+ * an undated row means rather than having it quietly counted.
+ */
+export function isWithinLocalDateRange(
+  value: string | null | undefined,
+  startDate: string,
+  endDate: string
+): boolean {
+  const date = parseMutasiDate(value)
+  if (!date) return false
+
+  const day = toLocalDateString(date)
+  return day >= startDate && day <= endDate
+}
+
+export function formatDateTime(dateStr: string | null): string {
+  const date = parseMutasiDate(dateStr)
+  if (!date) return dateStr || "-"
+
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 export function buildDescription(item: HistoryPaymentItem): string {

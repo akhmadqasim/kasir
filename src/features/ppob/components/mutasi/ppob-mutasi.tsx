@@ -34,7 +34,9 @@ import { formatRupiah, toLocalDateString } from "@/lib/format"
 import {
   getDefaultDateRange,
   getDefaultDateRangeDates,
+  isWithinLocalDateRange,
   normalizeStatus,
+  parseMutasiDate,
   formatDateTime,
 } from "../history/history-utils"
 import type { MutasiItem } from "../../types"
@@ -295,15 +297,44 @@ export function PpobMutasi() {
 
   const { data: items, isLoading, error, refetch, isFetching } = usePpobMutasi(startDate, endDate)
 
+  /**
+   * Topups are not date-filtered by the backend and cannot be.
+   *
+   * `ppob_get_mutasi` sends the range to `history-payment`, but the vendor's
+   * `topup/history` takes only a `device_id` — the OpenAPI contract has no date
+   * parameters at all — so it always answers with the account's whole topup
+   * history. Every `in` row therefore has to be narrowed here, or "Total Masuk"
+   * reports every topup ever made regardless of the range on screen.
+   */
+  const { dateFilteredItems, undatedIn } = useMemo(() => {
+    if (!items) return { dateFilteredItems: [], undatedIn: 0 }
+
+    const kept = []
+    let undated = 0
+    for (const item of items) {
+      if (item.mutationType !== "in") {
+        kept.push(item)
+        continue
+      }
+      if (isWithinLocalDateRange(item.createdAt, startDate, endDate)) {
+        kept.push(item)
+      } else if (!parseMutasiDate(item.createdAt)) {
+        // Cannot be placed in or out of the range. Keep it visible and say so
+        // rather than dropping money off the screen without a word.
+        kept.push(item)
+        undated++
+      }
+    }
+    return { dateFilteredItems: kept, undatedIn: undated }
+  }, [items, startDate, endDate])
+
   const filteredItems = useMemo(() => {
-    if (!items) return []
-    if (typeFilter === "all") return items
-    return items.filter((item) => item.mutationType === typeFilter)
-  }, [items, typeFilter])
+    if (typeFilter === "all") return dateFilteredItems
+    return dateFilteredItems.filter((item) => item.mutationType === typeFilter)
+  }, [dateFilteredItems, typeFilter])
 
   const summary = useMemo(() => {
-    if (!items) return { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 }
-    return items.reduce(
+    return dateFilteredItems.reduce(
       (acc, item) => {
         const amount = item.amount ?? 0
         const isSuccess = normalizeStatus(item.status) === "sukses"
@@ -318,7 +349,7 @@ export function PpobMutasi() {
       },
       { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 }
     )
-  }, [items])
+  }, [dateFilteredItems])
 
   return (
     <div className="space-y-5 p-6">
@@ -358,6 +389,11 @@ export function PpobMutasi() {
           <p className="text-xl font-bold text-green-600">
             +{formatRupiah(summary.totalIn)}
           </p>
+          {undatedIn > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
+            </p>
+          )}
         </div>
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground">Total Keluar ({summary.countOut} trx)</p>
