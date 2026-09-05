@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { TooltipProvider } from "@/components/ui/tooltip"
 import type { ReactNode } from "react"
 
 const queryClient = new QueryClient({
@@ -13,12 +12,12 @@ const queryClient = new QueryClient({
   },
 })
 
+/**
+ * React Query is the only provider left. HeroUI needs none — the theme travels
+ * on `<html>` as a `light`/`dark` class plus `data-theme`, and its `Tooltip`
+ * carries its own context per instance, so the Radix `TooltipProvider` that used
+ * to wrap the app went away with the last Radix tooltip.
+ */
 export function AppProviders({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        {children}
-      </TooltipProvider>
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }

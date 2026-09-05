@@ -1,4 +1,19 @@
 import "@testing-library/jest-dom/vitest"
+import { configure } from "@testing-library/react"
+
+/**
+ * `findBy*` menunggu 1000 ms secara bawaan. Layar HeroUI jauh lebih berat
+ * dirender daripada shadcn — satu layar bisa memasang beberapa portal, focus
+ * scope, dan koleksi React Aria sekaligus — dan Vitest menjalankan file test
+ * secara paralel, jadi worker-worker itu berebut CPU. Hasilnya: test yang lulus
+ * sendirian mulai kehabisan waktu begitu suite-nya penuh, dan file yang gagal
+ * berpindah-pindah tiap run.
+ *
+ * Menaikkan batasnya menunggu penjadwalan, bukan menyembunyikan kegagalan:
+ * assertion-nya tetap harus terpenuhi, hanya diberi waktu lebih panjang untuk
+ * itu. Test yang benar-benar salah tetap merah, cuma lebih lambat melapor.
+ */
+configure({ asyncUtilTimeout: 5000 })
 
 /**
  * jsdom ships a `matchMedia` stub whose `matches` is always false, which makes the
