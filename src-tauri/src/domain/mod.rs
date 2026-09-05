@@ -9,6 +9,7 @@ pub mod actor;
 pub mod auth;
 pub mod backup;
 pub mod categories;
+pub mod dashboard;
 pub mod onboarding;
 pub mod ppob;
 pub mod products;
