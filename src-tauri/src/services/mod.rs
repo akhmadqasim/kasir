@@ -10,4 +10,5 @@ pub mod categories;
 pub mod guard;
 pub mod onboarding;
 pub mod products;
+pub mod shifts;
 pub mod stock;
