@@ -57,6 +57,8 @@ export function CreateRefundPage() {
 
   const {
     detail,
+    refundableItems,
+    nonRefundableItems,
     isLoading,
     itemStates,
     actionType,
@@ -152,7 +154,12 @@ export function CreateRefundPage() {
         </div>
         <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
           <div className="space-y-3 pt-2">
-            {detail.items.map((item) => (
+            {refundableItems.length === 0 && (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                Tidak ada barang fisik yang bisa diretur pada transaksi ini.
+              </p>
+            )}
+            {refundableItems.map((item) => (
               <RefundItemCard
                 key={item.id}
                 item={item}
@@ -160,6 +167,20 @@ export function CreateRefundPage() {
                 onUpdate={(updates) => updateItem(item.id, updates)}
               />
             ))}
+            {nonRefundableItems.length > 0 && (
+              <div className="rounded-lg border border-dashed p-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Tidak bisa diretur (layanan PPOB)
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {nonRefundableItems.map((item) => (
+                    <li key={item.id} className="text-xs text-muted-foreground">
+                      {item.product_name} × {item.quantity}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </ScrollArea>
       </div>

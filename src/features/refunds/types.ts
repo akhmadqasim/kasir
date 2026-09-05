@@ -1,6 +1,12 @@
+/**
+ * One returned line. The product is deliberately absent: the backend derives it
+ * from `transaction_item_id`, which it checks against the lines of the
+ * transaction being refunded. A client-chosen `product_id` used to let a refund
+ * restore stock for an item that was never sold, so `create_refund` now ignores
+ * the field entirely.
+ */
 export interface RefundItemInput {
   transaction_item_id: number
-  product_id: number
   quantity: number
   condition: "good" | "damaged" | "expired"
 }

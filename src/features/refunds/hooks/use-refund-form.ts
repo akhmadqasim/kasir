@@ -54,10 +54,28 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     { enabled: !!transactionId }
   )
 
+  /**
+   * Lines a refund can actually touch.
+   *
+   * `resolve_refund_line` rejects any line without a `product_id` — a PPOB top-up
+   * has no physical stock to give back — so listing them only let the cashier tick
+   * one and collect "'…' bukan produk fisik dan tidak bisa di-refund" from the
+   * server after filling in the whole form.
+   */
+  const refundableItems = useMemo(
+    () => (detail?.items ?? []).filter((item) => item.product_id !== null),
+    [detail]
+  )
+
+  const nonRefundableItems = useMemo(
+    () => (detail?.items ?? []).filter((item) => item.product_id === null),
+    [detail]
+  )
+
   useEffect(() => {
     if (!detail) return
     const states: Record<number, RefundItemState> = {}
-    for (const item of detail.items) {
+    for (const item of refundableItems) {
       states[item.id] = {
         checked: false,
         quantity: item.quantity,
@@ -66,7 +84,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
       }
     }
     setItemStates(states)
-  }, [detail])
+  }, [detail, refundableItems])
 
   const updateItem = useCallback((itemId: number, updates: Partial<RefundItemState>) => {
     setItemStates((prev) => ({
@@ -110,10 +128,10 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     setExchangeItems((prev) => prev.filter((i) => i.product_id !== productId))
   }, [])
 
-  const selectedItems = useMemo(() => {
-    if (!detail) return []
-    return detail.items.filter((item) => itemStates[item.id]?.checked)
-  }, [detail, itemStates])
+  const selectedItems = useMemo(
+    () => refundableItems.filter((item) => itemStates[item.id]?.checked),
+    [refundableItems, itemStates]
+  )
 
   // Money handed back is what the customer paid, not the list price. Mirrors
   // `refund_amount_for` in `commands/refunds.rs`; using `product_price` here gave
@@ -152,7 +170,6 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
         reason: reason || undefined,
         items: selectedItems.map((item) => ({
           transaction_item_id: item.id,
-          product_id: item.product_id!,
           quantity: itemStates[item.id].quantity,
           condition: itemStates[item.id].condition,
         })),
@@ -177,6 +194,8 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   return {
     // Data
     detail,
+    refundableItems,
+    nonRefundableItems,
     isLoading,
     // State
     itemStates,
