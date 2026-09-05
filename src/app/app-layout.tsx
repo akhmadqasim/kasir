@@ -87,7 +87,9 @@ export function AppLayout() {
           zoomOut={() => setZoom((z) => stepZoom(z, -ZOOM_STEP))}
           zoomReset={() => setZoom(1.0)}
         />
-        <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 pb-16 lg:pb-4">
+        {/* `print:overflow-visible`: pembungkus ini yang menggulung isi layar,
+            jadi saat mencetak ia juga yang memotong halaman jadi satu viewport. */}
+        <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 pb-16 lg:pb-4 print:overflow-visible">
           <Outlet />
         </div>
       </SidebarInset>

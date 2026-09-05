@@ -29,6 +29,43 @@
   }
 }
 
+/* Cetak: lepaskan tinggi tetap dan pemotongan milik shell aplikasi.
+ *
+ * Layarnya sengaja tidak pernah menggulung di tingkat dokumen — `body` memakai
+ * `overflow-hidden`, shell-nya setinggi `100svh`, dan isi halaman menggulung di
+ * dalam pembungkus `overflow-auto` di `app-layout`. Saat mencetak, ketiganya
+ * memotong keluaran tepat satu layar: laporan tutup kasir yang lebih panjang
+ * dari viewport kehilangan sisanya, dan itu sudah terjadi sejak sebelum migrasi
+ * HeroUI.
+ *
+ * Aturan ini hanya berlaku di `@media print`, jadi tampilan di layar tidak
+ * tersentuh. Komponen tetap boleh memakai `print:` untuk urusannya sendiri —
+ * `shift-close-report` mematikan mask `ScrollShadow` dengan cara itu.
+ */
+@media print {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Pembungkus shell memotong lewat `overflow-hidden` dan tinggi inline
+     `calc(100svh / zoom)`; keduanya hanya bisa dilepas dari sini karena tinggi
+     itu inline style. Selektor `data-slot` sengaja dipakai supaya aturannya
+     tidak ikut melepas `truncate` di dalam laporan. */
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-inset"] {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Navigasi bukan bagian dari laporan. */
+  [data-slot="sidebar"] {
+    display: none !important;
+  }
+}
+
 /* Theme tokens.
  *
  * These blocks are deliberately unlayered so they win over the `@layer base`
