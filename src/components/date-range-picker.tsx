@@ -9,7 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import type { DateRange } from "@/lib/date-range"
+import { resolveRangeSelection, type DateRange } from "@/lib/date-range"
 
 /** Label tombol: "01 Sep 2026 - 30 Sep 2026", satu tanggal, atau placeholder. */
 function formatRangeLabel(range: DateRange | undefined) {
@@ -21,7 +21,11 @@ function formatRangeLabel(range: DateRange | undefined) {
 
 interface DateRangePickerProps {
   value: DateRange | undefined
-  onChange: (range: DateRange | undefined) => void
+  /**
+   * Selalu dipanggil dengan rentang terisi: klik yang menghapus pilihan diterjemahkan
+   * jadi rentang satu hari, lihat {@link resolveRangeSelection}.
+   */
+  onChange: (range: DateRange) => void
   /** Sisi popover yang disejajarkan dengan tombol. */
   align?: "start" | "center" | "end"
   /** Jumlah bulan yang ditampilkan berdampingan. */
@@ -61,7 +65,9 @@ export function DateRangePicker({
           mode="range"
           defaultMonth={value?.from}
           selected={value}
-          onSelect={onChange}
+          onSelect={(range, triggerDate) =>
+            onChange(resolveRangeSelection(range, triggerDate))
+          }
           numberOfMonths={numberOfMonths}
           locale={idLocale}
         />

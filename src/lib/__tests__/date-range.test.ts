@@ -3,6 +3,8 @@ import {
   DEFAULT_RANGE_DAYS,
   getDefaultDateRange,
   getTodayRange,
+  resolveRangeSelection,
+  type DateRange,
 } from "../date-range"
 import { toLocalDateString } from "../format"
 
@@ -50,6 +52,44 @@ describe("getDefaultDateRange", () => {
 
     range.from!.setDate(1)
     expect(toLocalDateString(range.to!)).toBe("2026-09-05")
+  })
+})
+
+describe("resolveRangeSelection", () => {
+  const clicked = new Date(2026, 8, 5)
+
+  it("turns a cleared selection into a single-day range", () => {
+    // Apa yang dikirim react-day-picker saat hari yang diklik sama dengan kedua ujung
+    // rentang. Tanpa ini filter terkirim kosong dan laporan menampilkan "Tidak ada data".
+    const range = resolveRangeSelection(undefined, clicked)
+
+    expect(range.from).toBe(clicked)
+    expect(range.to).toBe(clicked)
+  })
+
+  it("keeps a complete range untouched", () => {
+    const selected: DateRange = {
+      from: new Date(2026, 7, 1),
+      to: new Date(2026, 7, 31),
+    }
+
+    expect(resolveRangeSelection(selected, clicked)).toBe(selected)
+  })
+
+  it("keeps a half-open range so the second click can finish it", () => {
+    const selected: DateRange = { from: new Date(2026, 7, 1), to: undefined }
+
+    expect(resolveRangeSelection(selected, clicked)).toBe(selected)
+  })
+
+  it("falls back to the clicked day when only the end is set", () => {
+    const range = resolveRangeSelection(
+      { from: undefined, to: new Date(2026, 7, 31) },
+      clicked
+    )
+
+    expect(range.from).toBe(clicked)
+    expect(range.to).toBe(clicked)
   })
 })
 
