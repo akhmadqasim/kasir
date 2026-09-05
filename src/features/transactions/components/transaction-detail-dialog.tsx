@@ -44,8 +44,11 @@ import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import {
+  SELECTABLE_PAYMENT_METHODS,
   TRANSACTION_STATUS_CLASSNAMES,
   TRANSACTION_STATUS_VARIANTS,
+  isSelectablePaymentMethod,
+  paymentMethodLabel,
   paymentSplitLabel,
   transactionStatusLabel,
 } from "@/lib/labels"
@@ -146,6 +149,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const isDeleted = detail?.transaction.status === "deleted"
   const hasRefundAction = !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
   const refundBlocked = detail ? refundBlockedReason(detail.transaction.created_at) : null
+  const isSplitPayment = (detail?.payment_breakdown.length ?? 0) > 1
   const originalTotalAmount = detail
     ? Math.max(detail.transaction.subtotal_amount - detail.transaction.discount_amount, 0)
     : 0
@@ -475,7 +479,14 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        setNewPaymentMethod(detail.transaction.payment_method)
+                        // `mixed` is not one of the options and the backend rejects
+                        // it, so leave the select empty and make the admin pick a
+                        // real method instead of pre-filling an invalid one.
+                        setNewPaymentMethod(
+                          isSelectablePaymentMethod(detail.transaction.payment_method)
+                            ? detail.transaction.payment_method
+                            : ""
+                        )
                         setShowEditPayment(true)
                       }}
                     >
@@ -558,16 +569,23 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             <DialogTitle>{id.transactions.editPaymentMethod}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {isSplitPayment && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                Transaksi ini dibayar dengan beberapa metode. Menyimpan metode
+                tunggal akan mengganti seluruh rincian pembayarannya menjadi satu
+                baris sebesar total transaksi.
+              </p>
+            )}
             <Select value={newPaymentMethod} onValueChange={setNewPaymentMethod}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Pilih metode pembayaran" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="cash">{id.payment.cash}</SelectItem>
-                <SelectItem value="qris">{id.payment.qris}</SelectItem>
-                <SelectItem value="debit">{id.payment.debit}</SelectItem>
-                <SelectItem value="ewallet">{id.payment.ewallet}</SelectItem>
-                <SelectItem value="transfer">{id.payment.transfer}</SelectItem>
+                {SELECTABLE_PAYMENT_METHODS.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {paymentMethodLabel(method)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Textarea
@@ -583,7 +601,11 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             </Button>
             <Button
               onClick={handleUpdatePaymentMethod}
-              disabled={isUpdatingPayment || !editPaymentReason.trim() || !newPaymentMethod}
+              disabled={
+                isUpdatingPayment ||
+                !editPaymentReason.trim() ||
+                !isSelectablePaymentMethod(newPaymentMethod)
+              }
             >
               {isUpdatingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {id.common.save}

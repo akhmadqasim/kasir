@@ -16,6 +16,31 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   mixed: id.payment.mixed,
 }
 
+/**
+ * Metode yang boleh disimpan ke `transactions.payment_method` lewat
+ * `update_payment_method`, sama persis dengan `VALID_PAYMENT_METHODS` di
+ * `commands/transactions.rs`.
+ *
+ * `mixed` sengaja tidak ada di sini: itu status turunan dari beberapa baris
+ * `transaction_payments`, bukan metode yang bisa dipilih, dan backend menolaknya
+ * dengan "Metode pembayaran tidak valid: mixed".
+ */
+export const SELECTABLE_PAYMENT_METHODS = [
+  "cash",
+  "qris",
+  "debit",
+  "ewallet",
+  "transfer",
+] as const
+
+export type SelectablePaymentMethod = (typeof SELECTABLE_PAYMENT_METHODS)[number]
+
+export function isSelectablePaymentMethod(
+  method: string | null | undefined
+): method is SelectablePaymentMethod {
+  return SELECTABLE_PAYMENT_METHODS.includes(method as SelectablePaymentMethod)
+}
+
 /** Nilai yang tidak dikenal ditampilkan apa adanya, bukan disembunyikan. */
 export function paymentMethodLabel(method: string): string {
   return PAYMENT_METHOD_LABELS[method] ?? method

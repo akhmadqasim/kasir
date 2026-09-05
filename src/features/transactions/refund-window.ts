@@ -1,3 +1,4 @@
+import { MAX_REFUND_DAYS } from "@/lib/constants"
 import { parseBackendDate } from "@/lib/format"
 
 /**
@@ -14,7 +15,7 @@ import { parseBackendDate } from "@/lib/format"
  *    skipped the check for those rows, which made a missing timestamp mean
  *    "unlimited"; it now rejects them outright.
  */
-export const REFUND_MAX_DAYS = 7
+export const REFUND_MAX_DAYS = MAX_REFUND_DAYS
 export const REFUND_WINDOW_MS = REFUND_MAX_DAYS * 24 * 60 * 60 * 1000
 
 export type RefundWindowState = "open" | "expired" | "unknown"
