@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::commands::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::commands::ppob::{MitraClient, PaymentResult};
-use crate::commands::settings::parse_app_settings;
+use crate::domain::settings::parse_app_settings;
 use crate::entity::{
     products, store_info, transaction_items, transaction_payments, transactions, users,
 };

@@ -7,9 +7,11 @@
 
 pub mod actor;
 pub mod auth;
+pub mod backup;
 pub mod categories;
 pub mod onboarding;
 pub mod products;
+pub mod settings;
 pub mod shifts;
 pub mod stock;
 

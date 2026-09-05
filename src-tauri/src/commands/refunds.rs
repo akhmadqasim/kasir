@@ -5,7 +5,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::commands::settings::parse_app_settings;
+use crate::domain::settings::parse_app_settings;
 use crate::entity::{
     exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
     transaction_items, transactions,

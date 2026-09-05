@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
-use crate::commands::settings::parse_app_settings;
+use crate::domain::settings::parse_app_settings;
 use crate::entity::store_info;
 use super::auth::get_mitra_request_context;
 use super::client::MitraClient;

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::super::settings::parse_app_settings;
+use crate::domain::settings::parse_app_settings;
 use super::client::{MitraClient, MitraRequestContext};
 use crate::entity::store_info;
 use crate::utils::AppError;
