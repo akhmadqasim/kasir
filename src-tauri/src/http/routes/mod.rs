@@ -25,6 +25,7 @@ pub mod auth;
 pub mod categories;
 pub mod onboarding;
 pub mod products;
+pub mod users;
 
 use axum::Router;
 
@@ -52,6 +53,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
     let admin = Router::new()
         .merge(products::admin())
         .merge(categories::admin())
+        .merge(users::admin())
         .route_layer(admin_layer)
         .route_layer(session_layer);
 
