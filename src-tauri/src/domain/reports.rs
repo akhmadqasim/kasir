@@ -44,6 +44,12 @@ pub struct ReceiptRow {
     pub status: String,
     pub item_count: i64,
     pub created_at: String,
+    /// Every return ever booked against this receipt, net of exchange
+    /// replacements. Not scoped to the report's date range — it is a property
+    /// of the receipt.
+    pub refund_amount: f64,
+    /// `total_amount - refund_amount`: what the customer kept and paid for.
+    pub net_amount: f64,
 }
 
 /// `items` is capped at the report row limit; `total_count` is the number of

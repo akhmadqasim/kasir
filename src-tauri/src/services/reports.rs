@@ -48,70 +48,216 @@ fn local_date_end_exclusive_to_utc(date_str: &str) -> String {
 /// list was cut short instead of silently deriving totals from a partial array.
 const REPORT_ROW_LIMIT: i64 = 500;
 
-async fn query_daily_sales(
+// --- Net revenue ---
+//
+// Every sales figure in this file and in `services/dashboard.rs` is NET: what
+// stayed in the till after returns. Gross takings are counted on the day the
+// sale was rung up, and a return is subtracted on the day the money went back
+// over the counter. See [`refund_adjust_cte`] for why that date, and
+// [`SALE_STATUSES`] for why a fully refunded sale is still counted gross.
+
+/// Sales-side status filter, written for a `transactions` aliased as `t`.
+///
+/// A `pending_ppob`/`ppob_failed` sale never delivered anything and a `deleted`
+/// one was voided — neither ever became money. `refunded` is deliberately NOT in
+/// the list: a fully returned sale really did take the customer's money on the
+/// day it was rung up, and [`refund_adjust_cte`] takes it back out on the day of
+/// the return. Excluding the sale as well would subtract it twice, and would
+/// also rewrite a closed day's revenue the moment a late return landed.
+pub(crate) const SALE_STATUSES: &str = "t.status NOT IN ('pending_ppob', 'ppob_failed', 'deleted')";
+
+/// The `refund_adjust` CTE: how much of a period's takings went back out.
+///
+/// WHICH DAY A REFUND LANDS ON
+/// The refund's own day (`refunds.created_at`), not the sale's. A sale on the
+/// 1st returned on the 5th put Rp 300.000 in the till on the 1st and took
+/// Rp 200.000 back out on the 5th, and that is what the owner asked to see. It
+/// also means a day's revenue never changes after the fact: the 1st keeps
+/// reading Rp 300.000 forever, however late the return arrives. Dating the
+/// deduction to the sale instead would silently rewrite reports that have
+/// already been printed and reconciled. `reports::returns` and the dashboard's
+/// refund counters already group refunds by their own date, so this is also the
+/// only choice that agrees with the rest of the app.
+///
+/// WHAT AN EXCHANGE DOES
+/// Returned lines subtract; replacement goods add straight back. An exchange is
+/// a return plus a sale that never got written into `transaction_items`, so the
+/// two halves are unioned with opposite signs and the net effect on revenue is
+/// exactly `difference_amount` — the money that actually changed hands. A
+/// like-for-like swap nets to zero, and a customer who upgrades and pays the
+/// difference increases revenue.
+///
+/// SHAPE
+/// One pass over `refund_items` and one over `exchange_items`, grouped once and
+/// joined once by the caller. Deliberately not a correlated subquery per sale
+/// row, which would re-scan the refund tables for every transaction in the
+/// period.
+///
+/// `refund_bucket` and `exchange_bucket` are the grouping keys for the two
+/// halves — the same expression for a calendar bucket, different columns when
+/// grouping by product. `start`/`end` are the placeholders holding the period's
+/// UTC boundaries.
+pub(crate) fn refund_adjust_cte(
+    refund_bucket: &str,
+    exchange_bucket: &str,
+    start: &str,
+    end: &str,
+) -> String {
+    format!(
+        "refund_adjust AS (
+            SELECT bucket,
+                   COALESCE(SUM(revenue), 0) as revenue,
+                   COALESCE(SUM(cost), 0) as cost,
+                   COALESCE(SUM(qty), 0) as qty
+            FROM (
+                SELECT {refund_bucket} as bucket,
+                       ri.subtotal as revenue,
+                       ri.quantity * COALESCE(ti.buy_price, p.buy_price, 0) as cost,
+                       ri.quantity as qty
+                FROM refunds r
+                JOIN transactions t ON t.id = r.transaction_id
+                JOIN refund_items ri ON ri.refund_id = r.id
+                JOIN transaction_items ti ON ti.id = ri.transaction_item_id
+                LEFT JOIN products p ON p.id = ti.product_id
+                WHERE r.created_at >= {start} AND r.created_at < {end}
+                AND {SALE_STATUSES}
+                UNION ALL
+                SELECT {exchange_bucket} as bucket,
+                       -ei.subtotal as revenue,
+                       -(ei.quantity * COALESCE(p.buy_price, 0)) as cost,
+                       -ei.quantity as qty
+                FROM refunds r
+                JOIN transactions t ON t.id = r.transaction_id
+                JOIN exchange_items ei ON ei.refund_id = r.id
+                LEFT JOIN products p ON p.id = ei.product_id
+                WHERE r.created_at >= {start} AND r.created_at < {end}
+                AND {SALE_STATUSES}
+            )
+            GROUP BY bucket
+        )"
+    )
+}
+
+/// One row of [`query_sales_buckets`]: `(bucket, transactions, revenue, cost,
+/// profit)`, all four figures already net of returns.
+type SalesBucket = (String, i64, f64, f64, f64);
+
+/// Sales aggregated into whatever calendar bucket the two expressions name — a
+/// day for the daily report, a month for the monthly one. `sale_bucket` reads
+/// the bucket off `transactions t`, `refund_bucket` off `refunds r`; they must
+/// name the same calendar unit or the two sides will not line up.
+///
+/// Revenue is per transaction and cost is per line item, so the two are
+/// aggregated separately and joined on the bucket. Summing `t.total_amount`
+/// over a join against `transaction_items` counted each transaction once per
+/// item, inflating revenue by the item count.
+///
+/// Returns are subtracted through [`refund_adjust_cte`] on the bucket the refund
+/// itself falls in, which is why the bucket list is the UNION of the two sides:
+/// a day whose only activity was a return still has a row, showing the money
+/// that left.
+async fn query_sales_buckets(
     db: &DatabaseConnection,
-    start_date: &str,
-    end_date: &str,
-) -> Result<Vec<DailySalesRow>, AppError> {
+    sale_bucket: &str,
+    refund_bucket: &str,
+    start_utc: String,
+    end_utc: String,
+) -> Result<Vec<SalesBucket>, AppError> {
+    let sql = format!(
+        "WITH tx AS (
+            SELECT
+                t.id as id,
+                {sale_bucket} as bucket,
+                t.total_amount as total_amount
+            FROM transactions t
+            WHERE {SALE_STATUSES}
+            AND t.created_at >= $1 AND t.created_at < $2
+        ),
+        revenue AS (
+            SELECT
+                bucket,
+                COUNT(*) as transaction_count,
+                COALESCE(SUM(total_amount), 0) as total_revenue
+            FROM tx
+            GROUP BY bucket
+        ),
+        cost AS (
+            SELECT
+                tx.bucket as bucket,
+                COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost
+            FROM tx
+            JOIN transaction_items ti ON ti.transaction_id = tx.id
+            LEFT JOIN products p ON p.id = ti.product_id
+            GROUP BY tx.bucket
+        ),
+        {refund_adjust},
+        buckets AS (
+            SELECT bucket FROM revenue
+            UNION
+            SELECT bucket FROM refund_adjust
+        )
+        SELECT
+            b.bucket,
+            COALESCE(r.transaction_count, 0) as transaction_count,
+            COALESCE(r.total_revenue, 0) - COALESCE(ra.revenue, 0) as total_revenue,
+            COALESCE(c.total_cost, 0) - COALESCE(ra.cost, 0) as total_cost,
+            (COALESCE(r.total_revenue, 0) - COALESCE(ra.revenue, 0))
+                - (COALESCE(c.total_cost, 0) - COALESCE(ra.cost, 0)) as gross_profit
+        FROM buckets b
+        LEFT JOIN revenue r ON r.bucket = b.bucket
+        LEFT JOIN cost c ON c.bucket = b.bucket
+        LEFT JOIN refund_adjust ra ON ra.bucket = b.bucket
+        ORDER BY b.bucket DESC",
+        refund_adjust = refund_adjust_cte(refund_bucket, refund_bucket, "$1", "$2"),
+    );
+
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            // Revenue is per transaction, cost is per line item, so the two are
-            // aggregated separately and joined on the day. Summing
-            // `t.total_amount` over a join against `transaction_items` counted
-            // each transaction once per item, inflating revenue by the item
-            // count.
-            "WITH tx AS (
-                SELECT
-                    t.id as id,
-                    date(t.created_at, 'localtime') as sale_date,
-                    t.total_amount as total_amount
-                FROM transactions t
-                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND t.created_at >= $1 AND t.created_at < $2
-            ),
-            revenue AS (
-                SELECT
-                    sale_date,
-                    COUNT(*) as transaction_count,
-                    COALESCE(SUM(total_amount), 0) as total_revenue
-                FROM tx
-                GROUP BY sale_date
-            ),
-            cost AS (
-                SELECT
-                    tx.sale_date as sale_date,
-                    COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost
-                FROM tx
-                JOIN transaction_items ti ON ti.transaction_id = tx.id
-                LEFT JOIN products p ON p.id = ti.product_id
-                GROUP BY tx.sale_date
-            )
-            SELECT
-                r.sale_date,
-                r.transaction_count,
-                r.total_revenue,
-                COALESCE(c.total_cost, 0) as total_cost,
-                r.total_revenue - COALESCE(c.total_cost, 0) as gross_profit
-            FROM revenue r
-            LEFT JOIN cost c ON c.sale_date = r.sale_date
-            ORDER BY r.sale_date DESC",
-            vec![
-                local_date_start_to_utc(start_date).into(),
-                local_date_end_exclusive_to_utc(end_date).into(),
-            ],
+            &sql,
+            vec![start_utc.into(), end_utc.into()],
         ))
         .await?;
 
     Ok(rows
         .iter()
-        .map(|row| DailySalesRow {
-            date: row.try_get_by_index(0).unwrap_or_default(),
-            transaction_count: row.try_get_by_index(1).unwrap_or(0),
-            total_revenue: row.try_get_by_index(2).unwrap_or(0.0),
-            total_cost: row.try_get_by_index(3).unwrap_or(0.0),
-            gross_profit: row.try_get_by_index(4).unwrap_or(0.0),
+        .map(|row| {
+            (
+                row.try_get_by_index(0).unwrap_or_default(),
+                row.try_get_by_index(1).unwrap_or(0),
+                row.try_get_by_index(2).unwrap_or(0.0),
+                row.try_get_by_index(3).unwrap_or(0.0),
+                row.try_get_by_index(4).unwrap_or(0.0),
+            )
         })
+        .collect())
+}
+
+async fn query_daily_sales(
+    db: &DatabaseConnection,
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<DailySalesRow>, AppError> {
+    let buckets = query_sales_buckets(
+        db,
+        "date(t.created_at, 'localtime')",
+        "date(r.created_at, 'localtime')",
+        local_date_start_to_utc(start_date),
+        local_date_end_exclusive_to_utc(end_date),
+    )
+    .await?;
+
+    Ok(buckets
+        .into_iter()
+        .map(
+            |(date, transaction_count, total_revenue, total_cost, gross_profit)| DailySalesRow {
+                date,
+                transaction_count,
+                total_revenue,
+                total_cost,
+                gross_profit,
+            },
+        )
         .collect())
 }
 
@@ -141,58 +287,28 @@ async fn query_monthly_sales(
     let year_start = local_date_start_to_utc(&format!("{:04}-01-01", year));
     let year_end = local_date_start_to_utc(&format!("{:04}-01-01", year + 1));
 
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            // Same per-transaction / per-item split as `query_daily_sales`.
-            "WITH tx AS (
-                SELECT
-                    t.id as id,
-                    strftime('%Y-%m', t.created_at, 'localtime') as sale_month,
-                    t.total_amount as total_amount
-                FROM transactions t
-                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND t.created_at >= $1 AND t.created_at < $2
-            ),
-            revenue AS (
-                SELECT
-                    sale_month,
-                    COUNT(*) as transaction_count,
-                    COALESCE(SUM(total_amount), 0) as total_revenue
-                FROM tx
-                GROUP BY sale_month
-            ),
-            cost AS (
-                SELECT
-                    tx.sale_month as sale_month,
-                    COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as total_cost
-                FROM tx
-                JOIN transaction_items ti ON ti.transaction_id = tx.id
-                LEFT JOIN products p ON p.id = ti.product_id
-                GROUP BY tx.sale_month
-            )
-            SELECT
-                r.sale_month,
-                r.transaction_count,
-                r.total_revenue,
-                COALESCE(c.total_cost, 0) as total_cost,
-                r.total_revenue - COALESCE(c.total_cost, 0) as gross_profit
-            FROM revenue r
-            LEFT JOIN cost c ON c.sale_month = r.sale_month
-            ORDER BY r.sale_month DESC",
-            vec![year_start.into(), year_end.into()],
-        ))
-        .await?;
+    // Same aggregate as the daily report, bucketed a month at a time, so the
+    // twelve months of a year sum to the same figure the daily rows do.
+    let buckets = query_sales_buckets(
+        db,
+        "strftime('%Y-%m', t.created_at, 'localtime')",
+        "strftime('%Y-%m', r.created_at, 'localtime')",
+        year_start,
+        year_end,
+    )
+    .await?;
 
-    Ok(rows
-        .iter()
-        .map(|row| MonthlySalesRow {
-            month: row.try_get_by_index(0).unwrap_or_default(),
-            transaction_count: row.try_get_by_index(1).unwrap_or(0),
-            total_revenue: row.try_get_by_index(2).unwrap_or(0.0),
-            total_cost: row.try_get_by_index(3).unwrap_or(0.0),
-            gross_profit: row.try_get_by_index(4).unwrap_or(0.0),
-        })
+    Ok(buckets
+        .into_iter()
+        .map(
+            |(month, transaction_count, total_revenue, total_cost, gross_profit)| MonthlySalesRow {
+                month,
+                transaction_count,
+                total_revenue,
+                total_cost,
+                gross_profit,
+            },
+        )
         .collect())
 }
 
@@ -244,8 +360,17 @@ pub async fn sales_receipts(
 /// applies the same status filter as `query_daily_sales`. Without it, this was
 /// the only sales report that counted voided (`deleted`) and unfulfilled PPOB
 /// transactions at full value, and the receipt list never summed to the period
-/// total shown above it. `status` stays on the row so `partial_refund` remains
-/// visible.
+/// total shown above it. `status` stays on the row so `partial_refund` and
+/// `refunded` remain visible.
+///
+/// `refund_amount` is EVERY return ever booked against that receipt, not just
+/// the ones inside the queried window: this is a per-receipt view, and a
+/// cashier looking up a receipt wants its final state rather than a figure that
+/// changes with the date filter. `net_amount` is what the customer ended up
+/// paying for it. The consequence is that `SUM(net_amount)` here equals the
+/// period summary's revenue only when every return happened in the same period
+/// as its sale — the summary dates returns to the day the money went back
+/// (see [`refund_adjust_cte`]), this list dates them to the receipt.
 async fn query_sales_receipts(
     db: &DatabaseConnection,
     start_date: &str,
@@ -255,26 +380,62 @@ async fn query_sales_receipts(
 ) -> Result<ReceiptReport, AppError> {
     // `COUNT(*) OVER ()` is evaluated over the full result set before LIMIT, so
     // it reports how many receipts matched even when only `limit` are returned.
+    //
+    // The refund totals are one grouped pass over the receipts in the window,
+    // joined once — not a subquery re-run per receipt row.
+    let sql = format!(
+        "WITH tx AS (
+            SELECT
+                t.id as id,
+                t.receipt_number as receipt_number,
+                t.user_id as user_id,
+                t.total_amount as total_amount,
+                t.payment_method as payment_method,
+                t.status as status,
+                t.created_at as created_at
+            FROM transactions t
+            WHERE {SALE_STATUSES}
+            AND t.created_at >= $1 AND t.created_at < $2
+            AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
+        ),
+        refund_totals AS (
+            SELECT transaction_id, COALESCE(SUM(amount), 0) as amount
+            FROM (
+                SELECT r.transaction_id as transaction_id, ri.subtotal as amount
+                FROM refunds r
+                JOIN refund_items ri ON ri.refund_id = r.id
+                WHERE r.transaction_id IN (SELECT id FROM tx)
+                UNION ALL
+                SELECT r.transaction_id as transaction_id, -ei.subtotal as amount
+                FROM refunds r
+                JOIN exchange_items ei ON ei.refund_id = r.id
+                WHERE r.transaction_id IN (SELECT id FROM tx)
+            )
+            GROUP BY transaction_id
+        )
+        SELECT
+            tx.id,
+            tx.receipt_number,
+            COALESCE(u.full_name, '-') as cashier_name,
+            tx.total_amount,
+            tx.payment_method,
+            tx.status,
+            (SELECT COUNT(*) FROM transaction_items WHERE transaction_id = tx.id) as item_count,
+            tx.created_at,
+            COALESCE(rt.amount, 0) as refund_amount,
+            tx.total_amount - COALESCE(rt.amount, 0) as net_amount,
+            COUNT(*) OVER () as total_count
+        FROM tx
+        LEFT JOIN users u ON u.id = tx.user_id
+        LEFT JOIN refund_totals rt ON rt.transaction_id = tx.id
+        ORDER BY tx.created_at DESC
+        LIMIT $4"
+    );
+
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
-                t.id,
-                t.receipt_number,
-                COALESCE(u.full_name, '-') as cashier_name,
-                t.total_amount,
-                t.payment_method,
-                t.status,
-                (SELECT COUNT(*) FROM transaction_items WHERE transaction_id = t.id) as item_count,
-                t.created_at,
-                COUNT(*) OVER () as total_count
-            FROM transactions t
-            LEFT JOIN users u ON u.id = t.user_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND t.created_at >= $1 AND t.created_at < $2
-            AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
-            ORDER BY t.created_at DESC
-            LIMIT $4",
+            &sql,
             vec![
                 local_date_start_to_utc(start_date).into(),
                 local_date_end_exclusive_to_utc(end_date).into(),
@@ -286,7 +447,7 @@ async fn query_sales_receipts(
 
     let total_count = rows
         .first()
-        .and_then(|row| row.try_get_by_index::<i64>(8).ok())
+        .and_then(|row| row.try_get_by_index::<i64>(10).ok())
         .unwrap_or(0);
 
     let items = rows
@@ -300,6 +461,8 @@ async fn query_sales_receipts(
             status: row.try_get_by_index(5).unwrap_or_default(),
             item_count: row.try_get_by_index(6).unwrap_or(0),
             created_at: row.try_get_by_index(7).unwrap_or_default(),
+            refund_amount: row.try_get_by_index(8).unwrap_or(0.0),
+            net_amount: row.try_get_by_index(9).unwrap_or(0.0),
         })
         .collect();
 
@@ -311,35 +474,64 @@ pub async fn payment_methods(
     start_date: String,
     end_date: String,
 ) -> Result<Vec<PaymentMethodRow>, AppError> {
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "WITH payment_method_rows AS (
-                SELECT
-                    tp.payment_method as payment_method,
-                    tp.amount as amount,
-                    tp.transaction_id as transaction_id
-                FROM transaction_payments tp
-                JOIN transactions t ON t.id = tp.transaction_id
-                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND t.created_at >= $1 AND t.created_at < $2
-                UNION ALL
-                SELECT
-                    t.payment_method as payment_method,
-                    t.total_amount as amount,
-                    t.id as transaction_id
-                FROM transactions t
-                WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-                AND t.created_at >= $1 AND t.created_at < $2
-                AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
-            )
+    // A return goes back the way it was paid, so it is deducted from its own
+    // method: `refunds.payment_method`, which the refund copies from the sale.
+    // A method whose only activity in the period was a return still gets a row
+    // — with zero transactions, because a return is not a sale.
+    let sql = format!(
+        "WITH payment_method_rows AS (
+            SELECT
+                tp.payment_method as payment_method,
+                tp.amount as amount,
+                tp.transaction_id as transaction_id
+            FROM transaction_payments tp
+            JOIN transactions t ON t.id = tp.transaction_id
+            WHERE {SALE_STATUSES}
+            AND t.created_at >= $1 AND t.created_at < $2
+            UNION ALL
+            SELECT
+                t.payment_method as payment_method,
+                t.total_amount as amount,
+                t.id as transaction_id
+            FROM transactions t
+            WHERE {SALE_STATUSES}
+            AND t.created_at >= $1 AND t.created_at < $2
+            AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
+        ),
+        sales AS (
             SELECT
                 payment_method,
                 COUNT(DISTINCT transaction_id) as transaction_count,
                 COALESCE(SUM(amount), 0) as total_amount
             FROM payment_method_rows
             GROUP BY payment_method
-            ORDER BY total_amount DESC",
+        ),
+        {refund_adjust},
+        methods AS (
+            SELECT payment_method as method FROM sales
+            UNION
+            SELECT bucket as method FROM refund_adjust
+        )
+        SELECT
+            m.method,
+            COALESCE(s.transaction_count, 0) as transaction_count,
+            COALESCE(s.total_amount, 0) - COALESCE(ra.revenue, 0) as total_amount
+        FROM methods m
+        LEFT JOIN sales s ON s.payment_method = m.method
+        LEFT JOIN refund_adjust ra ON ra.bucket = m.method
+        ORDER BY total_amount DESC",
+        refund_adjust = refund_adjust_cte(
+            "COALESCE(r.payment_method, t.payment_method)",
+            "COALESCE(r.payment_method, t.payment_method)",
+            "$1",
+            "$2",
+        ),
+    );
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            &sql,
             vec![
                 local_date_start_to_utc(&start_date).into(),
                 local_date_end_exclusive_to_utc(&end_date).into(),
@@ -375,36 +567,76 @@ pub async fn product_sales(
     query_product_sales(db, &start_date, &end_date).await
 }
 
+/// The `sold` CTE both product reports build on: per-product quantity, revenue
+/// and cost over the period, before returns.
+///
+/// Revenue is `net_subtotal` — the rupiah the line actually brought in, with
+/// its own discount and its share of the transaction discount already taken off
+/// (migration 018). `SUM(ti.subtotal)` was the list price, so on any discounted
+/// sale the product report claimed more revenue than the transaction reports
+/// did, and deducting a (net) refund from it would have compared two different
+/// currencies.
+///
 /// `transaction_items.product_id` is NULL for PPOB lines, so they are excluded
-/// here (as `get_top_products` in `commands/dashboard.rs` already does).
-/// Grouping over the NULL key produced one fabricated `productId: 0` row
-/// carrying an arbitrary PPOB name and every PPOB sale's qty and revenue.
+/// (as `dashboard::top_products` already does). Grouping over the NULL key
+/// produced one fabricated `productId: 0` row carrying an arbitrary PPOB name
+/// and every PPOB sale's qty and revenue.
+const PRODUCT_SOLD_CTE: &str = "sold AS (
+    SELECT
+        ti.product_id as product_id,
+        MAX(ti.product_name) as product_name,
+        SUM(ti.quantity) as qty,
+        SUM(ti.net_subtotal) as revenue,
+        SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)) as cost
+    FROM transaction_items ti
+    JOIN transactions t ON t.id = ti.transaction_id
+    LEFT JOIN products p ON p.id = ti.product_id
+    WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'deleted')
+    AND t.created_at >= $1 AND t.created_at < $2
+    AND ti.product_id IS NOT NULL
+    GROUP BY ti.product_id
+)";
+
 async fn query_product_sales(
     db: &DatabaseConnection,
     start_date: &str,
     end_date: &str,
 ) -> Result<Vec<ProductSalesRow>, AppError> {
+    // Returned units come off the product they were sold as; exchange
+    // replacements are added to the product that went out instead, which is why
+    // the id list is the union of both sides — a product handed over purely as
+    // a replacement still sold.
+    let sql = format!(
+        "WITH {PRODUCT_SOLD_CTE},
+        {refund_adjust},
+        ids AS (
+            SELECT product_id FROM sold
+            UNION
+            SELECT bucket as product_id FROM refund_adjust
+        )
+        SELECT
+            i.product_id,
+            COALESCE(s.product_name, p.name, '(dihapus)') as product_name,
+            p.barcode,
+            c.name as category_name,
+            COALESCE(s.qty, 0) - COALESCE(ra.qty, 0) as qty_sold,
+            COALESCE(s.revenue, 0) - COALESCE(ra.revenue, 0) as total_revenue,
+            COALESCE(s.cost, 0) - COALESCE(ra.cost, 0) as total_cost,
+            (COALESCE(s.revenue, 0) - COALESCE(ra.revenue, 0))
+                - (COALESCE(s.cost, 0) - COALESCE(ra.cost, 0)) as profit
+        FROM ids i
+        LEFT JOIN sold s ON s.product_id = i.product_id
+        LEFT JOIN refund_adjust ra ON ra.bucket = i.product_id
+        LEFT JOIN products p ON p.id = i.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        ORDER BY qty_sold DESC",
+        refund_adjust = refund_adjust_cte("ri.product_id", "ei.product_id", "$1", "$2"),
+    );
+
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
-                ti.product_id,
-                ti.product_name,
-                p.barcode,
-                c.name as category_name,
-                SUM(ti.quantity) as qty_sold,
-                SUM(ti.subtotal) as total_revenue,
-                SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)) as total_cost,
-                SUM(ti.subtotal) - SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)) as profit
-            FROM transaction_items ti
-            JOIN transactions t ON t.id = ti.transaction_id
-            LEFT JOIN products p ON p.id = ti.product_id
-            LEFT JOIN categories c ON c.id = p.category_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND t.created_at >= $1 AND t.created_at < $2
-            AND ti.product_id IS NOT NULL
-            GROUP BY ti.product_id
-            ORDER BY qty_sold DESC",
+            &sql,
             vec![
                 local_date_start_to_utc(start_date).into(),
                 local_date_end_exclusive_to_utc(end_date).into(),
@@ -436,7 +668,13 @@ pub async fn popular_products(
     query_popular_products(db, &start_date, &end_date, limit).await
 }
 
-/// See `query_product_sales` for why PPOB lines (NULL `product_id`) are skipped.
+/// Same aggregate as [`query_product_sales`], ranked and capped, so the two
+/// reports never disagree about how much of a product sold.
+///
+/// See [`PRODUCT_SOLD_CTE`] for why PPOB lines (NULL `product_id`) are skipped
+/// and why revenue is `net_subtotal`. Ranking is on the NET quantity, so a
+/// product that was mostly returned drops down the list instead of staying on
+/// top on the strength of a sale that was handed straight back.
 async fn query_popular_products(
     db: &DatabaseConnection,
     start_date: &str,
@@ -445,26 +683,44 @@ async fn query_popular_products(
 ) -> Result<Vec<PopularProductRow>, AppError> {
     let limit = limit.clamp(1, 500);
 
+    let sql = format!(
+        "WITH {PRODUCT_SOLD_CTE},
+        {refund_adjust},
+        ids AS (
+            SELECT product_id FROM sold
+            UNION
+            SELECT bucket as product_id FROM refund_adjust
+        ),
+        net AS (
+            SELECT
+                i.product_id as product_id,
+                COALESCE(s.product_name, p.name, '(dihapus)') as product_name,
+                c.name as category_name,
+                COALESCE(s.qty, 0) - COALESCE(ra.qty, 0) as qty_sold,
+                COALESCE(s.revenue, 0) - COALESCE(ra.revenue, 0) as total_revenue
+            FROM ids i
+            LEFT JOIN sold s ON s.product_id = i.product_id
+            LEFT JOIN refund_adjust ra ON ra.bucket = i.product_id
+            LEFT JOIN products p ON p.id = i.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+        )
+        SELECT
+            ROW_NUMBER() OVER (ORDER BY qty_sold DESC) as rank,
+            product_id,
+            product_name,
+            category_name,
+            qty_sold,
+            total_revenue
+        FROM net
+        ORDER BY qty_sold DESC
+        LIMIT $3",
+        refund_adjust = refund_adjust_cte("ri.product_id", "ei.product_id", "$1", "$2"),
+    );
+
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT
-                ROW_NUMBER() OVER (ORDER BY SUM(ti.quantity) DESC) as rank,
-                ti.product_id,
-                ti.product_name,
-                c.name as category_name,
-                SUM(ti.quantity) as qty_sold,
-                SUM(ti.subtotal) as total_revenue
-            FROM transaction_items ti
-            JOIN transactions t ON t.id = ti.transaction_id
-            LEFT JOIN products p ON p.id = ti.product_id
-            LEFT JOIN categories c ON c.id = p.category_id
-            WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'refunded', 'deleted')
-            AND t.created_at >= $1 AND t.created_at < $2
-            AND ti.product_id IS NOT NULL
-            GROUP BY ti.product_id
-            ORDER BY qty_sold DESC
-            LIMIT $3",
+            &sql,
             vec![
                 local_date_start_to_utc(start_date).into(),
                 local_date_end_exclusive_to_utc(end_date).into(),
@@ -544,12 +800,12 @@ async fn query_current_stock(
     filter: &str,
     limit: i64,
 ) -> Result<CurrentStockReport, AppError> {
+    // One shared definition of "low stock" — see `products::LOW_STOCK_SQL`.
     let low_stock_clause = if filter == "low" {
-        "AND p.stock <= p.min_stock AND p.min_stock > 0"
-    } else if filter == "all" || filter.is_empty() {
-        ""
+        format!("AND {}", crate::services::products::LOW_STOCK_SQL)
     } else {
-        "" // Ignore unknown filters
+        // "all", empty, and anything unrecognised: no extra filter.
+        String::new()
     };
 
     let sql = format!(
@@ -769,9 +1025,11 @@ pub async fn cash_flows(
 mod tests {
     use super::*;
     use crate::test_support::{
-        date_str, insert_product, insert_transaction, insert_transaction_item, insert_writeoff,
-        setup_test_db, today, utc_at_local_noon, WriteoffSpec,
+        date_str, insert_exchange_item, insert_product, insert_refund, insert_refund_item,
+        insert_transaction, insert_transaction_item, insert_writeoff, setup_test_db, today,
+        utc_at_local_noon, RefundSpec, WriteoffSpec,
     };
+    use chrono::{Datelike, Duration};
 
     /// One Rp 100.000 sale with three line items plus one Rp 50.000 sale with a
     /// single line item. Revenue must stay per-transaction (Rp 150.000); the
@@ -1026,15 +1284,418 @@ mod tests {
             .await
             .expect("query");
 
+        // `refunded` belongs here now: the money really was taken that day, and
+        // the return is what takes it back out (see `SALE_STATUSES`). `deleted`
+        // and the two unfulfilled PPOB states never were money.
         let mut statuses: Vec<&str> = report.items.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
-        assert_eq!(statuses, vec!["completed", "partial_refund"]);
+        assert_eq!(statuses, vec!["completed", "partial_refund", "refunded"]);
 
-        // The receipt list must sum to the same revenue as the period summary.
-        let receipts_total: f64 = report.items.iter().map(|r| r.total_amount).sum();
+        // With no refund rows recorded, the receipt list still sums to the
+        // period summary.
+        let receipts_total: f64 = report.items.iter().map(|r| r.net_amount).sum();
         let summary = query_sales_period(&conn, &day, &day).await.expect("query");
-        assert_eq!(receipts_total, 130_000.0);
+        assert_eq!(receipts_total, 200_000.0);
         assert_eq!(receipts_total, summary.total_revenue);
+    }
+
+    // --- Net revenue ---
+
+    /// The scenario the owner described: one Rp 300.000 sale of three items, two
+    /// of them handed back. Returns `(transaction, [line ids])`.
+    async fn three_item_sale(
+        conn: &DatabaseConnection,
+        created_at: &str,
+    ) -> (i64, Vec<(i64, i64)>) {
+        let beras = insert_product(conn, "Beras 5kg", 60_000.0, 100_000.0, 100).await;
+        let gula = insert_product(conn, "Gula 1kg", 60_000.0, 100_000.0, 100).await;
+        let minyak = insert_product(conn, "Minyak 1L", 60_000.0, 100_000.0, 100).await;
+
+        let txn = insert_transaction(conn, 1, 300_000.0, "completed", created_at).await;
+        let mut lines = Vec::new();
+        for product in [&beras, &gula, &minyak] {
+            let item = insert_transaction_item(
+                conn,
+                txn.id,
+                Some(product.id),
+                &product.name,
+                100_000.0,
+                60_000.0,
+                1,
+            )
+            .await;
+            lines.push((item.id, product.id));
+        }
+        (txn.id, lines)
+    }
+
+    /// Books a plain (non-exchange) return of `lines`, each one unit at
+    /// `unit_price`.
+    async fn return_lines(
+        conn: &DatabaseConnection,
+        txn_id: i64,
+        created_at: &str,
+        payment_method: &str,
+        lines: &[(i64, i64)],
+        unit_price: f64,
+    ) {
+        let refund = insert_refund(
+            conn,
+            RefundSpec {
+                transaction_id: txn_id,
+                user_id: 1,
+                refund_type: "refund",
+                total_refund_amount: unit_price * lines.len() as f64,
+                total_exchange_amount: 0.0,
+                difference_amount: unit_price * lines.len() as f64,
+                payment_method,
+                shift_id: None,
+                created_at,
+            },
+        )
+        .await;
+        for (item_id, product_id) in lines {
+            insert_refund_item(conn, refund.id, *item_id, *product_id, 1, unit_price).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn daily_sales_subtract_what_was_handed_back() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
+
+        let day = date_str(today());
+        let rows = query_daily_sales(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].total_revenue, 100_000.0,
+            "only one item stayed sold"
+        );
+        assert_eq!(rows[0].total_cost, 60_000.0, "the returned stock came back");
+        assert_eq!(rows[0].gross_profit, 40_000.0);
+        assert_eq!(
+            rows[0].transaction_count, 1,
+            "a return is not a second transaction"
+        );
+    }
+
+    /// A sale on the 1st returned on the 5th: the 1st keeps the full takings
+    /// and the 5th carries the payout, so a report already printed for the 1st
+    /// never changes under the owner's feet.
+    #[tokio::test]
+    async fn a_return_is_deducted_on_its_own_day_not_the_sales_day() {
+        let conn = setup_test_db().await;
+        let sale_day = today() - Duration::days(4);
+        let refund_day = today();
+
+        let (txn_id, lines) = three_item_sale(&conn, &utc_at_local_noon(sale_day)).await;
+        return_lines(
+            &conn,
+            txn_id,
+            &utc_at_local_noon(refund_day),
+            "cash",
+            &lines[..2],
+            100_000.0,
+        )
+        .await;
+
+        let sale = date_str(sale_day);
+        let refund = date_str(refund_day);
+
+        let sale_only = query_daily_sales(&conn, &sale, &sale).await.expect("query");
+        assert_eq!(sale_only.len(), 1);
+        assert_eq!(sale_only[0].total_revenue, 300_000.0);
+
+        let refund_only = query_daily_sales(&conn, &refund, &refund)
+            .await
+            .expect("query");
+        assert_eq!(refund_only.len(), 1, "the payout day still gets a row");
+        assert_eq!(refund_only[0].total_revenue, -200_000.0);
+        assert_eq!(refund_only[0].transaction_count, 0);
+
+        let whole = query_sales_period(&conn, &sale, &refund)
+            .await
+            .expect("query");
+        assert_eq!(whole.total_revenue, 100_000.0);
+    }
+
+    /// The stated contract: a period summary is the sum of its days, whatever
+    /// the returns did.
+    #[tokio::test]
+    async fn period_summary_equals_the_sum_of_its_days() {
+        let conn = setup_test_db().await;
+        let sale_day = today() - Duration::days(3);
+        let (txn_id, lines) = three_item_sale(&conn, &utc_at_local_noon(sale_day)).await;
+        return_lines(
+            &conn,
+            txn_id,
+            &utc_at_local_noon(today() - Duration::days(1)),
+            "cash",
+            &lines[..2],
+            100_000.0,
+        )
+        .await;
+
+        let summary = query_sales_period(&conn, &date_str(sale_day), &date_str(today()))
+            .await
+            .expect("query");
+
+        let day_revenue: f64 = summary
+            .daily_breakdown
+            .iter()
+            .map(|d| d.total_revenue)
+            .sum();
+        let day_cost: f64 = summary.daily_breakdown.iter().map(|d| d.total_cost).sum();
+        assert_eq!(summary.total_revenue, day_revenue);
+        assert_eq!(summary.total_cost, day_cost);
+        assert_eq!(summary.gross_profit, day_revenue - day_cost);
+        assert_eq!(summary.total_revenue, 100_000.0);
+    }
+
+    /// The monthly report has to reach the same answer as the daily one it sits
+    /// next to.
+    #[tokio::test]
+    async fn monthly_sales_agree_with_the_daily_report() {
+        let conn = setup_test_db().await;
+        // Anchored mid-month so the sale and the return cannot straddle two
+        // months and make the comparison meaningless.
+        let sale_day = today()
+            .with_day(10)
+            .expect("the 10th exists in every month");
+        let created_at = utc_at_local_noon(sale_day);
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
+
+        let day = date_str(sale_day);
+        let daily = query_daily_sales(&conn, &day, &day).await.expect("query");
+        let year: i32 = sale_day.format("%Y").to_string().parse().expect("year");
+        let monthly = query_monthly_sales(&conn, year).await.expect("query");
+
+        let month = sale_day.format("%Y-%m").to_string();
+        let row = monthly
+            .iter()
+            .find(|r| r.month == month)
+            .expect("the month is present");
+        assert_eq!(row.total_revenue, daily[0].total_revenue);
+        assert_eq!(row.total_cost, daily[0].total_cost);
+        assert_eq!(row.gross_profit, daily[0].gross_profit);
+    }
+
+    /// A sale returned in full nets to zero. It used to disappear from the
+    /// reports entirely the moment its status flipped to `refunded`, which meant
+    /// the same query answered differently depending on when it was run.
+    #[tokio::test]
+    async fn a_fully_returned_sale_nets_to_zero() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines, 100_000.0).await;
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transactions SET status = 'refunded' WHERE id = $1",
+            vec![txn_id.into()],
+        ))
+        .await
+        .expect("status update");
+
+        let day = date_str(today());
+        let rows = query_daily_sales(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_revenue, 0.0);
+        assert_eq!(rows[0].total_cost, 0.0);
+        assert_eq!(rows[0].gross_profit, 0.0);
+    }
+
+    /// An exchange is a return plus a sale, so only the difference moves. The
+    /// units follow the goods: off the product that came back, on to the product
+    /// that went out.
+    #[tokio::test]
+    async fn an_exchange_moves_only_the_difference() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+
+        let sarung = insert_product(&conn, "Sarung", 40_000.0, 60_000.0, 10).await;
+        let peci = insert_product(&conn, "Peci", 25_000.0, 45_000.0, 10).await;
+        let txn = insert_transaction(&conn, 1, 60_000.0, "completed", &created_at).await;
+        let line = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(sarung.id),
+            "Sarung",
+            60_000.0,
+            40_000.0,
+            1,
+        )
+        .await;
+
+        let refund = insert_refund(
+            &conn,
+            RefundSpec {
+                transaction_id: txn.id,
+                user_id: 1,
+                refund_type: "exchange",
+                total_refund_amount: 60_000.0,
+                total_exchange_amount: 45_000.0,
+                difference_amount: 15_000.0,
+                payment_method: "cash",
+                shift_id: None,
+                created_at: &created_at,
+            },
+        )
+        .await;
+        insert_refund_item(&conn, refund.id, line.id, sarung.id, 1, 60_000.0).await;
+        insert_exchange_item(&conn, refund.id, peci.id, "Peci", 45_000.0, 1).await;
+
+        let day = date_str(today());
+        let rows = query_daily_sales(&conn, &day, &day).await.expect("query");
+        assert_eq!(
+            rows[0].total_revenue, 45_000.0,
+            "60.000 taken, 15.000 given back — the customer kept 45.000 of goods"
+        );
+        assert_eq!(
+            rows[0].total_cost, 25_000.0,
+            "the peci's cost, not the sarung's"
+        );
+
+        let products = query_product_sales(&conn, &day, &day).await.expect("query");
+        let sarung_row = products
+            .iter()
+            .find(|r| r.product_id == sarung.id)
+            .expect("sarung row");
+        let peci_row = products
+            .iter()
+            .find(|r| r.product_id == peci.id)
+            .expect("the replacement counts as sold even though it was never rung up");
+        assert_eq!(sarung_row.qty_sold, 0);
+        assert_eq!(sarung_row.total_revenue, 0.0);
+        assert_eq!(peci_row.qty_sold, 1);
+        assert_eq!(peci_row.total_revenue, 45_000.0);
+    }
+
+    #[tokio::test]
+    async fn product_sales_subtract_returned_units() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
+
+        let day = date_str(today());
+        let rows = query_product_sales(&conn, &day, &day).await.expect("query");
+
+        let total_qty: i64 = rows.iter().map(|r| r.qty_sold).sum();
+        let total_revenue: f64 = rows.iter().map(|r| r.total_revenue).sum();
+        assert_eq!(total_qty, 1, "three units sold, two handed back");
+        assert_eq!(total_revenue, 100_000.0);
+
+        // And the product-level revenue reconciles with the period summary.
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+        assert_eq!(total_revenue, summary.total_revenue);
+    }
+
+    #[tokio::test]
+    async fn popular_products_rank_on_net_quantity() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        // The first product sold twice as much but every unit came straight
+        // back; the third kept its single sale.
+        let extra = insert_transaction(&conn, 1, 100_000.0, "completed", &created_at).await;
+        let extra_line = insert_transaction_item(
+            &conn,
+            extra.id,
+            Some(lines[0].1),
+            "Beras 5kg",
+            100_000.0,
+            60_000.0,
+            1,
+        )
+        .await;
+        return_lines(
+            &conn,
+            txn_id,
+            &created_at,
+            "cash",
+            &[lines[0], (extra_line.id, lines[0].1)],
+            100_000.0,
+        )
+        .await;
+
+        let day = date_str(today());
+        let rows = query_popular_products(&conn, &day, &day, 10)
+            .await
+            .expect("query");
+
+        let beras = rows
+            .iter()
+            .find(|r| r.product_id == lines[0].1)
+            .expect("beras row");
+        assert_eq!(beras.qty_sold, 0);
+        assert_eq!(beras.total_revenue, 0.0);
+        assert_ne!(rows[0].product_id, lines[0].1, "it is not the top seller");
+
+        // The two reports over the same window must not disagree.
+        let sales = query_product_sales(&conn, &day, &day).await.expect("query");
+        for row in &rows {
+            let other = sales
+                .iter()
+                .find(|s| s.product_id == row.product_id)
+                .expect("present in both reports");
+            assert_eq!(row.qty_sold, other.qty_sold);
+            assert_eq!(row.total_revenue, other.total_revenue);
+        }
+    }
+
+    /// The money goes back the way it came, so it comes off that method's total
+    /// and no other.
+    #[tokio::test]
+    async fn payment_methods_subtract_refunds_from_their_own_method() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
+
+        let day = date_str(today());
+        let rows = payment_methods(&conn, day.clone(), day.clone())
+            .await
+            .expect("query");
+
+        let cash = rows
+            .iter()
+            .find(|r| r.payment_method == "cash")
+            .expect("cash row");
+        assert_eq!(cash.total_amount, 100_000.0);
+        assert_eq!(cash.transaction_count, 1);
+
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+        let by_method: f64 = rows.iter().map(|r| r.total_amount).sum();
+        assert_eq!(by_method, summary.total_revenue);
+    }
+
+    /// The receipt drill-down carries the receipt's own final state, so a
+    /// partially returned sale is not shown at its gross value.
+    #[tokio::test]
+    async fn sales_receipts_show_what_each_receipt_kept() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let (txn_id, lines) = three_item_sale(&conn, &created_at).await;
+        return_lines(&conn, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
+
+        let day = date_str(today());
+        let report = query_sales_receipts(&conn, &day, &day, "", REPORT_ROW_LIMIT)
+            .await
+            .expect("query");
+
+        assert_eq!(report.items.len(), 1);
+        assert_eq!(report.items[0].total_amount, 300_000.0);
+        assert_eq!(report.items[0].refund_amount, 200_000.0);
+        assert_eq!(report.items[0].net_amount, 100_000.0);
+
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+        assert_eq!(report.items[0].net_amount, summary.total_revenue);
     }
 
     #[tokio::test]
