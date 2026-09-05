@@ -1,4 +1,6 @@
 import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useDebounce } from "@/hooks/use-debounce"
+import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type {
   PpobMenuGroup,
   PulsaDetailsResponse,
@@ -17,12 +19,21 @@ export function usePpobMenu() {
   })
 }
 
+/**
+ * Look up the provider and product list for a phone number.
+ *
+ * Debounced because the query is enabled from ten digits on: an Indonesian mobile
+ * number is 11-13 digits, so typing one straight through fired three to four
+ * vendor calls for a single lookup. `CLAUDE.md` puts the debounce at 300 ms.
+ */
 export function usePulsaDetails(phoneNumber: string) {
+  const debouncedPhoneNumber = useDebounce(phoneNumber, SEARCH_DEBOUNCE_MS)
+
   return useTauriQuery<PulsaDetailsResponse>(
     "ppob_get_pulsa_details",
-    { phoneNumber },
+    { phoneNumber: debouncedPhoneNumber },
     {
-      enabled: phoneNumber.length >= 10,
+      enabled: debouncedPhoneNumber.length >= 10,
       staleTime: 60000,
       retry: false,
     }
