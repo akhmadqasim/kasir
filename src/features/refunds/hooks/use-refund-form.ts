@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { id } from "@/i18n/id"
 import { netAmountForQuantity } from "@/features/transactions/line-amounts"
+import { refundBlockedReason } from "@/features/transactions/refund-window"
 import type { TransactionDetail } from "@/features/transactions/types"
 import {
   parseRemainingQuantityError,
@@ -198,8 +199,18 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
    */
   const hasEarlierRefund = detail?.transaction.status === "partial_refund"
 
+  /** Why this sale cannot be refunded at all, or `null` when it can. */
+  const blockedReason = detail
+    ? refundBlockedReason(detail.transaction.created_at)
+    : null
+
   const handleSubmit = async () => {
     if (!transactionId || !userId) return
+
+    if (blockedReason) {
+      toast.error(blockedReason)
+      return
+    }
 
     if (selectedItems.length === 0) {
       toast.error(id.refund.noItemsSelected)
@@ -265,6 +276,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     totalExchange,
     difference,
     hasEarlierRefund,
+    blockedReason,
     // Actions
     setReason,
     setActionType,

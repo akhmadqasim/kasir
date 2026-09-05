@@ -34,6 +34,11 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
@@ -51,6 +56,7 @@ import {
   netLineAmount,
 } from "../line-amounts"
 import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-status"
+import { refundBlockedReason } from "../refund-window"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
 interface TransactionDetailDialogProps {
@@ -79,6 +85,42 @@ function SummaryRow({
   )
 }
 
+/**
+ * Refund entry point. Past the seven-day window the backend rejects the refund
+ * outright, so the button is disabled here with the reason attached — a disabled
+ * button eats pointer events, hence the wrapper the tooltip hangs off.
+ */
+function RefundAction({
+  blockedReason,
+  onRefund,
+}: {
+  blockedReason: string | null
+  onRefund: () => void
+}) {
+  const button = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={blockedReason !== null}
+      onClick={onRefund}
+    >
+      <RotateCcw className="mr-2 h-4 w-4" />
+      {id.refund.title}
+    </Button>
+  )
+
+  if (!blockedReason) return button
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent>{blockedReason}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function TransactionDetailDialog({ transaction, onClose }: TransactionDetailDialogProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -103,6 +145,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
   const isDeleted = detail?.transaction.status === "deleted"
   const hasRefundAction = !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
+  const refundBlocked = detail ? refundBlockedReason(detail.transaction.created_at) : null
   const originalTotalAmount = detail
     ? Math.max(detail.transaction.subtotal_amount - detail.transaction.discount_amount, 0)
     : 0
@@ -458,17 +501,13 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     </Button>
                   )}
                   {hasRefundAction && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
+                    <RefundAction
+                      blockedReason={refundBlocked}
+                      onRefund={() => {
                         onClose()
                         navigate(`/refund/${detail.transaction.id}`)
                       }}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      {id.refund.title}
-                    </Button>
+                    />
                   )}
                   <Button size="sm" onClick={handlePrint}>
                     <Printer className="mr-2 h-4 w-4" />

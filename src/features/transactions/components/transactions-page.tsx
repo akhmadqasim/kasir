@@ -25,6 +25,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useDebounce } from "@/hooks/use-debounce"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
@@ -35,8 +40,52 @@ import {
   transactionStatusLabel,
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
+import { refundBlockedReason } from "../refund-window"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
 import type { PaginatedTransactions, TransactionListItem } from "../types"
+
+/**
+ * The refund entry point for one row.
+ *
+ * A disabled button swallows pointer events, so the tooltip has to hang off a
+ * wrapper: without it the cashier sees a dead button and no reason for it.
+ */
+function RefundActionButton({
+  blockedReason,
+  onClick,
+}: {
+  blockedReason: string | null
+  onClick: () => void
+}) {
+  const button = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8"
+      disabled={blockedReason !== null}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title={blockedReason ?? id.refund.title}
+    >
+      <RotateCcw className="h-4 w-4" />
+    </Button>
+  )
+
+  if (!blockedReason) return button
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {button}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{blockedReason}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function getTransactionDescription(txn: TransactionListItem): string {
   if (txn.deleted_reason?.trim()) {
@@ -261,15 +310,10 @@ export function TransactionsPage() {
                         <Eye className="h-4 w-4" />
                       </Button>
                       {!txn.has_ppob && txn.status !== "refunded" && txn.status !== "deleted" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/refund/${txn.id}`) }}
-                          title={id.refund.title}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
+                        <RefundActionButton
+                          blockedReason={refundBlockedReason(txn.created_at)}
+                          onClick={() => navigate(`/refund/${txn.id}`)}
+                        />
                       )}
                       <Button
                         variant="ghost"
