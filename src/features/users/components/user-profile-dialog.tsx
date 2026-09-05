@@ -1,15 +1,8 @@
 import { useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
+import type { FormEvent } from "react"
+import { Button, Form, Modal, Separator } from "@heroui/react"
+
+import { StatusBadge } from "@/components/status-badge"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -58,7 +51,8 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     return Object.keys(newErrors).length === 0
   }
 
-  const handleChangePin = () => {
+  const handleChangePin = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     if (!validate() || !user) return
 
     changePin.mutate(
@@ -75,77 +69,77 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
   if (!user) return null
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{id.profile.title}</DialogTitle>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
+      <Modal.Container scroll="inside" size="sm">
+        <Modal.Dialog aria-label={id.profile.title}>
+          {/* validationBehavior="aria" keeps validation in this component. With
+              React Aria's default ("native") an `isInvalid` field calls
+              setCustomValidity, and the browser then blocks every later submit —
+              including the one that would clear the error. */}
+          <Form validationBehavior="aria" onSubmit={handleChangePin}>
+            <Modal.Header>
+              <Modal.Heading>{id.profile.title}</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
-            <span className="text-muted-foreground">{id.users.username}</span>
-            <span className="font-medium">{user.username}</span>
-            <span className="text-muted-foreground">{id.users.fullName}</span>
-            <span className="font-medium">{user.full_name}</span>
-            <span className="text-muted-foreground">{id.users.role}</span>
-            <Badge variant="outline" className="w-fit capitalize">
-              {user.role === "admin" ? id.users.admin : id.users.kasir}
-            </Badge>
-          </div>
+            <Modal.Body className="space-y-4">
+              <div className="grid grid-cols-[100px_1fr] items-center gap-2 text-sm">
+                <span className="text-muted">{id.users.username}</span>
+                <span className="font-medium">{user.username}</span>
+                <span className="text-muted">{id.users.fullName}</span>
+                <span className="font-medium">{user.full_name}</span>
+                <span className="text-muted">{id.users.role}</span>
+                <StatusBadge
+                  className="w-fit"
+                  status={user.role === "admin" ? "info" : "neutral"}
+                >
+                  {user.role === "admin" ? id.users.admin : id.users.kasir}
+                </StatusBadge>
+              </div>
 
-          <Separator />
+              <Separator />
 
-          <h4 className="font-medium">{id.profile.changePin}</h4>
+              <h4 className="font-medium">{id.profile.changePin}</h4>
 
-          <div className="space-y-2">
-            <Label htmlFor="currentPin">{id.profile.currentPin}</Label>
-            <PinInput
-              id="currentPin"
-              value={currentPin}
-              onChange={setCurrentPin}
-              isDisabled={changePin.isPending}
-            />
-            {errors.currentPin && (
-              <p className="text-sm font-medium text-destructive">{errors.currentPin}</p>
-            )}
-          </div>
+              <PinInput
+                errorMessage={errors.currentPin}
+                isDisabled={changePin.isPending}
+                label={id.profile.currentPin}
+                value={currentPin}
+                onChange={setCurrentPin}
+              />
+              <PinInput
+                errorMessage={errors.newPin}
+                isDisabled={changePin.isPending}
+                label={id.profile.newPin}
+                value={newPin}
+                onChange={setNewPin}
+              />
+              <PinInput
+                errorMessage={errors.confirmPin}
+                isDisabled={changePin.isPending}
+                label={id.profile.confirmNewPin}
+                value={confirmPin}
+                onChange={setConfirmPin}
+              />
+            </Modal.Body>
 
-          <div className="space-y-2">
-            <Label htmlFor="newPin">{id.profile.newPin}</Label>
-            <PinInput
-              id="newPin"
-              value={newPin}
-              onChange={setNewPin}
-              isDisabled={changePin.isPending}
-            />
-            {errors.newPin && (
-              <p className="text-sm font-medium text-destructive">{errors.newPin}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmNewPin">{id.profile.confirmNewPin}</Label>
-            <PinInput
-              id="confirmNewPin"
-              value={confirmPin}
-              onChange={setConfirmPin}
-              isDisabled={changePin.isPending}
-            />
-            {errors.confirmPin && (
-              <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={changePin.isPending}>
-            {id.users.cancel}
-          </Button>
-          <Button onClick={handleChangePin} disabled={changePin.isPending}>
-            {changePin.isPending ? "..." : id.users.save}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <Modal.Footer>
+              <Button
+                isDisabled={changePin.isPending}
+                type="button"
+                variant="outline"
+                onPress={() => handleOpenChange(false)}
+              >
+                {id.users.cancel}
+              </Button>
+              <Button isDisabled={changePin.isPending} type="submit">
+                {changePin.isPending ? "..." : id.users.save}
+              </Button>
+            </Modal.Footer>
+          </Form>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }

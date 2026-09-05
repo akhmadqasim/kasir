@@ -1,17 +1,18 @@
-import { FieldError, Input, Label, TextField } from "@heroui/react"
+import { Description, FieldError, Input, Label, TextField } from "@heroui/react"
 
 interface PinInputProps {
   /**
    * Label kolom. React Aria menghubungkan label ke input lewat context, jadi
-   * layar yang sudah memakai HeroUI cukup mengisi prop ini. Layar yang masih
-   * memasang label sendiri (dialog pengguna, masih shadcn) mengosongkannya dan
-   * mengisi `id` supaya `htmlFor` eksternal tetap terhubung.
+   * layar cukup mengisi prop ini; tidak ada lagi `htmlFor` dari luar sejak dialog
+   * pengguna ikut pindah ke HeroUI. Kalau dikosongkan, kolomnya memakai
+   * `aria-label="PIN"` supaya tetap punya nama.
    */
   label?: string
-  id?: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  /** Keterangan di bawah kolom, mis. "Kosongkan jika tidak ingin mengubah PIN". */
+  description?: string
   /** Pesan validasi; kolom otomatis ditandai invalid saat pesan ini terisi. */
   errorMessage?: string
   isDisabled?: boolean
@@ -21,10 +22,10 @@ interface PinInputProps {
 /** Kolom PIN kasir: hanya menerima angka, 4-6 digit, disembunyikan seperti password. */
 export function PinInput({
   label,
-  id,
   value,
   onChange,
   placeholder,
+  description,
   errorMessage,
   isDisabled,
   autoFocus,
@@ -44,10 +45,10 @@ export function PinInput({
       {label && <Label>{label}</Label>}
       <Input
         aria-label={label ? undefined : "PIN"}
-        id={id}
         inputMode="numeric"
         placeholder={placeholder}
       />
+      {description && <Description>{description}</Description>}
       {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </TextField>
   )

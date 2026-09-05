@@ -1,26 +1,28 @@
 import { useState } from "react"
+import type { FormEvent } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
+  Button,
+  FieldError,
+  Form,
+  Input,
+  Label,
+  ListBox,
+  Modal,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  TextField,
+} from "@heroui/react"
+
+import { selectedText } from "@/components/selected-text"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
 import type { User } from "@/features/auth/types"
+
+const ROLE_OPTIONS = [
+  { key: "admin", label: id.users.admin },
+  { key: "kasir", label: id.users.kasir },
+] as const
 
 interface UserFormDialogProps {
   open: boolean
@@ -30,14 +32,17 @@ interface UserFormDialogProps {
 
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        {/* Radix keeps the content alive through its exit animation. Without this
-            guard, reopening for another user within that window shows the previous
-            user's values against the new id and saving overwrites the wrong row. */}
-        {open && <UserFormBody user={user} onOpenChange={onOpenChange} />}
-      </DialogContent>
-    </Dialog>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container scroll="inside" size="sm">
+        <Modal.Dialog aria-label={user ? id.users.editUser : id.users.addUser}>
+          {/* React Aria unmounts the dialog as it closes rather than keeping it
+              alive through an exit animation, so the state below starts empty on
+              every open — reopening for another user can no longer show the
+              previous one's values against the new id. */}
+          <UserFormBody user={user} onOpenChange={onOpenChange} />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -77,7 +82,8 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     if (!validate()) return
 
     if (isEdit && user) {
@@ -113,97 +119,99 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
   const isPending = createUser.isPending || updateUser.isPending
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{isEdit ? id.users.editUser : id.users.addUser}</DialogTitle>
-      </DialogHeader>
+    // validationBehavior="aria" keeps validation in this component. With React
+    // Aria's default ("native") an `isInvalid` field calls setCustomValidity, and
+    // the browser then blocks every later submit — including the one that would
+    // clear the error.
+    <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.Header>
+        <Modal.Heading>{isEdit ? id.users.editUser : id.users.addUser}</Modal.Heading>
+        <Modal.CloseTrigger />
+      </Modal.Header>
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="username">{id.users.username}</Label>
-          <Input
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="contoh: kasir01"
-            disabled={isPending}
-          />
-          {errors.username && (
-            <p className="text-sm font-medium text-destructive">{errors.username}</p>
-          )}
-        </div>
+      <Modal.Body className="space-y-4">
+        <TextField
+          fullWidth
+          isDisabled={isPending}
+          isInvalid={Boolean(errors.username)}
+          value={username}
+          onChange={setUsername}
+        >
+          <Label>{id.users.username}</Label>
+          <Input placeholder="contoh: kasir01" />
+          <FieldError>{errors.username}</FieldError>
+        </TextField>
 
-        <div className="space-y-2">
-          <Label htmlFor="fullName">{id.users.fullName}</Label>
-          <Input
-            id="fullName"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="contoh: Ahmad Kasir"
-            disabled={isPending}
-          />
-          {errors.fullName && (
-            <p className="text-sm font-medium text-destructive">{errors.fullName}</p>
-          )}
-        </div>
+        <TextField
+          fullWidth
+          isDisabled={isPending}
+          isInvalid={Boolean(errors.fullName)}
+          value={fullName}
+          onChange={setFullName}
+        >
+          <Label>{id.users.fullName}</Label>
+          <Input placeholder="contoh: Ahmad Kasir" />
+          <FieldError>{errors.fullName}</FieldError>
+        </TextField>
 
-        <div className="space-y-2">
+        <Select
+          fullWidth
+          isDisabled={isPending}
+          value={role}
+          onChange={(value) => setRole(value === "admin" ? "admin" : "kasir")}
+        >
           <Label>{id.users.role}</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as "admin" | "kasir")}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">{id.users.admin}</SelectItem>
-              <SelectItem value="kasir">{id.users.kasir}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {ROLE_OPTIONS.map((option) => (
+                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
+                  <Label>{option.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
 
-        <div className="space-y-2">
-          <Label htmlFor="pin">
-            {isEdit ? id.users.resetPin : id.users.pin}
-          </Label>
-          {isEdit && (
-            <p className="text-xs text-muted-foreground">{id.users.resetPinDesc}</p>
-          )}
-          <PinInput
-            id="pin"
-            value={pin}
-            onChange={setPin}
-            placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
-            isDisabled={isPending}
-          />
-          {errors.pin && (
-            <p className="text-sm font-medium text-destructive">{errors.pin}</p>
-          )}
-        </div>
+        <PinInput
+          errorMessage={errors.pin}
+          isDisabled={isPending}
+          label={isEdit ? id.users.resetPin : id.users.pin}
+          description={isEdit ? id.users.resetPinDesc : undefined}
+          placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
+          value={pin}
+          onChange={setPin}
+        />
 
         {(pin || !isEdit) && (
-          <div className="space-y-2">
-            <Label htmlFor="confirmPin">{id.users.confirmPin}</Label>
-            <PinInput
-              id="confirmPin"
-              value={confirmPin}
-              onChange={setConfirmPin}
-              placeholder="Ulangi PIN"
-              isDisabled={isPending}
-            />
-            {errors.confirmPin && (
-              <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>
-            )}
-          </div>
+          <PinInput
+            errorMessage={errors.confirmPin}
+            isDisabled={isPending}
+            label={id.users.confirmPin}
+            placeholder="Ulangi PIN"
+            value={confirmPin}
+            onChange={setConfirmPin}
+          />
         )}
-      </div>
+      </Modal.Body>
 
-      <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+      <Modal.Footer>
+        <Button
+          isDisabled={isPending}
+          type="button"
+          variant="outline"
+          onPress={() => onOpenChange(false)}
+        >
           {id.users.cancel}
         </Button>
-        <Button onClick={handleSubmit} disabled={isPending}>
+        <Button isDisabled={isPending} type="submit">
           {isPending ? "..." : id.users.save}
         </Button>
-      </DialogFooter>
-    </>
+      </Modal.Footer>
+    </Form>
   )
 }
