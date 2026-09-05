@@ -40,3 +40,50 @@ pub(crate) async fn resolve_actor(
     let user = require_role(db, caller_id, "any").await?;
     Ok(Actor::from(user))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{insert_user, setup_test_db};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    /// The resolved actor carries the role the database holds, not anything the
+    /// caller claimed, so every `guard::require_*` downstream decides on the
+    /// stored value.
+    #[tokio::test]
+    async fn the_resolved_actor_carries_the_stored_role() {
+        let conn = setup_test_db().await;
+        let kasir = insert_user(&conn, "kasir1", "Kasir Satu", "kasir").await;
+
+        let actor = resolve_actor(&conn, kasir.id).await.expect("resolves");
+        assert_eq!(actor.user_id, kasir.id);
+        assert_eq!(actor.role, "kasir");
+        assert!(!actor.is_admin());
+    }
+
+    /// A deactivated account never becomes an actor, so nothing downstream —
+    /// voiding a sale, changing a payment method, editing settings — can be
+    /// reached with one. This check used to sit inside each of those handlers.
+    #[tokio::test]
+    async fn a_deactivated_admin_is_never_resolved() {
+        let conn = setup_test_db().await;
+        let ghost = insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
+        let mut deactivated: crate::entity::users::ActiveModel = ghost.clone().into();
+        deactivated.is_active = Set(false);
+        deactivated.update(&conn).await.expect("deactivate user");
+
+        match resolve_actor(&conn, ghost.id).await {
+            Err(AppError::Auth(_)) => {}
+            other => panic!("expected Auth error, got {:?}", other.map(|a| a.role)),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_caller_is_never_resolved() {
+        let conn = setup_test_db().await;
+        match resolve_actor(&conn, 9_999).await {
+            Err(AppError::Auth(_)) => {}
+            other => panic!("expected Auth error, got {:?}", other.map(|a| a.role)),
+        }
+    }
+}

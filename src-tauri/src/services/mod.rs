@@ -19,3 +19,4 @@ pub mod reports;
 pub mod settings;
 pub mod shifts;
 pub mod stock;
+pub mod transactions;
