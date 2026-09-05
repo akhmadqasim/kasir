@@ -515,6 +515,62 @@ pub async fn bulk_create(
     })
 }
 
+/// Filename offered for the import template download.
+pub const IMPORT_TEMPLATE_FILENAME: &str = "template-import-produk.csv";
+
+/// The import template, generated server-side.
+///
+/// The Tauri path has the webview build this CSV and post it back to
+/// [`save_template_file`], which means the column contract — the thing
+/// [`bulk_create`] parses — is defined in the frontend and merely written by the
+/// backend. Over HTTP the template is a download, so the columns are declared
+/// here next to the importer that has to understand them.
+pub fn import_template_csv() -> String {
+    const HEADERS: [&str; 7] = [
+        "Nama Produk",
+        "Barcode",
+        "Kategori",
+        "Harga Beli",
+        "Harga Jual",
+        "Stok",
+        "Satuan",
+    ];
+    const SAMPLE_ROWS: [[&str; 7]; 3] = [
+        [
+            "Indomie Goreng",
+            "8996001010013",
+            "Mie Instan",
+            "2500",
+            "3000",
+            "100",
+            "pcs",
+        ],
+        [
+            "Gula Pasir 1kg",
+            "8991002101036",
+            "Bahan Pokok",
+            "14000",
+            "16000",
+            "50",
+            "pcs",
+        ],
+        [
+            "Minyak Goreng 1L",
+            "",
+            "Minyak",
+            "18000",
+            "20000",
+            "30",
+            "pcs",
+        ],
+    ];
+
+    std::iter::once(HEADERS.join(","))
+        .chain(SAMPLE_ROWS.iter().map(|row| row.join(",")))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Write an import template onto the user's Desktop.
 pub fn save_template_file(input: SaveTemplateFileInput) -> Result<(), AppError> {
     let SaveTemplateFileInput { content, filename } = input;

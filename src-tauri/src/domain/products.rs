@@ -40,6 +40,10 @@ pub struct CreateProductInput {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateProductInput {
+    /// Optional in the payload because over HTTP the id lives in the path
+    /// (`PUT /api/products/{id}`) and the route overwrites whatever the body
+    /// says. The Tauri command still sends it in the body.
+    #[serde(default)]
     pub id: i64,
     pub barcode: Option<String>,
     pub sku: Option<String>,
