@@ -6,6 +6,8 @@
 //! replaces it.
 
 pub mod actor;
+pub mod auth;
 pub mod categories;
+pub mod onboarding;
 
 pub use actor::Actor;
