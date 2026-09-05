@@ -39,72 +39,18 @@ pub async fn require_auth(db: &DatabaseConnection, user_id: i64) -> Result<users
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db;
-    use crate::entity::{store_info, users};
+    use crate::entity::users;
+    use crate::test_support::{insert_user, now_ts, setup_test_db};
     use sea_orm::{ActiveModelTrait, ActiveValue::NotSet, Set};
-    use std::path::PathBuf;
-    use uuid::Uuid;
 
-    fn test_db_path() -> PathBuf {
-        std::env::temp_dir().join(format!("kasir-test-{}.db", Uuid::new_v4()))
-    }
+    /// The guard cases need three users. The shared in-memory fixture supplies
+    /// the admin (id 1); a kasir (id 2) and a deactivated admin (id 3) are added
+    /// on top of it. `require_role` reads nothing but `users`, so no `store_info`
+    /// row is seeded and the database never reaches the disk.
+    async fn setup_guard_db() -> DatabaseConnection {
+        let conn = setup_test_db().await;
+        insert_user(&conn, "kasir1", "Kasir", "kasir").await;
 
-    fn now_ts() -> String {
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-    }
-
-    async fn setup_test_db() -> DatabaseConnection {
-        let db_path = test_db_path();
-        let conn = db::setup_database(db_path.to_string_lossy().as_ref())
-            .await
-            .expect("db setup");
-
-        store_info::ActiveModel {
-            id: Set(1),
-            name: Set("Test Store".to_string()),
-            address: Set(None),
-            phone: Set(None),
-            email: Set(None),
-            logo_path: Set(None),
-            additional_info: Set(None),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(&conn)
-        .await
-        .expect("store insert");
-
-        // Admin user (id=1)
-        users::ActiveModel {
-            id: NotSet,
-            username: Set("admin".to_string()),
-            pin_hash: Set("hash".to_string()),
-            full_name: Set("Admin".to_string()),
-            role: Set("admin".to_string()),
-            is_active: Set(true),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(&conn)
-        .await
-        .expect("admin user insert");
-
-        // Kasir user (id=2)
-        users::ActiveModel {
-            id: NotSet,
-            username: Set("kasir1".to_string()),
-            pin_hash: Set("hash".to_string()),
-            full_name: Set("Kasir".to_string()),
-            role: Set("kasir".to_string()),
-            is_active: Set(true),
-            created_at: Set(Some(now_ts())),
-            updated_at: Set(Some(now_ts())),
-        }
-        .insert(&conn)
-        .await
-        .expect("kasir user insert");
-
-        // Inactive user (id=3)
         users::ActiveModel {
             id: NotSet,
             username: Set("inactive".to_string()),
@@ -124,7 +70,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_role_admin_succeeds() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let user = require_role(&conn, 1, "admin")
             .await
             .expect("admin role check should succeed");
@@ -134,7 +80,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_role_kasir_rejected_for_admin_role() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let result = require_role(&conn, 2, "admin").await;
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -147,7 +93,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_role_any_succeeds() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let user = require_role(&conn, 2, "any")
             .await
             .expect("any role check should succeed for kasir");
@@ -157,7 +103,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_role_inactive_user_fails() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let result = require_role(&conn, 3, "admin").await;
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -170,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_role_nonexistent_user_fails() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let result = require_role(&conn, 999, "admin").await;
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -183,7 +129,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_auth_succeeds_for_any_active_user() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let user = require_auth(&conn, 1)
             .await
             .expect("require_auth should succeed for active user");
@@ -192,7 +138,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_require_auth_fails_for_inactive_user() {
-        let conn = setup_test_db().await;
+        let conn = setup_guard_db().await;
         let result = require_auth(&conn, 3).await;
         assert!(result.is_err());
         match result.unwrap_err() {

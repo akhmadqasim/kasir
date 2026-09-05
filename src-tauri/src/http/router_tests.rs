@@ -1701,10 +1701,28 @@ async fn every_dashboard_panel_answers_a_session() {
 /// directory from it. Without the override the export test would read the
 /// developer's real `kasir.db` and the import test would stage a restore next to
 /// it — which the next real launch would then apply.
+///
+/// The path is fixed rather than per-run. The backup routes need a real file on
+/// disk, and the test harness offers no teardown hook to delete one afterwards,
+/// so a per-run directory would pile up in the temp folder run after run. Wiping
+/// the one fixed directory on the way in gives each run a clean slate and leaves
+/// the machine with a single scratch folder however often the suite is run.
+/// Also removes the per-pid directories the earlier naming left behind.
 fn scratch_data_dir() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("kasir-http-tests-{}", std::process::id()));
+        let temp = std::env::temp_dir();
+        if let Ok(entries) = std::fs::read_dir(&temp) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                if name.to_string_lossy().starts_with("kasir-http-tests-") {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+
+        let dir = temp.join("kasir-http-tests");
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         std::env::set_var("KASIR_DATA_DIR", &dir);
 

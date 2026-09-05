@@ -189,7 +189,7 @@ mod tests {
     }
 
     async fn seed_sale(conn: &DatabaseConnection) -> TransactionResult {
-        let product = insert_product(&conn, "Kopi Sachet", 2_000.0, 10).await;
+        let product = insert_product(conn, "Kopi Sachet", 2_000.0, 10).await;
         checkout_with_executor(
             conn,
             &actor(),
