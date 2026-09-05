@@ -26,6 +26,7 @@ pub mod categories;
 pub mod onboarding;
 pub mod products;
 pub mod refunds;
+pub mod reports;
 pub mod settings;
 pub mod shifts;
 pub mod stock;
@@ -54,6 +55,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(refunds::session())
         .merge(stock::session())
         .merge(shifts::session())
+        .merge(reports::session())
         .route_layer(session_layer.clone());
 
     // The order matters and is the reverse of how it reads: a `route_layer`
