@@ -2,24 +2,19 @@ import { useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import { toast } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
+  Button,
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+  Description,
+  Label,
+  ListBox,
+  Select,
+  Separator,
+  Switch,
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { AppSettings } from "../types"
@@ -86,54 +81,63 @@ export function SalesSettingsTab() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{id.settings.tabSales}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label>{id.settings.allowNegativeStock}</Label>
-            <p className="text-xs text-muted-foreground">
-              {id.settings.allowNegativeStockDesc}
-            </p>
-          </div>
-          <Switch
-            checked={allowNegativeStock}
-            onCheckedChange={setAllowNegativeStock}
-          />
-        </div>
+      <Card.Header>
+        <Card.Title>{id.settings.tabSales}</Card.Title>
+      </Card.Header>
+      <Card.Content className="space-y-6">
+        {/* The label now sits inside the Switch, so clicking the text toggles it and
+            the description is wired up through aria-describedby — neither held with
+            the old free-standing Label. */}
+        <Switch
+          className="w-full"
+          isSelected={allowNegativeStock}
+          onChange={setAllowNegativeStock}
+        >
+          <Switch.Content className="w-full justify-between">
+            <span className="text-sm font-medium">{id.settings.allowNegativeStock}</span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+          <Description className="text-xs">
+            {id.settings.allowNegativeStockDesc}
+          </Description>
+        </Switch>
 
         <Separator />
 
-        <div className="space-y-2">
+        <Select
+          fullWidth
+          value={defaultPaymentMethod || null}
+          onChange={(value) => setDefaultPaymentMethod(value === null ? "" : String(value))}
+        >
           <Label>{id.settings.defaultPaymentMethod}</Label>
-          <Select
-            value={defaultPaymentMethod}
-            onValueChange={setDefaultPaymentMethod}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {paymentOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {paymentOptions.map((option) => (
+                <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                  <Label>{option.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
+            </ListBox>
+          </Select.Popover>
+        </Select>
 
         <Separator />
 
         <Button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || !isReady}
+          isDisabled={saveMutation.isPending || !isReady}
+          onPress={() => saveMutation.mutate()}
         >
           <Save className="mr-2 h-4 w-4" />
           {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
         </Button>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }

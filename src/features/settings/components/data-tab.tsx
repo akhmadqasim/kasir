@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -15,49 +15,22 @@ import {
   ShieldCheck,
   ArrowDownToLine,
 } from "lucide-react"
-import { toast } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import {
   Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import {
+  Button,
+  Card,
+  Chip,
+  Input,
+  Label,
+  ListBox,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  TextField,
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -121,6 +94,12 @@ const RETENTION_OPTIONS = [
   { value: "365", label: "365 hari" },
 ]
 
+/** Aksi yang menunggu konfirmasi pada satu baris backup. */
+interface PendingBackupAction {
+  action: "restore" | "delete"
+  filename: string
+}
+
 function BackupSettingsInline({
   intervalHours,
   retentionDays,
@@ -148,6 +127,8 @@ function BackupSettingsInline({
   })
 
   const handleChange = (field: "interval_hours" | "retention_days", value: string) => {
+    // Same guard as the other tabs: the backend rewrites all four blocks, so a change
+    // sent before the query resolves would post the missing blocks as defaults.
     const current = settingsQuery.data
     if (!current) return
     const updated = {
@@ -160,45 +141,61 @@ function BackupSettingsInline({
     updateMutation.mutate(updated)
   }
 
+  const isDisabled = updateMutation.isPending || !settingsQuery.data
+
   return (
     <div className="flex items-center gap-4 rounded-lg border bg-default/50 p-3">
-      <Settings2 className="h-4 w-4 text-muted-foreground shrink-0" />
+      <Settings2 className="h-4 w-4 shrink-0 text-muted" />
       <div className="flex items-center gap-2">
-        <Label className="text-sm whitespace-nowrap">Interval:</Label>
+        {/* Teks label dibiarkan sebagai `span` agar barisnya tetap satu baris; nama
+            aksesibilitasnya dibawa `aria-label`, seperti bar filter di layar lain. */}
+        <span className="text-sm whitespace-nowrap">Interval:</span>
         <Select
+          aria-label="Interval backup otomatis"
+          className="w-[100px]"
+          isDisabled={isDisabled}
           value={String(intervalHours)}
-          onValueChange={(v) => handleChange("interval_hours", v)}
-          disabled={updateMutation.isPending || !settingsQuery.data}
+          onChange={(value) => value !== null && handleChange("interval_hours", String(value))}
         >
-          <SelectTrigger className="w-[100px] h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {INTERVAL_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <Select.Trigger className="h-8">
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {INTERVAL_OPTIONS.map((opt) => (
+                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                  <Label>{opt.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
         </Select>
       </div>
       <div className="flex items-center gap-2">
-        <Label className="text-sm whitespace-nowrap">Retensi:</Label>
+        <span className="text-sm whitespace-nowrap">Retensi:</span>
         <Select
+          aria-label="Retensi backup otomatis"
+          className="w-[110px]"
+          isDisabled={isDisabled}
           value={String(retentionDays)}
-          onValueChange={(v) => handleChange("retention_days", v)}
-          disabled={updateMutation.isPending || !settingsQuery.data}
+          onChange={(value) => value !== null && handleChange("retention_days", String(value))}
         >
-          <SelectTrigger className="w-[110px] h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {RETENTION_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <Select.Trigger className="h-8">
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {RETENTION_OPTIONS.map((opt) => (
+                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                  <Label>{opt.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
         </Select>
       </div>
     </div>
@@ -210,9 +207,11 @@ export function DataTab() {
   const [importPath, setImportPath] = useState("")
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [pendingBackup, setPendingBackup] = useState<PendingBackupAction | null>(null)
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false)
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
-  const exportSectionRef = React.useRef<HTMLDivElement | null>(null)
+  const exportSectionRef = useRef<HTMLDivElement | null>(null)
 
   const dbInfoQuery = useQuery<DatabaseInfo>({
     queryKey: ["database-info"],
@@ -245,6 +244,16 @@ export function DataTab() {
     onSuccess: (message) => toast.success(message),
     onError: (error) => toast.error(String(error)),
   })
+
+  const confirmPendingBackup = () => {
+    if (!pendingBackup) return
+    if (pendingBackup.action === "delete") {
+      deleteBackupMutation.mutate(pendingBackup.filename)
+    } else {
+      restoreBackupMutation.mutate(pendingBackup.filename)
+    }
+    setPendingBackup(null)
+  }
 
   const handleExportWithDialog = async () => {
     setIsExporting(true)
@@ -322,77 +331,82 @@ export function DataTab() {
   const status = backupStatusQuery.data
   const backups = backupListQuery.data ?? []
   const showSafetyBanner = !!dbInfoQuery.data && !!backupStatusQuery.data
+  const isDeletePending = pendingBackup?.action === "delete"
 
   return (
     <div className="space-y-4">
       {showSafetyBanner && (
-        <Alert className="border-primary/20 bg-primary/5 px-4 py-4 text-foreground">
-          <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
-          <AlertTitle className="text-base">
-            Update normal tidak menghapus data kasir.
-          </AlertTitle>
-          <AlertDescription className="space-y-3">
-            <p>
+        <Alert status="accent">
+          <Alert.Indicator>
+            <ShieldCheck className="h-5 w-5" />
+          </Alert.Indicator>
+          <Alert.Content>
+            <Alert.Title className="text-base">
+              Update normal tidak menghapus data kasir.
+            </Alert.Title>
+            <Alert.Description>
               Database disimpan terpisah dari file aplikasi dan backup otomatis tetap berjalan.
               Jika pindah dari versi debug/portable ke installer, gunakan Export Database lalu Import Database.
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            </Alert.Description>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <Button
-                onClick={() => createBackupMutation.mutate()}
-                disabled={createBackupMutation.isPending}
+                isDisabled={createBackupMutation.isPending}
+                onPress={() => createBackupMutation.mutate()}
               >
                 <Shield className="mr-2 h-4 w-4" />
                 {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => exportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                onPress={() =>
+                  exportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
               >
                 <ArrowDownToLine className="mr-2 h-4 w-4" />
                 Ke Export Database
               </Button>
             </div>
-          </AlertDescription>
+          </Alert.Content>
         </Alert>
       )}
 
       {/* Database Info */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2">
             <HardDrive className="h-5 w-5" />
             Database
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </Card.Title>
+        </Card.Header>
+        <Card.Content className="space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{id.settings.databaseSize}</span>
+            <span className="text-muted">{id.settings.databaseSize}</span>
             <span className="font-medium">
               {dbInfoQuery.data ? formatFileSize(dbInfoQuery.data.size_bytes) : "—"}
             </span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{id.settings.databasePath}</span>
-            <span className="font-mono text-xs max-w-[300px] truncate">
+            <span className="text-muted">{id.settings.databasePath}</span>
+            <span className="max-w-[300px] truncate font-mono text-xs">
               {dbInfoQuery.data?.path ?? "—"}
             </span>
           </div>
-        </CardContent>
+        </Card.Content>
       </Card>
 
       {/* Auto Backup Status & Settings */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+        <Card.Header>
+          <Card.Title className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
             Backup Otomatis
-          </CardTitle>
-          <CardDescription>
+          </Card.Title>
+          <Card.Description>
             Backup otomatis setiap {status?.settings.interval_hours ?? 3} jam.
             Tersimpan selama {status?.settings.retention_days ?? 90} hari, file terkompresi (gzip).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-4">
           {/* Settings */}
           <BackupSettingsInline
             intervalHours={status?.settings.interval_hours ?? 3}
@@ -402,22 +416,22 @@ export function DataTab() {
           <div className="grid grid-cols-3 gap-4">
             <div className="rounded-lg border p-3 text-center">
               <div className="text-2xl font-bold">{status?.total_backups ?? 0}</div>
-              <div className="text-xs text-muted-foreground">Total Backup</div>
+              <div className="text-xs text-muted">Total Backup</div>
             </div>
             <div className="rounded-lg border p-3 text-center">
               <div className="text-2xl font-bold">
                 {status ? formatFileSize(status.total_size_bytes) : "—"}
               </div>
-              <div className="text-xs text-muted-foreground">Total Ukuran</div>
+              <div className="text-xs text-muted">Total Ukuran</div>
             </div>
             <div className="rounded-lg border p-3 text-center">
               <div className="text-2xl font-bold">{status?.settings.retention_days ?? 90}</div>
-              <div className="text-xs text-muted-foreground">Hari Retensi</div>
+              <div className="text-xs text-muted">Hari Retensi</div>
             </div>
           </div>
 
           {status?.last_backup && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted">
               <Clock className="h-4 w-4" />
               Backup terakhir: {formatDateTime(status.last_backup.created_at)} —{" "}
               {formatFileSize(status.last_backup.size_bytes)}
@@ -425,180 +439,211 @@ export function DataTab() {
           )}
 
           {status?.backup_dir && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted">
               <FolderOpen className="h-4 w-4" />
-              <span className="font-mono text-xs truncate">{status.backup_dir}</span>
+              <span className="truncate font-mono text-xs">{status.backup_dir}</span>
             </div>
           )}
 
           <Button
-            onClick={() => createBackupMutation.mutate()}
-            disabled={createBackupMutation.isPending}
+            isDisabled={createBackupMutation.isPending}
             variant="outline"
+            onPress={() => createBackupMutation.mutate()}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${createBackupMutation.isPending ? "animate-spin" : ""}`} />
             {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
           </Button>
-        </CardContent>
+        </Card.Content>
       </Card>
 
       {/* Backup List */}
       {backups.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Daftar Backup</CardTitle>
-            <CardDescription>
+          <Card.Header>
+            <Card.Title>Daftar Backup</Card.Title>
+            <Card.Description>
               {backups.length} backup tersedia. Backup lama otomatis dihapus setelah {status?.settings.retention_days ?? 90} hari.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="max-h-[300px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead className="text-right">Ukuran</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {backups.map((backup, i) => (
-                    <TableRow key={backup.filename}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{backup.filename}</span>
-                          {i === 0 && (
-                            <Badge variant="secondary" className="text-xs">Terbaru</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right text-sm">
-                        {formatFileSize(backup.size_bytes)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Pulihkan Backup</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Database akan diganti dengan backup <strong>{backup.filename}</strong>.
-                                  Data saat ini akan hilang. Pastikan sudah membuat backup terbaru.
-                                  Aplikasi perlu di-restart setelah pemulihan.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Batal</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => restoreBackupMutation.mutate(backup.filename)}
-                                >
-                                  Ya, Pulihkan
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Hapus Backup</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Hapus backup <strong>{backup.filename}</strong>? Tindakan ini tidak dapat dibatalkan.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Batal</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deleteBackupMutation.mutate(backup.filename)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Ya, Hapus
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
+            </Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <Table variant="secondary">
+              <Table.ScrollContainer className="max-h-[300px]">
+                <Table.Content aria-label="Daftar Backup">
+                  <Table.Header>
+                    <Table.Column isRowHeader>File</Table.Column>
+                    <Table.Column className="text-right">Ukuran</Table.Column>
+                    <Table.Column className="text-right">Aksi</Table.Column>
+                  </Table.Header>
+                  <Table.Body>
+                    {backups.map((backup, i) => (
+                      <Table.Row
+                        key={backup.filename}
+                        id={backup.filename}
+                        textValue={backup.filename}
+                      >
+                        <Table.Cell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm">{backup.filename}</span>
+                            {i === 0 && <Chip size="sm">Terbaru</Chip>}
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell className="text-right text-sm">
+                          {formatFileSize(backup.size_bytes)}
+                        </Table.Cell>
+                        <Table.Cell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              aria-label={`Pulihkan backup ${backup.filename}`}
+                              isIconOnly
+                              size="sm"
+                              variant="ghost"
+                              onPress={() =>
+                                setPendingBackup({ action: "restore", filename: backup.filename })
+                              }
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              aria-label={`Hapus backup ${backup.filename}`}
+                              className="text-danger"
+                              isIconOnly
+                              size="sm"
+                              variant="ghost"
+                              onPress={() =>
+                                setPendingBackup({ action: "delete", filename: backup.filename })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
+            </Table>
+          </Card.Content>
         </Card>
       )}
 
       {/* Manual Export */}
       <Card>
         <div ref={exportSectionRef} />
-        <CardHeader>
-          <CardTitle>{id.settings.exportDatabase}</CardTitle>
-          <CardDescription>{id.settings.exportDatabaseDesc}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="export-path">Lokasi File</Label>
-            <Input
-              id="export-path"
-              value={exportPath}
-              onChange={(e) => setExportPath(e.target.value)}
-              placeholder="C:\backup\kasir-backup.db"
-            />
-          </div>
-          <Button onClick={handleExportWithDialog} disabled={isExporting}>
+        <Card.Header>
+          <Card.Title>{id.settings.exportDatabase}</Card.Title>
+          <Card.Description>{id.settings.exportDatabaseDesc}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-4">
+          <TextField fullWidth value={exportPath} onChange={setExportPath}>
+            <Label>Lokasi File</Label>
+            <Input placeholder="C:\backup\kasir-backup.db" />
+          </TextField>
+          <Button isDisabled={isExporting} onPress={handleExportWithDialog}>
             <Download className="mr-2 h-4 w-4" />
             {isExporting ? "Mengexport..." : id.settings.exportDatabase}
           </Button>
-        </CardContent>
+        </Card.Content>
       </Card>
 
       {/* Manual Import */}
       <Card>
-        <CardHeader>
-          <CardTitle>{id.settings.importDatabase}</CardTitle>
-          <CardDescription>{id.settings.importDatabaseDesc}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="import-path">Lokasi File Backup</Label>
-            <Input
-              id="import-path"
-              value={importPath}
-              onChange={(e) => setImportPath(e.target.value)}
-              placeholder="C:\backup\kasir-backup.db"
-            />
-          </div>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={isImporting}>
-                <Upload className="mr-2 h-4 w-4" />
-                {isImporting ? "Mengimport..." : id.settings.importDatabase}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{id.settings.importDatabase}</AlertDialogTitle>
-                <AlertDialogDescription>{id.settings.importConfirm}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Batal</AlertDialogCancel>
-                <AlertDialogAction onClick={handleImportWithDialog}>
-                  Ya, Import
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </CardContent>
+        <Card.Header>
+          <Card.Title>{id.settings.importDatabase}</Card.Title>
+          <Card.Description>{id.settings.importDatabaseDesc}</Card.Description>
+        </Card.Header>
+        <Card.Content className="space-y-4">
+          <TextField fullWidth value={importPath} onChange={setImportPath}>
+            <Label>Lokasi File Backup</Label>
+            <Input placeholder="C:\backup\kasir-backup.db" />
+          </TextField>
+          <Button
+            isDisabled={isImporting}
+            variant="danger"
+            onPress={() => setImportConfirmOpen(true)}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {isImporting ? "Mengimport..." : id.settings.importDatabase}
+          </Button>
+        </Card.Content>
       </Card>
+
+      {/* Satu dialog untuk semua baris backup, bukan sepasang per baris: daftar backup
+          bisa panjang, dan React Aria memasang focus scope + portal untuk setiap
+          AlertDialog yang dirender. Baris mana yang dikonfirmasi dibawa state, persis
+          pola `deactivateUser` di halaman manajemen user. */}
+      <AlertDialog.Backdrop
+        isOpen={pendingBackup !== null}
+        onOpenChange={(open) => !open && setPendingBackup(null)}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog
+            aria-label={isDeletePending ? "Hapus Backup" : "Pulihkan Backup"}
+          >
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>
+                {isDeletePending ? "Hapus Backup" : "Pulihkan Backup"}
+              </AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              {isDeletePending ? (
+                <p className="text-sm text-muted">
+                  Hapus backup <strong>{pendingBackup?.filename}</strong>? Tindakan ini tidak dapat dibatalkan.
+                </p>
+              ) : (
+                <p className="text-sm text-muted">
+                  Database akan diganti dengan backup <strong>{pendingBackup?.filename}</strong>.
+                  Data saat ini akan hilang. Pastikan sudah membuat backup terbaru.
+                  Aplikasi perlu di-restart setelah pemulihan.
+                </p>
+              )}
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button variant="outline" onPress={() => setPendingBackup(null)}>
+                Batal
+              </Button>
+              <Button
+                variant={isDeletePending ? "danger" : "primary"}
+                onPress={confirmPendingBackup}
+              >
+                {isDeletePending ? "Ya, Hapus" : "Ya, Pulihkan"}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+
+      <AlertDialog.Backdrop
+        isOpen={importConfirmOpen}
+        onOpenChange={setImportConfirmOpen}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label={id.settings.importDatabase}>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{id.settings.importDatabase}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p className="text-sm text-muted">{id.settings.importConfirm}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button variant="outline" onPress={() => setImportConfirmOpen(false)}>
+                Batal
+              </Button>
+              <Button
+                variant="danger"
+                onPress={() => {
+                  setImportConfirmOpen(false)
+                  void handleImportWithDialog()
+                }}
+              >
+                Ya, Import
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   )
 }

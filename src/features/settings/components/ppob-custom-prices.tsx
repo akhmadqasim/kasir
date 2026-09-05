@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import { Button, Chip, Input, NumberField, TextField } from "@heroui/react"
+
 import { formatRupiah, parseIndonesianInteger } from "@/lib/format"
 
 interface PpobCustomPricesProps {
@@ -76,14 +74,14 @@ export function PpobCustomPrices({
   return (
     <div className="space-y-3">
       <div className="space-y-0.5">
-        <Label className="text-base">Harga Jual Pulsa per Nominal</Label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-base font-medium">Harga Jual Pulsa per Nominal</p>
+        <p className="text-xs text-muted">
           Berlaku untuk semua provider. Nominal tanpa harga pakai markup umum.
         </p>
       </div>
 
       <div className="grid gap-2">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs font-medium text-muted-foreground px-1">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs font-medium text-muted">
           <span>Nominal</span>
           <span className="w-28 text-center">Harga Jual</span>
           <span className="w-8" />
@@ -94,34 +92,51 @@ export function PpobCustomPrices({
           const isCustomNominal = !PRESET_NOMINALS.includes(nominal)
 
           return (
-            <div key={nominal} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+            <div key={nominal} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium tabular-nums">
                   {formatRupiah(nominal)}
                 </span>
                 {isCustomNominal && (
-                  <Badge variant="outline" className="text-[10px] h-4 px-1">custom</Badge>
+                  <Chip size="sm" variant="tertiary">
+                    custom
+                  </Chip>
                 )}
               </div>
-              <Input
-                type="number"
-                min="0"
-                placeholder={`cth: ${formatRupiah(nominal + 2000)}`}
-                value={hasPrice ? sellPrice : ""}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10)
-                  handlePriceChange(nominal, isNaN(val) ? undefined : val)
-                }}
-                disabled={disabled}
-                className="w-28 h-8 text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              {(hasPrice || isCustomNominal) ? (
+              {/* NumberField replaces `<input type="number">` and the CSS that used to
+                  hide its spinners. Grouping is off on purpose: React Aria parses with
+                  the runtime locale, and the app ships no I18nProvider, so a grouped
+                  "12.000" would read as 12 on an en-US webview. */}
+              <NumberField
+                aria-label={`Harga jual untuk nominal ${formatRupiah(nominal)}`}
+                className="w-28"
+                formatOptions={{ useGrouping: false, maximumFractionDigits: 0 }}
+                isDisabled={disabled}
+                minValue={0}
+                value={hasPrice ? sellPrice : Number.NaN}
+                onChange={(value) =>
+                  handlePriceChange(
+                    nominal,
+                    value === undefined || Number.isNaN(value) ? undefined : value
+                  )
+                }
+              >
+                <NumberField.Group className="h-8">
+                  <NumberField.Input
+                    className="text-xs tabular-nums"
+                    placeholder={`cth: ${formatRupiah(nominal + 2000)}`}
+                  />
+                </NumberField.Group>
+              </NumberField>
+              {hasPrice || isCustomNominal ? (
                 <Button
+                  aria-label={`Hapus harga nominal ${formatRupiah(nominal)}`}
+                  className="h-7 w-7 text-muted hover:text-danger"
+                  isDisabled={disabled}
+                  isIconOnly
+                  size="sm"
                   variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => handleRemoveCustom(nominal)}
-                  disabled={disabled}
+                  onPress={() => handleRemoveCustom(nominal)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -133,24 +148,28 @@ export function PpobCustomPrices({
         })}
       </div>
 
-      <div className="flex gap-2 items-center pt-1">
-        <Input
-          type="text"
-          placeholder="Nominal lain, cth: 12000"
+      <div className="flex items-center gap-2 pt-1">
+        <TextField
+          aria-label="Nominal lain"
+          className="flex-1"
+          isDisabled={disabled}
           value={newNominal}
-          onChange={(e) => setNewNominal(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAddNominal()}
-          disabled={disabled}
-          className="flex-1 h-8 text-xs"
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8"
-          onClick={handleAddNominal}
-          disabled={disabled || !newNominal}
+          onChange={setNewNominal}
         >
-          <Plus className="h-3.5 w-3.5 mr-1" />
+          <Input
+            className="h-8 text-xs"
+            placeholder="Nominal lain, cth: 12000"
+            onKeyDown={(e) => e.key === "Enter" && handleAddNominal()}
+          />
+        </TextField>
+        <Button
+          className="h-8"
+          isDisabled={disabled || !newNominal}
+          size="sm"
+          variant="outline"
+          onPress={handleAddNominal}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
           Tambah
         </Button>
       </div>

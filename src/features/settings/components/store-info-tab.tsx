@@ -2,17 +2,9 @@ import { useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Save, Info } from "lucide-react"
+import { Button, Card, Input, Label, TextField } from "@heroui/react"
+
 import { toast } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { StoreInfo } from "../types"
@@ -70,70 +62,62 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{id.settings.tabStore}</CardTitle>
-        <CardDescription>
-          {!isAdmin && (
-            <span className="flex items-center gap-1.5 text-amber-600">
+      <Card.Header>
+        <Card.Title>{id.settings.tabStore}</Card.Title>
+        {!isAdmin && (
+          <Card.Description>
+            <span className="flex items-center gap-1.5 text-warning">
               <Info className="h-4 w-4" />
               {id.settings.storeInfoReadOnly}
             </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="store-name">{id.settings.storeName} *</Label>
-          <Input
-            id="store-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!isAdmin}
-            required
-          />
-        </div>
+          </Card.Description>
+        )}
+      </Card.Header>
+      <Card.Content className="space-y-4">
+        {/* `isRequired` replaces the old `required` attribute: HeroUI's Label draws the
+            asterisk itself, so the marker no longer has to be typed into the string. */}
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          isRequired
+          value={name}
+          onChange={setName}
+        >
+          <Label>{id.settings.storeName}</Label>
+          <Input />
+        </TextField>
 
-        <div className="space-y-2">
-          <Label htmlFor="store-address">{id.settings.storeAddress}</Label>
-          <Input
-            id="store-address"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            disabled={!isAdmin}
-          />
-        </div>
+        <TextField fullWidth isDisabled={!isAdmin} value={address} onChange={setAddress}>
+          <Label>{id.settings.storeAddress}</Label>
+          <Input />
+        </TextField>
 
-        <div className="space-y-2">
-          <Label htmlFor="store-phone">{id.settings.storePhone}</Label>
-          <Input
-            id="store-phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            disabled={!isAdmin}
-          />
-        </div>
+        <TextField fullWidth isDisabled={!isAdmin} value={phone} onChange={setPhone}>
+          <Label>{id.settings.storePhone}</Label>
+          <Input />
+        </TextField>
 
-        <div className="space-y-2">
-          <Label htmlFor="store-email">{id.settings.storeEmail}</Label>
-          <Input
-            id="store-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={!isAdmin}
-          />
-        </div>
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          type="email"
+          value={email}
+          onChange={setEmail}
+        >
+          <Label>{id.settings.storeEmail}</Label>
+          <Input />
+        </TextField>
 
         {isAdmin && (
           <Button
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || !isReady || !name.trim()}
+            isDisabled={saveMutation.isPending || !isReady || !name.trim()}
+            onPress={() => saveMutation.mutate()}
           >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
           </Button>
         )}
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }

@@ -2,26 +2,21 @@ import { useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { RefreshCw, Save, TestTube } from "lucide-react"
-import { toast } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
+  Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+  Description,
+  Label,
+  ListBox,
+  Select,
+  Separator,
+  Switch,
+  TextArea,
+  TextField,
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import type { PrinterSettings, PrinterInfo } from "../types"
 
@@ -96,53 +91,65 @@ export function PrinterSettingsTab() {
     })
   }
 
+  const printers = printersQuery.data ?? []
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{id.settings.tabPrinter}</CardTitle>
-        <CardDescription>
+      <Card.Header>
+        <Card.Title>{id.settings.tabPrinter}</Card.Title>
+        <Card.Description>
           Konfigurasi printer thermal untuk mencetak struk transaksi
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="space-y-6">
         {/* Printer Selection */}
         <div className="space-y-2">
-          <Label htmlFor="printer">{id.settings.selectPrinter}</Label>
-          <div className="flex gap-2">
+          <div className="flex items-end gap-2">
             <Select
-              value={selectedPrinter}
-              onValueChange={setSelectedPrinter}
+              className="flex-1"
+              placeholder={id.settings.noPrinterSelected}
+              value={selectedPrinter || null}
+              onChange={(value) => setSelectedPrinter(value === null ? "" : String(value))}
             >
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder={id.settings.noPrinterSelected} />
-              </SelectTrigger>
-              <SelectContent>
-                {printersQuery.data?.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-                {printersQuery.data?.length === 0 && (
-                  <SelectItem value="_none" disabled>
-                    Tidak ada printer tersedia
-                  </SelectItem>
-                )}
-              </SelectContent>
+              <Label>{id.settings.selectPrinter}</Label>
+              <Select.Trigger>
+                <Select.Value>{selectedText}</Select.Value>
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {printers.length === 0 ? (
+                    <ListBox.Item
+                      id="_none"
+                      isDisabled
+                      textValue="Tidak ada printer tersedia"
+                    >
+                      <Label>Tidak ada printer tersedia</Label>
+                    </ListBox.Item>
+                  ) : (
+                    printers.map((p) => (
+                      <ListBox.Item key={p.id} id={p.id} textValue={p.name}>
+                        <Label>{p.name}</Label>
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))
+                  )}
+                </ListBox>
+              </Select.Popover>
             </Select>
             <Button
+              aria-label="Muat ulang daftar printer"
+              isDisabled={printersQuery.isFetching}
+              isIconOnly
               variant="outline"
-              size="icon"
-              onClick={() =>
-                queryClient.invalidateQueries({ queryKey: ["printers"] })
-              }
-              disabled={printersQuery.isFetching}
+              onPress={() => queryClient.invalidateQueries({ queryKey: ["printers"] })}
             >
               <RefreshCw
                 className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`}
               />
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted">
             Pastikan printer thermal sudah terhubung dan terinstall di Windows
           </p>
         </div>
@@ -150,64 +157,72 @@ export function PrinterSettingsTab() {
         <Separator />
 
         {/* Paper Width */}
-        <div className="space-y-2">
-          <Label htmlFor="paper-width">{id.settings.paperWidth}</Label>
-          <Select value={paperWidth} onValueChange={setPaperWidth}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="58">58mm (32 karakter/baris)</SelectItem>
-              <SelectItem value="80">80mm (42 karakter/baris)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          fullWidth
+          value={paperWidth}
+          onChange={(value) => value !== null && setPaperWidth(String(value))}
+        >
+          <Label>{id.settings.paperWidth}</Label>
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="58" textValue="58mm (32 karakter/baris)">
+                <Label>58mm (32 karakter/baris)</Label>
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              <ListBox.Item id="80" textValue="80mm (42 karakter/baris)">
+                <Label>80mm (42 karakter/baris)</Label>
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+            </ListBox>
+          </Select.Popover>
+        </Select>
 
         <Separator />
 
         {/* Auto Print */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label>{id.settings.autoPrint}</Label>
-            <p className="text-xs text-muted-foreground">
-              {id.settings.autoPrintDesc}
-            </p>
-          </div>
-          <Switch checked={autoPrint} onCheckedChange={setAutoPrint} />
-        </div>
+        <Switch className="w-full" isSelected={autoPrint} onChange={setAutoPrint}>
+          <Switch.Content className="w-full justify-between">
+            <span className="text-sm font-medium">{id.settings.autoPrint}</span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+          <Description className="text-xs">{id.settings.autoPrintDesc}</Description>
+        </Switch>
 
         <Separator />
 
         {/* Footer Text */}
-        <div className="space-y-2">
-          <Label htmlFor="footer-text">{id.settings.footerText}</Label>
-          <Textarea
-            id="footer-text"
-            value={footerText}
-            onChange={(e) => setFooterText(e.target.value)}
-            placeholder={id.settings.footerTextPlaceholder}
-            rows={3}
-          />
-        </div>
+        <TextField fullWidth value={footerText} onChange={setFooterText}>
+          <Label>{id.settings.footerText}</Label>
+          <TextArea placeholder={id.settings.footerTextPlaceholder} rows={3} />
+        </TextField>
 
         <Separator />
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saveMutation.isPending || !isReady}>
+          <Button
+            isDisabled={saveMutation.isPending || !isReady}
+            onPress={handleSave}
+          >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
           </Button>
           <Button
+            isDisabled={testPrintMutation.isPending || !selectedPrinter}
             variant="outline"
-            onClick={() => testPrintMutation.mutate()}
-            disabled={testPrintMutation.isPending || !selectedPrinter}
+            onPress={() => testPrintMutation.mutate()}
           >
             <TestTube className="mr-2 h-4 w-4" />
             {testPrintMutation.isPending ? "Mengirim..." : id.settings.testPrint}
           </Button>
         </div>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
