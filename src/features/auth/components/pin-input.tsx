@@ -1,4 +1,4 @@
-import { Input, Label, TextField } from "@heroui/react"
+import { FieldError, Input, Label, TextField } from "@heroui/react"
 
 interface PinInputProps {
   /**
@@ -12,6 +12,8 @@ interface PinInputProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  /** Pesan validasi; kolom otomatis ditandai invalid saat pesan ini terisi. */
+  errorMessage?: string
   isDisabled?: boolean
   autoFocus?: boolean
 }
@@ -23,6 +25,7 @@ export function PinInput({
   value,
   onChange,
   placeholder,
+  errorMessage,
   isDisabled,
   autoFocus,
 }: PinInputProps) {
@@ -31,6 +34,7 @@ export function PinInput({
       autoFocus={autoFocus}
       fullWidth
       isDisabled={isDisabled}
+      isInvalid={Boolean(errorMessage)}
       maxLength={6}
       minLength={4}
       type="password"
@@ -44,6 +48,7 @@ export function PinInput({
         inputMode="numeric"
         placeholder={placeholder}
       />
+      {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </TextField>
   )
 }
