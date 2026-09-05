@@ -1,18 +1,15 @@
 import { useState } from "react"
+import { Card, Table } from "@heroui/react"
+
 import { DateRangePicker } from "@/components/date-range-picker"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { usePaymentMethods } from "../hooks/use-reports"
 import { formatRupiah, toLocalDateString } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
+import { usePaymentMethods } from "../hooks/use-reports"
+import { ReportPage, ReportTable } from "./report-shell"
+
+const TITLE = "Jenis Pembayaran"
+const COLUMN_COUNT = 4
 
 const paymentColors: Record<string, string> = {
   cash: "bg-[var(--chart-1)]",
@@ -28,87 +25,96 @@ export function PaymentMethodsPage() {
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
   const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
-  const { data, isLoading } = usePaymentMethods(startDate, endDate)
+  const { data, isLoading, error } = usePaymentMethods(startDate, endDate)
 
-  const total = data?.reduce((sum, r) => sum + r.totalAmount, 0) ?? 0
+  const rows = data ?? []
+  const total = rows.reduce((sum, r) => sum + r.totalAmount, 0)
+  const totalTransactions = rows.reduce((sum, r) => sum + r.transactionCount, 0)
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Jenis Pembayaran</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      title={TITLE}
+      filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
-      </div>
-
-      {data && data.length > 0 && (
+      }
+    >
+      {rows.length > 0 && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {data.map((row) => (
+          {rows.map((row) => (
+            /* Bukan `ReportStatCard`: kartu ini membawa jumlah transaksi dan bilah
+               persentase di bawah angkanya. Bilahnya murni hiasan — persentasenya
+               sudah tertulis sebagai teks tepat di atasnya. */
             <Card key={row.paymentMethod}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <Card.Header className="pb-2">
+                <Card.Description className="text-sm font-medium text-muted">
                   {paymentMethodLabel(row.paymentMethod)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </Card.Description>
+              </Card.Header>
+              <Card.Content>
                 <p className="text-2xl font-bold">{formatRupiah(row.totalAmount)}</p>
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">{row.transactionCount} transaksi</span>
-                  <span className="text-sm font-medium">({row.percentage.toFixed(1)}%)</span>
+                  <span className="text-sm text-muted">
+                    {row.transactionCount} transaksi
+                  </span>
+                  <span className="text-sm font-medium">
+                    ({row.percentage.toFixed(1)}%)
+                  </span>
                 </div>
                 <div className="mt-2 h-2 w-full rounded-full bg-default">
                   <div
-                    className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-gray-500"}`}
+                    className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-[var(--muted-foreground)]"}`}
                     style={{ width: `${row.percentage}%` }}
                   />
                 </div>
-              </CardContent>
+              </Card.Content>
             </Card>
           ))}
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Metode Pembayaran</TableHead>
-              <TableHead className="text-right">Jumlah Transaksi</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Persentase</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.length ? (
-              <TableRow>
-                <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {data.map((row) => (
-                  <TableRow key={row.paymentMethod}>
-                    <TableCell className="font-medium">{paymentMethodLabel(row.paymentMethod)}</TableCell>
-                    <TableCell className="text-right">{row.transactionCount}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(row.totalAmount)}</TableCell>
-                    <TableCell className="text-right">{row.percentage.toFixed(1)}%</TableCell>
-                  </TableRow>
-                ))}
-                <TableRow className="font-bold">
-                  <TableCell>Total</TableCell>
-                  <TableCell className="text-right">{data.reduce((s, r) => s + r.transactionCount, 0)}</TableCell>
-                  <TableCell className="text-right">{formatRupiah(total)}</TableCell>
-                  <TableCell className="text-right">100%</TableCell>
-                </TableRow>
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        columns={
+          <>
+            <Table.Column isRowHeader>Metode Pembayaran</Table.Column>
+            <Table.Column className="text-right">Jumlah Transaksi</Table.Column>
+            <Table.Column className="text-right">Total</Table.Column>
+            <Table.Column className="text-right">Persentase</Table.Column>
+          </>
+        }
+      >
+        {rows.map((row) => (
+          <Table.Row
+            key={row.paymentMethod}
+            id={row.paymentMethod}
+            textValue={paymentMethodLabel(row.paymentMethod)}
+          >
+            <Table.Cell className="font-medium">
+              {paymentMethodLabel(row.paymentMethod)}
+            </Table.Cell>
+            <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
+            <Table.Cell className="text-right">{formatRupiah(row.totalAmount)}</Table.Cell>
+            <Table.Cell className="text-right">{row.percentage.toFixed(1)}%</Table.Cell>
+          </Table.Row>
+        ))}
+        {/* Baris total ikut di dalam `Table.Body`, bukan `Table.Footer`: kaki HeroUI
+            duduk di luar `<table>` dan tidak punya kolom untuk disejajarkan. Baris ini
+            hanya muncul kalau ada datanya, supaya tabel kosong tetap jatuh ke
+            `renderEmptyState`. */}
+        {rows.length > 0 && (
+          <Table.Row id="total" className="font-bold" textValue="Total">
+            <Table.Cell>Total</Table.Cell>
+            <Table.Cell className="text-right">{totalTransactions}</Table.Cell>
+            <Table.Cell className="text-right">{formatRupiah(total)}</Table.Cell>
+            <Table.Cell className="text-right">100%</Table.Cell>
+          </Table.Row>
+        )}
+      </ReportTable>
+    </ReportPage>
   )
 }

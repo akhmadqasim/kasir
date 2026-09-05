@@ -1,17 +1,14 @@
 import { useState } from "react"
+import { Table } from "@heroui/react"
+
 import { DateRangePicker } from "@/components/date-range-picker"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useSalesDaily } from "../hooks/use-reports"
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { useSalesDaily } from "../hooks/use-reports"
+import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+
+const TITLE = "Penjualan per Hari"
+const COLUMN_COUNT = 5
 
 export function SalesDailyPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
@@ -19,7 +16,7 @@ export function SalesDailyPage() {
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
   const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
-  const { data, isLoading } = useSalesDaily(startDate, endDate)
+  const { data, isLoading, error } = useSalesDaily(startDate, endDate)
 
   const totals = data?.reduce(
     (acc, row) => ({
@@ -32,70 +29,54 @@ export function SalesDailyPage() {
   )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Penjualan per Hari</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      title={TITLE}
+      filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
-      </div>
-
+      }
+    >
       {totals && (
         <div className="grid grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Transaksi</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{totals.transactions}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Pendapatan</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.revenue)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Modal</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.cost)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Laba Kotor</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-green-600">{formatRupiah(totals.profit)}</p></CardContent>
-          </Card>
+          <ReportStatCard label="Total Transaksi" value={totals.transactions} />
+          <ReportStatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
+          <ReportStatCard label="Total Modal" value={formatRupiah(totals.cost)} />
+          <ReportStatCard
+            label="Laba Kotor"
+            tone="success"
+            value={formatRupiah(totals.profit)}
+          />
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tanggal</TableHead>
-              <TableHead className="text-right">Transaksi</TableHead>
-              <TableHead className="text-right">Pendapatan</TableHead>
-              <TableHead className="text-right">Modal</TableHead>
-              <TableHead className="text-right">Laba Kotor</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.length ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              data.map((row) => (
-                <TableRow key={row.date}>
-                  <TableCell className="font-medium">{formatDayDate(row.date)}</TableCell>
-                  <TableCell className="text-right">{row.transactionCount}</TableCell>
-                  <TableCell className="text-right">{formatRupiah(row.totalRevenue)}</TableCell>
-                  <TableCell className="text-right">{formatRupiah(row.totalCost)}</TableCell>
-                  <TableCell className="text-right font-medium text-green-600">{formatRupiah(row.grossProfit)}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        columns={
+          <>
+            <Table.Column isRowHeader>Tanggal</Table.Column>
+            <Table.Column className="text-right">Transaksi</Table.Column>
+            <Table.Column className="text-right">Pendapatan</Table.Column>
+            <Table.Column className="text-right">Modal</Table.Column>
+            <Table.Column className="text-right">Laba Kotor</Table.Column>
+          </>
+        }
+      >
+        {(data ?? []).map((row) => (
+          <Table.Row key={row.date} id={row.date} textValue={formatDayDate(row.date)}>
+            <Table.Cell className="font-medium">{formatDayDate(row.date)}</Table.Cell>
+            <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
+            <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
+            <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
+            <Table.Cell className="text-right font-medium text-success">
+              {formatRupiah(row.grossProfit)}
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </ReportTable>
+    </ReportPage>
   )
 }

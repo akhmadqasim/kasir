@@ -1,22 +1,25 @@
 import { useState } from "react"
-import { DateRangePicker } from "@/components/date-range-picker"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useReturns } from "../hooks/use-reports"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { Table } from "@heroui/react"
 
-const typeLabels: Record<string, { label: string; variant: "destructive" | "secondary" }> = {
-  refund: { label: "Refund", variant: "destructive" },
-  exchange: { label: "Tukar", variant: "secondary" },
+import { DateRangePicker } from "@/components/date-range-picker"
+import { StatusBadge, type StatusVariant } from "@/components/status-badge"
+import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
+import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { useReturns } from "../hooks/use-reports"
+import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+
+const TITLE = "Retur Produk"
+const COLUMN_COUNT = 7
+
+const TYPE_LABELS: Record<string, string> = {
+  refund: "Refund",
+  exchange: "Tukar",
+}
+
+/** Refund menguras kas, tukar barang tidak — karena itu hanya refund yang merah. */
+const TYPE_VARIANTS: Record<string, StatusVariant> = {
+  refund: "error",
+  exchange: "neutral",
 }
 
 export function ReturnsPage() {
@@ -25,7 +28,7 @@ export function ReturnsPage() {
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
   const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
-  const { data, isLoading } = useReturns(startDate, endDate)
+  const { data, isLoading, error } = useReturns(startDate, endDate)
 
   const totals = data?.reduce(
     (acc, r) => ({ count: acc.count + 1, amount: acc.amount + r.totalRefundAmount }),
@@ -33,73 +36,64 @@ export function ReturnsPage() {
   )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Retur Produk</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      title={TITLE}
+      filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
-      </div>
-
+      }
+    >
       {totals && (
         <div className="grid grid-cols-2 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Retur</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{totals.count}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Nilai Retur</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-red-600">{formatRupiah(totals.amount)}</p></CardContent>
-          </Card>
+          <ReportStatCard label="Total Retur" value={totals.count} />
+          <ReportStatCard
+            label="Total Nilai Retur"
+            tone="danger"
+            value={formatRupiah(totals.amount)}
+          />
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>No. Refund</TableHead>
-              <TableHead>No. Struk Asli</TableHead>
-              <TableHead>Kasir</TableHead>
-              <TableHead>Tipe</TableHead>
-              <TableHead className="text-right">Jumlah</TableHead>
-              <TableHead>Alasan</TableHead>
-              <TableHead>Tanggal</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.length ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              data.map((row) => {
-                const cfg = typeLabels[row.type] ?? { label: row.type, variant: "secondary" as const }
-                return (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-mono text-sm">{row.refundNumber}</TableCell>
-                    <TableCell className="font-mono text-sm">{row.transactionReceipt}</TableCell>
-                    <TableCell>{row.cashierName}</TableCell>
-                    <TableCell>
-                      <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-red-600">{formatRupiah(row.totalRefundAmount)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">{row.reason ?? "-"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDayDate(row.createdAt)}
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        columns={
+          <>
+            <Table.Column isRowHeader>No. Refund</Table.Column>
+            <Table.Column>No. Struk Asli</Table.Column>
+            <Table.Column>Kasir</Table.Column>
+            <Table.Column>Tipe</Table.Column>
+            <Table.Column className="text-right">Jumlah</Table.Column>
+            <Table.Column>Alasan</Table.Column>
+            <Table.Column>Tanggal</Table.Column>
+          </>
+        }
+      >
+        {(data ?? []).map((row) => (
+          <Table.Row key={row.id} id={row.id} textValue={row.refundNumber}>
+            <Table.Cell className="font-mono text-sm">{row.refundNumber}</Table.Cell>
+            <Table.Cell className="font-mono text-sm">{row.transactionReceipt}</Table.Cell>
+            <Table.Cell>{row.cashierName}</Table.Cell>
+            <Table.Cell>
+              <StatusBadge status={TYPE_VARIANTS[row.type] ?? "neutral"}>
+                {TYPE_LABELS[row.type] ?? row.type}
+              </StatusBadge>
+            </Table.Cell>
+            <Table.Cell className="text-right font-medium text-danger">
+              {formatRupiah(row.totalRefundAmount)}
+            </Table.Cell>
+            <Table.Cell className="max-w-[200px] truncate text-sm text-muted">
+              {row.reason ?? "-"}
+            </Table.Cell>
+            <Table.Cell className="text-sm text-muted">
+              {formatDayDate(row.createdAt)}
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </ReportTable>
+    </ReportPage>
   )
 }

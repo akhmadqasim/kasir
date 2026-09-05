@@ -1,30 +1,41 @@
 import { useState } from "react"
-import { DateRangePicker } from "@/components/date-range-picker"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useLosses } from "../hooks/use-reports"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { Card, Table } from "@heroui/react"
 
-const reasonLabels: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  damaged: { label: "Rusak", variant: "destructive" },
-  expired: { label: "Kadaluarsa", variant: "secondary" },
-  lost: { label: "Hilang", variant: "outline" },
-  other: { label: "Lainnya", variant: "default" },
+import { DateRangePicker } from "@/components/date-range-picker"
+import { StatusBadge, type StatusVariant } from "@/components/status-badge"
+import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
+import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { useLosses } from "../hooks/use-reports"
+import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+
+const TITLE = "Laporan Kerugian"
+const COLUMN_COUNT = 9
+
+const REASON_LABELS: Record<string, string> = {
+  damaged: "Rusak",
+  expired: "Kadaluarsa",
+  lost: "Hilang",
+  other: "Lainnya",
 }
 
-const statusLabels: Record<string, { label: string; variant: "default" | "outline" | "secondary" }> = {
-  approved: { label: "Disetujui", variant: "default" },
-  pending: { label: "Menunggu", variant: "outline" },
-  rejected: { label: "Ditolak", variant: "secondary" },
+/** Kosakata yang sama dengan layar write-off stok, supaya warnanya tidak berbeda arti. */
+const REASON_VARIANTS: Record<string, StatusVariant> = {
+  damaged: "error",
+  expired: "warning",
+  lost: "neutral",
+  other: "neutral",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  approved: "Disetujui",
+  pending: "Menunggu",
+  rejected: "Ditolak",
+}
+
+const STATUS_VARIANTS: Record<string, StatusVariant> = {
+  approved: "success",
+  pending: "warning",
+  rejected: "error",
 }
 
 export function LossesPage() {
@@ -33,108 +44,101 @@ export function LossesPage() {
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
   const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
-  const { data, isLoading } = useLosses(startDate, endDate)
+  const { data, isLoading, error } = useLosses(startDate, endDate)
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Laporan Kerugian</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      title={TITLE}
+      filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
-      </div>
-
+      }
+    >
       {data && (
         <>
           <div className="grid grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Write-off</CardTitle></CardHeader>
-              <CardContent><p className="text-2xl font-bold">{data.totalWriteoffs}</p></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Qty</CardTitle></CardHeader>
-              <CardContent><p className="text-2xl font-bold">{data.totalQuantity}</p></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Kerugian</CardTitle></CardHeader>
-              <CardContent><p className="text-2xl font-bold text-red-600">{formatRupiah(data.totalLossValue)}</p></CardContent>
-            </Card>
+            <ReportStatCard label="Total Write-off" value={data.totalWriteoffs} />
+            <ReportStatCard label="Total Qty" value={data.totalQuantity} />
+            <ReportStatCard
+              label="Total Kerugian"
+              tone="danger"
+              value={formatRupiah(data.totalLossValue)}
+            />
           </div>
 
           {data.byReason.length > 0 && (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {data.byReason.map((r) => {
-                const cfg = reasonLabels[r.reason] ?? { label: r.reason, variant: "default" as const }
-                return (
-                  <Card key={r.reason}>
-                    <CardContent className="pt-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                        <span className="text-sm text-muted-foreground">{r.count}x</span>
-                      </div>
-                      <p className="text-lg font-bold text-red-600">{formatRupiah(r.totalValue)}</p>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+              {data.byReason.map((r) => (
+                /* Bukan `ReportStatCard`: labelnya sebuah badge beralasan dan angkanya
+                   berdampingan dengan jumlah kejadian, bukan label teks polos. */
+                <Card key={r.reason}>
+                  <Card.Content className="pt-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <StatusBadge status={REASON_VARIANTS[r.reason] ?? "neutral"}>
+                        {REASON_LABELS[r.reason] ?? r.reason}
+                      </StatusBadge>
+                      <span className="text-sm text-muted">{r.count}x</span>
+                    </div>
+                    <p className="text-lg font-bold text-danger">
+                      {formatRupiah(r.totalValue)}
+                    </p>
+                  </Card.Content>
+                </Card>
+              ))}
             </div>
           )}
         </>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>No. WO</TableHead>
-              <TableHead>Produk</TableHead>
-              <TableHead>Kasir</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead>Alasan</TableHead>
-              <TableHead className="text-right">Nilai Kerugian</TableHead>
-              <TableHead>Catatan</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Tanggal</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.items?.length ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              data.items.map((row) => {
-                const reasonCfg = reasonLabels[row.reason] ?? { label: row.reason, variant: "default" as const }
-                const statusCfg = statusLabels[row.status] ?? { label: row.status, variant: "outline" as const }
-                return (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-mono text-sm">{row.writeoffNumber}</TableCell>
-                    <TableCell className="font-medium">{row.productName}</TableCell>
-                    <TableCell>{row.cashierName}</TableCell>
-                    <TableCell className="text-right">{row.quantity}</TableCell>
-                    <TableCell>
-                      <Badge variant={reasonCfg.variant}>{reasonCfg.label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-red-600">{formatRupiah(row.lossValue)}</TableCell>
-                    <TableCell className="max-w-[150px] truncate text-sm text-muted-foreground">{row.notes ?? "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDayDate(row.createdAt)}
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        contentClassName="min-w-[1100px]"
+        columns={
+          <>
+            <Table.Column isRowHeader>No. WO</Table.Column>
+            <Table.Column>Produk</Table.Column>
+            <Table.Column>Kasir</Table.Column>
+            <Table.Column className="text-right">Qty</Table.Column>
+            <Table.Column>Alasan</Table.Column>
+            <Table.Column className="text-right">Nilai Kerugian</Table.Column>
+            <Table.Column>Catatan</Table.Column>
+            <Table.Column>Status</Table.Column>
+            <Table.Column>Tanggal</Table.Column>
+          </>
+        }
+      >
+        {(data?.items ?? []).map((row) => (
+          <Table.Row key={row.id} id={row.id} textValue={row.writeoffNumber}>
+            <Table.Cell className="font-mono text-sm">{row.writeoffNumber}</Table.Cell>
+            <Table.Cell className="font-medium">{row.productName}</Table.Cell>
+            <Table.Cell>{row.cashierName}</Table.Cell>
+            <Table.Cell className="text-right">{row.quantity}</Table.Cell>
+            <Table.Cell>
+              <StatusBadge status={REASON_VARIANTS[row.reason] ?? "neutral"}>
+                {REASON_LABELS[row.reason] ?? row.reason}
+              </StatusBadge>
+            </Table.Cell>
+            <Table.Cell className="text-right font-medium text-danger">
+              {formatRupiah(row.lossValue)}
+            </Table.Cell>
+            <Table.Cell className="max-w-[150px] truncate text-sm text-muted">
+              {row.notes ?? "-"}
+            </Table.Cell>
+            <Table.Cell>
+              <StatusBadge status={STATUS_VARIANTS[row.status] ?? "neutral"}>
+                {STATUS_LABELS[row.status] ?? row.status}
+              </StatusBadge>
+            </Table.Cell>
+            <Table.Cell className="text-sm text-muted">
+              {formatDayDate(row.createdAt)}
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </ReportTable>
+    </ReportPage>
   )
 }
