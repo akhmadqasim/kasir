@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { CalendarDate } from "@internationalized/date"
 import {
   DEFAULT_RANGE_DAYS,
+  fromCalendarDateRange,
   getDefaultDateRange,
   getTodayRange,
   resolveRangeSelection,
+  toCalendarDateRange,
   type DateRange,
 } from "../date-range"
 import { toLocalDateString } from "../format"
@@ -116,5 +119,47 @@ describe("getTodayRange", () => {
 
     range.from!.setDate(1)
     expect(toLocalDateString(range.to!)).toBe("2026-09-05")
+  })
+})
+
+describe("calendar adapters", () => {
+  it("carries a range across to React Aria and back unchanged", () => {
+    const range: DateRange = { from: new Date(2026, 8, 5), to: new Date(2026, 8, 30) }
+    const calendar = toCalendarDateRange(range)
+
+    expect(calendar).toEqual({
+      start: new CalendarDate(2026, 9, 5),
+      end: new CalendarDate(2026, 9, 30),
+    })
+    expect(fromCalendarDateRange(calendar)).toEqual(range)
+  })
+
+  it("fills a half-open range's end so the calendar has something to show", () => {
+    const calendar = toCalendarDateRange({ from: new Date(2026, 8, 5), to: undefined })
+
+    expect(calendar).toEqual({
+      start: new CalendarDate(2026, 9, 5),
+      end: new CalendarDate(2026, 9, 5),
+    })
+  })
+
+  it("has no calendar value for an empty range", () => {
+    expect(toCalendarDateRange(undefined)).toBeNull()
+    expect(toCalendarDateRange({ from: undefined })).toBeNull()
+  })
+
+  it("reads a cleared picker as no range at all", () => {
+    expect(fromCalendarDateRange(null)).toBeUndefined()
+  })
+
+  it("keeps the local calendar day, not the UTC one", () => {
+    // `toDate(timeZone)` would land on the previous day for anything west of UTC.
+    const range = fromCalendarDateRange({
+      start: new CalendarDate(2026, 1, 1),
+      end: new CalendarDate(2026, 1, 1),
+    })
+
+    expect(toLocalDateString(range!.from!)).toBe("2026-01-01")
+    expect(toLocalDateString(range!.to!)).toBe("2026-01-01")
   })
 })
