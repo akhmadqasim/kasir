@@ -24,6 +24,7 @@
 
 pub mod error;
 pub mod extract;
+pub mod idempotency;
 pub mod middleware;
 pub mod routes;
 pub mod session;
@@ -245,7 +246,7 @@ pub async fn start(state: AppState) -> Result<ServerHandle, AppError> {
         }
     });
 
-    spawn_session_sweeper(state.db.clone(), shutdown.clone());
+    spawn_sweeper(state.db.clone(), shutdown.clone());
 
     Ok(ServerHandle { port, shutdown })
 }
@@ -280,9 +281,10 @@ async fn bind_listener(config: &ServerConfig) -> Result<TcpListener, AppError> {
     )))
 }
 
-/// Expired rows are also dropped when they are next presented, but a session
-/// nobody ever comes back to would sit in the table forever.
-fn spawn_session_sweeper(db: DatabaseConnection, shutdown: Arc<Notify>) {
+/// Both tables drop their own dead rows when one is next presented, but a
+/// session nobody comes back to — and an idempotency key whose sale nobody
+/// retries, which is nearly all of them — would sit there forever.
+fn spawn_sweeper(db: DatabaseConnection, shutdown: Arc<Notify>) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(std::time::Duration::from_secs(SWEEP_INTERVAL_SECS));
         ticker.tick().await; // the first tick fires immediately
@@ -290,10 +292,18 @@ fn spawn_session_sweeper(db: DatabaseConnection, shutdown: Arc<Notify>) {
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    match session::sweep_expired(&db, chrono::Utc::now()).await {
+                    let now = chrono::Utc::now();
+
+                    match session::sweep_expired(&db, now).await {
                         Ok(0) => {}
                         Ok(n) => logging::log_info(&format!("Swept {n} expired session(s)")),
                         Err(e) => logging::log_error(&format!("Session sweep failed: {e}")),
+                    }
+
+                    match idempotency::sweep_expired(&db, now).await {
+                        Ok(0) => {}
+                        Ok(n) => logging::log_info(&format!("Swept {n} expired idempotency key(s)")),
+                        Err(e) => logging::log_error(&format!("Idempotency sweep failed: {e}")),
                     }
                 }
                 _ = shutdown.notified() => break,

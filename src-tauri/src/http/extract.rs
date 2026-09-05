@@ -62,3 +62,19 @@ fn to_api_error(rejection: JsonRejection) -> ApiError {
         other => ApiError::bad_request(format!("Format data tidak valid: {other}")),
     }
 }
+
+/// Deserialise a body the handler already holds, failing exactly as [`Json`]
+/// would.
+///
+/// The idempotent routes cannot use `Json<T>`: they have to hash the bytes the
+/// client actually sent, and an extractor that consumes the body leaves nothing
+/// to hash. They take `Bytes` and come here, so the error shape a client sees
+/// does not depend on which of the two paths parsed its request.
+pub fn json_from_slice<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiError> {
+    serde_json::from_slice(body).map_err(|err| match err.classify() {
+        serde_json::error::Category::Data => {
+            ApiError::validation(format!("Data tidak sesuai: {err}"))
+        }
+        _ => ApiError::bad_request(format!("Format data tidak valid: {err}")),
+    })
+}

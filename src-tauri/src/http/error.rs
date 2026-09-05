@@ -76,6 +76,17 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "csrf", message)
     }
 
+    /// The request cannot proceed in the state the server is currently in.
+    ///
+    /// Only the idempotency guard raises this, for the duplicate-in-flight case:
+    /// a second attempt arrives while the first still holds the same
+    /// `Idempotency-Key`. It is deliberately not a 422 — nothing about the
+    /// request is wrong, and the same request will succeed or replay once the
+    /// first attempt lands.
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, "conflict", message)
+    }
+
     /// Login backoff. The seconds are echoed in the `Retry-After` header.
     pub fn rate_limited(message: impl Into<String>, retry_after_secs: u64) -> Self {
         Self {

@@ -80,6 +80,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "020_sessions",
         include_str!("../../migrations/020_sessions.sql"),
     ),
+    (
+        "021_idempotency_keys",
+        include_str!("../../migrations/021_idempotency_keys.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {
