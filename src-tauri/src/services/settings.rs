@@ -256,6 +256,72 @@ pub fn export_database(actor: &Actor, export_path: &str) -> Result<u64, AppError
         .map_err(|e| AppError::Internal(format!("Gagal mengekspor database: {}", e)))
 }
 
+/// The live database, ready to be sent to a browser.
+pub struct DatabaseExport {
+    /// Where to read the bytes from. Always the server's own database path —
+    /// nothing a client sends contributes to it.
+    pub path: std::path::PathBuf,
+    /// What to put in `Content-Disposition`. Generated here, from the clock.
+    pub filename: String,
+    pub size_bytes: u64,
+}
+
+/// Prepare a download of the live database.
+///
+/// [`export_database`] takes a destination path from its caller and copies the
+/// file there. That is fine for a Tauri file dialog, whose path the user chose
+/// through the OS, and it is a path-traversal hole the moment the caller is a
+/// request body — an admin session could write a copy of the database anywhere
+/// the process can reach, under any name.
+///
+/// There is no destination here at all. The server opens its own file and
+/// streams it; the only thing the client influences is whether it saves what
+/// arrives. The filename in the header is generated from the clock, so it is not
+/// a path either.
+pub fn prepare_export(actor: &Actor) -> Result<DatabaseExport, AppError> {
+    guard::require_admin(actor)?;
+
+    let db_path = get_db_path();
+    if !db_path.exists() {
+        return Err(AppError::NotFound("File database tidak ditemukan".into()));
+    }
+
+    // WAL is on, so everything committed since the last checkpoint lives in
+    // `kasir.db-wal`. Sending `kasir.db` without checkpointing first silently
+    // drops the day's sales from the export.
+    backup::checkpoint_database_wal(&db_path);
+
+    let size_bytes = std::fs::metadata(&db_path)
+        .map_err(|e| AppError::Internal(format!("Gagal membaca info database: {}", e)))?
+        .len();
+
+    Ok(DatabaseExport {
+        filename: format!(
+            "kasir-export-{}.db",
+            chrono::Local::now().format("%Y-%m-%d_%H%M%S")
+        ),
+        path: db_path,
+        size_bytes,
+    })
+}
+
+/// Install an uploaded database image, from bytes rather than from a path.
+///
+/// The counterpart to [`prepare_export`]: [`import_database`] is handed a path
+/// and reads whatever is there, which over HTTP would let a request name any
+/// file on the till as the new database. Here the bytes *are* the request. They
+/// are checked for the SQLite header and staged next to the live file, to be
+/// swapped in at the next launch — the same staging `restore` uses, and for the
+/// same reason: the connection pool holds `kasir.db` open, so it cannot be
+/// replaced while the app is running.
+pub fn import_database_bytes(actor: &Actor, data: &[u8]) -> Result<String, AppError> {
+    guard::require_admin(actor)?;
+
+    backup::stage_restore_bytes(&get_db_path(), data)?;
+
+    Ok("Database berhasil diimpor. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
+}
+
 pub fn import_database(actor: &Actor, import_path: &str) -> Result<String, AppError> {
     guard::require_admin(actor)?;
 

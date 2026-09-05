@@ -1690,6 +1690,257 @@ async fn every_dashboard_panel_answers_a_session() {
 }
 
 // ---------------------------------------------------------------------------
+// Backups: a download, an upload, and no client-supplied paths
+// ---------------------------------------------------------------------------
+
+/// Point `KASIR_DATA_DIR` at a scratch folder for this test binary.
+///
+/// `services::backup` and `services::settings` resolve the database and backup
+/// directory from it. Without the override the export test would read the
+/// developer's real `kasir.db` and the import test would stage a restore next to
+/// it — which the next real launch would then apply.
+fn scratch_data_dir() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("kasir-http-tests-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        std::env::set_var("KASIR_DATA_DIR", &dir);
+
+        // A real SQLite file, so the WAL checkpoint on the export path has
+        // something valid to open.
+        let db = dir.join("kasir.db");
+        let conn = rusqlite::Connection::open(&db).expect("scratch database");
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS scratch (id INTEGER);")
+            .expect("scratch schema");
+        drop(conn);
+
+        dir
+    })
+}
+
+const MULTIPART_BOUNDARY: &str = "----kasirtestboundary";
+
+/// A `multipart/form-data` body with one part, so the upload route can be
+/// driven the way a browser drives it.
+fn multipart_file(field: &str, filename: &str, data: &[u8]) -> Body {
+    let mut body = Vec::new();
+    body.extend_from_slice(format!("--{MULTIPART_BOUNDARY}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
+    );
+    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    body.extend_from_slice(data);
+    body.extend_from_slice(format!("\r\n--{MULTIPART_BOUNDARY}--\r\n").as_bytes());
+    Body::from(body)
+}
+
+fn multipart_content_type() -> String {
+    format!("multipart/form-data; boundary={MULTIPART_BOUNDARY}")
+}
+
+/// The 16 bytes that make a file a SQLite database, followed by enough padding
+/// to look like a page.
+fn fake_sqlite_image() -> Vec<u8> {
+    let mut bytes = b"SQLite format 3\0".to_vec();
+    bytes.resize(512, 0);
+    bytes
+}
+
+/// The export is a download, not a copy to a path the caller named.
+#[tokio::test]
+async fn the_database_export_is_a_download_with_a_server_chosen_filename() {
+    scratch_data_dir();
+    let db = setup_test_db().await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/backups/export")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let disposition = response
+        .headers()
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .expect("a download header")
+        .to_string();
+    assert!(disposition.starts_with("attachment; filename=\"kasir-export-"));
+    assert!(disposition.ends_with(".db\""));
+
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok()),
+        Some("application/vnd.sqlite3")
+    );
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    assert!(
+        bytes.starts_with(b"SQLite format 3\0"),
+        "the download must be the database itself"
+    );
+}
+
+#[tokio::test]
+async fn the_database_export_is_closed_to_a_cashier() {
+    scratch_data_dir();
+    let db = setup_test_db().await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/backups/export")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// An upload that is not a database must be refused before anything is staged.
+/// A file that only fails at the next launch would brick the till in a way
+/// nobody could connect back to the upload.
+#[tokio::test]
+async fn an_upload_that_is_not_a_sqlite_database_is_refused() {
+    let dir = scratch_data_dir();
+    let db = setup_test_db().await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let pending = dir.join("kasir.db.restore-pending");
+    let _ = std::fs::remove_file(&pending);
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::POST, "/api/backups/import")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, multipart_content_type())
+                .body(multipart_file("file", "kasir.db", b"ini bukan database"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body_json(response).await["code"], json!("validation"));
+    assert!(
+        !pending.exists(),
+        "a rejected upload must not have been staged"
+    );
+}
+
+/// The `filename` on a multipart part is attacker-controlled. The import must
+/// not read it at all — what lands on disk is the one staging path the service
+/// owns, whatever the part claims to be called.
+#[tokio::test]
+async fn an_upload_filename_never_becomes_a_path() {
+    let dir = scratch_data_dir();
+    let db = setup_test_db().await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let escape = dir.join("dicuri.db");
+    let _ = std::fs::remove_file(&escape);
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::POST, "/api/backups/import")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, multipart_content_type())
+                .body(multipart_file(
+                    "file",
+                    "../../dicuri.db",
+                    &fake_sqlite_image(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        dir.join("kasir.db.restore-pending").exists(),
+        "the upload is staged next to the live database"
+    );
+    assert!(
+        !escape.exists(),
+        "the name the client chose must not have created a file"
+    );
+
+    std::fs::remove_file(dir.join("kasir.db.restore-pending")).expect("cleanup");
+}
+
+/// The two routes that do take a filename rebuild the path themselves and
+/// refuse anything that is not a plain backup name.
+#[tokio::test]
+async fn a_backup_filename_that_leaves_the_backup_directory_is_refused() {
+    let dir = scratch_data_dir();
+    let db = setup_test_db().await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+    let state = state(db);
+
+    for filename in [
+        "..",
+        "..%2F..%2Fkasir.db",
+        "%2Fetc%2Fpasswd",
+        "C:%5CWindows%5Cwin.ini",
+        "kasir_2026-09-05.db.gz%00",
+    ] {
+        let deleted = router(&state)
+            .oneshot(
+                same_origin(Method::DELETE, &format!("/api/backups/{filename}"))
+                    .header(header::COOKIE, cookie(&token))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            deleted.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "DELETE {filename}"
+        );
+
+        let restored = router(&state)
+            .oneshot(
+                same_origin(Method::POST, &format!("/api/backups/{filename}/restore"))
+                    .header(header::COOKIE, cookie(&token))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            restored.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "POST {filename}/restore"
+        );
+    }
+
+    assert!(
+        dir.join("kasir.db").exists(),
+        "nothing outside the backup directory may have been touched"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The real listener
 // ---------------------------------------------------------------------------
 

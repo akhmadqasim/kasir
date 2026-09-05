@@ -22,6 +22,7 @@
 //! [`Actor`]: crate::domain::Actor
 
 pub mod auth;
+pub mod backups;
 pub mod categories;
 pub mod dashboard;
 pub mod onboarding;
@@ -70,6 +71,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(users::admin())
         .merge(settings::admin())
         .merge(stock::admin())
+        .merge(backups::admin())
         .route_layer(admin_layer)
         .route_layer(session_layer);
 
