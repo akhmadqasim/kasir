@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 
 use sea_orm::DatabaseConnection;
 
-use crate::utils::AppError;
 use crate::utils::require_role;
+use crate::utils::AppError;
 
 const DEFAULT_INTERVAL_HOURS: u64 = 3;
 const DEFAULT_RETENTION_DAYS: i64 = 90;
@@ -56,6 +56,40 @@ fn get_backup_dir() -> PathBuf {
     crate::utils::paths::get_backup_dir()
 }
 
+// --- Backup filename ---
+
+const BACKUP_PREFIX: &str = "kasir_";
+const BACKUP_SUFFIX: &str = ".db.gz";
+
+/// The local calendar date encoded in a backup filename, plus the time of day
+/// when the name carries one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackupName {
+    pub date: chrono::NaiveDate,
+    pub time: Option<chrono::NaiveTime>,
+}
+
+/// Parse `kasir_YYYY-MM-DD.db.gz`, returning `None` for anything else.
+///
+/// This replaces three copies of `&name[6..16]` that were guarded only by
+/// `starts_with("kasir_") && ends_with(".db.gz")`. That guard admits
+/// `kasir_.db.gz`, which is 12 bytes long, so the slice panicked on an index out
+/// of range; a name with non-ASCII bytes could also split a UTF-8 boundary and
+/// panic. Neither panic is local: inside the scheduler's spawned task it stops
+/// every future automatic backup with nothing logged, and inside a command it
+/// aborts the IPC call so the frontend promise never settles.
+///
+/// `strip_prefix`/`strip_suffix` and the chrono parsers are all
+/// char-boundary-safe and reject rather than panic, so any file a user drops in
+/// the backup folder is simply ignored.
+pub fn parse_backup_filename(name: &str) -> Option<BackupName> {
+    let stem = name
+        .strip_prefix(BACKUP_PREFIX)?
+        .strip_suffix(BACKUP_SUFFIX)?;
+    let date = chrono::NaiveDate::parse_from_str(stem, "%Y-%m-%d").ok()?;
+    Some(BackupName { date, time: None })
+}
+
 /// Flush committed WAL pages into the main `.db` file before it is copied for a
 /// backup. Without this, a plain file read of `kasir.db` misses everything still
 /// sitting in `kasir.db-wal`. Best-effort: a transient BUSY must not abort the
@@ -68,7 +102,10 @@ fn checkpoint_wal(db_path: &Path) {
             }
         }
         Err(e) => {
-            eprintln!("[backup] Gagal membuka DB untuk checkpoint (dilewati): {}", e);
+            eprintln!(
+                "[backup] Gagal membuka DB untuk checkpoint (dilewati): {}",
+                e
+            );
         }
     }
 }
@@ -134,10 +171,43 @@ fn create_backup_file(db_path: &Path, backup_dir: &Path) -> Result<BackupInfo, A
     })
 }
 
+/// Every backup in `backup_dir`, newest first.
+///
+/// The single place that turns directory entries into `BackupInfo`; both
+/// `list_backups` and `get_backup_status` used to carry their own copy of this
+/// loop, complete with their own copy of the panicking name slice. A missing
+/// directory is an empty list, not an error — it just means no backup has run
+/// yet.
+fn collect_backups(backup_dir: &Path) -> Result<Vec<BackupInfo>, AppError> {
+    let mut backups: Vec<BackupInfo> = Vec::new();
+
+    if !backup_dir.exists() {
+        return Ok(backups);
+    }
+
+    let entries = fs::read_dir(backup_dir)
+        .map_err(|e| AppError::Internal(format!("Gagal membaca folder backup: {}", e)))?;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(parsed) = parse_backup_filename(&name) else {
+            continue;
+        };
+        let Ok(meta) = entry.metadata() else { continue };
+        backups.push(BackupInfo {
+            filename: name,
+            size_bytes: meta.len(),
+            created_at: format!("{} 00:00:00", parsed.date.format("%Y-%m-%d")),
+        });
+    }
+
+    backups.sort_by(|a, b| b.filename.cmp(&a.filename));
+    Ok(backups)
+}
+
 /// Delete backups older than retention period
 fn cleanup_old_backups(backup_dir: &Path, retention_days: i64) -> Result<usize, AppError> {
-    let cutoff = Local::now() - chrono::Duration::days(retention_days);
-    let cutoff_str = cutoff.format("%Y-%m-%d").to_string();
+    let cutoff = (Local::now() - chrono::Duration::days(retention_days)).date_naive();
     let mut deleted = 0;
 
     if !backup_dir.exists() {
@@ -149,14 +219,11 @@ fn cleanup_old_backups(backup_dir: &Path, retention_days: i64) -> Result<usize, 
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        // Pattern: kasir_YYYY-MM-DD.db.gz
-        if name.starts_with("kasir_") && name.ends_with(".db.gz") {
-            let date_part = &name[6..16]; // Extract YYYY-MM-DD
-            if date_part < cutoff_str.as_str() {
-                if fs::remove_file(entry.path()).is_ok() {
-                    deleted += 1;
-                }
-            }
+        let Some(parsed) = parse_backup_filename(&name) else {
+            continue;
+        };
+        if parsed.date < cutoff && fs::remove_file(entry.path()).is_ok() {
+            deleted += 1;
         }
     }
 
@@ -300,30 +367,8 @@ pub async fn get_backup_status(
     scheduler: State<'_, Arc<Mutex<BackupScheduler>>>,
 ) -> Result<BackupStatus, AppError> {
     let backup_dir = get_backup_dir();
-    let mut backups: Vec<BackupInfo> = Vec::new();
-    let mut total_size: u64 = 0;
-
-    if backup_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&backup_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("kasir_") && name.ends_with(".db.gz") {
-                    if let Ok(meta) = entry.metadata() {
-                        let date_part = name[6..16].to_string();
-                        total_size += meta.len();
-                        backups.push(BackupInfo {
-                            filename: name,
-                            size_bytes: meta.len(),
-                            created_at: format!("{} 00:00:00", date_part),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Sort by date descending
-    backups.sort_by(|a, b| b.filename.cmp(&a.filename));
+    let backups = collect_backups(&backup_dir).unwrap_or_default();
+    let total_size: u64 = backups.iter().map(|b| b.size_bytes).sum();
 
     let s = scheduler.lock().await;
 
@@ -338,36 +383,15 @@ pub async fn get_backup_status(
 
 #[tauri::command]
 pub async fn list_backups() -> Result<Vec<BackupInfo>, AppError> {
-    let backup_dir = get_backup_dir();
-    let mut backups: Vec<BackupInfo> = Vec::new();
-
-    if !backup_dir.exists() {
-        return Ok(backups);
-    }
-
-    let entries = fs::read_dir(&backup_dir)
-        .map_err(|e| AppError::Internal(format!("Gagal membaca folder backup: {}", e)))?;
-
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("kasir_") && name.ends_with(".db.gz") {
-            if let Ok(meta) = entry.metadata() {
-                let date_part = name[6..16].to_string();
-                backups.push(BackupInfo {
-                    filename: name,
-                    size_bytes: meta.len(),
-                    created_at: format!("{} 00:00:00", date_part),
-                });
-            }
-        }
-    }
-
-    backups.sort_by(|a, b| b.filename.cmp(&a.filename));
-    Ok(backups)
+    collect_backups(&get_backup_dir())
 }
 
 #[tauri::command]
-pub async fn restore_backup(db: State<'_, DatabaseConnection>, caller_id: i64, filename: String) -> Result<String, AppError> {
+pub async fn restore_backup(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
+    filename: String,
+) -> Result<String, AppError> {
     require_role(db.inner(), caller_id, "admin").await?;
 
     let backup_dir = get_backup_dir();
@@ -400,7 +424,11 @@ pub async fn restore_backup(db: State<'_, DatabaseConnection>, caller_id: i64, f
 }
 
 #[tauri::command]
-pub async fn delete_backup(db: State<'_, DatabaseConnection>, caller_id: i64, filename: String) -> Result<(), AppError> {
+pub async fn delete_backup(
+    db: State<'_, DatabaseConnection>,
+    caller_id: i64,
+    filename: String,
+) -> Result<(), AppError> {
     require_role(db.inner(), caller_id, "admin").await?;
 
     let backup_dir = get_backup_dir();
@@ -414,4 +442,49 @@ pub async fn delete_backup(db: State<'_, DatabaseConnection>, caller_id: i64, fi
         .map_err(|e| AppError::Internal(format!("Gagal menghapus backup: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    /// The name the old `&name[6..16]` slice panicked on: it passes
+    /// `starts_with("kasir_") && ends_with(".db.gz")` but is only 12 bytes long.
+    #[test]
+    fn parse_rejects_the_shortest_passing_name() {
+        assert_eq!(parse_backup_filename("kasir_.db.gz"), None);
+    }
+
+    /// A non-ASCII name whose 6..16 byte window lands inside a UTF-8 sequence.
+    /// Slicing it panicked with "byte index is not a char boundary".
+    #[test]
+    fn parse_rejects_non_ascii_names() {
+        assert_eq!(
+            parse_backup_filename("kasir_\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}.db.gz"),
+            None
+        );
+        assert_eq!(parse_backup_filename("kasir_caf\u{e9}-2026.db.gz"), None);
+    }
+
+    #[test]
+    fn parse_accepts_a_valid_name() {
+        let parsed = parse_backup_filename("kasir_2026-09-05.db.gz").expect("valid name");
+        assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2026, 9, 5).unwrap());
+        assert_eq!(parsed.time, None);
+    }
+
+    #[test]
+    fn parse_rejects_unrelated_files() {
+        for name in [
+            "",
+            "kasir_2026-09-05.db",
+            "notes.txt",
+            "kasir_2026-13-45.db.gz",
+            "kasir_2026-09-05 .db.gz",
+            "backup_2026-09-05.db.gz",
+        ] {
+            assert_eq!(parse_backup_filename(name), None, "should reject {name:?}");
+        }
+    }
 }
