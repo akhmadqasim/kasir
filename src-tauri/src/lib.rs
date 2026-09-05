@@ -35,7 +35,7 @@ pub fn run() {
     // `kasir.db` open, so it is the only point where swapping the file cannot
     // race SQLite's page cache or leave a stale `-wal` behind. A failure here is
     // logged and the app continues on the database it already had.
-    match commands::backup::apply_pending_restore(&db_path) {
+    match services::backup::apply_pending_restore(&db_path) {
         Ok(true) => utils::logging::log_startup("Applied pending database restore"),
         Ok(false) => {}
         Err(e) => {
@@ -67,7 +67,7 @@ pub fn run() {
 
     let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
 
-    let backup_scheduler = Arc::new(Mutex::new(commands::backup::BackupScheduler::new()));
+    let backup_scheduler = Arc::new(Mutex::new(services::backup::BackupScheduler::new()));
 
     let backup_scheduler_clone = backup_scheduler.clone();
     #[allow(unused_mut)]

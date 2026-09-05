@@ -193,7 +193,7 @@ pub async fn export_database(
     // `kasir.db-wal` and a bare copy of `kasir.db` leaves it behind — silently
     // losing the day's sales in the very flow the UI banner recommends for
     // moving between versions. `create_backup_file` already did this correctly.
-    super::backup::checkpoint_database_wal(&db_path);
+    crate::services::backup::checkpoint_database_wal(&db_path);
 
     std::fs::copy(&db_path, &export_path)
         .map_err(|e| AppError::Internal(format!("Gagal mengekspor database: {}", e)))
@@ -221,7 +221,7 @@ pub async fn import_database(
     // start. Staging the file makes the swap happen in `run()` before the pool
     // exists, with the sidecars removed; the header is checked first so a file
     // that is not a database is refused instead of bricking the app.
-    super::backup::stage_restore_from_file(&db_path, import)?;
+    crate::services::backup::stage_restore_from_file(&db_path, import)?;
 
     Ok("Database berhasil diimpor. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
 }

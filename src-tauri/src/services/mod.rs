@@ -6,6 +6,7 @@
 //! is what lets `cargo test --lib` exercise the rules without a running app.
 
 pub mod auth;
+pub mod backup;
 pub mod categories;
 pub mod guard;
 pub mod onboarding;
