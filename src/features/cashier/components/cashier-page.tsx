@@ -13,7 +13,11 @@ import type { TransactionResult } from "../types"
 
 export function CashierPage() {
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
+  // The shift dialog is not a state of its own: it is open whenever there is no
+  // shift and the cashier has not waved it away. Deriving it means it can never
+  // be left open over a shift that has since been opened, and it drops the effect
+  // that used to push it open on every render where `needsShift` was true.
+  const [shiftDialogDismissed, setShiftDialogDismissed] = useState(false)
   const [productSearchFocusKey, setProductSearchFocusKey] = useState(0)
   const [successResult, setSuccessResult] = useState<TransactionResult | null>(
     null
@@ -32,14 +36,13 @@ export function CashierPage() {
   }, [user, fetchActiveShift])
 
   const needsShift = !activeShift
+  const shiftDialogOpen = needsShift && !shiftDialogDismissed
   // Dialog milik halaman ini menutupi CartPanel, jadi shortcut-nya harus mati.
   const pageDialogOpen = paymentOpen || successResult !== null || shiftDialogOpen
 
-  useEffect(() => {
-    if (needsShift) {
-      setShiftDialogOpen(true)
-    }
-  }, [needsShift])
+  const handleShiftDialogOpenChange = useCallback((open: boolean) => {
+    setShiftDialogDismissed(!open)
+  }, [])
 
   const handlePaymentSuccess = useCallback((result: TransactionResult) => {
     setPaymentOpen(false)
@@ -99,7 +102,7 @@ export function CashierPage() {
             size="sm"
             variant="outline"
             className="border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/50"
-            onClick={() => setShiftDialogOpen(true)}
+            onClick={() => setShiftDialogDismissed(false)}
           >
             <DoorOpen className="mr-1 h-4 w-4" />
             Buka Kasir
@@ -138,7 +141,7 @@ export function CashierPage() {
 
       <OpenShiftDialog
         open={shiftDialogOpen}
-        onOpenChange={setShiftDialogOpen}
+        onOpenChange={handleShiftDialogOpenChange}
       />
     </>
   )
