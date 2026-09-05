@@ -12,8 +12,12 @@ import { configure } from "@testing-library/react"
  * Menaikkan batasnya menunggu penjadwalan, bukan menyembunyikan kegagalan:
  * assertion-nya tetap harus terpenuhi, hanya diberi waktu lebih panjang untuk
  * itu. Test yang benar-benar salah tetap merah, cuma lebih lambat melapor.
+ *
+ * 5 detik masih pecah kalau mesinnya sedang menjalankan `cargo build` di saat
+ * yang sama, dan itu bukan keadaan yang aneh di repo ini. Batas panjang tidak
+ * memperlambat test yang lulus — hanya yang memang sedang menunggu.
  */
-configure({ asyncUtilTimeout: 5000 })
+configure({ asyncUtilTimeout: 15_000 })
 
 /**
  * jsdom ships a `matchMedia` stub whose `matches` is always false, which makes the
