@@ -7,16 +7,13 @@ import {
   Search,
   RefreshCw,
   Loader2,
-  CalendarIcon,
 } from "lucide-react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import type { DateRange } from "react-day-picker"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
-import { Calendar } from "@/components/ui/calendar"
+import { DateRangePicker } from "@/components/date-range-picker"
+import type { DateRange } from "@/lib/date-range"
 import {
   Dialog,
   DialogContent,
@@ -24,11 +21,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -377,40 +369,7 @@ export function PpobMutasi() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              data-empty={!dateRange?.from}
-              className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                    {" - "}
-                    {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                  </>
-                ) : (
-                  format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                )
-              ) : (
-                <span>Pilih tanggal</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={setDateRange}
-              numberOfMonths={2}
-              locale={idLocale}
-            />
-          </PopoverContent>
-        </Popover>
+        <DateRangePicker value={dateRange} onChange={setDateRange} align="start" />
 
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-[140px]">
