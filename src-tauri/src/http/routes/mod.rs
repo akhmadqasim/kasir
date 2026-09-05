@@ -25,6 +25,7 @@ pub mod auth;
 pub mod backups;
 pub mod categories;
 pub mod dashboard;
+pub mod logs;
 pub mod onboarding;
 pub mod ppob;
 pub mod printers;
@@ -63,6 +64,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(dashboard::session())
         .merge(printers::session())
         .merge(ppob::session())
+        .merge(logs::session())
         .route_layer(session_layer.clone());
 
     // The order matters and is the reverse of how it reads: a `route_layer`
