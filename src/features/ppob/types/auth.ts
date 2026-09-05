@@ -28,14 +28,3 @@ export interface PpobSettings {
   pin: string
   markup: PpobMarkup
 }
-
-export interface AppSettingsWithPpob {
-  sales: {
-    allow_negative_stock: boolean
-    default_payment_method: string
-  }
-  security: {
-    session_timeout_minutes: number
-  }
-  ppob: PpobSettings
-}

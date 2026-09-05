@@ -61,7 +61,3 @@ const QUICK_ACCESS_KEYS: Set<PpobServiceKey> = new Set(["pulsa", "data", "pln", 
 export const QUICK_ACCESS_SERVICES = PPOB_SERVICES.filter(
   (svc): svc is PpobServiceDef & { key: QuickAccessServiceKey } => QUICK_ACCESS_KEYS.has(svc.key),
 )
-
-export function getServiceByKey(key: string): PpobServiceDef | undefined {
-  return PPOB_SERVICES.find((svc) => svc.key === key)
-}

@@ -6,7 +6,6 @@ import type {
   TopProduct,
   LowStockProduct,
   RecentTransaction,
-  WeeklyStats,
 } from "../types"
 
 export function useDashboardSummary() {
@@ -36,11 +35,5 @@ export function useLowStockProducts() {
 export function useRecentTransactions() {
   return useTauriQuery<RecentTransaction[]>("get_recent_transactions", undefined, {
     refetchInterval: 15000,
-  })
-}
-
-export function useWeeklyStats() {
-  return useTauriQuery<WeeklyStats>("get_weekly_stats", undefined, {
-    refetchInterval: 30000,
   })
 }

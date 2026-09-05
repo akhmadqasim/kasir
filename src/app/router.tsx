@@ -3,7 +3,6 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
-import { StartPage } from "./start-page"
 import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
@@ -75,10 +74,6 @@ const router = createHashRouter([
           {
             index: true,
             element: <ResumeRedirect />,
-          },
-          {
-            path: "start",
-            element: <StartPage />,
           },
           {
             path: "cashier",

@@ -1,9 +1,7 @@
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import type {
   PpobMenuGroup,
-  PulsaProvider,
   PulsaDetailsResponse,
-  PulsaProduct,
   PlnDenom,
   PdamProduct,
   EmoneyDenom,
@@ -19,13 +17,6 @@ export function usePpobMenu() {
   })
 }
 
-export function usePulsaProviders() {
-  return useTauriQuery<PulsaProvider[]>("ppob_get_providers", undefined, {
-    staleTime: 300000,
-    retry: false,
-  })
-}
-
 export function usePulsaDetails(phoneNumber: string) {
   return useTauriQuery<PulsaDetailsResponse>(
     "ppob_get_pulsa_details",
@@ -33,30 +24,6 @@ export function usePulsaDetails(phoneNumber: string) {
     {
       enabled: phoneNumber.length >= 10,
       staleTime: 60000,
-      retry: false,
-    }
-  )
-}
-
-export function usePulsaPriceList(providerUid: string) {
-  return useTauriQuery<PulsaProduct[]>(
-    "ppob_get_pulsa_price_list",
-    { providerUid },
-    {
-      enabled: !!providerUid,
-      staleTime: 300000,
-      retry: false,
-    }
-  )
-}
-
-export function useDataPriceList(providerUid: string) {
-  return useTauriQuery<PulsaProduct[]>(
-    "ppob_get_data_price_list",
-    { providerUid },
-    {
-      enabled: !!providerUid,
-      staleTime: 300000,
       retry: false,
     }
   )

@@ -1,6 +1,5 @@
 export * from "./use-auth"
 export * from "./use-products"
 export * from "./use-inquiry"
-export * from "./use-payment"
 export * from "./use-history"
 export * from "./use-notifications"
