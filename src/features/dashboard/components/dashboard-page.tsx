@@ -1,30 +1,14 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
 import {
+  Button,
   Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import {
+  Chip,
+  Label,
+  ListBox,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Table,
+} from "@heroui/react"
 import {
   ChartContainer,
   ChartTooltip,
@@ -50,7 +34,8 @@ import {
   PackageIcon,
   ShoppingCartIcon,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { selectedText } from "@/components/selected-text"
+import { StatusBadge } from "@/components/status-badge"
 import { id as t } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
@@ -65,16 +50,34 @@ import {
 } from "../hooks/use-dashboard"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import {
-  TRANSACTION_STATUS_CLASSNAMES,
-  TRANSACTION_STATUS_VARIANTS,
   paymentMethodLabel,
   transactionStatusLabel,
+  transactionStatusVariant,
 } from "@/lib/labels"
 
 // --- Helpers ---
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("id-ID").format(value)
+}
+
+/**
+ * Gradasi tipis khas kartu KPI.
+ *
+ * Dulu dipasang dari grid induk lewat `*:data-[slot=card]`, atribut yang hanya
+ * ada di Card shadcn. HeroUI tidak menandai kartunya, jadi kelasnya ditempel
+ * langsung ke tiap kartu. `dark:bg-card` lama ikut hilang karena Card HeroUI
+ * sudah memakai `bg-surface` — nilai yang sama dengan `--card`.
+ */
+const STAT_CARD_CLASS =
+  "@container/card bg-gradient-to-t from-accent/5 to-surface shadow-xs"
+
+const STAT_VALUE_CLASS =
+  "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl"
+
+/** Baris kosong tabel dashboard: satu pesan, bukan sel ber-`colSpan`. */
+function renderNoData() {
+  return <p className="py-6 text-center text-muted">{t.dashboard.noData}</p>
 }
 
 // --- Chart Configs ---
@@ -95,7 +98,41 @@ const paymentChartConfig = {
   transfer: { label: t.payment.transfer, color: "var(--chart-5)" },
 } satisfies ChartConfig
 
+const TIME_RANGE_OPTIONS = [
+  { key: "1y", label: t.dashboard.last1Year, days: 365 },
+  { key: "6m", label: t.dashboard.last6Months, days: 180 },
+  { key: "3m", label: t.dashboard.last3Months, days: 90 },
+  { key: "1m", label: t.dashboard.last1Month, days: 30 },
+  { key: "7d", label: t.dashboard.last1Week, days: 7 },
+] as const
+
 // --- Sub-components ---
+
+/**
+ * Kepala kartu KPI: label kecil, angka besar, lencana tren di kanan.
+ *
+ * Card HeroUI tidak punya padanan `CardAction`, jadi lencananya dibariskan
+ * dengan deskripsi supaya urutan bacanya tetap label → tren → angka.
+ */
+function StatCardHeader({
+  description,
+  value,
+  badge,
+}: {
+  description: string
+  value: string
+  badge?: ReactNode
+}) {
+  return (
+    <Card.Header className="gap-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <Card.Description>{description}</Card.Description>
+        {badge}
+      </div>
+      <Card.Title className={STAT_VALUE_CLASS}>{value}</Card.Title>
+    </Card.Header>
+  )
+}
 
 function SectionCards() {
   const { data: summary } = useDashboardSummary()
@@ -116,25 +153,25 @@ function SectionCards() {
   const isUp = revenueChange >= 0
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>{t.dashboard.todayRevenue}</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatRupiah(summary?.todayRevenue ?? 0)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+    <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+      <Card className={STAT_CARD_CLASS}>
+        <StatCardHeader
+          description={t.dashboard.todayRevenue}
+          value={formatRupiah(summary?.todayRevenue ?? 0)}
+          badge={
+            <Chip size="sm">
               {isUp ? (
-                <TrendingUpIcon />
+                <TrendingUpIcon className="size-3" />
               ) : (
-                <TrendingDownIcon />
+                <TrendingDownIcon className="size-3" />
               )}
-              {isUp ? "+" : ""}{revenueChange.toFixed(1)}%
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+              <Chip.Label>
+                {isUp ? "+" : ""}{revenueChange.toFixed(1)}%
+              </Chip.Label>
+            </Chip>
+          }
+        />
+        <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
             {isUp ? t.dashboard.trendUp : t.dashboard.trendDown} {Math.abs(revenueChange).toFixed(1)}% {t.dashboard.vsYesterday}{" "}
             {isUp ? (
@@ -143,73 +180,67 @@ function SectionCards() {
               <TrendingDownIcon className="size-4" />
             )}
           </div>
-          <div className="text-muted-foreground">
+          <div className="text-muted">
             {t.dashboard.revenueChartDescription}
           </div>
-        </CardFooter>
+        </Card.Footer>
       </Card>
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>{t.dashboard.grossProfit}</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatRupiah(summary?.todayGrossProfit ?? 0)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TrendingUpIcon />
-              {marginPct.toFixed(1)}%
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+      <Card className={STAT_CARD_CLASS}>
+        <StatCardHeader
+          description={t.dashboard.grossProfit}
+          value={formatRupiah(summary?.todayGrossProfit ?? 0)}
+          badge={
+            <Chip size="sm">
+              <TrendingUpIcon className="size-3" />
+              <Chip.Label>{marginPct.toFixed(1)}%</Chip.Label>
+            </Chip>
+          }
+        />
+        <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
             Margin {marginPct.toFixed(1)}% dari penjualan{" "}
             <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted-foreground">
+          <div className="text-muted">
             {t.dashboard.todayRevenue}
           </div>
-        </CardFooter>
+        </Card.Footer>
       </Card>
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>{t.dashboard.todayTransactions}</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatNumber(summary?.todayTransactions ?? 0)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TrendingUpIcon />
-              {t.dashboard.completedTransactions}
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+      <Card className={STAT_CARD_CLASS}>
+        <StatCardHeader
+          description={t.dashboard.todayTransactions}
+          value={formatNumber(summary?.todayTransactions ?? 0)}
+          badge={
+            <Chip size="sm">
+              <TrendingUpIcon className="size-3" />
+              <Chip.Label>{t.dashboard.completedTransactions}</Chip.Label>
+            </Chip>
+          }
+        />
+        <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
             {formatNumber(summary?.todayTransactions ?? 0)} {t.dashboard.completedTransactions}{" "}
             <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted-foreground">
+          <div className="text-muted">
             {t.dashboard.todayBreakdown}
           </div>
-        </CardFooter>
+        </Card.Footer>
       </Card>
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>{t.dashboard.avgPerTransaction}</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {formatRupiah(summary?.todayAvgPerTransaction ?? 0)}
-          </CardTitle>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+      <Card className={STAT_CARD_CLASS}>
+        <StatCardHeader
+          description={t.dashboard.avgPerTransaction}
+          value={formatRupiah(summary?.todayAvgPerTransaction ?? 0)}
+        />
+        <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
             {formatRupiah(summary?.todayAvgPerTransaction ?? 0)} {t.dashboard.perTransaction}{" "}
             <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted-foreground">
+          <div className="text-muted">
             {t.dashboard.todayBreakdown}
           </div>
-        </CardFooter>
+        </Card.Footer>
       </Card>
     </div>
   )
@@ -236,9 +267,9 @@ function QuickActions() {
         ? "Masuk ke kasir dan teruskan transaksi aktif."
         : "Masuk ke kasir untuk buka shift dan mulai berjualan.",
       icon: <ShoppingCartIcon className="h-4 w-4" />,
-      onClick: () => navigate("/cashier"),
+      onPress: () => navigate("/cashier"),
       label: "Mulai Penjualan",
-      variant: "default" as const,
+      variant: "primary" as const,
       visible: true,
       loading: false,
     },
@@ -246,7 +277,7 @@ function QuickActions() {
       title: "Lihat riwayat transaksi",
       description: "Cek transaksi terbaru, pembayaran, dan detail struk.",
       icon: <HistoryIcon className="h-4 w-4" />,
-      onClick: () => navigate("/transactions"),
+      onPress: () => navigate("/transactions"),
       label: "Riwayat Transaksi",
       variant: "outline" as const,
       visible: true,
@@ -256,7 +287,7 @@ function QuickActions() {
       title: "Kelola produk",
       description: "Tambah, ubah, dan cek stok produk toko.",
       icon: <PackageIcon className="h-4 w-4" />,
-      onClick: () => navigate("/products"),
+      onPress: () => navigate("/products"),
       label: "Kelola Produk",
       variant: "outline" as const,
       visible: isAdmin,
@@ -266,7 +297,7 @@ function QuickActions() {
       title: "Backup data sekarang",
       description: "Buat backup manual sebelum update atau perubahan besar.",
       icon: <DatabaseBackupIcon className="h-4 w-4" />,
-      onClick: () => createBackupMutation.mutate(),
+      onPress: () => createBackupMutation.mutate(),
       label: createBackupMutation.isPending ? "Membuat Backup..." : "Backup Sekarang",
       variant: "outline" as const,
       visible: isAdmin,
@@ -277,69 +308,53 @@ function QuickActions() {
   return (
     <div className="px-4 lg:px-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Aksi Cepat</CardTitle>
-          <CardDescription>
+        <Card.Header>
+          <Card.Title>Aksi Cepat</Card.Title>
+          <Card.Description>
             Buka area kerja utama tanpa harus berpindah-pindah menu.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </Card.Description>
+        </Card.Header>
+        <Card.Content>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {actions.map((action) => (
+              // Tombol HeroUI dikunci `h-10 md:h-9 w-fit whitespace-nowrap`,
+              // jadi kartu aksi ini harus melepas ketiganya secara eksplisit.
               <Button
                 key={action.title}
+                className="h-auto min-h-28 w-full flex-col items-start justify-start gap-2 rounded-2xl px-4 py-4 text-left whitespace-normal md:h-auto"
+                isDisabled={action.loading}
                 variant={action.variant}
-                className={`h-auto min-h-28 flex-col items-start gap-2 px-4 py-4 text-left ${
-                  action.variant === "default" ? "text-primary-foreground hover:text-primary-foreground" : ""
-                }`}
-                onClick={action.onClick}
-                disabled={action.loading}
+                onPress={action.onPress}
               >
-                <span className={`flex items-center gap-2 text-sm font-semibold ${
-                  action.variant === "default" ? "text-primary-foreground" : ""
-                }`}>
+                <span className="flex items-center gap-2 text-sm font-semibold">
                   {action.icon}
                   {action.label}
                 </span>
-                <span className={`text-base font-semibold leading-tight ${
-                  action.variant === "default" ? "text-primary-foreground" : "text-foreground"
-                }`}>
+                <span className="text-base leading-tight font-semibold">
                   {action.title}
                 </span>
-                <span className={`text-xs leading-relaxed ${
-                  action.variant === "default" ? "text-primary-foreground/80" : "text-muted-foreground"
-                }`}>
+                <span
+                  className={`text-xs leading-relaxed ${
+                    action.variant === "primary" ? "opacity-80" : "text-muted"
+                  }`}
+                >
                   {action.description}
                 </span>
               </Button>
             ))}
           </div>
-        </CardContent>
+        </Card.Content>
       </Card>
     </div>
   )
 }
 
 function ChartRevenueInteractive() {
-  const [timeRange, setTimeRange] = useState("7d")
+  const [timeRange, setTimeRange] = useState<string>("7d")
 
-  const daysMap: Record<string, number> = {
-    "7d": 7,
-    "1m": 30,
-    "3m": 90,
-    "6m": 180,
-    "1y": 365,
-  }
-  const days = daysMap[timeRange] ?? 7
+  const days =
+    TIME_RANGE_OPTIONS.find((option) => option.key === timeRange)?.days ?? 7
   const { data: dailyRevenue } = useDailyRevenue(days)
-
-  const timeRangeOptions = [
-    { value: "1y", label: t.dashboard.last1Year },
-    { value: "6m", label: t.dashboard.last6Months },
-    { value: "3m", label: t.dashboard.last3Months },
-    { value: "1m", label: t.dashboard.last1Month },
-    { value: "7d", label: t.dashboard.last1Week },
-  ]
 
   const totalRevenue = useMemo(() => {
     if (!dailyRevenue) return 0
@@ -351,18 +366,21 @@ function ChartRevenueInteractive() {
     return dailyRevenue.reduce((acc, curr) => acc + curr.transactions, 0)
   }, [dailyRevenue])
 
+  // Kepala kartu ini penuh sampai tepi (ada garis pemisah antar angka), jadi
+  // padding bawaan Card dilepas. `overflow-hidden` mengganti `overflow-visible`
+  // bawaan HeroUI supaya garisnya terpotong rapi di sudut membulat.
   return (
-    <Card className="py-4 sm:py-0">
-      <CardHeader className="flex flex-col items-stretch border-b p-0! sm:flex-row">
-        <div className="flex flex-1 flex-col justify-center gap-1 px-6 pb-3 sm:pb-0">
-          <CardTitle>{t.dashboard.revenueChart}</CardTitle>
-          <CardDescription>
+    <Card className="gap-0 overflow-hidden p-0">
+      <Card.Header className="flex flex-col items-stretch border-b sm:flex-row">
+        <div className="flex flex-1 flex-col justify-center gap-1 px-6 py-4 sm:py-0">
+          <Card.Title>{t.dashboard.revenueChart}</Card.Title>
+          <Card.Description>
             {t.dashboard.revenueChartDescription}
-          </CardDescription>
+          </Card.Description>
         </div>
         <div className="flex">
           <div className="flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted">
               {t.dashboard.revenue}
             </span>
             <span className="text-lg leading-none font-bold sm:text-3xl">
@@ -370,30 +388,37 @@ function ChartRevenueInteractive() {
             </span>
           </div>
           <div className="flex flex-1 flex-col justify-center gap-1 border-t border-l px-6 py-4 sm:border-t-0 sm:px-8 sm:py-6">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted">
               {t.dashboard.transactions}
             </span>
             <span className="text-lg leading-none font-bold sm:text-3xl">
-              {totalTransactions.toLocaleString("id-ID")}
+              {formatNumber(totalTransactions)}
             </span>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-2 pt-4 sm:px-6 sm:pt-6">
-        <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger
-            className="w-[160px] rounded-lg sm:ml-auto"
-            aria-label="Select a value"
-          >
-            <SelectValue placeholder={t.dashboard.last1Week} />
-          </SelectTrigger>
-          <SelectContent>
-            {timeRangeOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-4 px-2 py-4 sm:px-6 sm:py-6">
+        <Select
+          aria-label="Rentang waktu grafik"
+          className="w-40 sm:ml-auto"
+          placeholder={t.dashboard.last1Week}
+          value={timeRange}
+          onChange={(value) => setTimeRange(String(value))}
+        >
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {TIME_RANGE_OPTIONS.map((option) => (
+                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
+                  <Label>{option.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
         </Select>
         {dailyRevenue && dailyRevenue.length > 0 ? (
           <ChartContainer
@@ -445,11 +470,11 @@ function ChartRevenueInteractive() {
             </LineChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-[250px] items-center justify-center text-muted-foreground">
+          <div className="flex h-[250px] items-center justify-center text-muted">
             {t.dashboard.noData}
           </div>
         )}
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
@@ -478,12 +503,12 @@ function ChartPaymentRadar() {
   }, [radarData])
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="items-center pb-0">
-        <CardTitle>{t.dashboard.paymentMethods}</CardTitle>
-        <CardDescription>{t.dashboard.todayBreakdown}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 pb-0">
+    <Card>
+      <Card.Header className="items-center">
+        <Card.Title>{t.dashboard.paymentMethods}</Card.Title>
+        <Card.Description>{t.dashboard.todayBreakdown}</Card.Description>
+      </Card.Header>
+      <Card.Content className="flex-1">
         {radarData.length > 0 ? (
           <ChartContainer
             config={paymentChartConfig}
@@ -511,28 +536,28 @@ function ChartPaymentRadar() {
             </RadarChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-[250px] items-center justify-center text-muted-foreground">
+          <div className="flex h-[250px] items-center justify-center text-muted">
             {t.dashboard.noData}
           </div>
         )}
-      </CardContent>
-      <CardFooter className="flex-col gap-2 text-sm">
+      </Card.Content>
+      <Card.Footer className="flex-col gap-2 text-sm">
         {topPaymentMethod ? (
           <>
             <div className="flex items-center gap-2 leading-none font-medium">
               {topPaymentMethod.label} {t.dashboard.dominates} ({topPaymentMethod.pct}%)
               <TrendingUpIcon className="h-4 w-4" />
             </div>
-            <div className="leading-none text-muted-foreground">
+            <div className="leading-none text-muted">
               {t.dashboard.todayBreakdown}
             </div>
           </>
         ) : (
-          <div className="leading-none text-muted-foreground">
+          <div className="leading-none text-muted">
             {t.dashboard.noData}
           </div>
         )}
-      </CardFooter>
+      </Card.Footer>
     </Card>
   )
 }
@@ -542,43 +567,37 @@ function TopProductsTable() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{t.dashboard.topProducts}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t.dashboard.productName}</TableHead>
-              <TableHead className="text-right">{t.dashboard.qtySold}</TableHead>
-              <TableHead className="text-right">{t.dashboard.totalRevenue}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {topProducts && topProducts.length > 0 ? (
-              topProducts.map((p) => (
-                <TableRow key={p.productId}>
-                  <TableCell className="font-medium truncate max-w-[150px]">
-                    {p.productName}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatNumber(p.totalQty)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatRupiah(p.totalRevenue)}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground">
-                  {t.dashboard.noData}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
+      <Card.Header>
+        <Card.Title>{t.dashboard.topProducts}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label={t.dashboard.topProducts}>
+              <Table.Header>
+                <Table.Column isRowHeader>{t.dashboard.productName}</Table.Column>
+                <Table.Column className="text-right">{t.dashboard.qtySold}</Table.Column>
+                <Table.Column className="text-right">{t.dashboard.totalRevenue}</Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={renderNoData}>
+                {(topProducts ?? []).map((p) => (
+                  <Table.Row key={p.productId} id={p.productId} textValue={p.productName}>
+                    <Table.Cell className="max-w-[150px] truncate font-medium">
+                      {p.productName}
+                    </Table.Cell>
+                    <Table.Cell className="text-right tabular-nums">
+                      {formatNumber(p.totalQty)}
+                    </Table.Cell>
+                    <Table.Cell className="text-right tabular-nums">
+                      {formatRupiah(p.totalRevenue)}
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
         </Table>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
@@ -588,54 +607,46 @@ function LowStockTable() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+      <Card.Header>
+        <Card.Title className="flex items-center gap-2">
           <AlertTriangleIcon className="size-4" />
           {t.dashboard.lowStock}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t.dashboard.product}</TableHead>
-              <TableHead className="text-right">{t.dashboard.stock}</TableHead>
-              <TableHead className="text-right">{t.dashboard.minStock}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lowStock && lowStock.length > 0 ? (
-              lowStock.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium truncate max-w-[150px]">
-                    {p.name}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {p.stock === 0 ? (
-                      <Badge variant="destructive">
-                        0 {p.unit}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary">
+        </Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label={t.dashboard.lowStock}>
+              <Table.Header>
+                <Table.Column isRowHeader>{t.dashboard.product}</Table.Column>
+                <Table.Column className="text-right">{t.dashboard.stock}</Table.Column>
+                <Table.Column className="text-right">{t.dashboard.minStock}</Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={renderNoData}>
+                {(lowStock ?? []).map((p) => (
+                  <Table.Row key={p.id} id={p.id} textValue={p.name}>
+                    <Table.Cell className="max-w-[150px] truncate font-medium">
+                      {p.name}
+                    </Table.Cell>
+                    {/*
+                      Setiap baris di sini sudah di bawah `min_stock`, jadi statusnya
+                      peringatan; stok nol sudah kehabisan dan diberi warna error.
+                    */}
+                    <Table.Cell className="text-right">
+                      <StatusBadge size="sm" status={p.stock === 0 ? "error" : "warning"}>
                         {p.stock} {p.unit}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {p.minStock} {p.unit}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground">
-                  {t.dashboard.noData}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
+                      </StatusBadge>
+                    </Table.Cell>
+                    <Table.Cell className="text-right tabular-nums text-muted">
+                      {p.minStock} {p.unit}
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
         </Table>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
@@ -645,63 +656,59 @@ function RecentTransactionsTable() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{t.dashboard.recentTransactions}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t.dashboard.receipt}</TableHead>
-              <TableHead>{t.dashboard.cashier}</TableHead>
-              <TableHead>Metode</TableHead>
-              <TableHead>Tanggal</TableHead>
-              <TableHead className="text-center">Item</TableHead>
-              <TableHead className="text-right">{t.dashboard.amount}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {recentTx && recentTx.length > 0 ? (
-              recentTx.map((tx) => (
-                <TableRow key={tx.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span>{tx.receiptNumber}</span>
-                      {/*
-                        `query_recent_transactions` filters out deleted, refunded and
-                        unfulfilled PPOB rows, so only `completed` and
-                        `partial_refund` reach here. The partial ones still show their
-                        full original amount, which is the one case worth flagging.
-                      */}
-                      {tx.status !== "completed" && (
-                        <Badge
-                          variant={TRANSACTION_STATUS_VARIANTS[tx.status] ?? "secondary"}
-                          className={TRANSACTION_STATUS_CLASSNAMES[tx.status]}
-                        >
-                          {transactionStatusLabel(tx.status)}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{tx.cashierName}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{paymentMethodLabel(tx.paymentMethod)}</Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDateTime(tx.createdAt)}</TableCell>
-                  <TableCell className="text-center">{tx.totalItems}</TableCell>
-                  <TableCell className="text-right font-medium">{formatRupiah(tx.totalAmount)}</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  {t.dashboard.noData}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
+      <Card.Header>
+        <Card.Title>{t.dashboard.recentTransactions}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content
+              aria-label={t.dashboard.recentTransactions}
+              className="min-w-[720px]"
+            >
+              <Table.Header>
+                <Table.Column isRowHeader>{t.dashboard.receipt}</Table.Column>
+                <Table.Column>{t.dashboard.cashier}</Table.Column>
+                <Table.Column>Metode</Table.Column>
+                <Table.Column>Tanggal</Table.Column>
+                <Table.Column className="text-center">Item</Table.Column>
+                <Table.Column className="text-right">{t.dashboard.amount}</Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={renderNoData}>
+                {(recentTx ?? []).map((tx) => (
+                  <Table.Row key={tx.id} id={tx.id} textValue={tx.receiptNumber}>
+                    <Table.Cell className="font-medium">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{tx.receiptNumber}</span>
+                        {/*
+                          `query_recent_transactions` filters out deleted, refunded and
+                          unfulfilled PPOB rows, so only `completed` and
+                          `partial_refund` reach here. The partial ones still show their
+                          full original amount, which is the one case worth flagging.
+                        */}
+                        {tx.status !== "completed" && (
+                          <StatusBadge size="sm" status={transactionStatusVariant(tx.status)}>
+                            {transactionStatusLabel(tx.status)}
+                          </StatusBadge>
+                        )}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>{tx.cashierName}</Table.Cell>
+                    <Table.Cell>
+                      <Chip size="sm">{paymentMethodLabel(tx.paymentMethod)}</Chip>
+                    </Table.Cell>
+                    <Table.Cell className="text-muted">{formatDateTime(tx.createdAt)}</Table.Cell>
+                    <Table.Cell className="text-center tabular-nums">{tx.totalItems}</Table.Cell>
+                    <Table.Cell className="text-right font-medium tabular-nums">
+                      {formatRupiah(tx.totalAmount)}
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
         </Table>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
