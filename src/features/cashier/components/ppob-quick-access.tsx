@@ -45,7 +45,7 @@ import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import type { AppSettings } from "@/features/settings/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../ppob-pricing"
-import { formatRupiah, getAddItemValidationError } from "../utils"
+import { formatRupiah } from "../utils"
 
 export type ServiceType = QuickAccessServiceKey
 
@@ -136,7 +136,6 @@ export function PpobQuickAccess({
   )
   const [markup, setMarkup] = useState<PpobMarkup | null>(null)
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({})
-  const items = useCartStore((s) => s.items)
   const addPpobItem = useCartStore((s) => s.addPpobItem)
 
   useEffect(() => {
@@ -180,12 +179,6 @@ export function PpobQuickAccess({
     ppob_payment_code?: string
     ppob_flag_id?: string
   }) => {
-    const validationError = getAddItemValidationError(items, "ppob")
-    if (validationError) {
-      toast.error(validationError)
-      return
-    }
-
     const vendorCost = item.buy_price ?? item.price
     const sellPrice = Math.max(item.price, vendorCost)
 

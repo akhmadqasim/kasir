@@ -34,7 +34,7 @@ import {
   isLikelyBarcodeScannerInput,
   rankProductsForSearch,
 } from "../search-behavior"
-import { formatRupiah, getAddItemValidationError } from "../utils"
+import { formatRupiah } from "../utils"
 import { PpobQuickAccess } from "./ppob-quick-access"
 
 interface ShortcutProduct {
@@ -71,7 +71,6 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const holdStartRef = useRef<number>(0)
   const searchQueryRef = useRef("")
   const inputTimingRef = useRef({ query: "", startedAt: 0, lastInputAt: 0 })
-  const items = useCartStore((s) => s.items)
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
 
@@ -218,12 +217,6 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   }, [])
 
   const addToCart = useCallback((product: Product | ShortcutProduct, isManualSearch: boolean) => {
-    const validationError = getAddItemValidationError(items, "product")
-    if (validationError) {
-      toast.error(validationError)
-      return
-    }
-
     addItem(product)
     if (product.stock <= 0) {
       toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
@@ -231,7 +224,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     if (isManualSearch) {
       trackSelection(product.id)
     }
-  }, [addItem, items, trackSelection])
+  }, [addItem, trackSelection])
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key !== "Enter") return

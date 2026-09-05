@@ -31,7 +31,7 @@ import {
   isScannerBurstEntry,
   trackAmountEntry,
 } from "../payment-behavior"
-import { formatRupiah, getCartValidationError } from "../utils"
+import { formatRupiah } from "../utils"
 import type { PaymentSplitInput, TransactionResult } from "../types"
 
 interface PaymentDialogProps {
@@ -105,7 +105,6 @@ export function PaymentDialog({
   const total = getTotal()
   const subtotal = getSubtotal()
   const totalDiscount = getTotalDiscount()
-  const cartValidationError = getCartValidationError(items)
   const selectedPaymentSplits = useMemo(
     () => paymentSplits.filter((split) => split.selected),
     [paymentSplits]
@@ -184,7 +183,6 @@ export function PaymentDialog({
   )
   const canConfirm =
     items.length > 0 &&
-    !cartValidationError &&
     selectedMethodCount > 0 &&
     allTransferMethodsHaveBank &&
     !hasImplausibleAmount &&
@@ -673,11 +671,6 @@ export function PaymentDialog({
                     {formatRupiah(Math.max(0, changeAmount))}
                   </span>
                 </div>
-              )}
-              {cartValidationError && (
-                <p className="text-sm font-medium text-destructive">
-                  {cartValidationError}
-                </p>
               )}
               {hasImplausibleAmount && (
                 <p className="text-sm font-medium text-destructive">
