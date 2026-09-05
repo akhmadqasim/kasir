@@ -69,6 +69,7 @@ export function CreateRefundPage() {
     totalRefund,
     totalExchange,
     difference,
+    hasEarlierRefund,
     setReason,
     setActionType,
     updateItem,
@@ -149,6 +150,15 @@ export function CreateRefundPage() {
         </div>
 
         {/* Return items list */}
+        {hasEarlierRefund && (
+          <div className="px-4 pt-3">
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+              Sebagian transaksi ini sudah pernah diretur. Jumlah maksimum di bawah
+              masih memakai jumlah pembelian — sisa yang benar akan ditampilkan
+              kalau jumlahnya kelebihan.
+            </p>
+          </div>
+        )}
         <div className="px-4 pt-3 pb-1">
           <Label className="text-sm font-medium">{id.refund.refundItems}</Label>
         </div>
@@ -438,15 +448,19 @@ function RefundItemCard({
   if (!state) return null
 
   const itemId = `refund-item-${item.id}`
+  const isFullyRefunded = state.maxQty <= 0
 
   return (
     <Label
       htmlFor={itemId}
-      className="flex cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+      className={`flex items-start gap-4 rounded-lg border p-4 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 ${
+        isFullyRefunded ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-accent/50"
+      }`}
     >
       <Checkbox
         id={itemId}
         checked={state.checked}
+        disabled={isFullyRefunded}
         onCheckedChange={(checked) => onUpdate({ checked: checked === true })}
         className="mt-0.5"
       />
@@ -465,6 +479,11 @@ function RefundItemCard({
                 {formatRupiah(lineDiscountAmount(item))}
               </span>
             )}
+            {isFullyRefunded && (
+              <span className="text-xs text-muted-foreground">
+                Sudah diretur seluruhnya
+              </span>
+            )}
           </div>
           {state.checked && (
             <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
@@ -477,7 +496,7 @@ function RefundItemCard({
           <div className="flex flex-wrap items-end gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor={`qty-${item.id}`} className="text-xs text-muted-foreground">
-                {id.refund.refundQty}
+                {id.refund.refundQty} (maks. {state.maxQty})
               </Label>
               <Input
                 id={`qty-${item.id}`}

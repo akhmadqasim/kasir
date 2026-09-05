@@ -6,6 +6,11 @@ import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { id } from "@/i18n/id"
 import { netAmountForQuantity } from "@/features/transactions/line-amounts"
 import type { TransactionDetail } from "@/features/transactions/types"
+import {
+  parseRemainingQuantityError,
+  remainingQuantityMessage,
+  type RemainingQuantityLimit,
+} from "../refund-limits"
 import type { Product } from "@/features/products/types"
 import type { CreateRefundInput, RefundResult } from "../types"
 
@@ -16,6 +21,11 @@ export interface RefundItemState {
   checked: boolean
   quantity: number
   condition: Condition
+  /**
+   * Highest quantity the input offers. It starts at the purchased quantity
+   * because no command exposes how much of the line has already been returned —
+   * see `refund-limits.ts`. A rejected submit lowers it to the real remainder.
+   */
   maxQty: number
 }
 
@@ -93,6 +103,38 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     }))
   }, [])
 
+  /**
+   * Lower the cap on every line for that product to what the server says is left.
+   *
+   * Matching by name is as precise as the error message allows; a transaction with
+   * two separate lines of the same product would clamp both. That only ever offers
+   * *less*, never more, so the worst case is a second submit — not an over-refund.
+   */
+  const applyRemainingQuantityLimit = useCallback(
+    (limit: RemainingQuantityLimit) => {
+      const affected = refundableItems.filter(
+        (item) => item.product_name === limit.productName
+      )
+      if (affected.length === 0) return
+
+      setItemStates((prev) => {
+        const next = { ...prev }
+        for (const item of affected) {
+          const state = next[item.id]
+          if (!state) continue
+          next[item.id] = {
+            ...state,
+            checked: limit.remaining > 0 && state.checked,
+            maxQty: limit.remaining,
+            quantity: Math.max(Math.min(state.quantity, limit.remaining), 1),
+          }
+        }
+        return next
+      })
+    },
+    [refundableItems]
+  )
+
   const setActionType = useCallback((type: ActionType) => {
     setActionTypeRaw(type)
     if (type === "refund") {
@@ -149,6 +191,13 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
 
   const difference = totalRefund - totalExchange
 
+  /**
+   * Some of this sale has already come back. The per-line remainder is not part
+   * of any command's response, so the form can only warn that the maximum it
+   * offers is the purchased quantity, not the remaining one.
+   */
+  const hasEarlierRefund = detail?.transaction.status === "partial_refund"
+
   const handleSubmit = async () => {
     if (!transactionId || !userId) return
 
@@ -185,7 +234,14 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
       toast.success(actionType === "exchange" ? id.refund.exchangeSuccess : id.refund.refundSuccess)
       onSuccess?.()
     } catch (e) {
-      toast.error(`${id.refund.refundFailed}: ${e}`)
+      const message = e instanceof Error ? e.message : String(e)
+      const limit = parseRemainingQuantityError(message)
+      if (limit) {
+        applyRemainingQuantityLimit(limit)
+        toast.error(remainingQuantityMessage(limit))
+        return
+      }
+      toast.error(`${id.refund.refundFailed}: ${message}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -208,6 +264,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     totalRefund,
     totalExchange,
     difference,
+    hasEarlierRefund,
     // Actions
     setReason,
     setActionType,
