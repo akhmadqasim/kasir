@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { StatusBadge, ColorBadge } from "@/components/status-badge"
+import { StatusBadge } from "@/components/status-badge"
 import {
   Select,
   SelectContent,
@@ -73,7 +73,7 @@ function ReasonBadge({ reason }: { reason: string }) {
     case "damaged":
       return <Badge variant="destructive">Rusak</Badge>
     case "expired":
-      return <ColorBadge color="orange">Kadaluarsa</ColorBadge>
+      return <StatusBadge status="warning">Kadaluarsa</StatusBadge>
     case "lost":
       return <Badge variant="outline">Hilang</Badge>
     default:
