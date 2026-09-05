@@ -27,26 +27,41 @@ pub fn run() {
     }
 
     let db_path = utils::paths::get_db_path();
-    utils::logging::log_startup(&format!("Opening database at {}", db_path.display()));
 
-    let database = match tauri::async_runtime::block_on(db::setup_database(
-        db_path.to_str().unwrap_or(""),
-    )) {
-        Ok(db) => {
-            utils::logging::log_startup("Database initialized successfully");
-            db
-        }
+    // Install a restore staged by `restore_backup`. This MUST happen before
+    // `setup_database`: it is the only point in the process where nothing holds
+    // `kasir.db` open, so it is the only point where swapping the file cannot
+    // race SQLite's page cache or leave a stale `-wal` behind. A failure here is
+    // logged and the app continues on the database it already had.
+    match commands::backup::apply_pending_restore(&db_path) {
+        Ok(true) => utils::logging::log_startup("Applied pending database restore"),
+        Ok(false) => {}
         Err(e) => {
-            let msg = format!(
-                "Failed to initialize database at {}: {}",
-                db_path.display(),
-                e
-            );
+            let msg = format!("Pending restore not applied: {}", e);
             utils::logging::log_error(&msg);
             eprintln!("{}", msg);
-            panic!("{}", msg);
         }
-    };
+    }
+
+    utils::logging::log_startup(&format!("Opening database at {}", db_path.display()));
+
+    let database =
+        match tauri::async_runtime::block_on(db::setup_database(db_path.to_str().unwrap_or(""))) {
+            Ok(db) => {
+                utils::logging::log_startup("Database initialized successfully");
+                db
+            }
+            Err(e) => {
+                let msg = format!(
+                    "Failed to initialize database at {}: {}",
+                    db_path.display(),
+                    e
+                );
+                utils::logging::log_error(&msg);
+                eprintln!("{}", msg);
+                panic!("{}", msg);
+            }
+        };
 
     let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
 
