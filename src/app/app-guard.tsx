@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom"
-import { Loader2 } from "lucide-react"
+import { Spinner } from "@heroui/react"
 import { useCheckOnboarding } from "@/features/onboarding/hooks/use-onboarding"
 import { useAuthStore, useAuthHydrated } from "@/features/auth/hooks/use-auth-store"
 import { getDefaultRouteForRole, isAdminOnlyRoute } from "./resume-route"
@@ -11,9 +11,9 @@ export function AppGuard() {
 
   if (isLoading || !hasHydrated) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Memuat...</p>
+      <div className="flex min-h-svh flex-col items-center justify-center gap-3">
+        <Spinner aria-label="Memuat aplikasi" color="current" size="lg" className="text-muted" />
+        <p className="text-sm text-muted">Memuat...</p>
       </div>
     )
   }

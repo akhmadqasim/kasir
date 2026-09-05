@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react"
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
-import { Loader2 } from "lucide-react"
+import { Spinner } from "@heroui/react"
 import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
@@ -35,7 +35,7 @@ const CloseShiftPage = lazy(() => import("@/features/shift/components/close-shif
 function PageLoader() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <Spinner aria-label="Memuat halaman" color="current" size="lg" className="text-muted" />
     </div>
   )
 }
