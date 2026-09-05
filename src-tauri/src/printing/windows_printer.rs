@@ -180,6 +180,25 @@ impl Drop for SelectedGdiObject {
     }
 }
 
+/// How many lines of `line_height` device units fit on a page `page_height` tall,
+/// or `None` when the driver's metrics cannot be trusted.
+///
+/// The printing loop used to increment `y` forever without ever comparing it to
+/// `GetDeviceCaps(hdc, VERTRES)`, inside a single `StartPage`/`EndPage` pair, so
+/// everything past the bottom of the first page was silently dropped —
+/// `CLAUDE.md` allows a cart of up to 100 items, which is well past that.
+///
+/// `None` (print everything on one page, the old behaviour) is returned when the
+/// reported page height cannot hold at least two lines. Some continuous-roll
+/// thermal drivers report a zero or nominal height, and turning that into "one
+/// line per page" would eject a page per line, which is worse than the bug.
+fn max_lines_per_page(page_height: i32, line_height: i32) -> Option<usize> {
+    if line_height <= 0 || page_height < line_height * 2 {
+        return None;
+    }
+    Some((page_height / line_height) as usize)
+}
+
 /// Send receipt text lines to printer using GDI pipeline (goes through printer driver).
 /// This is more reliable than RAW for cheap USB thermal printers.
 pub fn send_gdi_text(
@@ -187,9 +206,9 @@ pub fn send_gdi_text(
     lines: &[super::receipt::ReceiptTextLine],
 ) -> Result<(), String> {
     use windows::Win32::Graphics::Gdi::{
-        CreateDCW, CreateFontW, GetDeviceCaps, GetTextMetricsW, TextOutW, CLIP_DEFAULT_PRECIS,
+        CreateDCW, CreateFontW, GetDeviceCaps, GetTextMetricsW, CLIP_DEFAULT_PRECIS,
         DEFAULT_CHARSET, DEFAULT_QUALITY, FIXED_PITCH, FW_BOLD, FW_NORMAL, LOGPIXELSY,
-        OUT_DEFAULT_PRECIS, TEXTMETRICW,
+        OUT_DEFAULT_PRECIS, TEXTMETRICW, VERTRES,
     };
 
     unsafe {
@@ -250,6 +269,7 @@ pub fn send_gdi_text(
         let mut tm = TEXTMETRICW::default();
         let _ = GetTextMetricsW(hdc, &mut tm);
         let line_height = tm.tmHeight + tm.tmExternalLeading;
+        let lines_per_page = max_lines_per_page(GetDeviceCaps(Some(hdc), VERTRES), line_height);
 
         // Start document using manually linked GDI functions
         let doc_name_wide = to_wide("POS Receipt");
@@ -265,36 +285,73 @@ pub fn send_gdi_text(
             return Err("StartDocW gagal".to_string());
         }
 
-        if GdiStartPage(hdc_raw) <= 0 {
-            GdiEndDoc(hdc_raw);
-            return Err("StartPage gagal".to_string());
-        }
-
-        // Print each line
-        let mut y = 0i32;
-        for line in lines {
-            SelectObject(
-                hdc,
-                if line.bold {
-                    bold_font.0.into()
-                } else {
-                    normal_font.0.into()
-                },
-            );
-
-            let text_wide: Vec<u16> = OsStr::new(&line.text).encode_wide().collect();
-            if !text_wide.is_empty() {
-                let _ = TextOutW(hdc, 0, y, &text_wide);
-            }
-            y += line_height;
-        }
-
-        GdiEndPage(hdc_raw);
+        let printed = print_pages(
+            hdc,
+            hdc_raw,
+            lines,
+            normal_font.0,
+            bold_font.0,
+            line_height,
+            lines_per_page,
+        );
         GdiEndDoc(hdc_raw);
+        printed?;
 
         eprintln!("[gdi] Print completed, {} lines", lines.len());
         Ok(())
     }
+}
+
+/// Emit every line, starting a new page each time `lines_per_page` is reached.
+///
+/// The caller owns the document (`StartDoc`/`EndDoc`); this owns the pages.
+unsafe fn print_pages(
+    hdc: HDC,
+    hdc_raw: isize,
+    lines: &[super::receipt::ReceiptTextLine],
+    normal_font: HFONT,
+    bold_font: HFONT,
+    line_height: i32,
+    lines_per_page: Option<usize>,
+) -> Result<(), String> {
+    use windows::Win32::Graphics::Gdi::TextOutW;
+
+    if GdiStartPage(hdc_raw) <= 0 {
+        return Err("StartPage gagal".to_string());
+    }
+
+    let mut y = 0i32;
+    let mut on_page = 0usize;
+
+    for line in lines {
+        if lines_per_page.is_some_and(|limit| on_page >= limit) {
+            GdiEndPage(hdc_raw);
+            if GdiStartPage(hdc_raw) <= 0 {
+                return Err("StartPage gagal".to_string());
+            }
+            y = 0;
+            on_page = 0;
+        }
+
+        SelectObject(
+            hdc,
+            if line.bold {
+                bold_font.into()
+            } else {
+                normal_font.into()
+            },
+        );
+
+        let text_wide: Vec<u16> = OsStr::new(&line.text).encode_wide().collect();
+        if !text_wide.is_empty() {
+            let _ = TextOutW(hdc, 0, y, &text_wide);
+        }
+        y += line_height;
+        on_page += 1;
+    }
+
+    GdiEndPage(hdc_raw);
+    Ok(())
 }
 
 /// Get the default Windows printer name
@@ -333,6 +390,28 @@ unsafe fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 300-DPI A4 page at ~46 device units per line: a 100-item receipt must
+    /// not be cut off at the bottom of page one.
+    #[test]
+    fn pagination_splits_a_long_receipt() {
+        assert_eq!(max_lines_per_page(3508, 46), Some(76));
+        assert_eq!(max_lines_per_page(1000, 100), Some(10));
+        assert_eq!(max_lines_per_page(1050, 100), Some(10));
+    }
+
+    /// Continuous-roll drivers can report no usable page height. Turning that
+    /// into one line per page would eject a page per line, so those fall back to
+    /// a single page.
+    #[test]
+    fn pagination_gives_up_on_nonsense_metrics() {
+        assert_eq!(max_lines_per_page(0, 46), None);
+        assert_eq!(max_lines_per_page(-1, 46), None);
+        assert_eq!(max_lines_per_page(3508, 0), None);
+        assert_eq!(max_lines_per_page(3508, -46), None);
+        // Room for one line only — indistinguishable from a bogus height.
+        assert_eq!(max_lines_per_page(50, 46), None);
+    }
 
     #[test]
     fn aligned_buffer_is_aligned_for_printer_info() {
