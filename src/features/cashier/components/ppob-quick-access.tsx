@@ -267,7 +267,7 @@ function SaldoBar() {
   const { data, isLoading, error, refetch } = usePpobSaldo()
 
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+    <div className="flex items-center justify-between rounded-lg border bg-default/30 px-3 py-2">
       <div className="flex items-center gap-2">
         <Wallet className="h-4 w-4 text-muted-foreground" />
         {isLoading ? (
@@ -436,7 +436,7 @@ function PulsaInput({
             return (
               <Card
                 key={product.id}
-                className={`cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
+                className={`cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : "hover:bg-default"}`}
                 onClick={() => setSelected(product)}
               >
                 <CardContent className="p-3">

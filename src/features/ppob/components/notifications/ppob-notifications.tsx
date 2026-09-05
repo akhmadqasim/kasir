@@ -218,8 +218,8 @@ export function PpobNotifications() {
               return (
                 <button
                   key={item.inboxId || idx}
-                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 cursor-pointer ${
-                    isUnread ? "bg-card" : "bg-muted/20"
+                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-default/50 cursor-pointer ${
+                    isUnread ? "bg-card" : "bg-default/20"
                   }`}
                   onClick={() => handleItemClick(item)}
                 >

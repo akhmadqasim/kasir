@@ -161,7 +161,7 @@ function BackupSettingsInline({
   }
 
   return (
-    <div className="flex items-center gap-4 rounded-lg border bg-muted/50 p-3">
+    <div className="flex items-center gap-4 rounded-lg border bg-default/50 p-3">
       <Settings2 className="h-4 w-4 text-muted-foreground shrink-0" />
       <div className="flex items-center gap-2">
         <Label className="text-sm whitespace-nowrap">Interval:</Label>

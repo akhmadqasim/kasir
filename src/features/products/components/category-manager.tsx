@@ -120,7 +120,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                 {categories?.map((category) => (
                   <div
                     key={category.id}
-                    className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-accent"
+                    className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-default"
                   >
                     {editingCategory?.id === category.id ? (
                       <>

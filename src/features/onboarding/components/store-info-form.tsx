@@ -99,7 +99,7 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
             </Field>
           </FieldGroup>
         </form>
-        <div className="relative hidden bg-muted md:block">
+        <div className="relative hidden bg-default md:block">
           <img
             src="/onboarding-bg.jpg"
             alt="Toko Sembako"

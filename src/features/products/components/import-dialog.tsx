@@ -381,7 +381,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           <div className="flex flex-col gap-6 py-4">
             <div className="space-y-2">
               <Label>File</Label>
-              <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary hover:bg-muted/50">
+              <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary hover:bg-default/50">
                 <Upload className="h-10 w-10 text-muted-foreground" />
                 <div>
                   <p className="font-medium">Klik untuk memilih file</p>
@@ -523,7 +523,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
         {step === "result" && result && (
           <div className="flex flex-col gap-4 py-4">
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-4">
+            <div className="flex items-center gap-3 rounded-lg border bg-default/50 p-4">
               <CheckCircle2 className="h-8 w-8 text-green-500" />
               <div>
                 <p className="text-lg font-semibold">Import Selesai</p>

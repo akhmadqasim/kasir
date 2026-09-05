@@ -8,7 +8,7 @@ const variantClasses: Record<StatusVariant, string> = {
   error: "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
   warning: "border-yellow-300 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
   info: "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  neutral: "border-border bg-muted text-muted-foreground",
+  neutral: "border-border bg-default text-muted-foreground",
 }
 
 interface StatusBadgeProps extends React.ComponentProps<"span"> {

@@ -57,7 +57,7 @@ export function PaymentMethodsPage() {
                   <span className="text-sm text-muted-foreground">{row.transactionCount} transaksi</span>
                   <span className="text-sm font-medium">({row.percentage.toFixed(1)}%)</span>
                 </div>
-                <div className="mt-2 h-2 w-full rounded-full bg-muted">
+                <div className="mt-2 h-2 w-full rounded-full bg-default">
                   <div
                     className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-gray-500"}`}
                     style={{ width: `${row.percentage}%` }}

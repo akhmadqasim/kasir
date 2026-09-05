@@ -79,7 +79,7 @@ export function PpFlow() {
                   {groups?.map((group) => (
                     <Card
                       key={group.id}
-                      className="cursor-pointer transition-colors hover:bg-accent"
+                      className="cursor-pointer transition-colors hover:bg-default"
                       onClick={() => setSelectedGroup(group)}
                     >
                       <CardContent className="flex flex-col items-center gap-2 py-6">
@@ -121,7 +121,7 @@ export function PpFlow() {
                   {filteredMerchants.map((item) => (
                     <Card
                       key={item.id}
-                      className={`cursor-pointer transition-colors hover:bg-accent ${
+                      className={`cursor-pointer transition-colors hover:bg-default ${
                         item.isTrouble ? "opacity-50" : ""
                       }`}
                       onClick={() => {

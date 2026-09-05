@@ -186,7 +186,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
                           <button
                             key={product.id}
                             type="button"
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent"
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-default"
                             onClick={() => handleSelectProduct(product)}
                           >
                             <Package className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -204,7 +204,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
                 )}
               </div>
               {selectedProduct && (
-                <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
                   <span className="font-medium">{selectedProduct.name}</span>
                   <span className="ml-2 text-muted-foreground">
                     · Stok: {selectedProduct.stock} {selectedProduct.unit}

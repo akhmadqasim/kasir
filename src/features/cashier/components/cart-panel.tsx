@@ -409,7 +409,7 @@ export function CartPanel({
               </TableHeader>
               <TableBody>
                 {heldCarts.map((held, idx) => (
-                  <TableRow key={held.id} ref={idx === selectedIdx ? selectedRowRef : undefined} className={cn("align-top", idx === selectedIdx && "bg-muted")}>
+                  <TableRow key={held.id} ref={idx === selectedIdx ? selectedRowRef : undefined} className={cn("align-top", idx === selectedIdx && "bg-default")}>
                     <TableCell className="text-center font-semibold">
                       {idx + 1}
                     </TableCell>

@@ -233,7 +233,7 @@ function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void })
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 cursor-pointer"
+      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-default/50 cursor-pointer"
       onClick={onClick}
     >
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${

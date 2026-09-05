@@ -75,7 +75,7 @@ function ServiceGrid() {
       {PPOB_SERVICES.map((svc) => (
         <button
           key={svc.key}
-          className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => navigate(svc.path)}
         >
           <svc.icon className={`h-7 w-7 ${PPOB_SERVICE_COLORS[svc.key].text}`} />

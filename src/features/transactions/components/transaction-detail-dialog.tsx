@@ -288,7 +288,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 <section className="space-y-2.5">
                   <h3 className="text-sm font-semibold">{id.transactions.itemList}</h3>
                   <div className="rounded-lg border">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-default/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                       <span>Item</span>
                       <span className="text-right">Subtotal</span>
                     </div>
@@ -343,7 +343,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
                 <section className="space-y-2.5">
                   <h3 className="text-sm font-semibold">Ringkasan Pembayaran</h3>
-                  <div className="rounded-lg border bg-muted/20 p-4">
+                  <div className="rounded-lg border bg-default/20 p-4">
                     <div className="space-y-1.5">
                       {detail.transaction.discount_amount > 0 && (
                         <>
@@ -461,7 +461,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               </div>
             </ScrollArea>
 
-            <div className="border-t bg-muted/30 px-4 py-4">
+            <div className="border-t bg-default/30 px-4 py-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex flex-wrap gap-2">
                   {isAdmin && !isDeleted && (

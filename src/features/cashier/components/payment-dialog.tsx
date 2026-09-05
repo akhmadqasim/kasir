@@ -522,7 +522,7 @@ export function PaymentDialog({
         </DialogHeader>
         <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
           <div className="min-h-0 overflow-y-auto border-b p-3.5 sm:p-4 md:border-b-0 md:border-r">
-            <div className="rounded-xl border bg-muted/40 p-3.5 sm:p-4">
+            <div className="rounded-xl border bg-default/40 p-3.5 sm:p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">

@@ -459,7 +459,7 @@ export function CloseShiftPage() {
               Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+          <div className="space-y-2 rounded-md border bg-default/50 px-3 py-2 text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">Kasir</span>
               <span className="font-medium">{summary.shift.userName}</span>
@@ -540,7 +540,7 @@ export function CloseShiftPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           {cashFlowToDelete && (
-            <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+            <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
               <div><span className="text-muted-foreground">Jenis:</span> {cashFlowToDelete.flowType === "in" ? "Uang Masuk" : "Uang Keluar"}</div>
               <div><span className="text-muted-foreground">Nominal:</span> {formatRp(cashFlowToDelete.amount)}</div>
               <div><span className="text-muted-foreground">Keterangan:</span> {cashFlowToDelete.description}</div>

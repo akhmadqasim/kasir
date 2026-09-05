@@ -446,7 +446,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                           ) : (
                             <div
                               role="button"
-                              className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-muted group-hover:opacity-100"
+                              className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-default group-hover:opacity-100"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleTogglePin(product.id)

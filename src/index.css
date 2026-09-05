@@ -1,9 +1,17 @@
+/* Tailwind first, then HeroUI — this order is required by @heroui/styles.
+ *
+ * `@heroui/styles` already pulls in `tw-animate-css`, so this file no longer
+ * imports it separately. `shadcn/tailwind.css` stays: it is the only source of
+ * the `data-open` / `data-checked` / `data-active` custom variants and the
+ * `no-scrollbar` utility that the not-yet-migrated shadcn screens rely on.
+ * The `dark` custom variant also comes from HeroUI now — its definition matches
+ * both `.dark` and `[data-theme="dark"]`, on the element itself and on
+ * descendants, which is what the theme switch on <html> needs.
+ */
 @import "tailwindcss";
-@import "tw-animate-css";
+@import "@heroui/styles";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
-
-@custom-variant dark (&:is(.dark *));
 
 @layer base {
   * {
@@ -21,17 +29,36 @@
   }
 }
 
+/* Theme tokens.
+ *
+ * These blocks are deliberately unlayered so they win over the `@layer base`
+ * declarations shipped by `@heroui/styles`. Two systems read from them:
+ *
+ *   - shadcn/ui (the screens not migrated yet): --background, --card, --popover,
+ *     --primary, --secondary, --muted-foreground, --destructive, --input, --ring,
+ *     --sidebar-*, --chart-1..5.
+ *   - HeroUI v3: --background, --foreground, --surface*, --overlay, --default,
+ *     --muted, --accent, --field-*, --border, --separator, --focus, --radius.
+ *
+ * Three names mean different things in the two systems, so the shadcn side was
+ * moved onto HeroUI's vocabulary instead of inventing new names:
+ *
+ *   shadcn `--muted` (a light surface)  -> `--default`   (`bg-muted`  -> `bg-default`)
+ *   shadcn `--accent` (a hover surface) -> `--default`   (`bg-accent` -> `bg-default`)
+ *   shadcn `--accent-foreground`        -> `--default-foreground`
+ *
+ * `--muted` now carries HeroUI's meaning (secondary *text* colour) and `--accent`
+ * HeroUI's meaning (the brand colour), both pointed at the equivalent shadcn value
+ * so the palette on screen is unchanged. `--muted-foreground` is untouched because
+ * HeroUI never reads it.
+ */
 :root {
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Canvas */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
+  --radius: 0.625rem;
+
+  /* shadcn surfaces */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -40,33 +67,66 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+
+  /* Sidebar (shadcn only) */
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Recharts reads these directly, see components/ui/chart.tsx */
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
+
+  /* HeroUI surfaces */
+  --surface: var(--card);
+  --surface-foreground: var(--card-foreground);
+  --surface-secondary: oklch(0.97 0 0);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(0.95 0 0);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: var(--popover);
+  --overlay-foreground: var(--popover-foreground);
+
+  /* HeroUI neutral — the old shadcn `muted` / `accent` surface */
+  --default: oklch(0.97 0 0);
+  --default-foreground: oklch(0.205 0 0);
+
+  /* HeroUI secondary text */
+  --muted: var(--muted-foreground);
+
+  /* HeroUI brand — the old shadcn `primary` */
+  --accent: var(--primary);
+  --accent-foreground: var(--primary-foreground);
+
+  /* HeroUI form fields, kept bordered like the shadcn Input */
+  --field-background: var(--background);
+  --field-foreground: var(--foreground);
+  --field-border: var(--input);
+  --field-border-width: 1px;
+
+  /* HeroUI misc */
+  --separator: var(--border);
+  --focus: var(--ring);
 }
 
-.dark {
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+.dark,
+[data-theme="dark"] {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -75,21 +135,58 @@
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
+
+  --surface: var(--card);
+  --surface-foreground: var(--card-foreground);
+  --surface-secondary: oklch(0.269 0 0);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(0.32 0 0);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: var(--popover);
+  --overlay-foreground: var(--popover-foreground);
+
+  --default: oklch(0.269 0 0);
+  --default-foreground: oklch(0.985 0 0);
+
+  --muted: var(--muted-foreground);
+
+  --accent: var(--primary);
+  --accent-foreground: var(--primary-foreground);
+
+  --field-background: var(--card);
+  --field-foreground: var(--foreground);
+  --field-border: var(--input);
+  --field-border-width: 1px;
+
+  --separator: var(--border);
+  --focus: var(--ring);
 }
 
+/* Tailwind token bridge for the shadcn-only variables. HeroUI's own bridge lives
+ * in @heroui/styles and is merged with this one; only the names below are
+ * redefined here. The radius scale keeps the shadcn ratios so the screens that
+ * have not been migrated yet render exactly as before.
+ */
 @theme inline {
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -107,12 +204,8 @@
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
-  --color-border: var(--border);
   --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -121,8 +214,6 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

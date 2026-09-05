@@ -40,7 +40,7 @@ export function CartItemRow({
 
   return (
     <TableRow
-      className="cursor-pointer hover:bg-muted/50"
+      className="cursor-pointer hover:bg-default/50"
       onClick={() => onEdit(item)}
     >
       <TableCell className="whitespace-normal">
@@ -50,7 +50,7 @@ export function CartItemRow({
             className={cn(
               "mt-0.5 inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-bold tabular-nums transition-colors",
               item.is_ppob
-                ? "border border-border bg-muted text-muted-foreground"
+                ? "border border-border bg-default text-muted-foreground"
                 : "bg-primary text-primary-foreground shadow-sm"
             )}
           >

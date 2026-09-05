@@ -174,7 +174,7 @@ export function HistoryTable({ items }: HistoryTableProps) {
                 return (
                   <TableRow
                     key={rowId}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="cursor-pointer hover:bg-default/50"
                     onClick={() => setSelectedItem(item)}
                   >
                     <TableCell>

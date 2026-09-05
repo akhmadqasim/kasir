@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="mb-4 text-sm text-muted-foreground">
               {this.state.error?.message || "Unknown error"}
             </p>
-            <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-3 text-xs text-muted-foreground">
+            <pre className="max-h-64 overflow-auto rounded-md border bg-default p-3 text-xs text-muted-foreground">
               {this.state.error?.stack}
             </pre>
             <Button

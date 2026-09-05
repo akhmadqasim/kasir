@@ -328,7 +328,7 @@ export function StockWriteoffPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           {confirmAction && (
-            <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+            <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
               <div><span className="text-muted-foreground">No. WO:</span> {confirmAction.writeoff.writeoffNumber}</div>
               <div><span className="text-muted-foreground">Produk:</span> {confirmAction.writeoff.productName}</div>
               <div><span className="text-muted-foreground">Qty:</span> {confirmAction.writeoff.quantity}</div>

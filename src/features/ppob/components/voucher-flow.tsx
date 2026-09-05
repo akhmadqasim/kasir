@@ -37,7 +37,7 @@ export function VoucherFlow() {
           {groups.map((group) => (
             <Card
               key={group.id}
-              className="cursor-pointer transition-colors hover:bg-accent"
+              className="cursor-pointer transition-colors hover:bg-default"
             >
               <CardContent className="flex flex-col items-center gap-2 py-6">
                 {group.icon ? (

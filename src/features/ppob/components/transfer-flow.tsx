@@ -81,7 +81,7 @@ export function TransferFlow() {
                   {filtered.map((ch) => (
                     <Card
                       key={ch.channel}
-                      className="cursor-pointer transition-colors hover:bg-accent"
+                      className="cursor-pointer transition-colors hover:bg-default"
                       onClick={() => {
                         setSelectedChannel(ch)
                         if (ch.details.length === 1) {
@@ -112,7 +112,7 @@ export function TransferFlow() {
                 {selectedChannel.details.map((detail) => (
                   <Card
                     key={detail.channelId}
-                    className="cursor-pointer transition-colors hover:bg-accent"
+                    className="cursor-pointer transition-colors hover:bg-default"
                     onClick={() => setSelectedDetail(detail)}
                   >
                     <CardContent className="py-3 flex justify-between items-center">

@@ -132,7 +132,7 @@ export function TransactionSuccessDialog({
           <h2 className="text-xl font-bold">Transaksi Berhasil!</h2>
         </div>
 
-        <div className="space-y-3 rounded-lg bg-muted p-4">
+        <div className="space-y-3 rounded-lg bg-default p-4">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">No. Struk</p>
             <p className="text-lg font-bold font-mono">

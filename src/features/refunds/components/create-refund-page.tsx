@@ -131,7 +131,7 @@ export function CreateRefundPage() {
 
         {/* Transaction info */}
         <div className="border-b px-4 py-3">
-          <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
+          <div className="rounded-lg border bg-default/50 p-3 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{detail.transaction.receipt_number}</span>
               <Badge variant="outline" className="text-xs">
@@ -256,7 +256,7 @@ export function CreateRefundPage() {
                             addExchangeItem(product)
                             setSearchQuery("")
                           }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-default"
                         >
                           <div className="grid gap-0.5">
                             <span className="font-medium">{product.name}</span>
@@ -365,7 +365,7 @@ export function CreateRefundPage() {
 
         {/* Summary + action (pinned to bottom) */}
         <div className="mt-auto border-t p-4 space-y-4">
-          <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+          <div className="rounded-lg border bg-default/50 p-4 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">{id.refund.totalRefund}</span>
               <span className="text-sm font-medium tabular-nums">
@@ -463,7 +463,7 @@ function RefundItemCard({
     <Label
       htmlFor={itemId}
       className={`flex items-start gap-4 rounded-lg border p-4 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 ${
-        isFullyRefunded ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-accent/50"
+        isFullyRefunded ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-default/50"
       }`}
     >
       <Checkbox

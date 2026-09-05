@@ -26,7 +26,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
+    <div className="flex min-h-svh flex-col items-center justify-center bg-default p-6 md:p-10">
       <div className="w-full max-w-sm md:max-w-4xl">
         <Card className="overflow-hidden p-0">
           <CardContent className="grid p-0 md:grid-cols-2">
@@ -84,7 +84,7 @@ export function LoginPage() {
                 </Field>
               </FieldGroup>
             </form>
-            <div className="relative hidden bg-muted md:block">
+            <div className="relative hidden bg-default md:block">
               <img
                 src="/onboarding-bg.jpg"
                 alt="Toko Sembako"
