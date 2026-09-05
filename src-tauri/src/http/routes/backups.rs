@@ -111,6 +111,12 @@ async fn export(Extension(actor): Extension<Actor>) -> ApiResult<Response> {
         )))
     })?;
 
+    // No `Content-Length`. The size was read a moment ago and the database is
+    // live: a sale committing in between would make the declared length a lie,
+    // and a body that disagrees with its length is a truncated download the
+    // admin has no way to notice. Chunked transfer costs a progress bar and
+    // cannot be wrong. (The compression layer strips the header anyway for any
+    // client that accepts gzip, which is all of them.)
     Ok((
         [
             (header::CONTENT_TYPE, "application/vnd.sqlite3".to_string()),
@@ -120,7 +126,6 @@ async fn export(Extension(actor): Extension<Actor>) -> ApiResult<Response> {
                 // dashes and underscores, so it needs no escaping.
                 format!("attachment; filename=\"{}\"", export.filename),
             ),
-            (header::CONTENT_LENGTH, export.size_bytes.to_string()),
         ],
         Body::from_stream(ReaderStream::new(file)),
     )

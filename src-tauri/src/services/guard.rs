@@ -47,10 +47,19 @@ mod tests {
         }
     }
 
+    /// An actor with no role — what the Tauri layer's unverified constructor
+    /// produces for a caller id it did not check — passes nothing.
+    ///
+    /// Written as `Actor::new(id, "")` rather than through that constructor on
+    /// purpose. Grepping the tree for that constructor's name and finding it
+    /// only under `commands/` is the standing check that no other layer has
+    /// started inventing identities, and a test calling it would be the
+    /// exception that makes the grep useless.
     #[test]
-    fn an_unverified_actor_fails_closed() {
-        assert!(require_admin(&Actor::unverified(1)).is_err());
-        assert!(require_role(&Actor::unverified(1), "kasir").is_err());
-        assert!(!Actor::unverified(1).is_admin());
+    fn an_actor_with_no_role_fails_closed() {
+        let roleless = Actor::new(1, "");
+        assert!(require_admin(&roleless).is_err());
+        assert!(require_role(&roleless, "kasir").is_err());
+        assert!(!roleless.is_admin());
     }
 }

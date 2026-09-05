@@ -1999,8 +1999,8 @@ async fn the_printer_routes_need_a_session() {
 // PPOB
 // ---------------------------------------------------------------------------
 
-/// Everything past these checks talks to a third party over the network, so
-/// what is worth asserting in-process is that the guards fire *before* it does.
+// Everything past these checks talks to a third party over the network, so what
+// is worth asserting in-process is that the guards fire *before* it does.
 
 /// Opening the upstream session acts on the shop's own credentials, so it is a
 /// configuration action rather than a selling one.

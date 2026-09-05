@@ -263,7 +263,6 @@ pub struct DatabaseExport {
     pub path: std::path::PathBuf,
     /// What to put in `Content-Disposition`. Generated here, from the clock.
     pub filename: String,
-    pub size_bytes: u64,
 }
 
 /// Prepare a download of the live database.
@@ -291,17 +290,12 @@ pub fn prepare_export(actor: &Actor) -> Result<DatabaseExport, AppError> {
     // drops the day's sales from the export.
     backup::checkpoint_database_wal(&db_path);
 
-    let size_bytes = std::fs::metadata(&db_path)
-        .map_err(|e| AppError::Internal(format!("Gagal membaca info database: {}", e)))?
-        .len();
-
     Ok(DatabaseExport {
         filename: format!(
             "kasir-export-{}.db",
             chrono::Local::now().format("%Y-%m-%d_%H%M%S")
         ),
         path: db_path,
-        size_bytes,
     })
 }
 

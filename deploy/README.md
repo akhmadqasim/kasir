@@ -97,6 +97,60 @@ curl -i -X POST http://127.0.0.1:17720/api/auth/login \
 
 Request baca (`GET`, `HEAD`) tidak diperiksa.
 
+## Idempotency-Key: tiga endpoint yang wajib memakainya
+
+`POST /api/transactions`, `POST /api/ppob/payments`, dan `POST /api/ppob/topups`
+**menolak** request yang tidak menyertakan header `Idempotency-Key`. Ketiganya
+memindahkan uang, dan lewat HTTP ada satu kegagalan yang tidak ada di IPC:
+penjualan tercatat, jawabannya hilang di jalan, lalu klien mengirim ulang.
+Tanpa key, kirim ulang itu menjadi penjualan kedua.
+
+Key-nya dipilih klien — satu UUID per keranjang, dibuat sekali dan dipakai untuk
+setiap percobaan keranjang itu. Panjangnya 8–200 karakter ASCII.
+
+| Keadaan | Jawaban |
+|---|---|
+| Key belum pernah dipakai | Pekerjaan dijalankan, `201` |
+| Key sudah selesai, body sama | Hasil yang tersimpan, `201` + header `Idempotency-Replayed: true` |
+| Key sudah selesai, body berbeda | `422` — key dipakai untuk permintaan lain |
+| Key sedang diproses | `409 conflict` — tunggu percobaan pertama selesai |
+| Percobaan sebelumnya gagal | Key bebas lagi, kirim ulang dengan key yang sama |
+
+Yang disimpan di tabel `idempotency_keys` adalah `sha256(scope | user_id | key)`
+sebagai primary key, digest body-nya, dan JSON jawabannya. Karena di-scope per
+endpoint dan per pengguna, key yang sama dari dua terminal tidak pernah saling
+memutar ulang. Baris kedaluwarsa setelah **24 jam** dan disapu oleh task per jam
+yang sama dengan penyapu sesi.
+
+## Ekspor dan impor database
+
+Tidak ada nama berkas dari klien yang pernah menjadi path.
+
+`GET /api/backups/export` (admin) menjalankan WAL checkpoint lalu **mengalirkan**
+`kasir.db` sebagai unduhan. Nama di `Content-Disposition`
+(`kasir-export-YYYY-MM-DD_HHMMSS.db`) dibuat server dari jamnya sendiri; itu
+saran untuk folder unduhan browser, bukan path yang diproses aplikasi.
+
+`POST /api/backups/import` (admin) menerima **multipart** dengan field bernama
+`file`. Nama berkas yang dibawa bagian multipart itu diabaikan sepenuhnya. Isinya
+diperiksa header SQLite-nya, lalu ditulis ke satu path staging di sebelah
+database dan dipasang saat aplikasi dijalankan berikutnya — sama seperti restore
+backup, dan karena alasan yang sama: pool koneksi masih memegang `kasir.db`.
+
+`DELETE /api/backups/{filename}` dan `POST /api/backups/{filename}/restore`
+menyusun ulang path dari direktori backup dan menolak apa pun yang bukan satu
+komponen nama backup (`kasir_YYYY-MM-DD[_HHMMSS].db.gz`). `..`, path absolut,
+dan pemisah yang di-percent-encode semuanya ditolak sebelum menyentuh filesystem.
+
+## Pengaturan: kredensial PPOB tidak pernah dikirim
+
+`GET /api/settings` (admin) **tidak** mengembalikan `ppob.password` dan
+`ppob.pin`. Yang ada hanya `ppob.has_credentials` — `true` bila keduanya
+tersimpan. `PUT /api/settings` juga tidak menerima keduanya; nilai yang sudah
+tersimpan dipertahankan, jadi menyimpan pengaturan markup tidak mengosongkan
+kredensial. Satu-satunya jalan mengubahnya adalah
+`PUT /api/settings/ppob/credentials` (admin).
+
 ## Bentuk error
 
 Semua kegagalan memakai bentuk yang sama: `{"code": "...", "message": "..."}`.
@@ -109,8 +163,9 @@ kode.
 | `forbidden` | 403 | Sudah login, tapi tidak berhak |
 | `csrf` | 403 | Origin/Referer tidak cocok atau tidak ada |
 | `not_found` | 404 | Data atau endpoint tidak ada |
+| `conflict` | 409 | `Idempotency-Key` yang sama masih diproses percobaan lain |
 | `rate_limited` | 429 | Kena backoff login; lihat header `Retry-After` |
-| `bad_request` | 400 | Body atau query tidak bisa diurai |
+| `bad_request` | 400 | Body atau query tidak bisa diurai, atau `Idempotency-Key` hilang |
 | `validation` | 422 | Body benar bentuknya, tapi melanggar aturan |
 | `internal` | 500 | Kesalahan server. Detail aslinya masuk `data/logs/error.log`, tidak pernah dikirim ke klien |
 
