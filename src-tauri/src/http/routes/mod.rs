@@ -25,6 +25,7 @@ pub mod auth;
 pub mod categories;
 pub mod onboarding;
 pub mod products;
+pub mod settings;
 pub mod users;
 
 use axum::Router;
@@ -44,6 +45,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(auth::session())
         .merge(products::session())
         .merge(categories::session())
+        .merge(settings::session())
         .route_layer(session_layer.clone());
 
     // The order matters and is the reverse of how it reads: a `route_layer`
@@ -54,6 +56,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(products::admin())
         .merge(categories::admin())
         .merge(users::admin())
+        .merge(settings::admin())
         .route_layer(admin_layer)
         .route_layer(session_layer);
 

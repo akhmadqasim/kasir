@@ -159,6 +159,88 @@ pub struct AppSettings {
     pub backup: BackupSettings,
 }
 
+/// [`AppSettings`] with the PPOB credentials taken out.
+///
+/// [`AppSettings`] is what the settings *service* works with, and it carries
+/// `ppob.password` and `ppob.pin` in the clear — `parse_app_settings`
+/// deobfuscates them on the way out of the database, because the PPOB executor
+/// needs them to log in upstream. Serialising that struct to a client is a
+/// credential leak, and over HTTP it is a credential leak to anything that can
+/// reach the port.
+///
+/// So the read side answers with this instead. It says whether a password and
+/// PIN are on file; it never says what they are. There is no round-trip either:
+/// [`UpdateAppSettingsInput`] cannot carry credentials back, so a client editing
+/// the markup table has no way to blank them by accident, and no way to read
+/// them by saving and reloading.
+#[derive(Debug, Serialize)]
+pub struct PublicPpobSettings {
+    pub enabled: bool,
+    pub phone_number: String,
+    pub device_id: String,
+    /// True only when both a password and a PIN are stored. Anything less
+    /// cannot authenticate upstream, so the UI should treat it as "not set up".
+    pub has_credentials: bool,
+    pub markup: PpobMarkup,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicAppSettings {
+    pub sales: SalesSettings,
+    pub security: SecuritySettings,
+    pub ppob: PublicPpobSettings,
+    pub backup: BackupSettings,
+}
+
+impl From<AppSettings> for PublicAppSettings {
+    fn from(settings: AppSettings) -> Self {
+        Self {
+            sales: settings.sales,
+            security: settings.security,
+            ppob: PublicPpobSettings {
+                enabled: settings.ppob.enabled,
+                phone_number: settings.ppob.phone_number,
+                device_id: settings.ppob.device_id,
+                has_credentials: !settings.ppob.password.is_empty()
+                    && !settings.ppob.pin.is_empty(),
+                markup: settings.ppob.markup,
+            },
+            backup: settings.backup,
+        }
+    }
+}
+
+/// The PPOB block a client may write: everything except the two secrets.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdatePpobSettingsInput {
+    pub enabled: bool,
+    pub phone_number: String,
+    pub device_id: String,
+    #[serde(default)]
+    pub markup: PpobMarkup,
+}
+
+/// The settings a client may write. Mirrors [`AppSettings`] minus the
+/// credentials, which keep whatever value is already stored.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateAppSettingsInput {
+    pub sales: SalesSettings,
+    pub security: SecuritySettings,
+    pub ppob: UpdatePpobSettingsInput,
+    pub backup: BackupSettings,
+}
+
+/// The one payload that carries the PPOB secrets, on its own route.
+///
+/// Separating it from the settings write is what makes the redaction hold: a
+/// GET can never produce these values, so the only way they change is a request
+/// that deliberately sets them.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdatePpobCredentialsInput {
+    pub password: String,
+    pub pin: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct DatabaseInfo {
     pub size_bytes: u64,

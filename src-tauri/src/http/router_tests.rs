@@ -15,7 +15,7 @@ use sea_orm::{
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use crate::entity::users;
+use crate::entity::{store_info, users};
 use crate::http::{session, AppState, ServerConfig};
 use crate::test_support::{now_ts, setup_test_db};
 
@@ -857,6 +857,196 @@ async fn an_admin_can_deactivate_an_account_through_the_active_route() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_json(response).await["is_active"], json!(false));
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+/// A store row whose PPOB block holds real credentials, stored the way
+/// `update_app_settings` stores them.
+async fn insert_store_with_ppob_credentials(
+    db: &DatabaseConnection,
+    password: &str,
+    pin: &str,
+) -> store_info::Model {
+    use crate::domain::settings::obfuscate;
+
+    store_info::ActiveModel {
+        id: Set(1),
+        name: Set("Toko Test".to_string()),
+        address: Set(None),
+        phone: Set(None),
+        email: Set(None),
+        logo_path: Set(None),
+        additional_info: Set(Some(
+            json!({
+                "sales": { "allow_negative_stock": true, "default_payment_method": "cash" },
+                "security": { "session_timeout_minutes": 30 },
+                "ppob": {
+                    "enabled": true,
+                    "phone_number": "0812000111",
+                    "password": obfuscate(password),
+                    "device_id": "device-1",
+                    "pin": obfuscate(pin),
+                },
+                "backup": { "interval_hours": 3, "retention_days": 90 },
+            })
+            .to_string(),
+        )),
+        created_at: Set(Some(now_ts())),
+        updated_at: Set(Some(now_ts())),
+    }
+    .insert(db)
+    .await
+    .expect("store info insert")
+}
+
+/// The whole reason `/api/settings` exists separately from `get_app_settings`.
+///
+/// The service deobfuscates the PPOB password and PIN because the fulfilment
+/// executor needs them; serialising that struct over HTTP would hand a shop's
+/// gateway credentials to anything that can reach the port. The response is
+/// checked as raw text, not as parsed fields, so a future field that happens to
+/// carry the secret is caught too.
+#[tokio::test]
+async fn the_settings_read_never_contains_the_ppob_credentials() {
+    let db = setup_test_db().await;
+    insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/settings")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let text = body_text(response).await;
+    assert!(
+        !text.contains("rahasia-sekali"),
+        "the PPOB password must not be in the response: {text}"
+    );
+    assert!(
+        !text.contains("424242"),
+        "the PPOB PIN must not be in the response: {text}"
+    );
+
+    let body: Value = serde_json::from_str(&text).expect("json");
+    assert!(body["ppob"].get("password").is_none());
+    assert!(body["ppob"].get("pin").is_none());
+    assert_eq!(body["ppob"]["has_credentials"], json!(true));
+    // The non-secret half is still readable, or the settings page has nothing
+    // to draw.
+    assert_eq!(body["ppob"]["phone_number"], json!("0812000111"));
+    assert_eq!(body["ppob"]["device_id"], json!("device-1"));
+}
+
+#[tokio::test]
+async fn the_settings_read_is_closed_to_a_cashier() {
+    let db = setup_test_db().await;
+    insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/settings")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// Because the client never receives the credentials, it cannot send them back
+/// — so a settings save must not read their absence as "clear them".
+#[tokio::test]
+async fn saving_the_settings_leaves_the_stored_credentials_intact() {
+    let db = setup_test_db().await;
+    insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let response = router(&state(db.clone()))
+        .oneshot(
+            same_origin(Method::PUT, "/api/settings")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({
+                    "sales": { "allow_negative_stock": false, "default_payment_method": "qris" },
+                    "security": { "session_timeout_minutes": 45 },
+                    "ppob": {
+                        "enabled": true,
+                        "phone_number": "0812000111",
+                        "device_id": "device-1",
+                    },
+                    "backup": { "interval_hours": 6, "retention_days": 30 },
+                })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let stored = crate::services::settings::get_app_settings(&db)
+        .await
+        .expect("settings");
+    assert_eq!(stored.ppob.password, "rahasia-sekali");
+    assert_eq!(stored.ppob.pin, "424242");
+    assert_eq!(stored.sales.default_payment_method, "qris");
+    assert_eq!(stored.security.session_timeout_minutes, 45);
+}
+
+#[tokio::test]
+async fn the_credentials_route_is_the_only_way_to_change_them() {
+    let db = setup_test_db().await;
+    insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+
+    let response = router(&state(db.clone()))
+        .oneshot(
+            same_origin(Method::PUT, "/api/settings/ppob/credentials")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(
+                    json!({ "password": "sandi-baru", "pin": "111111" }),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let stored = crate::services::settings::get_app_settings(&db)
+        .await
+        .expect("settings");
+    assert_eq!(stored.ppob.password, "sandi-baru");
+    assert_eq!(stored.ppob.pin, "111111");
+
+    // And what is on disk is still obfuscated, not the plain string.
+    let row = store_info::Entity::find_by_id(1_i64)
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("store row");
+    let raw = row.additional_info.unwrap_or_default();
+    assert!(
+        !raw.contains("sandi-baru"),
+        "credentials stored in the clear"
+    );
 }
 
 // ---------------------------------------------------------------------------

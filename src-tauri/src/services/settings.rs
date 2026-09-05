@@ -6,7 +6,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::settings::{
-    obfuscate, parse_app_settings, AppSettings, ChangePinInput, DatabaseInfo, UpdateStoreInfoInput,
+    obfuscate, parse_app_settings, AppSettings, ChangePinInput, DatabaseInfo, PpobSettings,
+    PublicAppSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput,
 };
 use crate::domain::Actor;
 use crate::entity::{store_info, users};
@@ -62,6 +63,69 @@ pub async fn get_app_settings(db: &DatabaseConnection) -> Result<AppSettings, Ap
         .unwrap_or_default();
 
     Ok(settings)
+}
+
+/// The settings with the PPOB credentials removed, for a caller that is not the
+/// PPOB executor.
+///
+/// [`get_app_settings`] hands back `ppob.password` and `ppob.pin` in the clear
+/// and checks no role at all, which was survivable while the only caller was a
+/// local webview. It is not survivable on a LAN. Every transport-facing read
+/// goes through this instead.
+pub async fn public_app_settings(
+    db: &DatabaseConnection,
+    actor: &Actor,
+) -> Result<PublicAppSettings, AppError> {
+    guard::require_admin(actor)?;
+    Ok(PublicAppSettings::from(get_app_settings(db).await?))
+}
+
+/// Save the settings a client is allowed to send, keeping the stored PPOB
+/// credentials.
+///
+/// The client never sees the password and PIN, so it cannot send them back —
+/// which means a settings save that did not carry them would otherwise wipe
+/// them. They are read from the database and put back unchanged.
+pub async fn update_public_app_settings(
+    db: &DatabaseConnection,
+    actor: &Actor,
+    mitra: &Arc<Mutex<MitraClient>>,
+    input: UpdateAppSettingsInput,
+) -> Result<(), AppError> {
+    guard::require_admin(actor)?;
+
+    let stored = get_app_settings(db).await?;
+    let settings = AppSettings {
+        sales: input.sales,
+        security: input.security,
+        ppob: PpobSettings {
+            enabled: input.ppob.enabled,
+            phone_number: input.ppob.phone_number,
+            device_id: input.ppob.device_id,
+            password: stored.ppob.password,
+            pin: stored.ppob.pin,
+            markup: input.ppob.markup,
+        },
+        backup: input.backup,
+    };
+
+    update_app_settings(db, actor, mitra, settings).await
+}
+
+/// Set the PPOB credentials. The only write that can change them.
+pub async fn update_ppob_credentials(
+    db: &DatabaseConnection,
+    actor: &Actor,
+    mitra: &Arc<Mutex<MitraClient>>,
+    input: UpdatePpobCredentialsInput,
+) -> Result<(), AppError> {
+    guard::require_admin(actor)?;
+
+    let mut settings = get_app_settings(db).await?;
+    settings.ppob.password = input.password;
+    settings.ppob.pin = input.pin;
+
+    update_app_settings(db, actor, mitra, settings).await
 }
 
 /// Save the settings blob, then drop the cached Mitra session if anything the
