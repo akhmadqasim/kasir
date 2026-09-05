@@ -1,26 +1,25 @@
-import { useEffect, useState } from "react"
-import { Minus, Plus } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import {
+  Button,
+  Input,
+  Label,
+  ListBox,
+  Modal,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Separator,
+  TextField,
+} from "@heroui/react"
+import { Minus, Plus } from "lucide-react"
+
+import { selectedText } from "@/components/selected-text"
 import { MAX_CART_QUANTITY, useCartStore } from "../hooks/use-cart-store"
 import type { CartItem } from "../types"
 import { formatRupiah, getQuantityWarning } from "../utils"
+
+const DISCOUNT_TYPES = [
+  { key: "fixed", label: "Nominal (Rp)" },
+  { key: "percentage", label: "Persen (%)" },
+] as const
 
 interface CartItemEditDialogProps {
   open: boolean
@@ -36,20 +35,20 @@ export function CartItemEditDialog({
   if (!item) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        {/* Body hanya hidup selama dialog terbuka dan di-key per baris keranjang,
-            jadi state form-nya lahir dari item yang benar tanpa perlu efek
-            penyelaras yang bisa menimpa ketikan kasir. */}
-        {open && (
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label={item.product_name}>
+          {/* Body hanya hidup selama dialog terbuka dan di-key per baris keranjang,
+              jadi state form-nya lahir dari item yang benar tanpa perlu efek
+              penyelaras yang bisa menimpa ketikan kasir. */}
           <CartItemEditBody
             key={item.cart_id}
             item={item}
             onOpenChange={onOpenChange}
           />
-        )}
-      </DialogContent>
-    </Dialog>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -69,19 +68,18 @@ function CartItemEditBody({
   const [qtyRaw, setQtyRaw] = useState(String(item.quantity))
   const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
   const [discRaw, setDiscRaw] = useState(disc ? String(disc.value) : "")
+  const qtyInputRef = useRef<HTMLInputElement>(null)
 
   const lineTotal = item.product_price * qty
-  const qtyInputId = `cart-item-edit-qty-${item.cart_id}`
   const quantityWarning = getQuantityWarning(item, qty)
   const discValue = Number(discRaw) || 0
   const discAmount =
     discType === "percentage"
-      ? Math.round(lineTotal * Math.min(discValue, 100) / 100)
+      ? Math.round((lineTotal * Math.min(discValue, 100)) / 100)
       : Math.min(discValue, lineTotal)
   const finalTotal = Math.max(0, lineTotal - discAmount)
 
-  const clampQty = (value: number) =>
-    Math.min(Math.max(1, value), MAX_CART_QUANTITY)
+  const clampQty = (value: number) => Math.min(Math.max(1, value), MAX_CART_QUANTITY)
 
   const handleQtyChange = (newQty: number) => {
     const validated = clampQty(newQty)
@@ -103,8 +101,7 @@ function CartItemEditBody({
   }
 
   const handleDiscChange = (value: string) => {
-    const cleaned = value.replace(/[^\d]/g, "")
-    setDiscRaw(cleaned)
+    setDiscRaw(value.replace(/[^\d]/g, ""))
   }
 
   const formatDiscDisplay = (raw: string): string => {
@@ -149,72 +146,78 @@ function CartItemEditBody({
   }
 
   // Baris PPOB tidak punya jumlah yang bisa diubah, jadi tidak ada yang difokuskan.
+  // React Aria memindahkan fokus ke dalam dialog saat ia dipasang, jadi seleksinya
+  // dijadwalkan setelah langkah itu selesai — kalau tidak, teksnya dipilih lalu
+  // fokusnya langsung diambil kembali.
   useEffect(() => {
     if (item.is_ppob) return
 
     const timer = setTimeout(() => {
-      const input = document.getElementById(qtyInputId) as HTMLInputElement | null
-      input?.focus()
-      input?.select()
+      qtyInputRef.current?.focus()
+      qtyInputRef.current?.select()
     }, 50)
 
     return () => clearTimeout(timer)
-  }, [item.is_ppob, qtyInputId])
+  }, [item.is_ppob])
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="leading-snug">
-          {item.product_name}
-        </DialogTitle>
-      </DialogHeader>
+      <Modal.Header>
+        <Modal.Heading className="leading-snug">{item.product_name}</Modal.Heading>
+        <Modal.CloseTrigger />
+      </Modal.Header>
 
+      <Modal.Body className="space-y-4">
         {/* Price info */}
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted">
           Harga: {formatRupiah(item.product_price)} / {item.unit ?? "pcs"}
         </div>
 
         {/* Quantity */}
         {!item.is_ppob && (
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Jumlah</Label>
+            {/* Judul blok, bukan label kolom: kolomnya sendiri diberi `aria-label`
+                supaya tidak ada `<label>` yang menggantung tanpa kolom. */}
+            <p className="text-sm font-medium">Jumlah</p>
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
-                size="icon"
+                aria-label="Kurangi jumlah"
                 className="h-9 w-9"
-                onClick={() => handleQtyChange(qty - 1)}
-                disabled={qty <= 1}
+                isDisabled={qty <= 1}
+                isIconOnly
+                variant="outline"
+                onPress={() => handleQtyChange(qty - 1)}
               >
                 <Minus className="h-4 w-4" />
               </Button>
-              <Input
-                id={qtyInputId}
-                type="text"
-                inputMode="numeric"
-                className="h-9 w-20 text-center text-lg font-semibold tabular-nums"
+              <TextField
+                aria-label="Jumlah"
                 value={qtyRaw}
-                autoFocus
-                onChange={(e) => handleQtyInputChange(e.target.value)}
-                onBlur={() => setQtyRaw(String(qty))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave()
-                }}
-              />
+                onChange={handleQtyInputChange}
+              >
+                <Input
+                  ref={qtyInputRef}
+                  className="h-9 w-20 text-center text-lg font-semibold tabular-nums"
+                  inputMode="numeric"
+                  onBlur={() => setQtyRaw(String(qty))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave()
+                  }}
+                />
+              </TextField>
               <Button
-                variant="outline"
-                size="icon"
+                aria-label="Tambah jumlah"
                 className="h-9 w-9"
-                onClick={() => handleQtyChange(qty + 1)}
-                disabled={qty >= MAX_CART_QUANTITY}
+                isDisabled={qty >= MAX_CART_QUANTITY}
+                isIconOnly
+                variant="outline"
+                onPress={() => handleQtyChange(qty + 1)}
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
             {quantityWarning && (
-              <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                {quantityWarning}
-              </p>
+              <p className="text-sm font-medium text-warning">{quantityWarning}</p>
             )}
           </div>
         )}
@@ -223,33 +226,47 @@ function CartItemEditBody({
 
         {/* Discount */}
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Diskon</Label>
+          <p className="text-sm font-medium">Diskon</p>
           <div className="flex items-center gap-2">
-            <Select value={discType} onValueChange={(v) => handleTypeChange(v as "fixed" | "percentage")}>
-              <SelectTrigger className="h-9 w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fixed">Nominal (Rp)</SelectItem>
-                <SelectItem value="percentage">Persen (%)</SelectItem>
-              </SelectContent>
+            <Select
+              aria-label="Jenis diskon"
+              className="w-[130px]"
+              value={discType}
+              onChange={(value) => handleTypeChange(value as "fixed" | "percentage")}
+            >
+              <Select.Trigger>
+                <Select.Value>{selectedText}</Select.Value>
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {DISCOUNT_TYPES.map((option) => (
+                    <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
+                      <Label>{option.label}</Label>
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
             </Select>
-            <Input
-              type="text"
-              inputMode="numeric"
-              className="h-9 flex-1 text-right tabular-nums"
-              placeholder={
-                discType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"
-              }
+            <TextField
+              aria-label="Nilai diskon"
+              className="flex-1"
               value={formatDiscDisplay(discRaw)}
-              onChange={(e) => handleDiscChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave()
-              }}
-            />
+              onChange={handleDiscChange}
+            >
+              <Input
+                className="h-9 text-right tabular-nums"
+                inputMode="numeric"
+                placeholder={discType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSave()
+                }}
+              />
+            </TextField>
           </div>
           {discAmount > 0 && (
-            <p className="text-sm text-destructive tabular-nums">
+            <p className="text-sm tabular-nums text-danger">
               Potongan: -{formatRupiah(discAmount)}
             </p>
           )}
@@ -260,11 +277,11 @@ function CartItemEditBody({
         {/* Summary */}
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
+            <span className="text-muted">Subtotal</span>
             <span className="tabular-nums">{formatRupiah(lineTotal)}</span>
           </div>
           {discAmount > 0 && (
-            <div className="flex justify-between text-destructive">
+            <div className="flex justify-between text-danger">
               <span>Diskon</span>
               <span className="tabular-nums">-{formatRupiah(discAmount)}</span>
             </div>
@@ -274,15 +291,16 @@ function CartItemEditBody({
             <span className="tabular-nums">{formatRupiah(finalTotal)}</span>
           </div>
         </div>
+      </Modal.Body>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          {discAmount > 0 && (
-            <Button variant="outline" onClick={handleReset}>
-              Reset Diskon
-            </Button>
-          )}
-          <Button onClick={handleSave}>Simpan</Button>
-        </DialogFooter>
-      </>
+      <Modal.Footer>
+        {discAmount > 0 && (
+          <Button variant="outline" onPress={handleReset}>
+            Reset Diskon
+          </Button>
+        )}
+        <Button onPress={handleSave}>Simpan</Button>
+      </Modal.Footer>
+    </>
   )
 }

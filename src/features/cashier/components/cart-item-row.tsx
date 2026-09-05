@@ -1,6 +1,6 @@
+import { Button, Table } from "@heroui/react"
 import { Smartphone, Zap, Droplet, ShieldCheck, Wallet, Wifi, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { TableCell, TableRow } from "@/components/ui/table"
+
 import { cn } from "@/lib/utils"
 import type { CartItem } from "../types"
 import { formatRupiah } from "../utils"
@@ -21,16 +21,12 @@ interface CartItemRowProps {
   hasDiscount?: boolean
 }
 
-export function CartItemRow({
-  item,
-  onRemove,
-  onEdit,
-  hasDiscount,
-}: CartItemRowProps) {
+export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRowProps) {
   const subtotal = item.product_price * item.quantity
   const qty = item.is_ppob ? 1 : item.quantity
+  const PpobIcon = PPOB_ICONS[item.service_type ?? ""] ?? Smartphone
 
-  const truncatePpobName= (name: string) => {
+  const truncatePpobName = (name: string) => {
     const parts = name.split(" - ")
     if (parts.length > 1) {
       return parts.slice(1).join(" - ").substring(0, 40)
@@ -39,19 +35,20 @@ export function CartItemRow({
   }
 
   return (
-    <TableRow
-      className="cursor-pointer hover:bg-default/50"
-      onClick={() => onEdit(item)}
+    <Table.Row
+      id={item.cart_id}
+      textValue={item.product_name}
+      onAction={() => onEdit(item)}
     >
-      <TableCell className="whitespace-normal">
-        <div className="flex items-start gap-2 min-w-0">
+      <Table.Cell className="whitespace-normal">
+        <div className="flex min-w-0 items-start gap-2">
           {/* Qty badge */}
           <span
             className={cn(
               "mt-0.5 inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-bold tabular-nums transition-colors",
               item.is_ppob
-                ? "border border-border bg-default text-muted-foreground"
-                : "bg-primary text-primary-foreground shadow-sm"
+                ? "border border-border bg-default text-muted"
+                : "bg-accent text-accent-foreground shadow-sm"
             )}
           >
             {qty}
@@ -61,42 +58,38 @@ export function CartItemRow({
               {item.is_ppob ? truncatePpobName(item.product_name) : item.product_name}
             </p>
             {item.is_ppob ? (
-              <div className="flex items-center gap-1 mt-0.5">
-                {(() => {
-                  const Icon = PPOB_ICONS[item.service_type ?? ""] ?? Smartphone
-                  return <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                })()}
-                <p className="text-xs text-muted-foreground">
-                  {item.service_ref}
-                </p>
+              <div className="mt-0.5 flex items-center gap-1">
+                <PpobIcon className="h-3 w-3 shrink-0 text-muted" />
+                <p className="text-xs text-muted">{item.service_ref}</p>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted">
                 {formatRupiah(item.product_price)} / {item.unit}
               </p>
             )}
             {hasDiscount && (
-              <p className="text-xs text-destructive font-medium">Diskon aktif</p>
+              <p className="text-xs font-medium text-danger">Diskon aktif</p>
             )}
           </div>
         </div>
-      </TableCell>
-      <TableCell className="text-right font-semibold tabular-nums">
+      </Table.Cell>
+      <Table.Cell className="text-right font-semibold tabular-nums">
         {formatRupiah(subtotal)}
-      </TableCell>
-      <TableCell>
+      </Table.Cell>
+      <Table.Cell>
+        {/* React Aria tidak menjalankan `onAction` baris saat tombol di dalamnya
+            ditekan, jadi tidak ada lagi `stopPropagation` yang perlu ditulis. */}
         <Button
+          aria-label={`Hapus ${item.product_name}`}
+          className="h-7 w-7 text-muted hover:text-danger"
+          isIconOnly
+          size="sm"
           variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove(item.cart_id)
-          }}
+          onPress={() => onRemove(item.cart_id)}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
-      </TableCell>
-    </TableRow>
+      </Table.Cell>
+    </Table.Row>
   )
 }

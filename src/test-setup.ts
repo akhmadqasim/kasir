@@ -104,3 +104,12 @@ window.ResizeObserver ??= ResizeObserverStub
  * lingkungan tanpa layout dan tanpa animasi.
  */
 Element.prototype.getAnimations ??= () => []
+
+/**
+ * jsdom tidak melakukan layout, jadi ia juga tidak punya `scrollIntoView`.
+ * Layar yang menggulung baris terpilih ke dalam pandangan — daftar transaksi
+ * tersimpan di kasir, panel konfirmasi PPOB — melempar `TypeError` dari dalam
+ * efeknya tanpa stub ini, padahal yang sedang diuji adalah pilihan barisnya,
+ * bukan posisi gulungannya.
+ */
+Element.prototype.scrollIntoView ??= () => {}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
+import { Alert, Button } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { useCartStore } from "../hooks/use-cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -91,28 +91,25 @@ export function CashierPage() {
     <>
       {/* Banner when no shift */}
       {needsShift && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/30">
-          <div className="flex items-center gap-2">
-            <DoorOpen className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+        <Alert className="mb-4" status="warning">
+          <Alert.Indicator>
+            <DoorOpen className="h-5 w-5" />
+          </Alert.Indicator>
+          <Alert.Content className="flex items-center justify-between gap-4">
+            <Alert.Title className="text-sm">
               Shift belum dibuka — buka shift untuk mulai transaksi
-            </span>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/50"
-            onClick={() => setShiftDialogDismissed(false)}
-          >
-            <DoorOpen className="mr-1 h-4 w-4" />
-            Buka Kasir
-          </Button>
-        </div>
+            </Alert.Title>
+            <Button size="sm" variant="outline" onPress={() => setShiftDialogDismissed(false)}>
+              <DoorOpen className="mr-1 h-4 w-4" />
+              Buka Kasir
+            </Button>
+          </Alert.Content>
+        </Alert>
       )}
 
       <div className="flex h-full flex-col gap-4 lg:grid lg:grid-cols-10">
         {/* Cart (top when stacked, left when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-4 lg:flex-none">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-surface lg:col-span-4 lg:flex-none">
           <CartPanel
             onPay={openPayment}
             disabled={needsShift}
@@ -122,7 +119,7 @@ export function CashierPage() {
         </div>
 
         {/* Product Search (bottom when stacked, right when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-6 lg:flex-none">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-surface lg:col-span-6 lg:flex-none">
           <ProductSearchPanel focusKey={productSearchFocusKey} />
         </div>
       </div>

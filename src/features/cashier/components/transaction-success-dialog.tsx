@@ -1,16 +1,11 @@
+import { useEffect, useRef, useState } from "react"
+import { Button, Modal, Separator } from "@heroui/react"
 import { CheckCircle2, Loader2, Printer } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
-import { useEffect, useRef, useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+
+import { toast } from "@/lib/toast"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
-import { toast } from "@/lib/toast"
 
 /** Jeda sebelum dialog menutup sendiri setelah struk tercetak otomatis */
 const AUTO_CLOSE_DELAY_MS = 1500
@@ -123,116 +118,120 @@ export function TransactionSuccessDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={() => onNewTransaction()}>
-      <DialogContent
-        className="sm:max-w-sm"
-      >
-        <div className="flex flex-col items-center gap-4 pt-4">
-          <CheckCircle2 className="h-16 w-16 text-green-500" />
-          <h2 className="text-xl font-bold">Transaksi Berhasil!</h2>
-        </div>
+    <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label="Transaksi Berhasil">
+          <Modal.Body className="space-y-4">
+            <div className="flex flex-col items-center gap-4 pt-4">
+              <CheckCircle2 className="h-16 w-16 text-success" />
+              <h2 className="text-xl font-bold">Transaksi Berhasil!</h2>
+            </div>
 
-        <div className="space-y-3 rounded-lg bg-default p-4">
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">No. Struk</p>
-            <p className="text-lg font-bold font-mono">
-              {transaction.receipt_number}
-            </p>
-          </div>
-
-          <Separator />
-
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Total</span>
-            <span className="font-semibold tabular-nums">
-              {formatRupiah(transaction.total_amount)}
-            </span>
-          </div>
-
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Metode Pembayaran</span>
-            <span className="font-medium">
-              {formatPaymentSplitLabel(
-                transaction.payment_method,
-                paymentBreakdown[0]?.bank_name
-              )}
-            </span>
-          </div>
-
-          {paymentBreakdown.length > 1 && (
-            <>
-              <Separator />
-              <div className="space-y-2 text-sm">
-                {paymentBreakdown.map((split) => (
-                  <div
-                    key={`${split.payment_method}-${split.bank_name ?? "default"}`}
-                    className="flex justify-between"
-                  >
-                    <span className="text-muted-foreground">
-                      {formatPaymentSplitLabel(split.payment_method, split.bank_name)}
-                    </span>
-                    <span className="font-medium tabular-nums">
-                      {formatRupiah(split.amount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {changeAmount > 0 && (
-            <>
-              <Separator />
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Jumlah Bayar</span>
-                <span className="text-lg font-semibold tabular-nums">
-                  {formatRupiah(transaction.payment_amount)}
-                </span>
-              </div>
-              <Separator />
-              <div className="text-center py-3">
-                <p className="text-sm text-muted-foreground mb-1">Kembalian</p>
-                <p className="text-5xl font-extrabold tabular-nums tracking-tight text-green-600">
-                  {formatRupiah(changeAmount)}
+            <div className="space-y-3 rounded-lg bg-default p-4">
+              <div className="text-center">
+                <p className="text-sm text-muted">No. Struk</p>
+                <p className="font-mono text-lg font-bold">
+                  {transaction.receipt_number}
                 </p>
               </div>
-            </>
-          )}
-          {hasPpob && (
-            <>
-              <Separator />
-              <div className="flex items-center gap-2 text-sm text-blue-600">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
-              </div>
-            </>
-          )}
-          {transaction.notes && (
-            <>
-              <Separator />
-              <div className="text-sm">
-                <p className="text-muted-foreground mb-0.5">Catatan</p>
-                <p>{transaction.notes}</p>
-              </div>
-            </>
-          )}
-        </div>
 
-        <DialogFooter className="flex gap-2 sm:flex-col">
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={handlePrint}
-            disabled={isPrinting}
-          >
-            <Printer className="mr-2 h-4 w-4" />
-            {isPrinting ? "Mencetak..." : "Cetak Struk"}
-          </Button>
-          <Button className="w-full" onClick={onNewTransaction}>
-            Transaksi Baru
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              <Separator />
+
+              <div className="flex justify-between">
+                <span className="text-muted">Total</span>
+                <span className="font-semibold tabular-nums">
+                  {formatRupiah(transaction.total_amount)}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-muted">Metode Pembayaran</span>
+                <span className="font-medium">
+                  {formatPaymentSplitLabel(
+                    transaction.payment_method,
+                    paymentBreakdown[0]?.bank_name
+                  )}
+                </span>
+              </div>
+
+              {paymentBreakdown.length > 1 && (
+                <>
+                  <Separator />
+                  <div className="space-y-2 text-sm">
+                    {paymentBreakdown.map((split) => (
+                      <div
+                        key={`${split.payment_method}-${split.bank_name ?? "default"}`}
+                        className="flex justify-between"
+                      >
+                        <span className="text-muted">
+                          {formatPaymentSplitLabel(split.payment_method, split.bank_name)}
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          {formatRupiah(split.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {changeAmount > 0 && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Jumlah Bayar</span>
+                    <span className="text-lg font-semibold tabular-nums">
+                      {formatRupiah(transaction.payment_amount)}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="py-3 text-center">
+                    <p className="mb-1 text-sm text-muted">Kembalian</p>
+                    <p className="text-5xl font-extrabold tracking-tight tabular-nums text-success">
+                      {formatRupiah(changeAmount)}
+                    </p>
+                  </div>
+                </>
+              )}
+              {hasPpob && (
+                <>
+                  <Separator />
+                  <div className="flex items-center gap-2 text-sm text-accent">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>
+                      PPOB sedang diproses di latar belakang. Cek status di Riwayat.
+                    </span>
+                  </div>
+                </>
+              )}
+              {transaction.notes && (
+                <>
+                  <Separator />
+                  <div className="text-sm">
+                    <p className="mb-0.5 text-muted">Catatan</p>
+                    <p>{transaction.notes}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal.Body>
+
+          <Modal.Footer className="flex-col gap-2">
+            <Button
+              className="w-full"
+              isDisabled={isPrinting}
+              variant="outline"
+              onPress={handlePrint}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              {isPrinting ? "Mencetak..." : "Cetak Struk"}
+            </Button>
+            <Button className="w-full" onPress={onNewTransaction}>
+              Transaksi Baru
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
