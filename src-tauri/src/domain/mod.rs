@@ -14,6 +14,7 @@ pub mod onboarding;
 pub mod ppob;
 pub mod products;
 pub mod receipt;
+pub mod refunds;
 pub mod reports;
 pub mod settings;
 pub mod shifts;
