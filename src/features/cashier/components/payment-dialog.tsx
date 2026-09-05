@@ -88,7 +88,7 @@ export function PaymentDialog({
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(
     createInitialPaymentSplits
   )
-  const [activePaymentMethod, setActivePaymentMethod] = useState("cash")
+  const [requestedPaymentMethod, setActivePaymentMethod] = useState("cash")
   const [notes, setNotes] = useState("")
   const paymentInputRef = useRef<HTMLInputElement>(null)
   const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
@@ -109,6 +109,17 @@ export function PaymentDialog({
     () => paymentSplits.filter((split) => split.selected),
     [paymentSplits]
   )
+  // Metode aktif harus selalu termasuk yang terpilih. Kalau tidak, "Uang Pas" dan
+  // keypad akan mengisi metode yang tidak dicentang — QRIS bisa tiba-tiba ikut
+  // ter-check. Diturunkan, bukan disinkronkan lewat efek, supaya tidak pernah ada
+  // render dengan nilai yang sudah basi.
+  const activePaymentMethod =
+    selectedPaymentSplits.length > 0 &&
+    !selectedPaymentSplits.some(
+      (split) => split.payment_method === requestedPaymentMethod
+    )
+      ? selectedPaymentSplits[0].payment_method
+      : requestedPaymentMethod
   const activeSplit =
     paymentSplits.find((split) => split.payment_method === activePaymentMethod) ??
     paymentSplits[0]
@@ -192,20 +203,6 @@ export function PaymentDialog({
     !checkoutTransaction.isPending
 
   const quickAmounts = QUICK_AMOUNT_OPTIONS
-
-  // Jaga agar metode aktif selalu termasuk yang terpilih. Tanpa ini, active bisa
-  // nyasar ke metode yang tidak terpilih lalu "Uang Pas"/keypad malah mengisinya
-  // (mis. QRIS tiba-tiba ke-check).
-  useEffect(() => {
-    if (
-      selectedPaymentSplits.length > 0 &&
-      !selectedPaymentSplits.some(
-        (split) => split.payment_method === activePaymentMethod
-      )
-    ) {
-      setActivePaymentMethod(selectedPaymentSplits[0].payment_method)
-    }
-  }, [selectedPaymentSplits, activePaymentMethod])
 
   // Auto-focus payment input when dialog opens
   useEffect(() => {
@@ -355,7 +352,7 @@ export function PaymentDialog({
       )
     )
     setActivePaymentMethod(method)
-  }, [isSingleCashSelection, paymentSplits, total])
+  }, [isSingleCashSelection, paymentSplits, selectedMethodCount, total])
 
   const ensureActiveMethodSelected = useCallback(() => {
     if (activeSplit?.selected) return

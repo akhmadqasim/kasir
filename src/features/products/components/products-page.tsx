@@ -44,7 +44,9 @@ export function ProductsPage() {
   })
 
   const { data: categories } = useCategories()
-  const products = productsData?.data ?? []
+  // `?? []` membuat array baru tiap render, jadi memo di bawahnya tidak pernah
+  // menyimpan apa pun. Kunci identitasnya di sini.
+  const products = useMemo(() => productsData?.data ?? [], [productsData])
 
   const reviewSummary = useMemo(() => {
     const noBarcode = products.filter((product) => !product.barcode?.trim()).length
