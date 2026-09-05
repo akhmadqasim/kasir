@@ -32,10 +32,7 @@ pub async fn require_role(
 
 /// Verify user exists and is active (any role).
 #[allow(dead_code)]
-pub async fn require_auth(
-    db: &DatabaseConnection,
-    user_id: i64,
-) -> Result<users::Model, AppError> {
+pub async fn require_auth(db: &DatabaseConnection, user_id: i64) -> Result<users::Model, AppError> {
     require_role(db, user_id, "any").await
 }
 
