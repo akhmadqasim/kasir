@@ -45,14 +45,8 @@ import {
   transactionStatusLabel,
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
+import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-status"
 import type { TransactionDetail, TransactionListItem } from "../types"
-
-
-const PPOB_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: "Menunggu", className: "bg-amber-50 text-amber-700" },
-  success: { label: "Berhasil", className: "bg-green-50 text-green-700" },
-  failed: { label: "Gagal", className: "bg-red-50 text-red-700" },
-}
 
 interface TransactionDetailDialogProps {
   transaction: TransactionListItem | null
@@ -101,7 +95,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   )
 
   const ppobItem = detail?.items.find((item) => item.service_type)
-  const ppobCanRetry = ppobItem?.ppob_status === "failed" || ppobItem?.ppob_status === "pending"
+  const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
   const isDeleted = detail?.transaction.status === "deleted"
   const hasRefundAction = !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
   const originalTotalAmount = detail
@@ -248,7 +242,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     </div>
                     <div className="divide-y">
                       {detail.items.map((item) => {
-                        const ppobStatus = item.ppob_status ? PPOB_STATUS_CONFIG[item.ppob_status] : null
+                        const ppobStatus = ppobStatusConfig(item.ppob_status)
                         return (
                           <div
                             key={item.id}
@@ -263,7 +257,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                                     variant="outline"
                                     className={`text-xs ${ppobStatus.className}`}
                                   >
-                                    {item.ppob_status === "pending" && (
+                                    {isPpobInFlight(item.ppob_status) && (
                                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                                     )}
                                     {ppobStatus.label}
@@ -391,6 +385,12 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                             {ppobItem.ppob_serial_number && (
                               <p className="mt-2 font-mono text-xs text-muted-foreground">
                                 SN: {ppobItem.ppob_serial_number}
+                              </p>
+                            )}
+                            {isPpobInFlight(ppobItem.ppob_status) && (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Masih diproses ke penyedia. Tunggu hasilnya — retry
+                                baru bisa dilakukan kalau statusnya gagal.
                               </p>
                             )}
                           </div>
