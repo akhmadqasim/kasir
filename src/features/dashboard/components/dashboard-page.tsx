@@ -64,6 +64,12 @@ import {
   useRecentTransactions,
 } from "../hooks/use-dashboard"
 import { formatDateTime, formatRupiah } from "@/lib/format"
+import {
+  TRANSACTION_STATUS_CLASSNAMES,
+  TRANSACTION_STATUS_VARIANTS,
+  paymentMethodLabel,
+  transactionStatusLabel,
+} from "@/lib/labels"
 
 // --- Helpers ---
 
@@ -658,10 +664,28 @@ function RecentTransactionsTable() {
             {recentTx && recentTx.length > 0 ? (
               recentTx.map((tx) => (
                 <TableRow key={tx.id}>
-                  <TableCell className="font-medium">{tx.receiptNumber}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{tx.receiptNumber}</span>
+                      {/*
+                        `query_recent_transactions` filters out deleted, refunded and
+                        unfulfilled PPOB rows, so only `completed` and
+                        `partial_refund` reach here. The partial ones still show their
+                        full original amount, which is the one case worth flagging.
+                      */}
+                      {tx.status !== "completed" && (
+                        <Badge
+                          variant={TRANSACTION_STATUS_VARIANTS[tx.status] ?? "secondary"}
+                          className={TRANSACTION_STATUS_CLASSNAMES[tx.status]}
+                        >
+                          {transactionStatusLabel(tx.status)}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{tx.cashierName}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{t.payment[tx.paymentMethod as keyof typeof t.payment] ?? tx.paymentMethod}</Badge>
+                    <Badge variant="outline">{paymentMethodLabel(tx.paymentMethod)}</Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{formatDateTime(tx.createdAt)}</TableCell>
                   <TableCell className="text-center">{tx.totalItems}</TableCell>
