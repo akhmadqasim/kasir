@@ -13,6 +13,7 @@ import {
   SidebarSubMenuLink,
 } from "@/components/layout/sidebar"
 import { sidebarMenuButtonClass } from "@/components/layout/sidebar-context"
+import { isPathWithin } from "@/app/resume-route"
 
 type NavSubItem = {
   group?: string
@@ -42,7 +43,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
               <SidebarMenuLink
                 to={item.url}
                 tooltip={item.title}
-                isActive={location.pathname === item.url}
+                isActive={isPathWithin(location.pathname, item.url)}
               >
                 {item.icon}
                 <SidebarLabel className="truncate">{item.title}</SidebarLabel>
@@ -71,7 +72,7 @@ function NavGroupItem({
 }) {
   return (
     <SidebarMenuItem>
-      <Disclosure defaultExpanded={pathname.startsWith(item.url)}>
+      <Disclosure defaultExpanded={isPathWithin(pathname, item.url)}>
         <Disclosure.Trigger className={sidebarMenuButtonClass()}>
           {item.icon}
           <SidebarLabel className="truncate">{item.title}</SidebarLabel>

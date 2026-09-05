@@ -9,6 +9,7 @@ import {
   SidebarMenuItem,
   SidebarMenuLink,
 } from "@/components/layout/sidebar"
+import { isPathWithin } from "@/app/resume-route"
 
 type NavItem = {
   title: string
@@ -29,7 +30,7 @@ export function NavSecondary({ items, className }: { items: NavItem[]; className
               to={item.url}
               size="sm"
               tooltip={item.title}
-              isActive={location.pathname === item.url}
+              isActive={isPathWithin(location.pathname, item.url)}
             >
               {item.icon}
               <SidebarLabel className="truncate">{item.title}</SidebarLabel>

@@ -29,7 +29,12 @@ const RESUMABLE_PREFIXES = [
  */
 const ADMIN_ONLY_PREFIXES = ["/users", "/products", "/settings"]
 
-function matchesPath(pathname: string, prefix: string) {
+/**
+ * True when `pathname` is `prefix` itself or a route nested under it. Both the route
+ * guards here and the sidebar highlight need this: a nested screen still belongs to
+ * the menu entry it was opened from.
+ */
+export function isPathWithin(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
 }
 
@@ -47,13 +52,13 @@ export function getDefaultRouteForRole(role: UserRole) {
 export function isResumableRoute(pathname: string | null | undefined) {
   const normalized = normalizePathname(pathname)
   if (!normalized || NON_RESUMABLE_PATHS.has(normalized)) return false
-  return RESUMABLE_PREFIXES.some((prefix) => matchesPath(normalized, prefix))
+  return RESUMABLE_PREFIXES.some((prefix) => isPathWithin(normalized, prefix))
 }
 
 export function isAdminOnlyRoute(pathname: string | null | undefined) {
   const normalized = normalizePathname(pathname)
   if (!normalized) return false
-  return ADMIN_ONLY_PREFIXES.some((prefix) => matchesPath(normalized, prefix))
+  return ADMIN_ONLY_PREFIXES.some((prefix) => isPathWithin(normalized, prefix))
 }
 
 export function isRouteAllowedForRole(
