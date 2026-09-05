@@ -40,9 +40,11 @@ use axum::extract::DefaultBodyLimit;
 use axum::Router;
 use sea_orm::DatabaseConnection;
 use tokio::net::TcpListener;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 use tower_http::compression::CompressionLayer;
 
+use crate::services::backup::BackupScheduler;
+use crate::services::ppob::MitraClient;
 use crate::utils::{logging, AppError};
 use throttle::LoginThrottle;
 
@@ -58,24 +60,49 @@ const PORT_SCAN_RANGE: u16 = 9;
 /// whole spreadsheet as JSON; nginx has its own, larger limit for DB restore.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
-/// How often dead sessions are swept from the table.
+/// How often dead sessions and spent idempotency keys are swept from their
+/// tables.
 const SWEEP_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Everything the transport needs and nothing it does not.
+///
+/// `mitra` and `backup_scheduler` are the two pieces of process-wide mutable
+/// state the services own: the cached PPOB upstream session, and the clock the
+/// daily backup runs on. They are shared handles rather than fresh instances
+/// because the Tauri command layer holds the same two — a second `MitraClient`
+/// would hold a second upstream session, and logging one in logs the other out.
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
     pub config: Arc<ServerConfig>,
     pub throttle: Arc<LoginThrottle>,
+    pub mitra: Arc<Mutex<MitraClient>>,
+    pub backup_scheduler: Arc<Mutex<BackupScheduler>>,
 }
 
 impl AppState {
+    /// State that owns its PPOB client and backup scheduler. This is what tests
+    /// build; the running app uses [`AppState::sharing`] so both transports see
+    /// one of each.
     pub fn new(db: DatabaseConnection, config: ServerConfig) -> Self {
         Self {
             db,
             config: Arc::new(config),
             throttle: Arc::new(LoginThrottle::new()),
+            mitra: Arc::new(Mutex::new(MitraClient::new())),
+            backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
         }
+    }
+
+    /// Adopt the PPOB client and backup scheduler `run()` already created.
+    pub fn sharing(
+        mut self,
+        mitra: Arc<Mutex<MitraClient>>,
+        backup_scheduler: Arc<Mutex<BackupScheduler>>,
+    ) -> Self {
+        self.mitra = mitra;
+        self.backup_scheduler = backup_scheduler;
+        self
     }
 }
 

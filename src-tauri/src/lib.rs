@@ -92,7 +92,7 @@ pub fn run() {
     // The HTTP server is started before the Tauri builder because the window's
     // URL depends on the port it actually got, and the port is only known once
     // the listener is bound.
-    let http_server = start_http_server(&database);
+    let http_server = start_http_server(&database, &mitra_client, &backup_scheduler);
     let http_port = http_server.as_ref().map(|server| server.port);
 
     let backup_scheduler_clone = backup_scheduler.clone();
@@ -247,7 +247,11 @@ pub fn run() {
 /// asked for and could not be provided, carrying on would silently produce a
 /// desktop-only app that the LAN clients cannot reach — a much harder thing to
 /// notice than a refusal to start.
-fn start_http_server(database: &sea_orm::DatabaseConnection) -> Option<http::ServerHandle> {
+fn start_http_server(
+    database: &sea_orm::DatabaseConnection,
+    mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
+    backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
+) -> Option<http::ServerHandle> {
     if !web_mode_enabled() {
         utils::logging::log_startup(&format!(
             "HTTP server disabled (set {WEB_MODE_ENV}=1 to enable web mode)"
@@ -259,7 +263,8 @@ fn start_http_server(database: &sea_orm::DatabaseConnection) -> Option<http::Ser
     // login attempt against an unknown username is not the request that pays it.
     services::auth::warm_password_verifier();
 
-    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env());
+    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env())
+        .sharing(mitra_client.clone(), backup_scheduler.clone());
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => Some(server),
         Err(e) => {

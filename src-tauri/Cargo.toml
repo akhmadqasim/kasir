@@ -33,13 +33,14 @@ tauri-plugin-mcp-bridge = "0.10"
 # `cookie` builds the `Set-Cookie` attributes, `rust-embed` compiles `dist/`
 # into the binary. All five were already in `Cargo.lock` as transitive
 # dependencies, so none of them adds anything new to the build.
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 tower-http = { version = "0.6", features = ["compression-gzip"] }
 rand = "0.9"
 sha2 = "0.10"
 hex = "0.4"
 cookie = "0.18"
 rust-embed = { version = "8", features = ["mime-guess"] }
+tokio-util = { version = "0.7.18", features = ["io"] }
 
 [dev-dependencies]
 # `ServiceExt::oneshot`, which drives the router in tests without a listener.
