@@ -14,20 +14,19 @@ import {
 import { toast } from "@/lib/toast"
 import { invoke } from "@tauri-apps/api/core"
 import { useNavigate } from "react-router-dom"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Button,
+  Input,
+  Label,
+  ListBox,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Separator,
+  Skeleton,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react"
+import { selectedText } from "@/components/selected-text"
 import {
   usePpobSaldo,
   usePulsaDetails,
@@ -206,10 +205,11 @@ export function PpobQuickAccess({
       <div className="p-4">
         <div className="mb-4 flex items-center gap-2">
           <Button
-            variant="ghost"
-            size="icon"
+            aria-label="Kembali"
             className="h-8 w-8"
-            onClick={() => {
+            isIconOnly
+            variant="ghost"
+            onPress={() => {
               if (initialService || onBack) {
                 onBack?.()
                 return
@@ -249,9 +249,9 @@ export function PpobQuickAccess({
         {QUICK_ACCESS_SERVICES.map(({ key, label, icon: Icon }) => (
           <Button
             key={key}
-            variant="outline"
             className="h-auto flex-col gap-1.5 py-3"
-            onClick={() => setSelectedService(key)}
+            variant="outline"
+            onPress={() => setSelectedService(key)}
           >
             <Icon className={`h-5 w-5 ${PPOB_SERVICE_COLORS[key].text}`} />
             <span className="text-xs font-medium">{label}</span>
@@ -269,11 +269,11 @@ function SaldoBar() {
   return (
     <div className="flex items-center justify-between rounded-lg border bg-default/30 px-3 py-2">
       <div className="flex items-center gap-2">
-        <Wallet className="h-4 w-4 text-muted-foreground" />
+        <Wallet className="h-4 w-4 text-muted" />
         {isLoading ? (
           <Skeleton className="h-5 w-28" />
         ) : error ? (
-          <span className="text-xs text-muted-foreground">Saldo tidak tersedia</span>
+          <span className="text-xs text-muted">Saldo tidak tersedia</span>
         ) : (
           <span className="text-sm font-semibold tabular-nums">
             Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}
@@ -282,20 +282,20 @@ function SaldoBar() {
       </div>
       <div className="flex items-center gap-1">
         <Button
-          variant="ghost"
-          size="icon"
+          aria-label="Muat ulang saldo"
           className="h-7 w-7"
-          onClick={() => refetch()}
-          title="Refresh saldo"
+          isIconOnly
+          variant="ghost"
+          onPress={() => refetch()}
         >
           <RefreshCw className="h-3.5 w-3.5" />
         </Button>
         <Button
-          variant="ghost"
-          size="icon"
+          aria-label="Riwayat transaksi"
           className="h-7 w-7"
-          onClick={() => navigate("/ppob/history")}
-          title="Riwayat transaksi"
+          isIconOnly
+          variant="ghost"
+          onPress={() => navigate("/ppob/history")}
         >
           <History className="h-3.5 w-3.5" />
         </Button>
@@ -372,27 +372,29 @@ function PulsaInput({
 
   const inputSection = (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <Label>Nomor HP</Label>
-        <div className="relative">
+      <div className="relative">
+        <TextField
+          autoFocus
+          fullWidth
+          value={phoneNumber}
+          onChange={(value) => {
+            setPhoneNumber(value.replace(/\D/g, ""))
+            setSelected(null)
+          }}
+        >
+          <Label>Nomor HP</Label>
           <Input
-            type="tel"
+            className="h-12 pr-24 font-mono !text-xl tracking-wider"
+            inputMode="tel"
             placeholder="08xxxxxxxxxx"
-            value={phoneNumber}
-            onChange={(e) => {
-              setPhoneNumber(e.target.value.replace(/\D/g, ""))
-              setSelected(null)
-            }}
-            className="font-mono pr-24 !text-xl h-12 tracking-wider"
-            autoFocus
           />
-          {data && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-              {data.image && <img src={data.image} alt={data.provider} className="h-5" />}
-              <span className="text-xs font-medium text-muted-foreground">{data.provider}</span>
-            </div>
-          )}
-        </div>
+        </TextField>
+        {data && (
+          <div className="absolute bottom-3 right-2 flex items-center gap-1.5">
+            {data.image && <img src={data.image} alt={data.provider} className="h-5" />}
+            <span className="text-xs font-medium text-muted">{data.provider}</span>
+          </div>
+        )}
       </div>
 
       {/*
@@ -406,7 +408,7 @@ function PulsaInput({
       )}
 
       {error && phoneNumber.length >= 10 && (
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p className="text-sm text-danger">{error.message}</p>
       )}
 
       {/*
@@ -420,7 +422,7 @@ function PulsaInput({
             Tidak ada produk {productType === "pulsa" ? "pulsa" : "paket data"} untuk
             nomor ini
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-muted">
             {data.provider
               ? `Provider terdeteksi: ${data.provider}. Coba tab lain atau ulangi beberapa saat lagi.`
               : "Periksa kembali nomornya, atau coba lagi beberapa saat lagi."}
@@ -434,17 +436,20 @@ function PulsaInput({
             const isSelected = selected?.id === product.id
             const sellPrice = getSellPrice(product)
             return (
-              <Card
+              <ToggleButton
                 key={product.id}
-                className={`cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : "hover:bg-default"}`}
-                onClick={() => setSelected(product)}
+                className="h-auto flex-col items-start gap-0 p-3 text-left"
+                isSelected={isSelected}
+                onChange={() => setSelected(product)}
               >
-                <CardContent className="p-3">
-                  <p className="text-xs font-medium leading-tight">{product.description.replace(/\n/g, " ")}</p>
-                  <p className="mt-1 text-sm font-bold">{formatRupiah(sellPrice)}</p>
-                  <p className="text-[10px] text-muted-foreground">Modal: {formatRupiah(product.vendorPrice)}</p>
-                </CardContent>
-              </Card>
+                <span className="text-xs font-medium leading-tight">
+                  {product.description.replace(/\n/g, " ")}
+                </span>
+                <span className="mt-1 text-sm font-bold">{formatRupiah(sellPrice)}</span>
+                <span className="text-[10px] text-muted">
+                  Modal: {formatRupiah(product.vendorPrice)}
+                </span>
+              </ToggleButton>
             )
           })}
         </div>
@@ -468,7 +473,7 @@ function PulsaInput({
             {confirmItems ? (
               <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
             ) : (
-              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted">
                 <Smartphone className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 <p className="text-sm">Pilih produk untuk melihat detail</p>
               </div>
@@ -581,23 +586,48 @@ function PlnInput({
 
   const inputSection = (
     <div className="space-y-4">
-      <Tabs value={mode} onValueChange={handleModeChange}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="token">Token (Prepaid)</TabsTrigger>
-          <TabsTrigger value="postpaid">Bayar (Pascabayar)</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Dua mode PLN, bukan dua panel: `ToggleButtonGroup` memberi `aria-pressed`
+          tanpa menuntut `Tabs.Panel` yang isinya tidak ada. */}
+      <ToggleButtonGroup
+        aria-label="Jenis layanan PLN"
+        fullWidth
+        disallowEmptySelection
+        selectedKeys={[mode]}
+        selectionMode="single"
+        onSelectionChange={(keys) => {
+          const [next] = [...keys]
+          if (next) handleModeChange(String(next))
+        }}
+      >
+        <ToggleButton id="token">Token (Prepaid)</ToggleButton>
+        <ToggleButton id="postpaid">
+          <ToggleButtonGroup.Separator />
+          Bayar (Pascabayar)
+        </ToggleButton>
+      </ToggleButtonGroup>
 
       <div className="space-y-2">
-        <Label>{mode === "token" ? "No. Meter / IDPEL" : "ID Pelanggan"}</Label>
-        <Input
-          placeholder={mode === "token" ? "Masukkan no. meter atau IDPEL" : "Masukkan ID pelanggan (12 digit)"}
-          value={customerId}
-          onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono !text-xl h-12 tracking-wider"
+        <TextField
           autoFocus
-        />
-        <p className="text-xs text-muted-foreground">
+          fullWidth
+          value={customerId}
+          onChange={(value) => {
+            setCustomerId(value.replace(/\D/g, ""))
+            setInquiryResult(null)
+          }}
+        >
+          <Label>{mode === "token" ? "No. Meter / IDPEL" : "ID Pelanggan"}</Label>
+          <Input
+            className="h-12 font-mono !text-xl tracking-wider"
+            inputMode="numeric"
+            placeholder={
+              mode === "token"
+                ? "Masukkan no. meter atau IDPEL"
+                : "Masukkan ID pelanggan (12 digit)"
+            }
+          />
+        </TextField>
+        <p className="text-xs text-muted">
           {mode === "token"
             ? "Bisa pakai No. Meter (11 digit) atau IDPEL (12 digit) dari struk PLN."
             : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."
@@ -613,24 +643,27 @@ function PlnInput({
 
       {mode === "token" && denoms && denoms.length > 0 && (
         <div className="space-y-2">
-          <Label>Nominal</Label>
+          <p className="text-sm font-medium">Nominal</p>
           <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
             {denoms.map((d) => (
-              <Button
+              <ToggleButton
                 key={d.id}
-                variant={selectedDenom === d.id ? "default" : "outline"}
                 className="h-12 text-sm font-semibold"
-                onClick={() => { setSelectedDenom(d.id); setInquiryResult(null) }}
+                isSelected={selectedDenom === d.id}
+                onChange={() => {
+                  setSelectedDenom(d.id)
+                  setInquiryResult(null)
+                }}
               >
                 {formatRupiah(parseFloat(d.denom))}
-              </Button>
+              </ToggleButton>
             ))}
           </div>
         </div>
       )}
 
       {canInquiry && !inquiryResult && (
-        <Button className="w-full" onClick={handleInquiry} disabled={plnInquiry.isPending}>
+        <Button className="w-full" isDisabled={plnInquiry.isPending} onPress={handleInquiry}>
           {plnInquiry.isPending
             ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {mode === "token" ? "Cek Info..." : "Cek Tagihan..."}</>
             : mode === "token" ? "Cek Info Pelanggan" : "Cek Tagihan"
@@ -656,7 +689,7 @@ function PlnInput({
             {confirmItems ? (
               <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
             ) : (
-              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted">
                 <Zap className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 <p className="text-sm">Cek tagihan untuk melihat detail</p>
               </div>
@@ -746,36 +779,55 @@ function PdamInput({
       {pdamLoading ? (
         <Skeleton className="h-10 w-full" />
       ) : (
-        <div className="space-y-2">
+        <Select
+          fullWidth
+          placeholder="-- Pilih PDAM --"
+          value={selectedPdam || null}
+          onChange={(value) => {
+            setSelectedPdam(value === null ? "" : String(value))
+            setInquiryResult(null)
+          }}
+        >
           <Label>Pilih PDAM</Label>
-          <Select
-            value={selectedPdam}
-            onValueChange={(value) => { setSelectedPdam(value); setInquiryResult(null) }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="-- Pilih PDAM --" />
-            </SelectTrigger>
-            <SelectContent>
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
               {pdamProducts?.map((p) => (
-                <SelectItem key={p.id} value={p.plu}>{p.merchant}</SelectItem>
+                <ListBox.Item key={p.id} id={p.plu} textValue={p.merchant}>
+                  <Label>{p.merchant}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
+            </ListBox>
+          </Select.Popover>
+        </Select>
       )}
 
-      <div className="space-y-2">
+      <TextField
+        fullWidth
+        value={customerId}
+        onChange={(value) => {
+          setCustomerId(value.replace(/\D/g, ""))
+          setInquiryResult(null)
+        }}
+      >
         <Label>ID Pelanggan</Label>
         <Input
+          className="h-12 font-mono !text-xl tracking-wider"
+          inputMode="numeric"
           placeholder="Masukkan ID pelanggan"
-          value={customerId}
-          onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono !text-xl h-12 tracking-wider"
         />
-      </div>
+      </TextField>
 
       {customerId && selectedPdam && !inquiryResult && (
-        <Button className="w-full" onClick={handleInquiry} disabled={pdamInquiry.isPending || customerId.length < 5}>
+        <Button
+          className="w-full"
+          isDisabled={pdamInquiry.isPending || customerId.length < 5}
+          onPress={handleInquiry}
+        >
           {pdamInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...</> : "Cek Tagihan"}
         </Button>
       )}
@@ -798,7 +850,7 @@ function PdamInput({
             {confirmItems ? (
               <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
             ) : (
-              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted">
                 <Droplets className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 <p className="text-sm">Cek tagihan untuk melihat detail</p>
               </div>
@@ -918,35 +970,50 @@ function BpjsInput({
 
   const inputSection = (
     <div className="space-y-4">
-      <Tabs
-        value={bpjsType}
-        onValueChange={(value) => {
-          setBpjsType(value as (typeof BPJS_TYPE_OPTIONS)[number]["value"])
+      <ToggleButtonGroup
+        aria-label="Jenis BPJS"
+        fullWidth
+        disallowEmptySelection
+        selectedKeys={[bpjsType]}
+        selectionMode="single"
+        onSelectionChange={(keys) => {
+          const [next] = [...keys]
+          if (!next) return
+          setBpjsType(next as (typeof BPJS_TYPE_OPTIONS)[number]["value"])
           setInquiryResult(null)
         }}
       >
-        <TabsList className="grid w-full grid-cols-2">
-          {BPJS_TYPE_OPTIONS.map((option) => (
-            <TabsTrigger key={option.value} value={option.value}>
-              {option.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        {BPJS_TYPE_OPTIONS.map((option, index) => (
+          <ToggleButton key={option.value} id={option.value}>
+            {index > 0 && <ToggleButtonGroup.Separator />}
+            {option.label}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
 
-      <div className="space-y-2">
+      <TextField
+        autoFocus
+        fullWidth
+        value={customerId}
+        onChange={(value) => {
+          setCustomerId(value.replace(/\D/g, ""))
+          setInquiryResult(null)
+        }}
+      >
         <Label>{customerIdLabel}</Label>
         <Input
+          className="h-12 font-mono !text-xl tracking-wider"
+          inputMode="numeric"
           placeholder={customerIdPlaceholder}
-          value={customerId}
-          onChange={(e) => { setCustomerId(e.target.value.replace(/\D/g, "")); setInquiryResult(null) }}
-          className="font-mono !text-xl h-12 tracking-wider"
-          autoFocus
         />
-      </div>
+      </TextField>
 
       {!inquiryResult && (
-        <Button className="w-full" onClick={handleInquiry} disabled={bpjsInquiry.isPending || customerId.length < 10}>
+        <Button
+          className="w-full"
+          isDisabled={bpjsInquiry.isPending || customerId.length < 10}
+          onPress={handleInquiry}
+        >
           {bpjsInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...</> : "Cek Tagihan"}
         </Button>
       )}
@@ -969,7 +1036,7 @@ function BpjsInput({
             {confirmItems ? (
               <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
             ) : (
-              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted">
                 <HeartPulse className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 <p className="text-sm">Cek tagihan untuk melihat detail</p>
               </div>
@@ -1053,16 +1120,23 @@ function EmoneyInput({
 
   const inputSection = (
     <div className="space-y-4">
-      <div className="space-y-2">
+      <TextField
+        autoFocus
+        fullWidth
+        value={phoneNumber}
+        onChange={(value) => {
+          setPhoneNumber(value.replace(/\D/g, ""))
+          setSelectedDenom(null)
+          setInquiryResult(null)
+        }}
+      >
         <Label>Nomor HP / ID</Label>
         <Input
+          className="h-12 font-mono !text-xl tracking-wider"
+          inputMode="numeric"
           placeholder="Masukkan nomor"
-          value={phoneNumber}
-          onChange={(e) => { setPhoneNumber(e.target.value.replace(/\D/g, "")); setSelectedDenom(null); setInquiryResult(null) }}
-          className="font-mono !text-xl h-12 tracking-wider"
-          autoFocus
         />
-      </div>
+      </TextField>
 
       {isLoading && (
         <div className="grid grid-cols-3 gap-2">
@@ -1072,21 +1146,31 @@ function EmoneyInput({
 
       {denoms && denoms.length > 0 && (
         <div className="space-y-2">
-          <Label>Nominal</Label>
+          <p className="text-sm font-medium">Nominal</p>
           <div className="grid grid-cols-3 gap-2">
             {denoms.map((d) => (
-              <Button key={d.id} variant={selectedDenom?.id === d.id ? "default" : "outline"} className="h-12 text-sm font-semibold"
-                onClick={() => { setSelectedDenom(d); setInquiryResult(null) }}
+              <ToggleButton
+                key={d.id}
+                className="h-12 text-sm font-semibold"
+                isSelected={selectedDenom?.id === d.id}
+                onChange={() => {
+                  setSelectedDenom(d)
+                  setInquiryResult(null)
+                }}
               >
                 {formatRupiah(parseFloat(d.denom))}
-              </Button>
+              </ToggleButton>
             ))}
           </div>
         </div>
       )}
 
       {phoneNumber && selectedDenom && !inquiryResult && (
-        <Button className="w-full" onClick={handleInquiry} disabled={emoneyInquiry.isPending || phoneNumber.length < 8}>
+        <Button
+          className="w-full"
+          isDisabled={emoneyInquiry.isPending || phoneNumber.length < 8}
+          onPress={handleInquiry}
+        >
           {emoneyInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Memproses...</> : "Cek & Proses"}
         </Button>
       )}
@@ -1109,7 +1193,7 @@ function EmoneyInput({
             {confirmItems ? (
               <ConfirmSection items={confirmItems} onConfirm={handleConfirm} />
             ) : (
-              <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-muted">
                 <Wallet className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 <p className="text-sm">Cek nominal untuk melihat detail</p>
               </div>
@@ -1139,25 +1223,25 @@ function ConfirmSection({
 
   return (
     <div ref={ref} className="space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-green-600">
+      <div className="flex items-center gap-2 text-sm font-medium text-success">
         <CheckCircle2 className="h-4 w-4" />
         Siap ditambahkan ke keranjang
       </div>
-      <div className="rounded-lg border p-3 space-y-2">
+      <div className="space-y-2 rounded-lg border p-3">
         {items.map((item) => (
           <div key={item.label} className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{item.label}</span>
+            <span className="text-muted">{item.label}</span>
             <span className={[
               item.mono && "font-mono",
               item.bold && "font-bold text-base",
-              item.green && "text-green-600 font-medium",
+              item.green && "text-success font-medium",
             ].filter(Boolean).join(" ")}>
               {item.value}
             </span>
           </div>
         ))}
       </div>
-      <Button className="w-full" size="lg" onClick={onConfirm}>
+      <Button className="w-full" size="lg" onPress={onConfirm}>
         <Smartphone className="mr-2 h-4 w-4" />
         Tambah ke Keranjang
       </Button>
