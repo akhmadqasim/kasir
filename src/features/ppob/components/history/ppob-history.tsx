@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Search } from "lucide-react"
-import type { DateRange } from "react-day-picker"
+import type { DateRange } from "@/lib/date-range"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { id as i18n } from "@/i18n/id"

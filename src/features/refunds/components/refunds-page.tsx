@@ -1,8 +1,5 @@
 import { useState, useCallback, useMemo } from "react"
-import { Eye, X, CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { type DateRange } from "react-day-picker"
+import { Eye, X } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -13,12 +10,8 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { DateRangePicker } from "@/components/date-range-picker"
+import { getTodayRange, type DateRange } from "@/lib/date-range"
 import {
   Select,
   SelectContent,
@@ -43,10 +36,7 @@ function getDifferenceColor(amount: number): string {
 export function RefundsPage() {
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState("")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date(),
-  })
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailRefundId, setDetailRefundId] = useState<number | null>(null)
 
   const queryArgs = useMemo(() => ({
@@ -67,7 +57,7 @@ export function RefundsPage() {
 
   const resetFilters = useCallback(() => {
     setTypeFilter("")
-    setDateRange({ from: new Date(), to: new Date() })
+    setDateRange(getTodayRange())
     setPage(1)
   }, [])
 
@@ -101,40 +91,11 @@ export function RefundsPage() {
         )}
 
         <div className="ml-auto">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                data-empty={!dateRange?.from}
-                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-              >
-                <CalendarIcon />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" - "}
-                      {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                  )
-                ) : (
-                  <span>Pilih tanggal</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={(range) => { setDateRange(range); setPage(1) }}
-                numberOfMonths={2}
-                locale={idLocale}
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker
+            value={dateRange}
+            onChange={(range) => { setDateRange(range); setPage(1) }}
+            align="start"
+          />
         </div>
       </div>
 

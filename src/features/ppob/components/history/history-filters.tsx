@@ -1,14 +1,7 @@
-import { X, CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import type { DateRange } from "react-day-picker"
+import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { DateRangePicker } from "@/components/date-range-picker"
+import type { DateRange } from "@/lib/date-range"
 import {
   Select,
   SelectContent,
@@ -78,40 +71,7 @@ export function HistoryFilters({
       )}
 
       <div className="ml-auto">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              data-empty={!dateRange?.from}
-              className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-            >
-              <CalendarIcon />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                    {" - "}
-                    {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                  </>
-                ) : (
-                  format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                )
-              ) : (
-                <span>Pilih tanggal</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={onDateRangeChange}
-              numberOfMonths={2}
-              locale={idLocale}
-            />
-          </PopoverContent>
-        </Popover>
+        <DateRangePicker value={dateRange} onChange={onDateRangeChange} />
       </div>
     </div>
   )

@@ -1,13 +1,9 @@
 import { useState } from "react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { type DateRange } from "react-day-picker"
-import { ArrowDownCircle, ArrowUpCircle, CalendarIcon } from "lucide-react"
+import { DateRangePicker } from "@/components/date-range-picker"
+import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
+import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Table,
   TableBody,
@@ -19,16 +15,8 @@ import {
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useCashFlows } from "../hooks/use-reports"
 
-
-function getDefaultRange(): DateRange {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  return { from, to }
-}
-
 export function CashFlowsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
 
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
   const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
@@ -40,40 +28,7 @@ export function CashFlowsPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="ml-auto">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                data-empty={!dateRange?.from}
-                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-              >
-                <CalendarIcon />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" - "}
-                      {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                  )
-                ) : (
-                  <span>Pilih tanggal</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                locale={idLocale}
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
       </div>
 

@@ -1,13 +1,9 @@
 import { useState } from "react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { type DateRange } from "react-day-picker"
-import { CalendarIcon, Search } from "lucide-react"
+import { DateRangePicker } from "@/components/date-range-picker"
+import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
+import { Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Table,
   TableBody,
@@ -19,14 +15,6 @@ import {
 import { useSalesReceipt } from "../hooks/use-reports"
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useDebounce } from "@/hooks/use-debounce"
-
-
-function getDefaultRange(): DateRange {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  return { from, to }
-}
 
 const paymentLabels: Record<string, string> = {
   cash: "Tunai",
@@ -44,7 +32,7 @@ const statusLabels: Record<string, { label: string; variant: "default" | "second
 }
 
 export function SalesReceiptPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 300)
 
@@ -68,40 +56,7 @@ export function SalesReceiptPage() {
           />
         </div>
         <div className="ml-auto">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                data-empty={!dateRange?.from}
-                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-              >
-                <CalendarIcon />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" - "}
-                      {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                  )
-                ) : (
-                  <span>Pilih tanggal</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                locale={idLocale}
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
       </div>
 
