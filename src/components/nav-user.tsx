@@ -1,24 +1,14 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Avatar,
-  AvatarFallback,
-} from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar"
+import { Avatar, Dropdown, Label, Separator } from "@heroui/react"
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
+
+import {
+  SidebarLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+} from "@/components/layout/sidebar"
+import { sidebarMenuButtonClass, useSidebar } from "@/components/layout/sidebar-context"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCartStore } from "@/features/cashier/hooks/use-cart-store"
@@ -28,7 +18,7 @@ import { UserProfileDialog } from "@/features/users/components/user-profile-dial
 function getInitials(name: string): string {
   return name
     .split(" ")
-    .map((n) => n[0])
+    .map((part) => part[0])
     .slice(0, 2)
     .join("")
     .toUpperCase()
@@ -41,6 +31,8 @@ export function NavUser() {
   const navigate = useNavigate()
   const [profileOpen, setProfileOpen] = useState(false)
 
+  const initials = user?.full_name ? getInitials(user.full_name) : "U"
+
   const handleLogout = () => {
     logout()
     useShiftStore.getState().clearShift()
@@ -50,62 +42,65 @@ export function NavUser() {
     navigate("/login")
   }
 
+  const handleAction = (key: React.Key) => {
+    if (key === "profile") {
+      setProfileOpen(true)
+    } else if (key === "logout") {
+      handleLogout()
+    }
+  }
+
   return (
     <>
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <Dropdown>
+            <Dropdown.Trigger
+              aria-label={id.profile.title}
+              className={sidebarMenuButtonClass(
+                "lg",
+                "aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground"
+              )}
             >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarFallback className="rounded-lg">
-                  {user?.full_name ? getInitials(user.full_name) : "U"}
-                </AvatarFallback>
+              <Avatar size="sm" className="rounded-lg">
+                <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
               </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user?.full_name}</span>
+              <SidebarLabel className="grid leading-tight">
+                <span className="truncate text-sm font-medium">{user?.full_name}</span>
                 <span className="truncate text-xs capitalize">{user?.role}</span>
-              </div>
-              <ChevronsUpDownIcon className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">
-                    {user?.full_name ? getInitials(user.full_name) : "U"}
-                  </AvatarFallback>
+              </SidebarLabel>
+              <ChevronsUpDownIcon className="ml-auto group-data-[state=collapsed]/sidebar:hidden" />
+            </Dropdown.Trigger>
+            <Dropdown.Popover
+              className="min-w-56"
+              placement={isMobile ? "bottom end" : "right bottom"}
+            >
+              <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
+                <Avatar size="sm" className="rounded-lg">
+                  <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
                 </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
+                <div className="grid min-w-0 flex-1 leading-tight">
                   <span className="truncate font-medium">{user?.full_name}</span>
-                  <span className="truncate text-xs capitalize">{user?.role}</span>
+                  <span className="truncate text-xs capitalize text-muted">{user?.role}</span>
                 </div>
               </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-              <UserIcon />
-              {id.profile.title}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOutIcon />
-              {id.auth.logout}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+              <Separator className="my-1" />
+              <Dropdown.Menu onAction={handleAction}>
+                <Dropdown.Item id="profile" textValue={id.profile.title}>
+                  <UserIcon className="size-4" />
+                  <Label>{id.profile.title}</Label>
+                </Dropdown.Item>
+                <Dropdown.Item id="logout" textValue={id.auth.logout}>
+                  <LogOutIcon className="size-4" />
+                  <Label>{id.auth.logout}</Label>
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+        </SidebarMenuItem>
+      </SidebarMenu>
 
-    <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </>
   )
 }

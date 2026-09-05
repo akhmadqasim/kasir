@@ -1,5 +1,4 @@
-import * as React from "react"
-import { NavLink } from "react-router-dom"
+import type { CSSProperties } from "react"
 import {
   ShoppingCartIcon,
   PackageIcon,
@@ -24,11 +23,12 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
+  SidebarLabel,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar"
+  SidebarMenuLink,
+} from "@/components/layout/sidebar"
+import { useSidebar } from "@/components/layout/sidebar-context"
 import { id } from "@/i18n/id"
 import { isAdminOnlyRoute } from "@/app/resume-route"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -102,7 +102,7 @@ const navAdmin = [
   },
 ]
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({ style }: { style?: CSSProperties }) {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
   const { toggleSidebar, open, hoverExpanded, pinSidebar } = useSidebar()
@@ -122,38 +122,42 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   return (
-    <Sidebar variant="inset" {...props}>
+    <Sidebar label="Menu utama" style={style}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <NavLink to="/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <StoreIcon className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{id.app.name}</span>
-                  <span className="truncate text-xs">Point of Sale</span>
-                </div>
-              </NavLink>
-            </SidebarMenuButton>
-            {open && (
-              <button
-                onClick={handleToggleClick}
-                className="absolute right-2 top-3 flex size-7 items-center justify-center rounded-md text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
-                title={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
-              >
-                {hoverExpanded ? <PanelLeftOpenIcon className="size-4" /> : <PanelLeftCloseIcon className="size-4" />}
-              </button>
-            )}
+            <SidebarMenuLink to="/dashboard" size="lg" tooltip={id.app.name}>
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <StoreIcon className="size-4" />
+              </div>
+              <SidebarLabel className="grid leading-tight">
+                <span className="truncate text-sm font-medium">{id.app.name}</span>
+                <span className="truncate text-xs">Point of Sale</span>
+              </SidebarLabel>
+            </SidebarMenuLink>
           </SidebarMenuItem>
         </SidebarMenu>
+        {open && (
+          <button
+            type="button"
+            onClick={handleToggleClick}
+            className="absolute top-3 right-2 flex size-7 items-center justify-center rounded-md text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            title={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
+          >
+            {hoverExpanded ? (
+              <PanelLeftOpenIcon className="size-4" />
+            ) : (
+              <PanelLeftCloseIcon className="size-4" />
+            )}
+            <span className="sr-only">
+              {hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
+            </span>
+          </button>
+        )}
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={visibleNavMain} />
-        {isAdmin && (
-          <NavSecondary items={navAdmin} className="mt-auto" />
-        )}
+        {isAdmin && <NavSecondary items={navAdmin} className="mt-auto" />}
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
