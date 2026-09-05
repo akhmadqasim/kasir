@@ -106,7 +106,15 @@ function NotificationDetailDialog({
 export function PpobNotifications() {
   const navigate = useNavigate()
   const [currentPage, setCurrentPage] = useState(1)
-  const { data, isLoading, error, refetch, isRefetching } = usePpobNotifications(currentPage, ITEMS_PER_PAGE)
+  // Set once the cashier presses refresh, so from then on this screen reads past
+  // the backend's five-minute cache. It is component state, so leaving the screen
+  // drops it back to the cheap cached read.
+  const [forceRefresh, setForceRefresh] = useState(false)
+  const { data, isLoading, error, refetch, isRefetching } = usePpobNotifications(
+    currentPage,
+    ITEMS_PER_PAGE,
+    forceRefresh
+  )
   const markAllRead = usePpobMarkAllRead()
   const markRead = usePpobMarkNotificationRead()
 
@@ -165,7 +173,16 @@ export function PpobNotifications() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => refetch()}
+            title="Muat ulang dari Mitra"
+            onClick={() => {
+              // The first press switches to the forced key, which fetches on its
+              // own; later presses are plain refetches of that same forced key.
+              if (forceRefresh) {
+                refetch()
+              } else {
+                setForceRefresh(true)
+              }
+            }}
             disabled={isRefetching}
           >
             <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
