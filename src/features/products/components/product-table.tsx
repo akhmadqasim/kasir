@@ -1,32 +1,17 @@
 import { useState } from "react"
-import { Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Pin } from "lucide-react"
+import { Pencil, Trash2, Pin } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
+import { useQueryClient } from "@tanstack/react-query"
+import { AlertDialog, Button, Table, Tooltip } from "@heroui/react"
+import type { SortDescriptor } from "@heroui/react"
+
 import { toast } from "@/lib/toast"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { StatusBadge } from "@/components/status-badge"
+import { TablePagination } from "@/components/table-pagination"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useDeleteProduct } from "../hooks/use-products"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
-import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import type { Product, Category } from "../types"
 
@@ -47,41 +32,6 @@ interface ProductTableProps {
   sortBy?: string
   sortOrder?: "asc" | "desc"
   onSortChange: (column: string) => void
-}
-
-function SortableHeader({
-  label,
-  column,
-  sortBy,
-  sortOrder,
-  onSort,
-  className,
-}: {
-  label: string
-  column: string
-  sortBy?: string
-  sortOrder?: "asc" | "desc"
-  onSort: (column: string) => void
-  className?: string
-}) {
-  const isActive = sortBy === column
-  return (
-    <TableHead className={className}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-3 h-8 gap-1"
-        onClick={() => onSort(column)}
-      >
-        {label}
-        {isActive ? (
-          sortOrder === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
-        ) : (
-          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
-        )}
-      </Button>
-    </TableHead>
-  )
 }
 
 export function ProductTable({
@@ -123,20 +73,13 @@ export function ProductTable({
 
   const getStockBadge = (product: Product) => {
     if (product.stock < 0) {
-      return <Badge variant="destructive">Stok Minus</Badge>
+      return <StatusBadge status="error" size="sm">Stok Minus</StatusBadge>
     }
     if (product.stock === 0) {
-      return <Badge variant="destructive">Stok Habis</Badge>
+      return <StatusBadge status="error" size="sm">Stok Habis</StatusBadge>
     }
     if (product.stock <= product.min_stock) {
-      return (
-        <Badge
-          variant="outline"
-          className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50"
-        >
-          {id.products.lowStock}
-        </Badge>
-      )
+      return <StatusBadge status="warning" size="sm">{id.products.lowStock}</StatusBadge>
     }
     return null
   }
@@ -148,142 +91,180 @@ export function ProductTable({
     })
   }
 
+  // React Aria hanya mengenal dua arah, sedangkan layar ini bersiklus tiga
+  // langkah: naik, turun, lalu kembali tanpa urutan. Arah yang dihitung React
+  // Aria dibuang dan induknya yang memutuskan langkah berikutnya, persis seperti
+  // sebelum pindah ke `Table`.
+  const sortDescriptor: SortDescriptor = {
+    column: sortBy ?? "",
+    direction: sortOrder === "desc" ? "descending" : "ascending",
+  }
+
+  const renderEmptyState = () => (
+    <p className="py-8 text-center text-muted">{id.products.noProducts}</p>
+  )
+
   return (
     <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableHeader label={id.products.name} column="name" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} />
-              <TableHead>{id.products.barcode}</TableHead>
-              <TableHead>{id.products.category}</TableHead>
-              <SortableHeader label={id.products.sellPrice} column="sell_price" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
-              <SortableHeader label={id.products.stock} column="stock" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
-              <TableHead className="text-right">{id.products.action}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {products.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  {id.products.noProducts}
-                </TableCell>
-              </TableRow>
-            ) : (
-              products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">
+      <Table variant="secondary">
+        <Table.ScrollContainer>
+          <Table.Content
+            aria-label={id.products.title}
+            sortDescriptor={sortDescriptor}
+            onSortChange={(descriptor) => onSortChange(String(descriptor.column))}
+          >
+            <Table.Header>
+              <Table.Column allowsSorting isRowHeader id="name">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.name}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column id="barcode">{id.products.barcode}</Table.Column>
+              <Table.Column id="category">{id.products.category}</Table.Column>
+              <Table.Column allowsSorting className="text-right" id="sell_price">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.sellPrice}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column allowsSorting className="text-right" id="stock">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.stock}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column className="text-right" id="actions">
+                {id.products.action}
+              </Table.Column>
+            </Table.Header>
+            <Table.Body renderEmptyState={renderEmptyState}>
+              {products.map((product) => (
+                <Table.Row key={product.id} id={product.id} textValue={product.name}>
+                  <Table.Cell className="font-medium">
                     <div className="space-y-1">
                       <div>{product.name}</div>
                       <div className="flex flex-wrap gap-1">
                         {!product.barcode?.trim() && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Tanpa Barcode
-                          </Badge>
+                          <StatusBadge status="neutral" size="sm">Tanpa Barcode</StatusBadge>
                         )}
                         {!product.category_id && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Tanpa Kategori
-                          </Badge>
+                          <StatusBadge status="neutral" size="sm">Tanpa Kategori</StatusBadge>
                         )}
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  </Table.Cell>
+                  <Table.Cell className="text-muted">
                     {product.barcode?.trim() || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <span className={cn(!product.category_id && "text-muted-foreground")}>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <span className={cn(!product.category_id && "text-muted")}>
                       {product.category_id ? categoryMap.get(product.category_id) || "—" : "Tanpa kategori"}
                     </span>
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </Table.Cell>
+                  <Table.Cell className="text-right">
                     {rupiahFormatter.format(product.sell_price)}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </Table.Cell>
+                  <Table.Cell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <span className={cn(
                         "tabular-nums",
-                        product.stock < 0 && "font-semibold text-destructive"
+                        product.stock < 0 && "font-semibold text-danger"
                       )}>
                         {product.stock}
                       </span>
                       {getStockBadge(product)}
                     </div>
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </Table.Cell>
+                  <Table.Cell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <PinActionButton
+                        isPinned={pinnedIds.has(product.id)}
+                        onPress={() => handleTogglePin(product.id)}
+                      />
                       <Button
+                        aria-label={`${id.common.edit} ${product.name}`}
+                        isIconOnly
+                        size="sm"
                         variant="ghost"
-                        size="icon"
-                        onClick={() => handleTogglePin(product.id)}
-                        title={pinnedIds.has(product.id) ? "Hapus pin shortcut" : "Pin ke shortcut kasir"}
-                      >
-                        <Pin className={`h-4 w-4 ${pinnedIds.has(product.id) ? "fill-current text-primary" : "text-muted-foreground"}`} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onEdit(product)}
+                        onPress={() => onEdit(product)}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
+                        aria-label={`${id.common.delete} ${product.name}`}
+                        isIconOnly
+                        size="sm"
                         variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteTarget(product)}
+                        onPress={() => setDeleteTarget(product)}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-danger" />
                       </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-sm text-muted-foreground">
-            {id.products.page} {page} {id.products.of} {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => onPageChange(page - 1)}
-          >
-            {id.products.prev}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            {id.products.next}
-          </Button>
-        </div>
-      )}
+      <TablePagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{id.common.confirm}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {id.products.deleteConfirm}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{id.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
-              {id.common.delete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog.Backdrop
+        isOpen={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label={id.common.confirm}>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{id.common.confirm}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p className="text-sm text-muted">{id.products.deleteConfirm}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button variant="outline" onPress={() => setDeleteTarget(null)}>
+                {id.common.cancel}
+              </Button>
+              <Button variant="danger" onPress={handleDelete}>
+                {id.common.delete}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
+  )
+}
+
+/**
+ * Pin produk ke shortcut kasir.
+ *
+ * Ikonnya sendiri tidak menjelaskan apa-apa, jadi alasannya dulu dititipkan ke
+ * atribut `title` — hanya terbaca kalau kursor berhenti di atasnya. Tombolnya
+ * aktif, jadi `Tooltip` boleh membungkus `Button` langsung tanpa
+ * `Tooltip.Trigger`: pembungkus itu menambah satu titik Tab yang tidak perlu.
+ */
+function PinActionButton({
+  isPinned,
+  onPress,
+}: {
+  isPinned: boolean
+  onPress: () => void
+}) {
+  const label = isPinned ? "Hapus pin shortcut" : "Pin ke shortcut kasir"
+
+  return (
+    <Tooltip>
+      <Button aria-label={label} isIconOnly size="sm" variant="ghost" onPress={onPress}>
+        <Pin className={cn("h-4 w-4", isPinned ? "fill-current text-accent" : "text-muted")} />
+      </Button>
+      <Tooltip.Content>{label}</Tooltip.Content>
+    </Tooltip>
   )
 }

@@ -1,34 +1,21 @@
 import { useState, useCallback } from "react"
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Download } from "lucide-react"
-import { toast } from "@/lib/toast"
+import { Upload, FileSpreadsheet, CheckCircle2, Download } from "lucide-react"
 import { read, utils, type WorkBook } from "xlsx"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import {
+  Alert,
+  Button,
+  Label,
+  ListBox,
+  Modal,
+  ScrollShadow,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
+import { selectedText } from "@/components/selected-text"
+import { StatusBadge } from "@/components/status-badge"
 import { useTauriMutation } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useQueryClient } from "@tanstack/react-query"
@@ -362,200 +349,232 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const hasNameMapped = Object.values(columnMap).includes("name")
   const hasPriceMapped = Object.values(columnMap).includes("sell_price")
 
+  const previewRows = rows.slice(0, 10)
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5" />
-            Import Produk
-          </DialogTitle>
-          <DialogDescription>
-            {step === "upload" && "Upload file CSV atau Excel untuk mengimport produk"}
-            {step === "mapping" && `${rows.length} baris ditemukan — mapping kolom ke field produk`}
-            {step === "result" && "Hasil import"}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
+      <Modal.Container scroll="inside" size="lg">
+        <Modal.Dialog aria-label={id.products.importProducts} className="max-h-[90vh] sm:max-w-6xl">
+          <Modal.Header>
+            <Modal.Heading className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              {id.products.importProducts}
+            </Modal.Heading>
+            <Modal.CloseTrigger />
+          </Modal.Header>
 
-        {step === "upload" && (
-          <div className="flex flex-col gap-6 py-4">
-            <div className="space-y-2">
-              <Label>File</Label>
-              <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary hover:bg-default/50">
-                <Upload className="h-10 w-10 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">Klik untuk memilih file</p>
-                  <p className="text-sm text-muted-foreground">
-                    .xlsx, .xls, .csv — kolom akan otomatis dideteksi
-                  </p>
-                </div>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".xlsx,.xls,.csv,.tsv"
-                  onChange={handleFileChange}
-                />
-              </label>
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0 text-xs"
-                onClick={downloadSampleTemplate}
-              >
-                <Download className="mr-1 h-3 w-3" />
-                Download contoh template
-              </Button>
-            </div>
-          </div>
-        )}
+          <Modal.Body className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              {step === "upload" && "Upload file CSV atau Excel untuk mengimport produk"}
+              {step === "mapping" && `${rows.length} baris ditemukan — mapping kolom ke field produk`}
+              {step === "result" && "Hasil import"}
+            </p>
 
-        {step === "mapping" && (
-          <div className="flex flex-1 flex-col gap-4 overflow-hidden">
-            {/* Column Mapping */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Label>Mapping Kolom</Label>
-                <Badge variant="secondary">{mappedCount} field dimapping</Badge>
+            {step === "upload" && (
+              <div className="flex flex-col gap-2 py-4">
+                <p className="text-sm font-medium">File</p>
+                {/* Input filenya sengaja tetap HTML biasa: `<label>` yang
+                    membungkusnya sekaligus jadi nama aksesibel dan area drop. */}
+                <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-accent hover:bg-default/50">
+                  <Upload className="h-10 w-10 text-muted" />
+                  <div>
+                    <p className="font-medium">Klik untuk memilih file</p>
+                    <p className="text-sm text-muted">
+                      .xlsx, .xls, .csv — kolom akan otomatis dideteksi
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".xlsx,.xls,.csv,.tsv"
+                    onChange={handleFileChange}
+                  />
+                </label>
+                <Button
+                  className="h-auto self-start p-0 text-xs"
+                  size="sm"
+                  variant="ghost"
+                  onPress={downloadSampleTemplate}
+                >
+                  <Download className="mr-1 h-3 w-3" />
+                  Download contoh template
+                </Button>
               </div>
-              <ScrollArea className="max-h-64">
-                <div className="grid grid-cols-2 gap-3">
-                  {headers.map((header, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <span className="min-w-[160px] truncate text-sm font-medium">
-                        {header || `Kolom ${idx + 1}`}
-                      </span>
-                      <Select
-                        value={columnMap[idx] ?? "skip"}
-                        onValueChange={(v) =>
-                          handleColumnMapChange(idx, v as TargetFieldKey)
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TARGET_FIELDS.map((f) => (
-                            <SelectItem key={f.key} value={f.key}>
-                              {f.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-
-            {!hasNameMapped && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Kolom "Produk (Nama)" wajib dimapping
-                </AlertDescription>
-              </Alert>
             )}
 
-            {/* Preview Table */}
-            <div className="flex-1 overflow-hidden">
-              <Label className="mb-2 block">
-                Preview ({Math.min(rows.length, 10)} dari {rows.length} baris)
-              </Label>
-              <ScrollArea className="h-48 rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {headers.map((h, i) => {
-                        const mapped = columnMap[i]
-                        const field = TARGET_FIELDS.find((f) => f.key === mapped)
+            {step === "mapping" && (
+              <>
+                {/* Column Mapping */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">Mapping Kolom</p>
+                    <StatusBadge status="neutral" size="sm">
+                      {mappedCount} field dimapping
+                    </StatusBadge>
+                  </div>
+                  <ScrollShadow className="max-h-64">
+                    <div className="grid grid-cols-2 gap-3">
+                      {headers.map((header, idx) => {
+                        const columnLabel = header || `Kolom ${idx + 1}`
                         return (
-                          <TableHead key={i} className="text-xs whitespace-nowrap">
-                            {field && mapped !== "skip" ? (
-                              <Badge variant="outline" className="text-xs">
-                                {field.label}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">{h}</span>
-                            )}
-                          </TableHead>
+                          <div key={idx} className="flex items-center gap-2">
+                            <span className="min-w-[160px] truncate text-sm font-medium">
+                              {columnLabel}
+                            </span>
+                            <Select
+                              aria-label={`Field untuk ${columnLabel}`}
+                              className="flex-1"
+                              value={columnMap[idx] ?? "skip"}
+                              onChange={(value) =>
+                                handleColumnMapChange(
+                                  idx,
+                                  (value === null ? "skip" : String(value)) as TargetFieldKey
+                                )
+                              }
+                            >
+                              <Select.Trigger>
+                                <Select.Value>{selectedText}</Select.Value>
+                                <Select.Indicator />
+                              </Select.Trigger>
+                              <Select.Popover>
+                                <ListBox>
+                                  {TARGET_FIELDS.map((field) => (
+                                    <ListBox.Item
+                                      key={field.key}
+                                      id={field.key}
+                                      textValue={field.label}
+                                    >
+                                      <Label>{field.label}</Label>
+                                      <ListBox.ItemIndicator />
+                                    </ListBox.Item>
+                                  ))}
+                                </ListBox>
+                              </Select.Popover>
+                            </Select>
+                          </div>
                         )
                       })}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.slice(0, 10).map((row, rowIdx) => (
-                      <TableRow key={rowIdx}>
-                        {headers.map((_, colIdx) => (
-                          <TableCell key={colIdx} className="text-xs whitespace-nowrap">
-                            {String(row[colIdx] ?? "")}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-            </div>
+                    </div>
+                  </ScrollShadow>
+                </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
-              <Button variant="outline" onClick={resetState}>
-                Kembali
+                {!hasNameMapped && (
+                  <Alert status="danger">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Description>
+                        Kolom "Produk (Nama)" wajib dimapping
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+
+                {/* Preview Table */}
+                <div className="min-h-0 flex-1">
+                  <p className="mb-2 text-sm font-medium">
+                    Preview ({previewRows.length} dari {rows.length} baris)
+                  </p>
+                  <Table variant="secondary">
+                    <Table.ScrollContainer className="h-48">
+                      <Table.Content aria-label="Preview data import">
+                        <Table.Header>
+                          {headers.map((header, colIdx) => {
+                            const mapped = columnMap[colIdx]
+                            const field = TARGET_FIELDS.find((f) => f.key === mapped)
+                            return (
+                              <Table.Column
+                                key={colIdx}
+                                className="text-xs whitespace-nowrap"
+                                id={String(colIdx)}
+                                isRowHeader={colIdx === 0}
+                              >
+                                {field && mapped !== "skip" ? (
+                                  <StatusBadge status="info" size="sm">
+                                    {field.label}
+                                  </StatusBadge>
+                                ) : (
+                                  <span className="text-muted">{header}</span>
+                                )}
+                              </Table.Column>
+                            )
+                          })}
+                        </Table.Header>
+                        <Table.Body>
+                          {previewRows.map((row, rowIdx) => (
+                            <Table.Row key={rowIdx} id={rowIdx} textValue={`Baris ${rowIdx + 1}`}>
+                              {headers.map((_, colIdx) => (
+                                <Table.Cell key={colIdx} className="text-xs whitespace-nowrap">
+                                  {String(row[colIdx] ?? "")}
+                                </Table.Cell>
+                              ))}
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            {step === "result" && result && (
+              <div className="flex flex-col gap-4 py-4">
+                <div className="flex items-center gap-3 rounded-lg border bg-default/50 p-4">
+                  <CheckCircle2 className="h-8 w-8 text-success" />
+                  <div>
+                    <p className="text-lg font-semibold">Import Selesai</p>
+                    <p className="text-sm text-muted">
+                      {result.imported} diimport, {result.updated} diupdate,{" "}
+                      {result.skipped} dilewati
+                    </p>
+                  </div>
+                </div>
+
+                {result.errors.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Peringatan ({result.errors.length})</p>
+                    <ScrollShadow className="max-h-32 rounded-md border p-3">
+                      {result.errors.map((err, i) => (
+                        <p key={i} className="text-xs text-danger">
+                          {err}
+                        </p>
+                      ))}
+                    </ScrollShadow>
+                  </div>
+                )}
+              </div>
+            )}
+          </Modal.Body>
+
+          {step === "mapping" && (
+            <Modal.Footer className="justify-between">
+              <Button variant="outline" onPress={resetState}>
+                {id.common.back}
               </Button>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-muted">
                   {getMappedProducts().products.length} produk valid
                 </span>
                 <Button
-                  onClick={handleImport}
-                  disabled={
-                    !hasNameMapped ||
-                    !hasPriceMapped ||
-                    importMutation.isPending
-                  }
+                  isDisabled={!hasNameMapped || !hasPriceMapped || importMutation.isPending}
+                  onPress={handleImport}
                 >
-                  {importMutation.isPending ? "Mengimport..." : "Mulai Import"}
+                  {importMutation.isPending ? id.products.importing : id.products.startImport}
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
+            </Modal.Footer>
+          )}
 
-        {step === "result" && result && (
-          <div className="flex flex-col gap-4 py-4">
-            <div className="flex items-center gap-3 rounded-lg border bg-default/50 p-4">
-              <CheckCircle2 className="h-8 w-8 text-green-500" />
-              <div>
-                <p className="text-lg font-semibold">Import Selesai</p>
-                <p className="text-sm text-muted-foreground">
-                  {result.imported} diimport, {result.updated} diupdate,{" "}
-                  {result.skipped} dilewati
-                </p>
-              </div>
-            </div>
-
-            {result.errors.length > 0 && (
-              <div className="space-y-2">
-                <Label>Peringatan ({result.errors.length})</Label>
-                <ScrollArea className="max-h-32 rounded-md border p-3">
-                  {result.errors.map((err, i) => (
-                    <p key={i} className="text-xs text-destructive">
-                      {err}
-                    </p>
-                  ))}
-                </ScrollArea>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={resetState}>
+          {step === "result" && result && (
+            <Modal.Footer>
+              <Button variant="outline" onPress={resetState}>
                 Import Lagi
               </Button>
-              <Button onClick={() => handleOpenChange(false)}>Selesai</Button>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+              <Button onPress={() => handleOpenChange(false)}>Selesai</Button>
+            </Modal.Footer>
+          )}
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }

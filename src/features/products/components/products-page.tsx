@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from "react"
 import { Plus, Tags, Upload } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Button, Card } from "@heroui/react"
+
 import { id } from "@/i18n/id"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
@@ -100,15 +100,15 @@ export function ProductsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{id.products.title}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Button variant="outline" onPress={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-          <Button variant="outline" onClick={() => setCategoryManagerOpen(true)}>
+          <Button variant="outline" onPress={() => setCategoryManagerOpen(true)}>
             <Tags className="mr-2 h-4 w-4" />
             {id.products.manageCategories}
           </Button>
-          <Button onClick={() => setFormOpen(true)}>
+          <Button onPress={() => setFormOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             {id.products.add}
           </Button>
@@ -124,28 +124,28 @@ export function ProductsPage() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
-          <CardContent className="p-4">
+          <Card.Content className="p-4">
             <div className="text-2xl font-bold tabular-nums">{reviewSummary.lowStock}</div>
-            <p className="text-sm text-muted-foreground">Stok rendah pada hasil saat ini</p>
-          </CardContent>
+            <p className="text-sm text-muted">Stok rendah pada hasil saat ini</p>
+          </Card.Content>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <Card.Content className="p-4">
             <div className="text-2xl font-bold tabular-nums">{reviewSummary.negativeStock}</div>
-            <p className="text-sm text-muted-foreground">Stok minus pada hasil saat ini</p>
-          </CardContent>
+            <p className="text-sm text-muted">Stok minus pada hasil saat ini</p>
+          </Card.Content>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <Card.Content className="p-4">
             <div className="text-2xl font-bold tabular-nums">{reviewSummary.noBarcode}</div>
-            <p className="text-sm text-muted-foreground">Tanpa barcode pada hasil saat ini</p>
-          </CardContent>
+            <p className="text-sm text-muted">Tanpa barcode pada hasil saat ini</p>
+          </Card.Content>
         </Card>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">{id.common.loading}</p>
+          <p className="text-muted">{id.common.loading}</p>
         </div>
       ) : (
         <ProductTable
