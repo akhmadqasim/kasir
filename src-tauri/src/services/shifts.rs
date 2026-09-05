@@ -115,7 +115,8 @@ pub async fn summary(
 }
 
 /// Cash the drawer should hold: opening float, plus the cash actually taken in
-/// over the shift, plus manual cash in, minus manual cash out.
+/// over the shift, plus manual cash in, minus manual cash out, minus the cash
+/// handed back for returns and exchange differences.
 async fn build_summary(
     db: &DatabaseConnection,
     shift: &shifts::Model,
@@ -188,7 +189,40 @@ async fn build_summary(
         })
         .collect();
 
-    let expected_cash = shift.opening_cash + cash_sales + cash_in - cash_out;
+    // Cash paid back out over this shift (B23).
+    //
+    // A return hands over the whole refunded amount; an exchange only hands over
+    // the difference, and `difference_amount` is signed
+    // (`total_refund_amount - total_exchange_amount`), so a customer who topped
+    // up for a dearer replacement contributes a negative value and correctly
+    // puts money back into the drawer.
+    //
+    // `refunds.payment_method` is copied from the original sale, which is the
+    // only record of how the money moved: a return of a QRIS sale is assumed to
+    // have gone back over QRIS and does not touch the drawer. `mixed` is
+    // deliberately not counted — how much of a split payment came back in cash
+    // is not recorded anywhere, and guessing would put a made-up number on the
+    // closing report.
+    let refund_result = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT COALESCE(SUM(
+                CASE WHEN r.type = 'exchange'
+                     THEN COALESCE(r.difference_amount, 0)
+                     ELSE r.total_refund_amount END
+             ), 0) as total
+             FROM refunds r
+             WHERE r.shift_id = $1 AND r.payment_method = 'cash'",
+            vec![shift.id.into()],
+        ))
+        .await?;
+
+    let cash_refunds: f64 = match refund_result {
+        Some(row) => row.try_get("", "total").unwrap_or(0.0),
+        None => 0.0,
+    };
+
+    let expected_cash = shift.opening_cash + cash_sales + cash_in - cash_out - cash_refunds;
 
     // Payment method breakdown
     let payment_rows = db
@@ -235,6 +269,7 @@ async fn build_summary(
         total_transactions,
         cash_in,
         cash_out,
+        cash_refunds,
         expected_cash,
         cash_flows: flow_responses,
         payment_breakdown,
@@ -331,7 +366,36 @@ pub async fn delete_cash_flow(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{insert_user, setup_test_db};
+    use crate::test_support::{
+        insert_refund, insert_transaction, insert_user, now_ts, setup_test_db, RefundSpec,
+    };
+
+    /// Records a return of `amount` against a fresh sale, paid back over
+    /// `payment_method` and booked to `shift_id`.
+    async fn refund_against_a_sale(
+        db: &DatabaseConnection,
+        shift_id: i64,
+        user_id: i64,
+        payment_method: &str,
+        amount: f64,
+    ) {
+        let txn = insert_transaction(db, user_id, amount, "refunded", &now_ts()).await;
+        insert_refund(
+            db,
+            RefundSpec {
+                transaction_id: txn.id,
+                user_id,
+                refund_type: "refund",
+                total_refund_amount: amount,
+                total_exchange_amount: 0.0,
+                difference_amount: amount,
+                payment_method,
+                shift_id: Some(shift_id),
+                created_at: &now_ts(),
+            },
+        )
+        .await;
+    }
 
     async fn open_shift_for(db: &DatabaseConnection, actor: &Actor) -> ShiftResponse {
         open(db, actor, OpenShiftInput { opening_cash: None })
@@ -393,5 +457,218 @@ mod tests {
         delete_cash_flow(&conn, &Actor::new(1, "admin"), flow.id)
             .await
             .expect("an admin may delete anyone's entry");
+    }
+
+    /// B23: the drawer is short by exactly what the cashier handed back, so the
+    /// closing report has to expect it. It used to accuse an honest till of a
+    /// shortfall.
+    #[tokio::test]
+    async fn expected_cash_subtracts_a_cash_refund() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let shift = open(
+            &conn,
+            &actor,
+            OpenShiftInput {
+                opening_cash: Some(500_000.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        refund_against_a_sale(&conn, shift.id, 1, "cash", 50_000.0).await;
+
+        let report = summary(&conn, shift.id).await.expect("summary");
+        assert_eq!(report.cash_refunds, 50_000.0);
+        assert_eq!(report.expected_cash, 450_000.0);
+    }
+
+    /// A QRIS sale reversed over QRIS never touches the drawer.
+    #[tokio::test]
+    async fn a_non_cash_refund_leaves_the_drawer_alone() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let shift = open(
+            &conn,
+            &actor,
+            OpenShiftInput {
+                opening_cash: Some(500_000.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        refund_against_a_sale(&conn, shift.id, 1, "qris", 50_000.0).await;
+
+        let report = summary(&conn, shift.id).await.expect("summary");
+        assert_eq!(report.cash_refunds, 0.0);
+        assert_eq!(report.expected_cash, 500_000.0);
+    }
+
+    /// Only the difference moves through the drawer on an exchange, and it moves
+    /// in the direction the sign says: a customer who takes a dearer replacement
+    /// pays the shop, so the drawer ends up fuller, not emptier.
+    #[tokio::test]
+    async fn an_exchange_moves_only_its_difference_through_the_drawer() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let shift = open(
+            &conn,
+            &actor,
+            OpenShiftInput {
+                opening_cash: Some(500_000.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        // Returned Rp 60.000 of goods, took Rp 45.000 back: the shop pays 15.000.
+        let paid_out = insert_transaction(&conn, 1, 60_000.0, "refunded", &now_ts()).await;
+        insert_refund(
+            &conn,
+            RefundSpec {
+                transaction_id: paid_out.id,
+                user_id: 1,
+                refund_type: "exchange",
+                total_refund_amount: 60_000.0,
+                total_exchange_amount: 45_000.0,
+                difference_amount: 15_000.0,
+                payment_method: "cash",
+                shift_id: Some(shift.id),
+                created_at: &now_ts(),
+            },
+        )
+        .await;
+
+        // Returned Rp 40.000 of goods, took Rp 70.000: the customer pays 30.000.
+        let topped_up = insert_transaction(&conn, 1, 40_000.0, "refunded", &now_ts()).await;
+        insert_refund(
+            &conn,
+            RefundSpec {
+                transaction_id: topped_up.id,
+                user_id: 1,
+                refund_type: "exchange",
+                total_refund_amount: 40_000.0,
+                total_exchange_amount: 70_000.0,
+                difference_amount: -30_000.0,
+                payment_method: "cash",
+                shift_id: Some(shift.id),
+                created_at: &now_ts(),
+            },
+        )
+        .await;
+
+        let report = summary(&conn, shift.id).await.expect("summary");
+        assert_eq!(report.cash_refunds, -15_000.0);
+        assert_eq!(report.expected_cash, 515_000.0);
+    }
+
+    /// A refund booked to somebody else's shift is not this shift's problem.
+    #[tokio::test]
+    async fn a_refund_from_another_shift_does_not_count() {
+        let conn = setup_test_db().await;
+        let other = insert_user(&conn, "kasir1", "Kasir Satu", "kasir").await;
+
+        let mine = open(
+            &conn,
+            &Actor::new(1, "admin"),
+            OpenShiftInput {
+                opening_cash: Some(500_000.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+        let theirs = open(
+            &conn,
+            &Actor::from(&other),
+            OpenShiftInput {
+                opening_cash: Some(100_000.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        refund_against_a_sale(&conn, theirs.id, other.id, "cash", 50_000.0).await;
+
+        let report = summary(&conn, mine.id).await.expect("summary");
+        assert_eq!(report.cash_refunds, 0.0);
+        assert_eq!(report.expected_cash, 500_000.0);
+    }
+
+    /// Migration 022's backfill, run against the exact SQL that ships. A refund
+    /// taken inside a cashier's shift is recovered; one taken with no shift open
+    /// stays unattributed, which is the documented limit.
+    #[tokio::test]
+    async fn migration_022_backfills_refunds_into_the_shift_that_was_open() {
+        const MIGRATION_022: &str = include_str!("../../migrations/022_refund_shift.sql");
+
+        let conn = setup_test_db().await;
+        let shift = open(
+            &conn,
+            &Actor::new(1, "admin"),
+            OpenShiftInput {
+                opening_cash: Some(0.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        // The migration has already run as part of `setup_test_db`, so undo the
+        // column's contents and re-run the backfill over rows that predate it.
+        let during = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let before = (chrono::Utc::now() - chrono::Duration::days(3))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+
+        let inside = insert_transaction(&conn, 1, 10_000.0, "refunded", &during).await;
+        let outside = insert_transaction(&conn, 1, 10_000.0, "refunded", &before).await;
+        for (txn_id, created_at) in [(inside.id, &during), (outside.id, &before)] {
+            insert_refund(
+                &conn,
+                RefundSpec {
+                    transaction_id: txn_id,
+                    user_id: 1,
+                    refund_type: "refund",
+                    total_refund_amount: 10_000.0,
+                    total_exchange_amount: 0.0,
+                    difference_amount: 10_000.0,
+                    payment_method: "cash",
+                    shift_id: None,
+                    created_at,
+                },
+            )
+            .await;
+        }
+
+        // The whole migration already ran as part of `setup_test_db`, and the
+        // ALTER cannot run twice — but the backfill is idempotent, so the test
+        // replays that half straight out of the shipped file rather than a copy
+        // of it.
+        let backfill = MIGRATION_022
+            .split_once("UPDATE refunds")
+            .map(|(_, rest)| format!("UPDATE refunds{}", rest))
+            .expect("migration 022 ends with its backfill UPDATE");
+        conn.execute_unprepared(&backfill)
+            .await
+            .expect("the backfill runs");
+
+        let placed = crate::entity::refunds::Entity::find()
+            .filter(crate::entity::refunds::Column::TransactionId.eq(inside.id))
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("refund row");
+        assert_eq!(placed.shift_id, Some(shift.id));
+
+        let unplaced = crate::entity::refunds::Entity::find()
+            .filter(crate::entity::refunds::Column::TransactionId.eq(outside.id))
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("refund row");
+        assert_eq!(
+            unplaced.shift_id, None,
+            "a refund from before the shift opened belongs to no drawer"
+        );
     }
 }

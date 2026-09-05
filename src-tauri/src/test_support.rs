@@ -13,7 +13,8 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, NotSet, Set};
 
 use crate::db;
 use crate::entity::{
-    products, stock_writeoffs, store_info, transaction_items, transactions, users,
+    exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
+    transaction_items, transactions, users,
 };
 
 /// Current UTC timestamp in the `"YYYY-MM-DD HH:MM:SS"` shape used by every
@@ -239,6 +240,93 @@ pub async fn insert_transaction_item(
         },
     )
     .await
+}
+
+/// A refund header. `total_exchange_amount`/`difference_amount` matter only for
+/// exchanges; [`insert_refund`] derives nothing, so a test states exactly what
+/// the row holds.
+pub struct RefundSpec<'a> {
+    pub transaction_id: i64,
+    pub user_id: i64,
+    /// `"refund"` or `"exchange"`.
+    pub refund_type: &'a str,
+    pub total_refund_amount: f64,
+    pub total_exchange_amount: f64,
+    /// `total_refund_amount - total_exchange_amount`: positive means the shop
+    /// paid the customer.
+    pub difference_amount: f64,
+    pub payment_method: &'a str,
+    pub shift_id: Option<i64>,
+    pub created_at: &'a str,
+}
+
+pub async fn insert_refund(conn: &DatabaseConnection, spec: RefundSpec<'_>) -> refunds::Model {
+    refunds::ActiveModel {
+        id: NotSet,
+        refund_number: Set(format!("RFD-TEST-{}", uuid::Uuid::new_v4())),
+        transaction_id: Set(spec.transaction_id),
+        user_id: Set(spec.user_id),
+        refund_type: Set(spec.refund_type.to_string()),
+        total_refund_amount: Set(spec.total_refund_amount),
+        total_exchange_amount: Set(Some(spec.total_exchange_amount)),
+        difference_amount: Set(Some(spec.difference_amount)),
+        payment_method: Set(Some(spec.payment_method.to_string())),
+        reason: Set(None),
+        shift_id: Set(spec.shift_id),
+        created_at: Set(Some(spec.created_at.to_string())),
+    }
+    .insert(conn)
+    .await
+    .expect("refund insert")
+}
+
+/// One returned line. `subtotal` is the money handed back, which is what the
+/// service writes (`net_subtotal` per unit times the quantity).
+pub async fn insert_refund_item(
+    conn: &DatabaseConnection,
+    refund_id: i64,
+    transaction_item_id: i64,
+    product_id: i64,
+    quantity: i64,
+    subtotal: f64,
+) -> refund_items::Model {
+    refund_items::ActiveModel {
+        id: NotSet,
+        refund_id: Set(refund_id),
+        transaction_item_id: Set(transaction_item_id),
+        product_id: Set(product_id),
+        quantity: Set(quantity),
+        subtotal: Set(subtotal),
+        condition: Set(Some("good".to_string())),
+        created_at: Set(Some(now_ts())),
+    }
+    .insert(conn)
+    .await
+    .expect("refund item insert")
+}
+
+/// One replacement handed over on an exchange.
+pub async fn insert_exchange_item(
+    conn: &DatabaseConnection,
+    refund_id: i64,
+    product_id: i64,
+    product_name: &str,
+    product_price: f64,
+    quantity: i64,
+) -> exchange_items::Model {
+    exchange_items::ActiveModel {
+        id: NotSet,
+        refund_id: Set(refund_id),
+        product_id: Set(product_id),
+        product_name: Set(product_name.to_string()),
+        product_price: Set(product_price),
+        quantity: Set(quantity),
+        subtotal: Set(product_price * quantity as f64),
+        created_at: Set(Some(now_ts())),
+    }
+    .insert(conn)
+    .await
+    .expect("exchange item insert")
 }
 
 pub struct WriteoffSpec<'a> {

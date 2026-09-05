@@ -68,6 +68,11 @@ pub struct ShiftSummaryResponse {
     pub total_transactions: i64,
     pub cash_in: f64,
     pub cash_out: f64,
+    /// Cash handed back to customers during this shift: the full amount for a
+    /// return, the exchange difference for a swap. Negative when customers
+    /// topped up more on exchanges than the shift paid out. Positive values
+    /// leave the drawer, so `expected_cash` subtracts this.
+    pub cash_refunds: f64,
     pub expected_cash: f64,
     pub cash_flows: Vec<CashFlowResponse>,
     pub payment_breakdown: Vec<PaymentBreakdown>,

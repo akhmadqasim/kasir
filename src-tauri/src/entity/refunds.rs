@@ -17,6 +17,11 @@ pub struct Model {
     pub difference_amount: Option<f64>,
     pub payment_method: Option<String>,
     pub reason: Option<String>,
+    /// The shift whose drawer the money came out of — the shift that was open
+    /// when the return was taken, not the one that rang up the sale. `None` for
+    /// refunds recorded with no shift open, and for the historical rows
+    /// migration 022 could not place.
+    pub shift_id: Option<i64>,
     pub created_at: Option<String>,
 }
 

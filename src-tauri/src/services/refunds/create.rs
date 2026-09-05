@@ -13,7 +13,7 @@ use crate::domain::refunds::{CreateRefundInput, RefundResult};
 use crate::domain::settings::parse_app_settings;
 use crate::domain::Actor;
 use crate::entity::{
-    exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
+    exchange_items, products, refund_items, refunds, shifts, stock_writeoffs, store_info,
     transaction_items, transactions,
 };
 use crate::utils::AppError;
@@ -193,6 +193,18 @@ pub async fn create(
         .unwrap_or(false);
     let refund_type = if has_exchange { "exchange" } else { "refund" };
 
+    // The drawer the money comes out of is the one open NOW, not the one that
+    // rang up the sale. It is resolved from the actor's own open shift rather
+    // than taken from the payload: a cashier cannot book a payout against
+    // somebody else's till by editing a request. `None` when no shift is open —
+    // shifts are optional here, exactly as they are for a sale.
+    let shift_id = shifts::Entity::find()
+        .filter(shifts::Column::UserId.eq(actor.user_id))
+        .filter(shifts::Column::Status.eq("open"))
+        .one(&txn)
+        .await?
+        .map(|s| s.id);
+
     // Create refund record
     let new_refund = refunds::ActiveModel {
         id: NotSet,
@@ -205,6 +217,7 @@ pub async fn create(
         difference_amount: Set(Some(0.0)),
         payment_method: Set(Some(transaction.payment_method.clone())),
         reason: Set(input.reason),
+        shift_id: Set(shift_id),
         created_at: Set(Some(now.clone())),
     };
 
@@ -266,8 +279,16 @@ pub async fn create(
                     "Auto write-off dari refund {}",
                     refund.refund_number
                 ))),
-                approved_by: Set(None),
-                status: Set("pending".to_string()),
+                // Approved on creation, like every other damaged/expired
+                // write-off (see `services::stock::create`). The customer just
+                // put the broken goods on the counter, so the evidence rule is
+                // satisfied more plainly here than anywhere else. Leaving these
+                // `pending` kept them out of the loss report — which counts
+                // `approved` rows only — so returns of damaged goods, the most
+                // predictable loss a shop has, went unreported until somebody
+                // clicked approve on a screen that changes nothing.
+                approved_by: Set(Some(actor.user_id)),
+                status: Set("approved".to_string()),
                 refund_id: Set(Some(refund.id)),
                 created_at: Set(Some(now.clone())),
             };
@@ -488,6 +509,48 @@ mod tests {
             }],
             exchange_items: None,
         }
+    }
+
+    /// B23: the money comes out of the drawer that is open now. The shift is
+    /// read from the actor's own open shift, so a payload cannot book a payout
+    /// against another cashier's till, and a return taken with no shift open is
+    /// simply unattributed rather than being forced onto one.
+    #[tokio::test]
+    async fn a_refund_is_stamped_with_the_cashiers_own_open_shift() {
+        use crate::domain::shifts::OpenShiftInput;
+
+        let conn = setup().await;
+        let (txn, item) = aged_sale(&conn, chrono::Duration::hours(1)).await;
+
+        let without_shift = create(&conn, &actor(), refund_one(txn.id, item.id))
+            .await
+            .expect("a refund with no shift open still works");
+        assert_eq!(without_shift.refund.shift_id, None);
+
+        let shift = crate::services::shifts::open(
+            &conn,
+            &actor(),
+            OpenShiftInput {
+                opening_cash: Some(0.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+
+        let (txn2, item2) = aged_sale(&conn, chrono::Duration::hours(1)).await;
+        let with_shift = create(&conn, &actor(), refund_one(txn2.id, item2.id))
+            .await
+            .expect("refund");
+        assert_eq!(with_shift.refund.shift_id, Some(shift.id));
+
+        // Another cashier's return goes to their own drawer, not this one.
+        let other =
+            crate::test_support::insert_user(&conn, "kasir9", "Kasir Sembilan", "kasir").await;
+        let (txn3, item3) = aged_sale(&conn, chrono::Duration::hours(1)).await;
+        let theirs = create(&conn, &Actor::from(&other), refund_one(txn3.id, item3.id))
+            .await
+            .expect("refund");
+        assert_eq!(theirs.refund.shift_id, None);
     }
 
     #[tokio::test]
@@ -909,7 +972,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_refund_writeoff_status_is_pending() {
+    async fn a_damaged_return_books_an_approved_writeoff() {
         let conn = setup().await;
 
         let product = insert_product(&conn, "Beras 5kg", 50_000.0, 65_000.0, 100).await;
@@ -949,7 +1012,12 @@ mod tests {
             .expect("query writeoffs");
 
         assert_eq!(writeoffs.len(), 1);
-        assert_eq!(writeoffs[0].status, "pending");
+        assert_eq!(
+            writeoffs[0].status, "approved",
+            "the damaged goods are on the counter — the loss is real now, not \
+             once somebody clicks approve"
+        );
+        assert_eq!(writeoffs[0].approved_by, Some(1));
         assert_eq!(writeoffs[0].reason, "damaged");
         assert_eq!(writeoffs[0].quantity, 1);
         assert_eq!(writeoffs[0].loss_value, 50_000.0); // buy_price * quantity
