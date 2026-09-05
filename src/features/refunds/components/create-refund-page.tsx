@@ -444,9 +444,12 @@ function RefundItemCard({
   const isFullyRefunded = state.maxQty <= 0
 
   return (
+    // Baris yang dicentang ditandai garis tepi warna merek dan permukaan netral.
+    // `bg-default` dipakai, bukan tint dari `--accent`: nama itu berarti dua hal
+    // berbeda di shadcn dan HeroUI, jadi seluruh aplikasi menghindarinya.
     <div
       className={`rounded-lg border p-4 transition-colors ${
-        state.checked ? "border-accent bg-accent/5" : ""
+        state.checked ? "border-accent bg-default" : ""
       } ${isFullyRefunded ? "opacity-60" : ""}`}
     >
       <Checkbox
