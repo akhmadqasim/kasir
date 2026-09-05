@@ -1,9 +1,9 @@
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    DbBackend, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement,
-    TransactionTrait,
+    DbBackend, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    Statement, TransactionTrait,
 };
-use sea_orm::sea_query::Expr;
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::future::Future;
@@ -14,7 +14,9 @@ use tokio::sync::Mutex;
 use crate::commands::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::commands::ppob::{MitraClient, PaymentResult};
 use crate::commands::settings::parse_app_settings;
-use crate::entity::{products, store_info, transaction_items, transaction_payments, transactions, users};
+use crate::entity::{
+    products, store_info, transaction_items, transaction_payments, transactions, users,
+};
 use crate::utils::{require_role, AppError};
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "transfer"];
@@ -127,7 +129,11 @@ async fn load_allow_negative_stock<C: ConnectionTrait>(db: &C) -> Result<bool, A
     Ok(store_info::Entity::find_by_id(1_i64)
         .one(db)
         .await?
-        .map(|s| parse_app_settings(&s.additional_info).sales.allow_negative_stock)
+        .map(|s| {
+            parse_app_settings(&s.additional_info)
+                .sales
+                .allow_negative_stock
+        })
         .unwrap_or(true))
 }
 
@@ -171,7 +177,9 @@ async fn resolve_items<C: ConnectionTrait>(
                 .service_ref
                 .clone()
                 .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| AppError::Validation("Referensi pelanggan PPOB harus diisi".into()))?;
+                .ok_or_else(|| {
+                    AppError::Validation("Referensi pelanggan PPOB harus diisi".into())
+                })?;
 
             match service_type.as_str() {
                 "pulsa" | "data" => {
@@ -224,9 +232,9 @@ async fn resolve_items<C: ConnectionTrait>(
             continue;
         }
 
-        let product_id = item_input.product_id.ok_or_else(|| {
-            AppError::Validation("Produk fisik harus memiliki ID produk".into())
-        })?;
+        let product_id = item_input
+            .product_id
+            .ok_or_else(|| AppError::Validation("Produk fisik harus memiliki ID produk".into()))?;
 
         let product = products::Entity::find_by_id(product_id)
             .filter(products::Column::IsActive.eq(true))
@@ -350,7 +358,10 @@ fn calculate_payment_amount_with_breakdown(
             }
 
             let mut seen = std::collections::HashSet::new();
-            if splits.iter().any(|split| !seen.insert(split.payment_method.clone())) {
+            if splits
+                .iter()
+                .any(|split| !seen.insert(split.payment_method.clone()))
+            {
                 return Err(AppError::Validation(
                     "Metode pembayaran tidak boleh duplikat".into(),
                 ));
@@ -420,11 +431,8 @@ fn calculate_payment_amount_with_breakdown(
         }
     }
 
-    let (payment_amount, change_amount, splits) = calculate_payment_amount(
-        &input.payment_method,
-        input.payment_amount,
-        total_amount,
-    )?;
+    let (payment_amount, change_amount, splits) =
+        calculate_payment_amount(&input.payment_method, input.payment_amount, total_amount)?;
 
     if input.payment_method == "transfer" {
         return Err(AppError::Validation(
@@ -795,7 +803,11 @@ where
     }
 
     // Process all PPOB items
-    for ppob_item in result.items.iter().filter(|item| item.service_type.is_some()) {
+    for ppob_item in result
+        .items
+        .iter()
+        .filter(|item| item.service_type.is_some())
+    {
         let request = build_ppob_request(ppob_item)?;
         let ppob_item_id = ppob_item.id;
 
@@ -856,7 +868,11 @@ pub async fn checkout_transaction(
 
     if has_ppob {
         // Process each PPOB item in its own background task
-        for ppob_item in result.items.iter().filter(|item| item.service_type.is_some()) {
+        for ppob_item in result
+            .items
+            .iter()
+            .filter(|item| item.service_type.is_some())
+        {
             let request = build_ppob_request(ppob_item)?;
             let ppob_item_id = ppob_item.id;
             let bg_conn = conn.clone();
@@ -1086,8 +1102,7 @@ pub async fn list_transactions(
 
     if let Some(ref date_from) = input.date_from {
         let local_start = format!("{} 00:00:00", date_from);
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S")
-        {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
             let utc_start = ndt - chrono::Duration::seconds(offset_secs);
             query = query.filter(
                 transactions::Column::CreatedAt
@@ -1284,7 +1299,8 @@ pub async fn get_transaction_detail(
     let cashier_name = cashier
         .map(|u| u.full_name)
         .unwrap_or_else(|| "Unknown".into());
-    let payment_breakdown = load_payment_breakdown(db.inner(), transaction_id, &transaction).await?;
+    let payment_breakdown =
+        load_payment_breakdown(db.inner(), transaction_id, &transaction).await?;
 
     Ok(TransactionDetail {
         transaction,
@@ -1323,7 +1339,9 @@ async fn delete_transaction_internal(
     require_role(db, input.user_id, "admin").await?;
 
     if input.reason.trim().is_empty() {
-        return Err(AppError::Validation("Alasan penghapusan wajib diisi".into()));
+        return Err(AppError::Validation(
+            "Alasan penghapusan wajib diisi".into(),
+        ));
     }
 
     let transaction = transactions::Entity::find_by_id(input.transaction_id)
@@ -1332,7 +1350,9 @@ async fn delete_transaction_internal(
         .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
 
     if transaction.deleted_at.is_some() {
-        return Err(AppError::Validation("Transaksi sudah dihapus sebelumnya".into()));
+        return Err(AppError::Validation(
+            "Transaksi sudah dihapus sebelumnya".into(),
+        ));
     }
 
     // Check for linked refunds
@@ -1353,9 +1373,7 @@ async fn delete_transaction_internal(
         .all(db)
         .await?;
 
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let txn = db.begin().await?;
 
@@ -1444,9 +1462,7 @@ async fn update_payment_method_internal(
         ));
     }
 
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let payment_amount = transaction.total_amount;
     let txn = db.begin().await?;
@@ -1606,7 +1622,7 @@ mod tests {
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
                     ppob_flag_id: None,
-                        item_discount: None,
+                    item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
                 payment_amount: 30_000.0,
@@ -1652,7 +1668,7 @@ mod tests {
                     ppob_inquiry_id: None,
                     ppob_payment_code: None,
                     ppob_flag_id: None,
-                        item_discount: None,
+                    item_discount: None,
                 }],
                 payment_method: "cash".to_string(),
                 payment_amount: 12_000.0,
@@ -1682,7 +1698,10 @@ mod tests {
 
         assert_eq!(result.transaction.status, STATUS_COMPLETED);
         assert_eq!(result.items[0].ppob_status.as_deref(), Some("success"));
-        assert_eq!(result.items[0].ppob_serial_number.as_deref(), Some("SN-123"));
+        assert_eq!(
+            result.items[0].ppob_serial_number.as_deref(),
+            Some("SN-123")
+        );
     }
 
     #[tokio::test]
@@ -1724,12 +1743,10 @@ mod tests {
         assert_eq!(result.transaction.status, STATUS_COMPLETED);
         // But item is marked as failed
         assert_eq!(result.items[0].ppob_status.as_deref(), Some("failed"));
-        assert!(
-            result.items[0]
-                .ppob_message
-                .as_deref()
-                .is_some_and(|message| message.contains("Provider timeout"))
-        );
+        assert!(result.items[0]
+            .ppob_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Provider timeout")));
     }
 
     #[tokio::test]
@@ -1803,7 +1820,11 @@ mod tests {
         assert_eq!(result.items.len(), 2);
 
         // Physical item: no ppob_status, stock deducted
-        let physical_item = result.items.iter().find(|i| i.service_type.is_none()).unwrap();
+        let physical_item = result
+            .items
+            .iter()
+            .find(|i| i.service_type.is_none())
+            .unwrap();
         assert!(physical_item.ppob_status.is_none());
         let updated_product = products::Entity::find_by_id(product.id)
             .one(&conn)
@@ -1813,7 +1834,11 @@ mod tests {
         assert_eq!(updated_product.stock, 4);
 
         // PPOB item: ppob_status = success
-        let ppob_item = result.items.iter().find(|i| i.service_type.is_some()).unwrap();
+        let ppob_item = result
+            .items
+            .iter()
+            .find(|i| i.service_type.is_some())
+            .unwrap();
         assert_eq!(ppob_item.ppob_status.as_deref(), Some("success"));
         assert_eq!(ppob_item.ppob_serial_number.as_deref(), Some("SN-MIX-1"));
     }
@@ -1897,10 +1922,7 @@ mod tests {
             .find(|i| i.service_type.as_deref() == Some("pulsa"))
             .unwrap();
         assert_eq!(pulsa_item.ppob_status.as_deref(), Some("success"));
-        assert_eq!(
-            pulsa_item.ppob_serial_number.as_deref(),
-            Some("SN-PULSA")
-        );
+        assert_eq!(pulsa_item.ppob_serial_number.as_deref(), Some("SN-PULSA"));
 
         let pln_item = result
             .items
@@ -1961,7 +1983,10 @@ mod tests {
     }
 
     /// A completed sale with one PPOB line, left in `ppob_status`.
-    async fn seed_ppob_sale(conn: &DatabaseConnection, ppob_status: &str) -> transaction_items::Model {
+    async fn seed_ppob_sale(
+        conn: &DatabaseConnection,
+        ppob_status: &str,
+    ) -> transaction_items::Model {
         let result = checkout_transaction_with_executor(
             conn,
             CheckoutTransactionInput {
@@ -2122,7 +2147,8 @@ mod tests {
         let conn = setup_test_db().await;
         let sale = seed_sale(&conn).await;
 
-        let ghost = crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
+        let ghost =
+            crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
         let mut deactivated: users::ActiveModel = ghost.clone().into();
         deactivated.is_active = Set(false);
         deactivated.update(&conn).await.expect("deactivate user");
@@ -2155,7 +2181,8 @@ mod tests {
         let conn = setup_test_db().await;
         let sale = seed_sale(&conn).await;
 
-        let ghost = crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
+        let ghost =
+            crate::test_support::insert_user(&conn, "mantan", "Mantan Admin", "admin").await;
         let mut deactivated: users::ActiveModel = ghost.clone().into();
         deactivated.is_active = Set(false);
         deactivated.update(&conn).await.expect("deactivate user");
