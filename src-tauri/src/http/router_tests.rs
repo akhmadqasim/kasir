@@ -1466,9 +1466,11 @@ async fn a_cashier_may_write_off_breakage_but_not_a_loss() {
     assert_eq!(body["userId"], json!(kasir.id));
     assert_eq!(
         body["status"],
-        json!("pending"),
-        "a cashier's write-off waits for an admin"
+        json!("approved"),
+        "the broken goods are in the storeroom; a cashier does not need an admin \
+         to write them off, and the stock came off either way"
     );
+    assert_eq!(body["approvedBy"], json!(kasir.id));
 
     let lost = router(&state)
         .oneshot(

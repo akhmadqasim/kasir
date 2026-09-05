@@ -211,10 +211,31 @@ pub async fn list(
 
 /// Record a write-off and deduct the units straight away.
 ///
-/// A kasir may write off physical evidence they still hold — damaged or expired
-/// goods — but the row stays `pending` until an admin approves it. `lost` has no
-/// physical evidence, so only an admin may record it; an admin's own write-off
-/// is approved on the spot.
+/// APPROVAL FOLLOWS THE REASON, NOT THE ROLE
+///
+/// `CLAUDE.md` says a cashier may write off damaged or expired goods directly,
+/// because the broken bottle is sitting in the storeroom for anyone to look at,
+/// and that only `lost` — which has no physical evidence — needs an admin. The
+/// code did the opposite: every cashier write-off was forced to `pending`
+/// whatever the reason, while the stock was deducted immediately anyway. So the
+/// shelf count moved, the loss report did not (it counts `approved` rows only),
+/// and the cashier got a success toast for something that had not happened. The
+/// approval step guarded nothing: the units were already gone, and rejecting the
+/// row is what put them back.
+///
+/// So:
+///   * `damaged`, `expired` — approved on creation, whoever the caller is.
+///   * `lost` — admin only, and approved on creation like any other admin action.
+///   * `other` — approved on creation for a cashier too, but it is the one reason
+///     with no stated evidence rule, so it stays reviewable: it is recorded
+///     against the cashier who raised it, `notes` carries their explanation, and
+///     an admin can see it in the loss report next to everything else. Holding it
+///     `pending` instead would reintroduce exactly the split this fixes — stock
+///     down, loss unreported — for the vaguest category of all, which is the
+///     worst place to hide a discrepancy.
+///
+/// Nothing lands `pending` from this path any more. `approve`/`reject` stay for
+/// the rows already sitting in that state.
 pub async fn create(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -262,11 +283,9 @@ pub async fn create(
     let writeoff_number = generate_writeoff_number(&txn).await?;
     let loss_value = product.buy_price * input.quantity as f64;
 
-    let (status, approved_by) = if actor.is_admin() {
-        ("approved".to_string(), Some(actor.user_id))
-    } else {
-        ("pending".to_string(), None)
-    };
+    // Approved on the spot, by the actor who raised it. See the doc comment
+    // above for why the reason, not the role, is what decides this.
+    let (status, approved_by) = ("approved".to_string(), Some(actor.user_id));
 
     let new_writeoff = stock_writeoffs::ActiveModel {
         id: NotSet,
@@ -664,10 +683,12 @@ mod tests {
         }
     }
 
-    /// A kasir may write off damage, but the row waits for approval and nobody
-    /// is recorded as approver.
+    /// `CLAUDE.md`: a cashier may write off damaged or expired goods directly,
+    /// because the evidence is in the storeroom. The stock comes off at
+    /// creation, so leaving the row `pending` only meant the loss report
+    /// disagreed with the shelf until an admin got round to it.
     #[tokio::test]
-    async fn a_kasir_writeoff_starts_pending_and_an_admin_one_is_approved() {
+    async fn a_kasir_writeoff_of_damaged_goods_is_approved_on_creation() {
         let conn = setup_test_db().await;
         let product = insert_product(&conn, "Beras 5kg", 10_000.0, 12_000.0, 10).await;
         let kasir = insert_user(&conn, "kasir1", "Kasir Satu", "kasir").await;
@@ -684,8 +705,8 @@ mod tests {
         )
         .await
         .expect("kasir may write off damaged goods");
-        assert_eq!(by_kasir.status, "pending");
-        assert_eq!(by_kasir.approved_by, None);
+        assert_eq!(by_kasir.status, "approved");
+        assert_eq!(by_kasir.approved_by, Some(kasir.id));
         assert_eq!(by_kasir.loss_value, 20_000.0);
 
         let by_admin = create(
@@ -710,5 +731,35 @@ mod tests {
             .expect("query")
             .expect("product");
         assert_eq!(after.stock, 7);
+    }
+
+    /// `expired` follows the same evidence rule as `damaged`, and `other` is
+    /// approved too rather than parking the stock deduction behind a status the
+    /// loss report ignores. Every reason a cashier is allowed to use lands
+    /// straight in the loss report.
+    #[tokio::test]
+    async fn every_reason_a_kasir_may_use_is_approved_and_reported() {
+        let conn = setup_test_db().await;
+        let kasir = insert_user(&conn, "kasir1", "Kasir Satu", "kasir").await;
+
+        for reason in ["expired", "other"] {
+            let product = insert_product(&conn, reason, 4_000.0, 6_000.0, 10).await;
+            let writeoff = create(
+                &conn,
+                &Actor::from(&kasir),
+                CreateWriteoffInput {
+                    product_id: product.id,
+                    quantity: 3,
+                    reason: reason.into(),
+                    notes: Some("Ditemukan saat stock opname".into()),
+                },
+            )
+            .await
+            .unwrap_or_else(|e| panic!("kasir may write off '{}': {:?}", reason, e));
+
+            assert_eq!(writeoff.status, "approved", "reason '{}'", reason);
+            assert_eq!(writeoff.approved_by, Some(kasir.id), "reason '{}'", reason);
+            assert_eq!(writeoff.user_id, kasir.id, "reason '{}'", reason);
+        }
     }
 }
