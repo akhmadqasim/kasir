@@ -5,6 +5,7 @@ use std::mem::{align_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 
 use windows::core::PCWSTR;
+use windows::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, SelectObject, HDC, HFONT, HGDIOBJ};
 use windows::Win32::Graphics::Printing::{
     EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL,
     PRINTER_INFO_2W,
@@ -130,6 +131,55 @@ struct GdiDocInfoW {
     fw_type: u32,
 }
 
+// --- RAII guards ---
+//
+// `send_gdi_text` has five exit paths (DC creation, font creation, StartDoc,
+// StartPage, success). Each one repeated its own cleanup, and each one got the
+// order wrong: `DeleteObject` was called on both fonts while one of them was
+// still selected into the DC. Windows refuses to delete a selected object, and
+// the failure was swallowed by `let _ =`, so every receipt leaked one or two
+// GDI objects out of the 10.000-per-process limit — a busy shop eventually
+// cannot print until the app is restarted.
+//
+// Drop runs in reverse declaration order, so declaring the DC first, then the
+// fonts, then the selection guard gives exactly the required order: restore the
+// DC's original object, delete the fonts, delete the DC.
+
+struct GdiDc(HDC);
+
+impl Drop for GdiDc {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DeleteDC(self.0);
+        }
+    }
+}
+
+struct GdiFont(HFONT);
+
+impl Drop for GdiFont {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DeleteObject(self.0.into());
+        }
+    }
+}
+
+/// Puts the object a DC held before `SelectObject` back when dropped, so the
+/// fonts are no longer selected by the time they are deleted.
+struct SelectedGdiObject {
+    hdc: HDC,
+    previous: HGDIOBJ,
+}
+
+impl Drop for SelectedGdiObject {
+    fn drop(&mut self) {
+        unsafe {
+            SelectObject(self.hdc, self.previous);
+        }
+    }
+}
+
 /// Send receipt text lines to printer using GDI pipeline (goes through printer driver).
 /// This is more reliable than RAW for cheap USB thermal printers.
 pub fn send_gdi_text(
@@ -137,9 +187,9 @@ pub fn send_gdi_text(
     lines: &[super::receipt::ReceiptTextLine],
 ) -> Result<(), String> {
     use windows::Win32::Graphics::Gdi::{
-        CreateDCW, CreateFontW, DeleteDC, DeleteObject, GetDeviceCaps, GetTextMetricsW,
-        SelectObject, TextOutW, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_QUALITY, FIXED_PITCH,
-        FW_BOLD, FW_NORMAL, LOGPIXELSY, OUT_DEFAULT_PRECIS, TEXTMETRICW,
+        CreateDCW, CreateFontW, GetDeviceCaps, GetTextMetricsW, TextOutW, CLIP_DEFAULT_PRECIS,
+        DEFAULT_CHARSET, DEFAULT_QUALITY, FIXED_PITCH, FW_BOLD, FW_NORMAL, LOGPIXELSY,
+        OUT_DEFAULT_PRECIS, TEXTMETRICW,
     };
 
     unsafe {
@@ -151,10 +201,11 @@ pub fn send_gdi_text(
             None,
         );
 
-        let hdc_raw = hdc.0 as isize;
         if hdc.0.is_null() {
             return Err(format!("Gagal membuat printer DC untuk '{}'", printer_name));
         }
+        let hdc_raw = hdc.0 as isize;
+        let _dc = GdiDc(hdc);
 
         let dpi_y = GetDeviceCaps(Some(hdc), LOGPIXELSY);
         let font_height = -(7 * dpi_y / 72); // 7pt
@@ -165,42 +216,37 @@ pub fn send_gdi_text(
         );
 
         let font_name_wide = to_wide("Consolas");
-        let normal_font = CreateFontW(
-            font_height,
-            0,
-            0,
-            0,
-            FW_NORMAL.0 as i32,
-            0,
-            0,
-            0,
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY,
-            FIXED_PITCH.0 as u32,
-            PCWSTR(font_name_wide.as_ptr()),
-        );
+        let make_font = |weight: i32| {
+            CreateFontW(
+                font_height,
+                0,
+                0,
+                0,
+                weight,
+                0,
+                0,
+                0,
+                DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS,
+                CLIP_DEFAULT_PRECIS,
+                DEFAULT_QUALITY,
+                FIXED_PITCH.0 as u32,
+                PCWSTR(font_name_wide.as_ptr()),
+            )
+        };
 
-        let bold_font = CreateFontW(
-            font_height,
-            0,
-            0,
-            0,
-            FW_BOLD.0 as i32,
-            0,
-            0,
-            0,
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY,
-            FIXED_PITCH.0 as u32,
-            PCWSTR(font_name_wide.as_ptr()),
-        );
+        let normal_font = GdiFont(make_font(FW_NORMAL.0 as i32));
+        let bold_font = GdiFont(make_font(FW_BOLD.0 as i32));
 
-        // Select normal font and get text metrics for line height
-        SelectObject(hdc, normal_font.into());
+        if normal_font.0.is_invalid() || bold_font.0.is_invalid() {
+            return Err("Gagal membuat font untuk struk".to_string());
+        }
+
+        // Select normal font and get text metrics for line height. The object the
+        // DC held first has to go back before the fonts are deleted.
+        let previous = SelectObject(hdc, normal_font.0.into());
+        let _selection = SelectedGdiObject { hdc, previous };
+
         let mut tm = TEXTMETRICW::default();
         let _ = GetTextMetricsW(hdc, &mut tm);
         let line_height = tm.tmHeight + tm.tmExternalLeading;
@@ -208,37 +254,33 @@ pub fn send_gdi_text(
         // Start document using manually linked GDI functions
         let doc_name_wide = to_wide("POS Receipt");
         let doc_info = GdiDocInfoW {
-            cb_size: std::mem::size_of::<GdiDocInfoW>() as i32,
+            cb_size: size_of::<GdiDocInfoW>() as i32,
             lpsz_doc_name: doc_name_wide.as_ptr(),
             lpsz_output: std::ptr::null(),
             lpsz_datatype: std::ptr::null(),
             fw_type: 0,
         };
 
-        let doc_id = GdiStartDocW(hdc_raw, &doc_info);
-        if doc_id <= 0 {
-            let _ = DeleteObject(normal_font.into());
-            let _ = DeleteObject(bold_font.into());
-            let _ = DeleteDC(hdc);
+        if GdiStartDocW(hdc_raw, &doc_info) <= 0 {
             return Err("StartDocW gagal".to_string());
         }
 
         if GdiStartPage(hdc_raw) <= 0 {
             GdiEndDoc(hdc_raw);
-            let _ = DeleteObject(normal_font.into());
-            let _ = DeleteObject(bold_font.into());
-            let _ = DeleteDC(hdc);
             return Err("StartPage gagal".to_string());
         }
 
         // Print each line
         let mut y = 0i32;
         for line in lines {
-            if line.bold {
-                SelectObject(hdc, bold_font.into());
-            } else {
-                SelectObject(hdc, normal_font.into());
-            }
+            SelectObject(
+                hdc,
+                if line.bold {
+                    bold_font.0.into()
+                } else {
+                    normal_font.0.into()
+                },
+            );
 
             let text_wide: Vec<u16> = OsStr::new(&line.text).encode_wide().collect();
             if !text_wide.is_empty() {
@@ -249,10 +291,6 @@ pub fn send_gdi_text(
 
         GdiEndPage(hdc_raw);
         GdiEndDoc(hdc_raw);
-
-        let _ = DeleteObject(normal_font.into());
-        let _ = DeleteObject(bold_font.into());
-        let _ = DeleteDC(hdc);
 
         eprintln!("[gdi] Print completed, {} lines", lines.len());
         Ok(())
