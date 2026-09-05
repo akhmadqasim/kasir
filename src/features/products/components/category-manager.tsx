@@ -201,6 +201,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
       </Drawer.Backdrop>
 
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
       >

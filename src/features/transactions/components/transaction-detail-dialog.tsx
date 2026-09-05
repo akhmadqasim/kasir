@@ -505,6 +505,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={showDeleteConfirm}
         onOpenChange={(open) => {
           if (!open) {

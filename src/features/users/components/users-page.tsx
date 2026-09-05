@@ -191,6 +191,7 @@ export function UsersPage() {
       />
 
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={!!deactivateUser}
         onOpenChange={(open) => !open && setDeactivateUser(null)}
       >

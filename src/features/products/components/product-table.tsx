@@ -215,6 +215,7 @@ export function ProductTable({
       <TablePagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
 
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
       >

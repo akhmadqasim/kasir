@@ -295,6 +295,7 @@ export function StockWriteoffPage() {
 
       {/* Confirmation Dialog */}
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
       >

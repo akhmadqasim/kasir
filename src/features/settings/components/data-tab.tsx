@@ -573,6 +573,7 @@ export function DataTab() {
           AlertDialog yang dirender. Baris mana yang dikonfirmasi dibawa state, persis
           pola `deactivateUser` di halaman manajemen user. */}
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={pendingBackup !== null}
         onOpenChange={(open) => !open && setPendingBackup(null)}
       >
@@ -615,6 +616,7 @@ export function DataTab() {
       </AlertDialog.Backdrop>
 
       <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
         isOpen={importConfirmOpen}
         onOpenChange={setImportConfirmOpen}
       >
