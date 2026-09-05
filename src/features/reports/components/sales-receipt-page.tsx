@@ -15,20 +15,14 @@ import {
 import { useSalesReceipt } from "../hooks/use-reports"
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useDebounce } from "@/hooks/use-debounce"
+import { paymentMethodLabel, transactionStatusLabel } from "@/lib/labels"
 
-const paymentLabels: Record<string, string> = {
-  cash: "Tunai",
-  qris: "QRIS",
-  ewallet: "E-Wallet",
-  transfer: "Transfer",
-}
-
-const statusLabels: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  completed: { label: "Selesai", variant: "default" },
-  pending_ppob: { label: "Menunggu PPOB", variant: "outline" },
-  ppob_failed: { label: "PPOB Gagal", variant: "destructive" },
-  refunded: { label: "Diretur", variant: "destructive" },
-  partial_refund: { label: "Retur Sebagian", variant: "secondary" },
+const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  completed: "default",
+  pending_ppob: "outline",
+  ppob_failed: "destructive",
+  refunded: "destructive",
+  partial_refund: "secondary",
 }
 
 export function SalesReceiptPage() {
@@ -90,7 +84,7 @@ export function SalesReceiptPage() {
               </TableRow>
             ) : (
               data.items.map((row) => {
-                const st = statusLabels[row.status] ?? { label: row.status, variant: "outline" as const }
+                const statusVariant = statusVariants[row.status] ?? "outline"
                 return (
                   <TableRow key={row.id}>
                     <TableCell className="font-mono text-sm">{row.receiptNumber}</TableCell>
@@ -100,10 +94,10 @@ export function SalesReceiptPage() {
                     </TableCell>
                     <TableCell className="text-right">{row.itemCount}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{paymentLabels[row.paymentMethod] ?? row.paymentMethod}</Badge>
+                      <Badge variant="outline">{paymentMethodLabel(row.paymentMethod)}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={st.variant}>{st.label}</Badge>
+                      <Badge variant={statusVariant}>{transactionStatusLabel(row.status)}</Badge>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatRupiah(row.totalAmount)}</TableCell>
                   </TableRow>

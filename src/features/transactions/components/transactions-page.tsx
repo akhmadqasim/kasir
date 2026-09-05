@@ -28,42 +28,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useDebounce } from "@/hooks/use-debounce"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
+import {
+  TRANSACTION_STATUS_CLASSNAMES,
+  TRANSACTION_STATUS_VARIANTS,
+  paymentMethodLabel,
+  transactionStatusLabel,
+} from "@/lib/labels"
 import { id } from "@/i18n/id"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
 import type { PaginatedTransactions, TransactionListItem } from "../types"
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: id.payment.cash,
-  qris: id.payment.qris,
-  debit: id.payment.debit,
-  ewallet: id.payment.ewallet,
-  transfer: id.payment.transfer,
-  mixed: id.payment.mixed,
-}
-
-const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
-  completed: "default",
-  pending_ppob: "secondary",
-  ppob_failed: "destructive",
-  refunded: "destructive",
-  partial_refund: "secondary",
-  deleted: "destructive",
-}
-
-const STATUS_CLASSNAMES: Record<string, string> = {
-  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
-  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  completed: id.transactions.completed,
-  pending_ppob: id.transactions.pendingPpob,
-  ppob_failed: id.transactions.ppobFailed,
-  refunded: id.transactions.refunded,
-  partial_refund: id.transactions.partialRefund,
-  deleted: id.transactions.deleted,
-}
 
 function getTransactionDescription(txn: TransactionListItem): string {
   if (txn.deleted_reason?.trim()) {
@@ -257,7 +230,7 @@ export function TransactionsPage() {
                   <TableCell className="text-center">{txn.item_count}</TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {PAYMENT_LABELS[txn.payment_method] || txn.payment_method}
+                      {paymentMethodLabel(txn.payment_method)}
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-64 whitespace-normal">
@@ -267,10 +240,10 @@ export function TransactionsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={STATUS_VARIANTS[txn.status] || "secondary"}
-                      className={STATUS_CLASSNAMES[txn.status]}
+                      variant={TRANSACTION_STATUS_VARIANTS[txn.status] || "secondary"}
+                      className={TRANSACTION_STATUS_CLASSNAMES[txn.status]}
                     >
-                      {STATUS_LABELS[txn.status] || txn.status}
+                      {transactionStatusLabel(txn.status)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">

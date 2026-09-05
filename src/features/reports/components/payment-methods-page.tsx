@@ -12,15 +12,7 @@ import {
 } from "@/components/ui/table"
 import { usePaymentMethods } from "../hooks/use-reports"
 import { formatRupiah, toLocalDateString } from "@/lib/format"
-
-const paymentLabels: Record<string, string> = {
-  cash: "Tunai",
-  qris: "QRIS",
-  debit: "Debit",
-  ewallet: "E-Wallet",
-  transfer: "Transfer",
-  mixed: "Campuran",
-}
+import { paymentMethodLabel } from "@/lib/labels"
 
 const paymentColors: Record<string, string> = {
   cash: "bg-[var(--chart-1)]",
@@ -56,7 +48,7 @@ export function PaymentMethodsPage() {
             <Card key={row.paymentMethod}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {paymentLabels[row.paymentMethod] ?? row.paymentMethod}
+                  {paymentMethodLabel(row.paymentMethod)}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -100,7 +92,7 @@ export function PaymentMethodsPage() {
               <>
                 {data.map((row) => (
                   <TableRow key={row.paymentMethod}>
-                    <TableCell className="font-medium">{paymentLabels[row.paymentMethod] ?? row.paymentMethod}</TableCell>
+                    <TableCell className="font-medium">{paymentMethodLabel(row.paymentMethod)}</TableCell>
                     <TableCell className="text-right">{row.transactionCount}</TableCell>
                     <TableCell className="text-right">{formatRupiah(row.totalAmount)}</TableCell>
                     <TableCell className="text-right">{row.percentage.toFixed(1)}%</TableCell>

@@ -38,47 +38,15 @@ import { useTauriQuery } from "@/hooks/use-tauri-command"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import {
+  TRANSACTION_STATUS_CLASSNAMES,
+  TRANSACTION_STATUS_VARIANTS,
+  paymentSplitLabel,
+  transactionStatusLabel,
+} from "@/lib/labels"
 import { id } from "@/i18n/id"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: id.payment.cash,
-  qris: id.payment.qris,
-  debit: id.payment.debit,
-  ewallet: id.payment.ewallet,
-  transfer: id.payment.transfer,
-  mixed: id.payment.mixed,
-}
-
-function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null): string {
-  const label = PAYMENT_LABELS[paymentMethod] || paymentMethod
-  return bankName?.trim() ? `${label} (${bankName.trim()})` : label
-}
-
-const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
-  completed: "default",
-  pending_ppob: "secondary",
-  ppob_failed: "destructive",
-  refunded: "destructive",
-  partial_refund: "secondary",
-  deleted: "destructive",
-}
-
-const STATUS_CLASSNAMES: Record<string, string> = {
-  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
-  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  completed: id.transactions.completed,
-  pending_ppob: id.transactions.pendingPpob,
-  ppob_failed: id.transactions.ppobFailed,
-  refunded: id.transactions.refunded,
-  partial_refund: id.transactions.partialRefund,
-  deleted: id.transactions.deleted,
-}
 
 const PPOB_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   pending: { label: "Menunggu", className: "bg-amber-50 text-amber-700" },
@@ -258,10 +226,10 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       label={id.transactions.status}
                       value={(
                         <Badge
-                          variant={STATUS_VARIANTS[detail.transaction.status] || "secondary"}
-                          className={STATUS_CLASSNAMES[detail.transaction.status]}
+                          variant={TRANSACTION_STATUS_VARIANTS[detail.transaction.status] || "secondary"}
+                          className={TRANSACTION_STATUS_CLASSNAMES[detail.transaction.status]}
                         >
-                          {STATUS_LABELS[detail.transaction.status] || detail.transaction.status}
+                          {transactionStatusLabel(detail.transaction.status)}
                         </Badge>
                       )}
                       rowClassName="items-center"
@@ -352,7 +320,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       )}
                       <SummaryRow
                         label={id.transactions.paymentMethod}
-                        value={formatPaymentSplitLabel(
+                        value={paymentSplitLabel(
                           detail.transaction.payment_method,
                           detail.payment_breakdown[0]?.bank_name
                         )}
@@ -364,7 +332,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                             {detail.payment_breakdown.map((split) => (
                               <SummaryRow
                                 key={`${split.payment_method}-${split.bank_name ?? "default"}`}
-                                label={formatPaymentSplitLabel(split.payment_method, split.bank_name)}
+                                label={paymentSplitLabel(split.payment_method, split.bank_name)}
                                 value={formatRupiah(split.amount)}
                                 valueClassName="tabular-nums"
                               />

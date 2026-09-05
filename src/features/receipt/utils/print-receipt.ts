@@ -1,19 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
+import { paymentSplitLabel } from "@/lib/labels"
 import type { ReceiptData } from "../types"
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "Tunai",
-  qris: "QRIS",
-  debit: "Debit",
-  ewallet: "E-Wallet",
-  transfer: "Transfer Bank",
-  mixed: "Campuran",
-}
-
-function formatPaymentSplitLabel(paymentMethod: string, bankName?: string | null): string {
-  const label = PAYMENT_LABELS[paymentMethod] ?? paymentMethod
-  return bankName?.trim() ? `${label} (${bankName.trim()})` : label
-}
 
 /**
  * Nama produk, catatan dan data toko berasal dari input pengguna dan berakhir di
@@ -51,7 +38,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
     )
     .join("")
 
-  const paymentLabel = formatPaymentSplitLabel(
+  const paymentLabel = paymentSplitLabel(
     data.payment_method,
     data.payment_breakdown[0]?.bank_name
   )
@@ -64,7 +51,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
           .map(
             (split) => `
     <tr>
-      <td>Bayar (${escapeHtml(formatPaymentSplitLabel(split.payment_method, split.bank_name))})</td>
+      <td>Bayar (${escapeHtml(paymentSplitLabel(split.payment_method, split.bank_name))})</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(split.amount)}</td>
     </tr>`

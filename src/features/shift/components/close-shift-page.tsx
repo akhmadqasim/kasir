@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/features/auth"
 import { toast } from "@/lib/toast"
+import { paymentMethodLabel } from "@/lib/labels"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -59,16 +60,6 @@ function formatTime(dateStr: string): string {
   })
 }
 
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "Tunai",
-  qris: "QRIS",
-  ewallet: "E-Wallet",
-  transfer: "Transfer Bank",
-}
-
-function paymentLabel(method: string): string {
-  return PAYMENT_LABELS[method] ?? method
-}
 
 export function CloseShiftPage() {
   const navigate = useNavigate()
@@ -315,7 +306,7 @@ export function CloseShiftPage() {
               <div className="space-y-3">
                 {summary.paymentBreakdown.map((pb) => (
                   <div key={pb.method} className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{paymentLabel(pb.method)}</span>
+                    <span className="text-sm text-muted-foreground">{paymentMethodLabel(pb.method)}</span>
                     <span className="text-sm font-medium tabular-nums">{formatRp(pb.total)}</span>
                   </div>
                 ))}
@@ -668,7 +659,7 @@ function ShiftCloseReport({ summary, storeName, onBack, onLogout }: ShiftCloseRe
                 {paymentBreakdown.map((pb) => (
                   <div key={pb.method} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">{paymentLabel(pb.method)}</span>
+                      <span className="text-muted-foreground">{paymentMethodLabel(pb.method)}</span>
                       <Badge variant="secondary" className="text-xs">{pb.count}x</Badge>
                     </div>
                     <span className="font-medium tabular-nums">{formatRp(pb.total)}</span>
