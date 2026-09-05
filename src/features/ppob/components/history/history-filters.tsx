@@ -1,14 +1,9 @@
+import { Button, Label, ListBox, Select } from "@heroui/react"
 import { X } from "lucide-react"
-import { Button } from "@/components/ui/button"
+
 import { DateRangePicker } from "@/components/date-range-picker"
+import { selectedText } from "@/components/selected-text"
 import type { DateRange } from "@/lib/date-range"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { PRODUCT_FILTER_OPTIONS, STATUS_FILTER_OPTIONS } from "./history-utils"
 
 interface HistoryFiltersProps {
@@ -37,34 +32,54 @@ export function HistoryFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Select value={productFilter} onValueChange={onProductFilterChange}>
-        <SelectTrigger className="w-full max-w-48">
-          <SelectValue placeholder="Semua Produk" />
-        </SelectTrigger>
-        <SelectContent>
-          {PRODUCT_FILTER_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
+      <Select
+        aria-label="Filter produk"
+        className="w-full max-w-48"
+        placeholder="Semua Produk"
+        value={productFilter}
+        onChange={(value) => onProductFilterChange(String(value))}
+      >
+        <Select.Trigger>
+          <Select.Value>{selectedText}</Select.Value>
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            {PRODUCT_FILTER_OPTIONS.map((opt) => (
+              <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                <Label>{opt.label}</Label>
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
       </Select>
 
-      <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-        <SelectTrigger className="w-full max-w-48">
-          <SelectValue placeholder="Semua Status" />
-        </SelectTrigger>
-        <SelectContent>
-          {STATUS_FILTER_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
+      <Select
+        aria-label="Filter status"
+        className="w-full max-w-48"
+        placeholder="Semua Status"
+        value={statusFilter}
+        onChange={(value) => onStatusFilterChange(String(value))}
+      >
+        <Select.Trigger>
+          <Select.Value>{selectedText}</Select.Value>
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            {STATUS_FILTER_OPTIONS.map((opt) => (
+              <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                <Label>{opt.label}</Label>
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
       </Select>
 
       {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={resetFilters}>
+        <Button size="sm" variant="ghost" onPress={resetFilters}>
           <X className="mr-1 h-4 w-4" />
           Reset Filter
         </Button>

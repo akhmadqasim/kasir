@@ -8,26 +8,19 @@ import {
   RefreshCw,
   Loader2,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
+import {
+  Button,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  Separator,
+  Skeleton,
+} from "@heroui/react"
 import { StatusBadge } from "@/components/status-badge"
 import { DateRangePicker } from "@/components/date-range-picker"
+import { selectedText } from "@/components/selected-text"
 import type { DateRange } from "@/lib/date-range"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { id as i18n } from "@/i18n/id"
 import { usePpobMutasi, usePpobSaldo } from "../../hooks"
 import { formatRupiah, toLocalDateString } from "@/lib/format"
@@ -175,87 +168,98 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
     addRow(key, val)
   }
 
+  const heading = isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {isIn ? (
-              <ArrowDownCircle className="h-5 w-5 text-green-600" />
-            ) : (
-              <ArrowUpCircle className="h-5 w-5 text-red-600" />
-            )}
-            {isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment}
-          </DialogTitle>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label={heading}>
+          <Modal.Header>
+            <Modal.Heading className="flex items-center gap-2">
+              {isIn ? (
+                <ArrowDownCircle className="h-5 w-5 text-success" />
+              ) : (
+                <ArrowUpCircle className="h-5 w-5 text-danger" />
+              )}
+              {heading}
+            </Modal.Heading>
+            <Modal.CloseTrigger />
+          </Modal.Header>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className={`text-lg font-bold ${isIn ? "text-green-600" : "text-red-600"}`}>
-              {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
-            </span>
-            {(() => {
-              const ns = normalizeStatus(item.status)
-              if (ns === "sukses") return <StatusBadge status="success">SUKSES</StatusBadge>
-              if (ns === "gagal") return <StatusBadge status="error">GAGAL</StatusBadge>
-              if (ns === "proses") return <StatusBadge status="warning">PROSES</StatusBadge>
-              return <Badge variant="outline">{(item.status ?? "-").toUpperCase()}</Badge>
-            })()}
-          </div>
+          <Modal.Body className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-lg font-bold ${isIn ? "text-success" : "text-danger"}`}
+              >
+                {isIn ? "+" : "-"}
+                {item.amount != null ? formatRupiah(item.amount) : "-"}
+              </span>
+              <MutasiStatusBadge status={item.status} />
+            </div>
 
-          <Separator />
+            <Separator />
 
-          <div className="max-h-[400px] overflow-y-auto space-y-1 pr-1">
-            {detailRows.map((row) => (
-              <div key={row.label} className="grid grid-cols-[120px_1fr] gap-2 text-sm py-0.5">
-                <span className="text-muted-foreground text-xs">{row.label}</span>
-                <span className="font-medium break-words">{row.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <div className="max-h-[400px] space-y-1 overflow-y-auto pr-1">
+              {detailRows.map((row) => (
+                <div
+                  key={row.label}
+                  className="grid grid-cols-[120px_1fr] gap-2 py-0.5 text-sm"
+                >
+                  <span className="text-xs text-muted">{row.label}</span>
+                  <span className="font-medium break-words">{row.value}</span>
+                </div>
+              ))}
+            </div>
+          </Modal.Body>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
-function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void }) {
-  const isIn = item.mutationType === "in"
-  const status = normalizeStatus(item.status)
+/** Status vendor yang tidak dikenal ditampilkan apa adanya, bukan disembunyikan. */
+function MutasiStatusBadge({ status, size }: { status: string | null; size?: "sm" }) {
+  switch (normalizeStatus(status)) {
+    case "sukses":
+      return <StatusBadge status="success" size={size}>Sukses</StatusBadge>
+    case "gagal":
+      return <StatusBadge status="error" size={size}>Gagal</StatusBadge>
+    case "proses":
+      return <StatusBadge status="warning" size={size}>Proses</StatusBadge>
+    default:
+      return <StatusBadge status="neutral" size={size}>{status ?? "-"}</StatusBadge>
+  }
+}
 
-  const statusBadge = {
-    sukses: <StatusBadge status="success" className="text-xs">Sukses</StatusBadge>,
-    gagal: <StatusBadge status="error" className="text-xs">Gagal</StatusBadge>,
-    proses: <StatusBadge status="warning" className="text-xs">Proses</StatusBadge>,
-    unknown: <Badge variant="outline" className="text-xs">{item.status ?? "-"}</Badge>,
-  }[status]
+function MutasiRow({ item, onPress }: { item: MutasiItem; onPress: () => void }) {
+  const isIn = item.mutationType === "in"
 
   return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-default/50 cursor-pointer"
-      onClick={onClick}
+    <Button
+      className="h-auto w-full justify-start gap-3 p-3 text-left"
+      variant="outline"
+      onPress={onPress}
     >
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-        isIn
-          ? "bg-green-100 dark:bg-green-950"
-          : "bg-red-100 dark:bg-red-950"
-      }`}>
+      <span
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+          isIn ? "bg-success-soft" : "bg-danger-soft"
+        }`}
+      >
         {isIn ? (
-          <ArrowDownCircle className="h-5 w-5 text-green-600" />
+          <ArrowDownCircle className="h-5 w-5 text-success" />
         ) : (
-          <ArrowUpCircle className="h-5 w-5 text-red-600" />
+          <ArrowUpCircle className="h-5 w-5 text-danger" />
         )}
-      </div>
+      </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">
             {item.description ?? (isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment)}
           </span>
-          {statusBadge}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <MutasiStatusBadge size="sm" status={item.status} />
+        </span>
+        <span className="flex items-center gap-2 text-xs text-muted">
           <span>{formatDateTime(item.createdAt)}</span>
           {item.reference && (
             <>
@@ -263,20 +267,21 @@ function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void })
               <span className="truncate">{item.reference}</span>
             </>
           )}
-        </div>
-      </div>
+        </span>
+      </span>
 
-      <div className="text-right shrink-0">
-        <p className={`text-sm font-semibold ${
-          isIn ? "text-green-600" : "text-red-600"
-        }`}>
-          {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
-        </p>
+      <span className="shrink-0 text-right">
+        <span
+          className={`block text-sm font-semibold ${isIn ? "text-success" : "text-danger"}`}
+        >
+          {isIn ? "+" : "-"}
+          {item.amount != null ? formatRupiah(item.amount) : "-"}
+        </span>
         {item.paymentMethod && (
-          <p className="text-xs text-muted-foreground">{item.paymentMethod}</p>
+          <span className="block text-xs text-muted">{item.paymentMethod}</span>
         )}
-      </div>
-    </button>
+      </span>
+    </Button>
   )
 }
 
@@ -355,16 +360,21 @@ export function PpobMutasi() {
     <div className="space-y-5 p-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
+        <Button
+          aria-label={i18n.common.back}
+          isIconOnly
+          variant="ghost"
+          onPress={() => navigate("/ppob")}
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.mutasiTitle}</h1>
         <div className="ml-auto">
           <Button
-            variant="outline"
+            isDisabled={isFetching}
             size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
+            variant="outline"
+            onPress={() => refetch()}
           >
             {isFetching ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -378,26 +388,26 @@ export function PpobMutasi() {
 
       {/* Saldo + Summary Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">{i18n.ppob.saldo}</p>
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted">{i18n.ppob.saldo}</p>
           <p className="text-xl font-bold">
             {saldoData ? formatRupiah(saldoData.saldo) : "-"}
           </p>
         </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Total Masuk ({summary.countIn} trx)</p>
-          <p className="text-xl font-bold text-green-600">
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted">Total Masuk ({summary.countIn} trx)</p>
+          <p className="text-xl font-bold text-success">
             +{formatRupiah(summary.totalIn)}
           </p>
           {undatedIn > 0 && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-[11px] text-muted">
               Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
             </p>
           )}
         </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Total Keluar ({summary.countOut} trx)</p>
-          <p className="text-xl font-bold text-red-600">
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted">Total Keluar ({summary.countOut} trx)</p>
+          <p className="text-xl font-bold text-danger">
             -{formatRupiah(summary.totalOut)}
           </p>
         </div>
@@ -407,17 +417,26 @@ export function PpobMutasi() {
       <div className="flex flex-wrap items-center gap-3">
         <DateRangePicker value={dateRange} onChange={setDateRange} align="start" />
 
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TYPE_FILTER_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
+        <Select
+          aria-label="Filter jenis mutasi"
+          className="w-[140px]"
+          value={typeFilter}
+          onChange={(value) => setTypeFilter(String(value))}
+        >
+          <Select.Trigger>
+            <Select.Value>{selectedText}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {TYPE_FILTER_OPTIONS.map((opt) => (
+                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                  <Label>{opt.label}</Label>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
         </Select>
       </div>
 
@@ -430,16 +449,16 @@ export function PpobMutasi() {
         </div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-destructive font-medium mb-1">Gagal memuat mutasi</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="mb-1 font-medium text-danger">Gagal memuat mutasi</p>
+          <p className="text-sm text-muted">
             {error instanceof Error ? error.message : "Terjadi kesalahan"}
           </p>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Search className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="font-medium mb-1">{i18n.ppob.mutasiNoData}</p>
-          <p className="text-sm text-muted-foreground">
+          <Search className="mb-3 h-10 w-10 text-muted" />
+          <p className="mb-1 font-medium">{i18n.ppob.mutasiNoData}</p>
+          <p className="text-sm text-muted">
             Tidak ditemukan mutasi pada rentang tanggal yang dipilih
           </p>
         </div>
@@ -449,7 +468,7 @@ export function PpobMutasi() {
             <MutasiRow
               key={item.id ?? index}
               item={item}
-              onClick={() => setSelectedItem(item)}
+              onPress={() => setSelectedItem(item)}
             />
           ))}
         </div>

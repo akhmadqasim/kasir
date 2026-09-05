@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { Button, Modal, Pagination, Separator, Skeleton } from "@heroui/react"
 import {
   ArrowLeft,
   RefreshCw,
@@ -8,20 +9,9 @@ import {
   Info,
   CreditCard,
   CheckCheck,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
+
+import { StatusBadge } from "@/components/status-badge"
 import { id as i18n } from "@/i18n/id"
 import {
   usePpobNotifications,
@@ -32,22 +22,41 @@ import type { NotificationItem } from "../../types"
 
 const ITEMS_PER_PAGE = 20
 
-function getCategoryIcon(category: string) {
-  switch (category.toUpperCase()) {
-    case "TRANSAKSI":
-      return <CreditCard className="h-4 w-4 text-blue-600" />
-    default:
-      return <Info className="h-4 w-4 text-amber-600" />
-  }
+function CategoryIcon({ category }: { category: string }) {
+  return category.toUpperCase() === "TRANSAKSI" ? (
+    <CreditCard className="h-4 w-4 text-accent" />
+  ) : (
+    <Info className="h-4 w-4 text-warning" />
+  )
 }
 
-function getCategoryStyle(category: string) {
-  switch (category.toUpperCase()) {
-    case "TRANSAKSI":
-      return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300"
-    default:
-      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+/** Transaksi dan pengumuman dibedakan warnanya, bukan cuma teksnya. */
+function CategoryBadge({ category }: { category: string }) {
+  return (
+    <StatusBadge
+      size="sm"
+      status={category.toUpperCase() === "TRANSAKSI" ? "info" : "warning"}
+    >
+      {category}
+    </StatusBadge>
+  )
+}
+
+/** Halaman pertama, terakhir, halaman aktif dan tetangganya; sisanya jadi elipsis. */
+function getPageNumbers(page: number, totalPages: number): (number | "ellipsis")[] {
+  const pages: (number | "ellipsis")[] = []
+
+  for (let candidate = 1; candidate <= totalPages; candidate++) {
+    const isEdge = candidate === 1 || candidate === totalPages
+    if (!isEdge && Math.abs(candidate - page) > 1) continue
+    const previous = pages[pages.length - 1]
+    if (typeof previous === "number" && candidate - previous > 1) {
+      pages.push("ellipsis")
+    }
+    pages.push(candidate)
   }
+
+  return pages
 }
 
 function formatDate(dateStr: string | null): string {
@@ -76,30 +85,30 @@ function NotificationDetailDialog({
   onOpenChange: (open: boolean) => void
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {getCategoryIcon(item.category)}
-            {item.category}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {formatDate(item.createdAt)}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label={item.category}>
+          <Modal.Header>
+            <Modal.Heading className="flex items-center gap-2">
+              <CategoryIcon category={item.category} />
+              {item.category}
+            </Modal.Heading>
+            <Modal.CloseTrigger />
+          </Modal.Header>
 
-        <Separator />
+          <Modal.Body className="space-y-3">
+            <p className="text-xs text-muted">{formatDate(item.createdAt)}</p>
 
-        <div className="space-y-3">
-          {item.title && item.title !== item.category && (
-            <p className="font-semibold text-sm">{item.title}</p>
-          )}
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-            {item.message}
-          </p>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <Separator />
+
+            {item.title && item.title !== item.category && (
+              <p className="text-sm font-semibold">{item.title}</p>
+            )}
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{item.message}</p>
+          </Modal.Body>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -125,13 +134,10 @@ export function PpobNotifications() {
   const totalPages = data?.totalPages ?? 1
   const totalCount = data?.totalCount ?? 0
 
-  const handleItemClick = (item: NotificationItem) => {
+  const handleItemPress = (item: NotificationItem) => {
     setSelectedItem(item)
     if (item.status === "unread") {
-      markRead.mutate(
-        { inboxId: item.inboxId },
-        { onSuccess: () => refetch() }
-      )
+      markRead.mutate({ inboxId: item.inboxId }, { onSuccess: () => refetch() })
     }
   }
 
@@ -144,23 +150,28 @@ export function PpobNotifications() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
+          <Button
+            aria-label={i18n.common.back}
+            isIconOnly
+            variant="ghost"
+            onPress={() => navigate("/ppob")}
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.notifications}</h1>
           {unreadCount > 0 && (
-            <Badge variant="destructive" className="text-xs px-2">
+            <StatusBadge size="sm" status="error">
               {unreadCount}
-            </Badge>
+            </StatusBadge>
           )}
         </div>
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
             <Button
-              variant="outline"
+              isDisabled={markAllRead.isPending}
               size="sm"
-              onClick={handleMarkAllRead}
-              disabled={markAllRead.isPending}
+              variant="outline"
+              onPress={handleMarkAllRead}
             >
               {markAllRead.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -171,10 +182,11 @@ export function PpobNotifications() {
             </Button>
           )}
           <Button
+            aria-label="Muat ulang dari Mitra"
+            isDisabled={isRefetching}
+            isIconOnly
             variant="outline"
-            size="icon"
-            title="Muat ulang dari Mitra"
-            onClick={() => {
+            onPress={() => {
               // The first press switches to the forced key, which fetches on its
               // own; later presses are plain refetches of that same forced key.
               if (forceRefresh) {
@@ -183,7 +195,6 @@ export function PpobNotifications() {
                 setForceRefresh(true)
               }
             }}
-            disabled={isRefetching}
           >
             <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
           </Button>
@@ -199,15 +210,15 @@ export function PpobNotifications() {
         </div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-destructive font-medium mb-1">Gagal memuat pemberitahuan</p>
-          <p className="text-sm text-muted-foreground">Silakan coba lagi nanti</p>
+          <Bell className="mb-3 h-10 w-10 text-muted" />
+          <p className="mb-1 font-medium text-danger">Gagal memuat pemberitahuan</p>
+          <p className="text-sm text-muted">Silakan coba lagi nanti</p>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="font-medium mb-1">{i18n.ppob.noNotifications}</p>
-          <p className="text-sm text-muted-foreground">Belum ada pemberitahuan saat ini</p>
+          <Bell className="mb-3 h-10 w-10 text-muted" />
+          <p className="mb-1 font-medium">{i18n.ppob.noNotifications}</p>
+          <p className="text-sm text-muted">Belum ada pemberitahuan saat ini</p>
         </div>
       ) : (
         <>
@@ -216,89 +227,72 @@ export function PpobNotifications() {
             {items.map((item, idx) => {
               const isUnread = item.status === "unread"
               return (
-                <button
+                <Button
                   key={item.inboxId || idx}
-                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-default/50 cursor-pointer ${
-                    isUnread ? "bg-card" : "bg-default/20"
+                  className={`h-auto w-full flex-col items-start gap-1 p-3 text-left ${
+                    isUnread ? "" : "bg-default/20"
                   }`}
-                  onClick={() => handleItemClick(item)}
+                  variant="outline"
+                  onPress={() => handleItemPress(item)}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className={`text-xs font-bold ${getCategoryStyle(item.category)}`}>
-                        {item.category}
-                      </Badge>
-                      {isUnread && (
-                        <span className="h-2 w-2 rounded-full bg-red-500" />
-                      )}
-                    </div>
-                    <p className={`text-sm line-clamp-2 ${isUnread ? "font-medium" : "text-muted-foreground"}`}>
-                      {item.message}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatDate(item.createdAt)}
-                    </p>
-                  </div>
-                </button>
+                  <span className="flex items-center gap-2">
+                    <CategoryBadge category={item.category} />
+                    {isUnread && <span className="h-2 w-2 rounded-full bg-danger" />}
+                  </span>
+                  <span
+                    className={`line-clamp-2 text-sm ${
+                      isUnread ? "font-medium" : "text-muted"
+                    }`}
+                  >
+                    {item.message}
+                  </span>
+                  <span className="text-xs text-muted">{formatDate(item.createdAt)}</span>
+                </Button>
               )
             })}
           </div>
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2">
-              <p className="text-sm text-muted-foreground">
+            <Pagination className="pt-2" size="sm">
+              <Pagination.Summary>
                 Halaman {currentPage} dari {totalPages} ({totalCount} pemberitahuan)
-              </p>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage((p) => p - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((page) => {
-                    // Show first, last, current, and neighbors
-                    return page === 1 || page === totalPages ||
-                      Math.abs(page - currentPage) <= 1
-                  })
-                  .reduce<(number | "ellipsis")[]>((acc, page, idx, arr) => {
-                    if (idx > 0 && page - (arr[idx - 1] as number) > 1) {
-                      acc.push("ellipsis")
-                    }
-                    acc.push(page)
-                    return acc
-                  }, [])
-                  .map((item, idx) =>
-                    item === "ellipsis" ? (
-                      <span key={`e-${idx}`} className="px-1 text-muted-foreground">…</span>
-                    ) : (
-                      <Button
-                        key={item}
-                        variant={currentPage === item ? "default" : "outline"}
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => setCurrentPage(item)}
+              </Pagination.Summary>
+              <Pagination.Content>
+                <Pagination.Item>
+                  <Pagination.Previous
+                    isDisabled={currentPage <= 1}
+                    onPress={() => setCurrentPage((page) => page - 1)}
+                  >
+                    <Pagination.PreviousIcon />
+                  </Pagination.Previous>
+                </Pagination.Item>
+                {getPageNumbers(currentPage, totalPages).map((page, index) =>
+                  page === "ellipsis" ? (
+                    <Pagination.Item key={`ellipsis-${index}`}>
+                      <Pagination.Ellipsis />
+                    </Pagination.Item>
+                  ) : (
+                    <Pagination.Item key={page}>
+                      <Pagination.Link
+                        isActive={page === currentPage}
+                        onPress={() => setCurrentPage(page)}
                       >
-                        {item}
-                      </Button>
-                    )
-                  )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => p + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+                        {page}
+                      </Pagination.Link>
+                    </Pagination.Item>
+                  )
+                )}
+                <Pagination.Item>
+                  <Pagination.Next
+                    isDisabled={currentPage >= totalPages}
+                    onPress={() => setCurrentPage((page) => page + 1)}
+                  >
+                    <Pagination.NextIcon />
+                  </Pagination.Next>
+                </Pagination.Item>
+              </Pagination.Content>
+            </Pagination>
           )}
         </>
       )}

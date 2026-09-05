@@ -1,11 +1,8 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Button, Card, Input, Label, SearchField, Skeleton, TextField } from "@heroui/react"
+import { ArrowLeft } from "lucide-react"
+
 import { id } from "@/i18n/id"
 import { usePpobMenu, usePpSubMenu } from "../hooks"
 import type { PpobMenuGroup, PpSubMenuItem } from "../types"
@@ -54,7 +51,7 @@ export function PpFlow() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={handleBack}>
+        <Button aria-label={id.common.back} isIconOnly variant="ghost" onPress={handleBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -77,20 +74,17 @@ export function PpFlow() {
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {groups?.map((group) => (
-                    <Card
+                    <Button
                       key={group.id}
-                      className="cursor-pointer transition-colors hover:bg-default"
-                      onClick={() => setSelectedGroup(group)}
+                      className="h-auto flex-col gap-2 py-6"
+                      variant="outline"
+                      onPress={() => setSelectedGroup(group)}
                     >
-                      <CardContent className="flex flex-col items-center gap-2 py-6">
-                        {group.pathIcon && (
-                          <img src={group.pathIcon} alt={group.group} className="h-8 w-8" />
-                        )}
-                        <span className="text-sm font-medium text-center">
-                          {group.group}
-                        </span>
-                      </CardContent>
-                    </Card>
+                      {group.pathIcon && (
+                        <img src={group.pathIcon} alt={group.group} className="h-8 w-8" />
+                      )}
+                      <span className="text-center text-sm font-medium">{group.group}</span>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -100,15 +94,18 @@ export function PpFlow() {
           {/* Step 2: Merchant Selection */}
           {selectedGroup && !selectedMerchant && (
             <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={id.ppob.searchMerchant}
-                  value={merchantSearch}
-                  onChange={(e) => setMerchantSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
+              <SearchField
+                aria-label={id.ppob.searchMerchant}
+                className="max-w-sm"
+                value={merchantSearch}
+                onChange={setMerchantSearch}
+              >
+                <SearchField.Group>
+                  <SearchField.SearchIcon />
+                  <SearchField.Input placeholder={id.ppob.searchMerchant} />
+                  <SearchField.ClearButton />
+                </SearchField.Group>
+              </SearchField>
 
               {subMenuLoading ? (
                 <div className="space-y-2">
@@ -117,34 +114,28 @@ export function PpFlow() {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto">
                   {filteredMerchants.map((item) => (
-                    <Card
+                    <Button
                       key={item.id}
-                      className={`cursor-pointer transition-colors hover:bg-default ${
-                        item.isTrouble ? "opacity-50" : ""
-                      }`}
-                      onClick={() => {
-                        if (!item.isTrouble) setSelectedMerchant(item)
-                      }}
+                      className="h-auto w-full justify-start gap-3 px-4 py-4 text-left"
+                      isDisabled={Boolean(item.isTrouble)}
+                      variant="outline"
+                      onPress={() => setSelectedMerchant(item)}
                     >
-                      <CardContent className="py-4 flex items-center gap-3">
-                        {item.pathIcon && (
-                          <img src={item.pathIcon} alt={item.merchant} className="h-8 w-8" />
+                      {item.pathIcon && (
+                        <img src={item.pathIcon} alt={item.merchant} className="h-8 w-8" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block font-medium">{item.merchant}</span>
+                        {item.description && (
+                          <span className="block text-sm text-muted">{item.description}</span>
                         )}
-                        <div>
-                          <p className="font-medium">{item.merchant}</p>
-                          {item.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {item.description}
-                            </p>
-                          )}
-                          {item.label && (
-                            <p className="text-xs text-muted-foreground">{item.label}</p>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                        {item.label && (
+                          <span className="block text-xs text-muted">{item.label}</span>
+                        )}
+                      </span>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -154,28 +145,21 @@ export function PpFlow() {
           {/* Step 3: Payment Code Input */}
           {selectedMerchant && (
             <Card>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{selectedMerchant.merchant}</p>
-                    {selectedMerchant.description && (
-                      <p className="text-sm text-muted-foreground">
-                        {selectedMerchant.description}
-                      </p>
-                    )}
-                  </div>
+              <Card.Content className="space-y-4">
+                <div>
+                  <p className="font-medium">{selectedMerchant.merchant}</p>
+                  {selectedMerchant.description && (
+                    <p className="text-sm text-muted">{selectedMerchant.description}</p>
+                  )}
                 </div>
-                <div className="space-y-2">
+                <TextField fullWidth value={paymentCode} onChange={setPaymentCode}>
                   <Label className="text-base">{id.ppob.paymentCode}</Label>
                   <Input
-                    type="text"
+                    className="h-12 font-mono text-xl"
                     placeholder={id.ppob.paymentCodePlaceholder}
-                    value={paymentCode}
-                    onChange={(e) => setPaymentCode(e.target.value)}
-                    className="font-mono text-xl md:text-xl h-12"
                   />
-                </div>
-              </CardContent>
+                </TextField>
+              </Card.Content>
             </Card>
           )}
         </div>
@@ -183,30 +167,30 @@ export function PpFlow() {
         <div className="col-span-4">
           <div className="sticky top-6">
             {selectedMerchant && paymentCode.length >= 6 ? (
-              <Card className="border-primary">
-                <CardHeader>
-                  <CardTitle className="text-lg">{id.ppob.confirm}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+              <Card className="border-accent">
+                <Card.Header>
+                  <Card.Title className="text-lg">{id.ppob.confirm}</Card.Title>
+                </Card.Header>
+                <Card.Content className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectGroup}</span>
+                    <span className="text-muted">{id.ppob.selectGroup}</span>
                     <span className="font-medium">{selectedGroup?.group}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectMerchant}</span>
+                    <span className="text-muted">{id.ppob.selectMerchant}</span>
                     <span className="font-medium">{selectedMerchant.merchant}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.paymentCode}</span>
+                    <span className="text-muted">{id.ppob.paymentCode}</span>
                     <span className="font-mono text-base font-medium">{paymentCode}</span>
                   </div>
-                  <Button className="w-full mt-4" size="lg" disabled>
+                  <Button className="mt-4 w-full" isDisabled size="lg">
                     {id.ppob.process} (Coming Soon)
                   </Button>
-                </CardContent>
+                </Card.Content>
               </Card>
             ) : groups ? (
-              <div className="text-sm text-muted-foreground text-center py-8">
+              <div className="py-8 text-center text-sm text-muted">
                 Pilih produk untuk melihat konfirmasi
               </div>
             ) : null}

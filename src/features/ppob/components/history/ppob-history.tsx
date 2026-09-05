@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
+import { Button, Skeleton } from "@heroui/react"
 import { ArrowLeft, Search } from "lucide-react"
+
 import type { DateRange } from "@/lib/date-range"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import { id as i18n } from "@/i18n/id"
 import { toLocalDateString } from "@/lib/format"
 import { usePpobHistory } from "../../hooks"
@@ -44,7 +44,12 @@ export function PpobHistory() {
   return (
     <div className="space-y-5 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
+        <Button
+          aria-label={i18n.common.back}
+          isIconOnly
+          variant="ghost"
+          onPress={() => navigate("/ppob")}
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.history}</h1>
@@ -67,16 +72,16 @@ export function PpobHistory() {
         </div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-destructive font-medium mb-1">Gagal memuat riwayat</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="mb-1 font-medium text-danger">Gagal memuat riwayat</p>
+          <p className="text-sm text-muted">
             {error instanceof Error ? error.message : "Terjadi kesalahan"}
           </p>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Search className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="font-medium mb-1">Tidak ada transaksi</p>
-          <p className="text-sm text-muted-foreground">
+          <Search className="mb-3 h-10 w-10 text-muted" />
+          <p className="mb-1 font-medium">Tidak ada transaksi</p>
+          <p className="text-sm text-muted">
             Tidak ditemukan riwayat pada rentang tanggal yang dipilih
           </p>
         </div>

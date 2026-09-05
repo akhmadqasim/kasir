@@ -1,13 +1,7 @@
 import { Routes, Route, useNavigate } from "react-router-dom"
-import {
-  RefreshCw,
-  History,
-  ArrowUpDown,
-  Bell,
-} from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Button, Card, Skeleton } from "@heroui/react"
+import { RefreshCw, History, ArrowUpDown, Bell } from "lucide-react"
+
 import { id } from "@/i18n/id"
 import { usePpobSaldo } from "../hooks"
 import { PPOB_SERVICES, PPOB_SERVICE_COLORS } from "../constants"
@@ -30,22 +24,22 @@ function SaldoCard() {
   if (error) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-between py-4">
+        <Card.Content className="flex items-center justify-between py-4">
           <div>
-            <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
-            <p className="text-sm text-destructive">{id.ppob.notConfigured}</p>
-            <p className="text-xs text-muted-foreground">{id.ppob.configureInSettings}</p>
+            <p className="text-sm text-muted">{id.ppob.saldo}</p>
+            <p className="text-sm text-danger">{id.ppob.notConfigured}</p>
+            <p className="text-xs text-muted">{id.ppob.configureInSettings}</p>
           </div>
-        </CardContent>
+        </Card.Content>
       </Card>
     )
   }
 
   return (
     <Card>
-      <CardContent className="flex items-center justify-between py-4">
+      <Card.Content className="flex items-center justify-between py-4">
         <div>
-          <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
+          <p className="text-sm text-muted">{id.ppob.saldo}</p>
           {isLoading ? (
             <Skeleton className="h-8 w-48" />
           ) : (
@@ -53,16 +47,21 @@ function SaldoCard() {
               <p className="text-2xl font-bold">
                 Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted">
                 {id.ppob.connectionInfo}: {data?.username}
               </p>
             </>
           )}
         </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()}>
+        <Button
+          aria-label="Muat ulang saldo"
+          isIconOnly
+          variant="ghost"
+          onPress={() => refetch()}
+        >
           <RefreshCw className="h-4 w-4" />
         </Button>
-      </CardContent>
+      </Card.Content>
     </Card>
   )
 }
@@ -73,14 +72,15 @@ function ServiceGrid() {
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {PPOB_SERVICES.map((svc) => (
-        <button
+        <Button
           key={svc.key}
-          className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => navigate(svc.path)}
+          className="h-auto flex-col gap-2 p-4"
+          variant="outline"
+          onPress={() => navigate(svc.path)}
         >
           <svc.icon className={`h-7 w-7 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
-          <span className="text-sm font-medium text-center">{svc.label}</span>
-        </button>
+          <span className="text-center text-sm font-medium">{svc.label}</span>
+        </Button>
       ))}
     </div>
   )
@@ -94,15 +94,15 @@ function PpobHome() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{id.ppob.title}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate("notifications")}>
+          <Button size="sm" variant="outline" onPress={() => navigate("notifications")}>
             <Bell className="mr-2 h-4 w-4" />
             {id.ppob.notifications}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("mutasi")}>
+          <Button size="sm" variant="outline" onPress={() => navigate("mutasi")}>
             <ArrowUpDown className="mr-2 h-4 w-4" />
             {id.ppob.mutasi}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("history")}>
+          <Button size="sm" variant="outline" onPress={() => navigate("history")}>
             <History className="mr-2 h-4 w-4" />
             {id.ppob.history}
           </Button>

@@ -1,11 +1,8 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Button, Card, Input, Label, SearchField, Skeleton, TextField } from "@heroui/react"
+import { ArrowLeft } from "lucide-react"
+
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { useTransferChannels } from "../hooks"
@@ -43,10 +40,20 @@ export function TransferFlow() {
     senderName.trim().length > 0 &&
     senderPhone.length >= 8
 
+  const resetChannel = () => {
+    setSelectedChannel(null)
+    setSelectedDetail(null)
+  }
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
+        <Button
+          aria-label={id.common.back}
+          isIconOnly
+          variant="ghost"
+          onPress={() => navigate("/ppob")}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -60,15 +67,18 @@ export function TransferFlow() {
           {/* Bank Selection */}
           {!selectedChannel && (
             <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={id.ppob.searchBank}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
+              <SearchField
+                aria-label={id.ppob.searchBank}
+                className="max-w-sm"
+                value={search}
+                onChange={setSearch}
+              >
+                <SearchField.Group>
+                  <SearchField.SearchIcon />
+                  <SearchField.Input placeholder={id.ppob.searchBank} />
+                  <SearchField.ClearButton />
+                </SearchField.Group>
+              </SearchField>
 
               {isLoading ? (
                 <div className="space-y-2">
@@ -77,25 +87,24 @@ export function TransferFlow() {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto">
                   {filtered.map((ch) => (
-                    <Card
+                    <Button
                       key={ch.channel}
-                      className="cursor-pointer transition-colors hover:bg-default"
-                      onClick={() => {
+                      className="h-auto w-full flex-col items-start gap-0.5 px-4 py-4 text-left"
+                      variant="outline"
+                      onPress={() => {
                         setSelectedChannel(ch)
                         if (ch.details.length === 1) {
                           setSelectedDetail(ch.details[0])
                         }
                       }}
                     >
-                      <CardContent className="py-4">
-                        <p className="font-medium">{ch.channel}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {ch.details.length} {ch.details.length === 1 ? "tipe" : "tipe"} transfer
-                        </p>
-                      </CardContent>
-                    </Card>
+                      <span className="font-medium">{ch.channel}</span>
+                      <span className="text-sm text-muted">
+                        {ch.details.length} tipe transfer
+                      </span>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -105,56 +114,47 @@ export function TransferFlow() {
           {/* Channel Detail Selection (if multiple) */}
           {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">{selectedChannel.channel}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
+              <Card.Header>
+                <Card.Title className="text-lg">{selectedChannel.channel}</Card.Title>
+              </Card.Header>
+              <Card.Content className="space-y-2">
                 {selectedChannel.details.map((detail) => (
-                  <Card
+                  <Button
                     key={detail.channelId}
-                    className="cursor-pointer transition-colors hover:bg-default"
-                    onClick={() => setSelectedDetail(detail)}
+                    className="h-auto w-full justify-between px-4 py-3"
+                    variant="outline"
+                    onPress={() => setSelectedDetail(detail)}
                   >
-                    <CardContent className="py-3 flex justify-between items-center">
-                      <span className="font-medium">{detail.transferType}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {id.ppob.fee}: {formatRupiah(detail.fee)}
-                      </span>
-                    </CardContent>
-                  </Card>
+                    <span className="font-medium">{detail.transferType}</span>
+                    <span className="text-sm text-muted">
+                      {id.ppob.fee}: {formatRupiah(detail.fee)}
+                    </span>
+                  </Button>
                 ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setSelectedChannel(null)
-                    setSelectedDetail(null)
-                  }}
-                >
+                <Button className="mt-2" size="sm" variant="outline" onPress={resetChannel}>
                   Ganti Bank
                 </Button>
-              </CardContent>
+              </Card.Content>
             </Card>
           )}
 
           {/* Transfer Form */}
           {selectedChannel && selectedDetail && (
             <Card>
-              <CardContent className="space-y-4">
+              <Card.Content className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">{selectedChannel.channel}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedDetail.transferType} — {id.ppob.fee}: {formatRupiah(selectedDetail.fee)}
+                    <p className="text-sm text-muted">
+                      {selectedDetail.transferType} — {id.ppob.fee}:{" "}
+                      {formatRupiah(selectedDetail.fee)}
                     </p>
                   </div>
                   <Button
-                    variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setSelectedChannel(null)
-                      setSelectedDetail(null)
+                    variant="outline"
+                    onPress={() => {
+                      resetChannel()
                       setAccountNumber("")
                       setAmount("")
                       setDescription("")
@@ -167,60 +167,56 @@ export function TransferFlow() {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                  <TextField
+                    fullWidth
+                    value={accountNumber}
+                    onChange={(value) => setAccountNumber(value.replace(/\D/g, ""))}
+                  >
                     <Label className="text-base">{id.ppob.accountNumber}</Label>
                     <Input
-                      type="text"
+                      className="h-12 font-mono text-xl"
+                      inputMode="numeric"
                       placeholder={id.ppob.accountNumberPlaceholder}
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
-                      className="font-mono text-xl md:text-xl h-12"
                     />
-                  </div>
+                  </TextField>
 
-                  <div className="space-y-2">
+                  <TextField
+                    fullWidth
+                    value={amount}
+                    onChange={(value) => setAmount(value.replace(/\D/g, ""))}
+                  >
                     <Label className="text-base">{id.ppob.amount}</Label>
                     <Input
-                      type="text"
+                      className="h-12 font-mono text-xl"
+                      inputMode="numeric"
                       placeholder={id.ppob.amountPlaceholder}
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
-                      className="font-mono text-xl md:text-xl h-12"
                     />
-                  </div>
+                  </TextField>
 
-                  <div className="space-y-2">
+                  <TextField fullWidth value={description} onChange={setDescription}>
                     <Label>{id.ppob.description}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.descriptionPlaceholder}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
-                  </div>
+                    <Input placeholder={id.ppob.descriptionPlaceholder} />
+                  </TextField>
 
-                  <div className="space-y-2">
+                  <TextField fullWidth value={senderName} onChange={setSenderName}>
                     <Label>{id.ppob.senderName}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.senderNamePlaceholder}
-                      value={senderName}
-                      onChange={(e) => setSenderName(e.target.value)}
-                    />
-                  </div>
+                    <Input placeholder={id.ppob.senderNamePlaceholder} />
+                  </TextField>
 
-                  <div className="space-y-2">
+                  <TextField
+                    fullWidth
+                    value={senderPhone}
+                    onChange={(value) => setSenderPhone(value.replace(/\D/g, ""))}
+                  >
                     <Label>{id.ppob.senderPhone}</Label>
                     <Input
-                      type="tel"
-                      placeholder={id.ppob.senderPhonePlaceholder}
-                      value={senderPhone}
-                      onChange={(e) => setSenderPhone(e.target.value.replace(/\D/g, ""))}
                       className="font-mono"
+                      inputMode="tel"
+                      placeholder={id.ppob.senderPhonePlaceholder}
                     />
-                  </div>
+                  </TextField>
                 </div>
-              </CardContent>
+              </Card.Content>
             </Card>
           )}
         </div>
@@ -228,54 +224,54 @@ export function TransferFlow() {
         <div className="col-span-4">
           <div className="sticky top-6">
             {selectedChannel && selectedDetail && isFormValid ? (
-              <Card className="border-primary">
-                <CardHeader>
-                  <CardTitle className="text-lg">{id.ppob.confirm}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+              <Card className="border-accent">
+                <Card.Header>
+                  <Card.Title className="text-lg">{id.ppob.confirm}</Card.Title>
+                </Card.Header>
+                <Card.Content className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectBank}</span>
+                    <span className="text-muted">{id.ppob.selectBank}</span>
                     <span className="font-medium">{selectedChannel.channel}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.accountNumber}</span>
+                    <span className="text-muted">{id.ppob.accountNumber}</span>
                     <span className="font-mono text-base font-medium">{accountNumber}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.amount}</span>
+                    <span className="text-muted">{id.ppob.amount}</span>
                     <span className="font-medium">{formatRupiah(amountNum)}</span>
                   </div>
                   {description && (
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">{id.ppob.description}</span>
+                      <span className="text-muted">{id.ppob.description}</span>
                       <span>{description}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.senderName}</span>
+                    <span className="text-muted">{id.ppob.senderName}</span>
                     <span>{senderName}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.senderPhone}</span>
+                    <span className="text-muted">{id.ppob.senderPhone}</span>
                     <span className="font-mono text-base font-medium">{senderPhone}</span>
                   </div>
-                  <div className="border-t pt-3 mt-3 space-y-2">
+                  <div className="mt-3 space-y-2 border-t pt-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{id.ppob.fee}</span>
+                      <span className="text-muted">{id.ppob.fee}</span>
                       <span>{formatRupiah(fee)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">{id.ppob.totalPayment}</span>
+                      <span className="font-medium text-muted">{id.ppob.totalPayment}</span>
                       <span className="text-lg font-bold">{formatRupiah(total)}</span>
                     </div>
                   </div>
-                  <Button className="w-full mt-4" size="lg" disabled>
+                  <Button className="mt-4 w-full" isDisabled size="lg">
                     {id.ppob.process} (Coming Soon)
                   </Button>
-                </CardContent>
+                </Card.Content>
               </Card>
             ) : channels ? (
-              <div className="text-sm text-muted-foreground text-center py-8">
+              <div className="py-8 text-center text-sm text-muted">
                 Pilih produk untuk melihat konfirmasi
               </div>
             ) : null}
