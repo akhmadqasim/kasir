@@ -45,13 +45,13 @@ const LINE: CartItem = {
   unit: "pcs",
 }
 
-function renderDialog() {
+function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <PaymentDialog open onOpenChange={() => {}} onSuccess={() => {}} />
+      <PaymentDialog open onOpenChange={onOpenChange} onSuccess={() => {}} />
     </QueryClientProvider>
   )
 }
@@ -153,6 +153,16 @@ describe("payment dialog", () => {
 
     expect(await screen.findByLabelText("Nominal QRIS")).toBeInTheDocument()
     expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+  })
+
+  it("closes on Escape", async () => {
+    const onOpenChange = vi.fn()
+    renderDialog(onOpenChange)
+    const field = await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.keyDown(field, { key: "Escape" })
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })
 
   it("asks for a bank before a transfer can be confirmed", async () => {

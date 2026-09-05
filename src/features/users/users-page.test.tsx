@@ -96,6 +96,25 @@ describe("halaman manajemen user", () => {
     })
   })
 
+  /**
+   * HeroUI mematikan Escape pada `AlertDialog` secara bawaan; dialog Radix yang
+   * digantikannya tidak. Kasir dan admin sama-sama menekan Escape untuk mundur.
+   */
+  it("menutup konfirmasi dengan Escape", async () => {
+    renderPage()
+
+    await screen.findByText("kasir01")
+    fireEvent.click(screen.getByRole("button", { name: "Nonaktifkan kasir01" }))
+
+    const dialog = await screen.findByRole("alertdialog")
+    fireEvent.keyDown(dialog, { key: "Escape" })
+
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+    )
+    expect(invoke).not.toHaveBeenCalledWith("toggle_user_active", expect.anything())
+  })
+
   it("mengaktifkan kembali user nonaktif tanpa konfirmasi", async () => {
     renderPage()
 
