@@ -11,6 +11,7 @@ import {
 import { sidebarMenuButtonClass, useSidebar } from "@/components/layout/sidebar-context"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useLogout } from "@/features/auth/hooks/use-auth"
 import { useCartStore } from "@/features/cashier/hooks/use-cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { UserProfileDialog } from "@/features/users/components/user-profile-dialog"
@@ -27,19 +28,26 @@ function getInitials(name: string): string {
 export function NavUser() {
   const { isMobile } = useSidebar()
   const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
+  const logout = useLogout()
   const navigate = useNavigate()
   const [profileOpen, setProfileOpen] = useState(false)
 
   const initials = user?.full_name ? getInitials(user.full_name) : "U"
 
   const handleLogout = () => {
-    logout()
-    useShiftStore.getState().clearShift()
-    // The cart is persisted to localStorage, so without this the next cashier
-    // inherits these items and checks them out under their own id.
-    useCartStore.getState().clear()
-    navigate("/login")
+    // The server drops the session row and clears the cookie; the mutation drops
+    // the cached user and the whole query cache with it. Everything below is
+    // state that lives outside React Query and would otherwise be inherited by
+    // whoever logs in next on this till.
+    logout.mutate(undefined, {
+      onSettled: () => {
+        useShiftStore.getState().clearShift()
+        // The cart is persisted to localStorage, so without this the next
+        // cashier inherits these items and rings them up as their own.
+        useCartStore.getState().clear()
+        navigate("/login")
+      },
+    })
   }
 
   const handleAction = (key: React.Key) => {

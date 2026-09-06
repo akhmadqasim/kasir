@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { createHashRouter, Navigate, RouterProvider } from "react-router-dom"
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 import { Spinner } from "@heroui/react"
 import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
@@ -55,7 +55,7 @@ function ResumeRedirect() {
   return <Navigate to={target} replace />
 }
 
-const router = createHashRouter([
+const router = createBrowserRouter([
   {
     path: "/onboarding",
     element: <LazyPage><OnboardingPage /></LazyPage>,
