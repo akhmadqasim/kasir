@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import { createIdempotencyKey } from "@/lib/api/client"
 import type { CartItem } from "../types"
 
 /** Guards against a barcode landing in a quantity field */
@@ -65,11 +66,24 @@ interface CartStore {
   holdCart: (label?: string) => void
   recallCart: (holdId: string) => void
   removeHeldCart: (holdId: string) => void
+  /**
+   * The `Idempotency-Key` this cart checks out with.
+   *
+   * `null` until the first attempt, then fixed for the life of the cart. See
+   * {@link CartStore.getCheckoutKey}.
+   */
+  checkoutKey: string | null
+  getCheckoutKey: () => string
 }
 
 type PersistedCart = Pick<
   CartStore,
-  "items" | "ppobCounter" | "heldCarts" | "itemDiscounts" | "transactionDiscount"
+  | "items"
+  | "ppobCounter"
+  | "heldCarts"
+  | "itemDiscounts"
+  | "transactionDiscount"
+  | "checkoutKey"
 >
 
 /**
@@ -98,6 +112,7 @@ export function migrateCartState(persisted: unknown, version: number): Persisted
       heldCarts,
       itemDiscounts: {},
       transactionDiscount: null,
+      checkoutKey: null,
     }
   }
 
@@ -107,6 +122,7 @@ export function migrateCartState(persisted: unknown, version: number): Persisted
     heldCarts,
     itemDiscounts: state.itemDiscounts ?? {},
     transactionDiscount: state.transactionDiscount ?? null,
+    checkoutKey: state.checkoutKey ?? null,
   }
 }
 
@@ -118,6 +134,7 @@ export const useCartStore = create<CartStore>()(
       heldCarts: [],
       itemDiscounts: {},
       transactionDiscount: null,
+      checkoutKey: null,
 
       addItem: (product) => {
         const { items } = get()
@@ -319,7 +336,44 @@ export const useCartStore = create<CartStore>()(
         return get().getCartTotals().total
       },
 
-      clear: () => set({ items: [], itemDiscounts: {}, transactionDiscount: null }),
+      /**
+       * The key this cart's checkout attempts share.
+       *
+       * Minted once, on the first attempt, and kept until the cart is emptied,
+       * held, or swapped out. That lifetime is the whole point of the header.
+       * Over IPC, a checkout either happened or it did not; over HTTP there is a
+       * third outcome — the sale committed and the answer was lost on shop wifi
+       * — and a retry from that state is indistinguishable from a request that
+       * never arrived. Reusing the key makes the server replay the first sale
+       * instead of ringing up a second one.
+       *
+       * A key per *retry* would defeat it entirely. A key per *cashier session*
+       * would be worse: the second genuine sale of the day would come back as a
+       * replay of the first.
+       *
+       * A failed attempt releases the key on the server, so correcting the cart
+       * and trying again works with the same key. It is only a *completed* key
+       * with a different body that is refused, which is exactly the case worth
+       * refusing: that sale already went through.
+       */
+      getCheckoutKey: () => {
+        const existing = get().checkoutKey
+        if (existing) return existing
+
+        const key = createIdempotencyKey()
+        set({ checkoutKey: key })
+        return key
+      },
+
+      // Emptying the cart ends the attempt the key belonged to. The next sale is
+      // a different sale and gets a different key.
+      clear: () =>
+        set({
+          items: [],
+          itemDiscounts: {},
+          transactionDiscount: null,
+          checkoutKey: null,
+        }),
 
       holdCart: (label?: string) => {
         const { items, heldCarts, itemDiscounts, transactionDiscount } = get()
@@ -345,6 +399,8 @@ export const useCartStore = create<CartStore>()(
           items: [],
           itemDiscounts: {},
           transactionDiscount: null,
+          // A held cart is a different customer. Holding one ends this attempt.
+          checkoutKey: null,
         })
       },
 
@@ -377,6 +433,7 @@ export const useCartStore = create<CartStore>()(
             items: held.items,
             itemDiscounts: heldItemDiscounts,
             transactionDiscount: heldTransactionDiscount,
+            checkoutKey: null,
           })
         } else {
           set({
@@ -384,6 +441,9 @@ export const useCartStore = create<CartStore>()(
             items: held.items,
             itemDiscounts: heldItemDiscounts,
             transactionDiscount: heldTransactionDiscount,
+            // Recalling swaps in a different customer's cart, so it starts its
+            // own attempt rather than inheriting the outgoing one's key.
+            checkoutKey: null,
           })
         }
       },
@@ -403,6 +463,10 @@ export const useCartStore = create<CartStore>()(
         heldCarts: state.heldCarts,
         itemDiscounts: state.itemDiscounts,
         transactionDiscount: state.transactionDiscount,
+        // Persisted with the cart it belongs to. A reload in the middle of a
+        // checkout is precisely the case the key exists for: the cart comes
+        // back, and so does the key that stops it being rung up twice.
+        checkoutKey: state.checkoutKey,
       }),
       migrate: migrateCartState,
     }

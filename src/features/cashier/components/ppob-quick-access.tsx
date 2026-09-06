@@ -12,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { toast } from "@/lib/toast"
-import { invoke } from "@tauri-apps/api/core"
+import { getAppSettings } from "@/lib/api/settings"
 import { useNavigate } from "react-router-dom"
 import {
   Button,
@@ -41,7 +41,6 @@ import {
 import { QUICK_ACCESS_SERVICES, PPOB_SERVICE_COLORS, type QuickAccessServiceKey } from "@/features/ppob/constants"
 import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
-import type { AppSettings } from "@/features/settings/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../ppob-pricing"
 import { formatRupiah } from "../utils"
@@ -137,8 +136,20 @@ export function PpobQuickAccess({
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({})
   const addPpobItem = useCartStore((s) => s.addPpobItem)
 
+  /**
+   * The shop's PPOB markup, which is what turns the provider's cost into the
+   * price on the counter.
+   *
+   * Known gap: `GET /api/settings` is admin-only, and this screen is a cashier's.
+   * A cashier therefore gets a 403 here and falls through to
+   * `DEFAULT_PPOB_MARKUP`, which is zero — selling at cost. The old Tauri command
+   * checked no role at all, which is exactly why it moved behind `require_admin`:
+   * it used to hand out the PPOB password with the same call. The markup itself
+   * is not a secret and needs an endpoint of its own in the session group; until
+   * there is one, this degrades quietly rather than blocking the sale.
+   */
   useEffect(() => {
-    invoke<AppSettings>("get_app_settings")
+    getAppSettings()
       .then((settings) => {
         if (settings.ppob?.markup) {
           setMarkup(settings.ppob.markup)

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { Button, Modal, Separator } from "@heroui/react"
 import { CheckCircle2, Loader2, Printer } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
 
 import { toast } from "@/lib/toast"
+import { getPrinterSettings, printReceipt } from "@/lib/api/printers"
+import { errorMessage } from "@/lib/api/client"
 import { formatRupiah } from "../utils"
+import type { PrinterSettings } from "@/features/settings/types"
 import type { TransactionResult } from "../types"
 
 /** Jeda sebelum dialog menutup sendiri setelah struk tercetak otomatis */
@@ -59,9 +61,9 @@ export function TransactionSuccessDialog({
     let closeTimer: ReturnType<typeof setTimeout> | undefined
 
     const tryAutoPrint = async () => {
-      let settings: { printer_id: string | null; auto_print: boolean | null }
+      let settings: PrinterSettings
       try {
-        settings = await invoke("get_printer_settings_cmd")
+        settings = await getPrinterSettings()
       } catch {
         // Printer belum diatur — cetak manual saja, tidak perlu diributkan
         return
@@ -73,7 +75,7 @@ export function TransactionSuccessDialog({
       autoPrintedRef.current = transaction.id
       setIsPrinting(true)
       try {
-        await invoke("print_receipt", { transactionId: transaction.id })
+        await printReceipt(transaction.id)
         if (cancelled) return
         toast.success("Struk otomatis dicetak!")
         closeTimer = setTimeout(() => onNewTransaction(), AUTO_CLOSE_DELAY_MS)
@@ -81,7 +83,7 @@ export function TransactionSuccessDialog({
         if (cancelled) return
         // Biarkan kasir mencoba lagi lewat tombol "Cetak Struk"
         autoPrintedRef.current = null
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         toast.error(
           `Struk gagal dicetak otomatis: ${message}. Gunakan tombol "Cetak Struk".`
         )
@@ -103,10 +105,10 @@ export function TransactionSuccessDialog({
   const handlePrint = async () => {
     setIsPrinting(true)
     try {
-      await invoke("print_receipt", { transactionId: transaction.id })
+      await printReceipt(transaction.id)
       toast.success("Struk berhasil dicetak!")
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       if (message.includes("belum dikonfigurasi")) {
         toast.error("Printer belum diatur. Silakan atur di menu Pengaturan.")
       } else {

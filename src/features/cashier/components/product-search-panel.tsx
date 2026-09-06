@@ -1,15 +1,25 @@
 import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
 import { Button, InputGroup, Kbd, ScrollShadow, Tabs } from "@heroui/react"
 import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { StatusBadge } from "@/components/status-badge"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import {
+  getPopularProducts,
+  searchProducts,
+  toggleProductPin,
+  trackProductSelection,
+} from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
-import type { PaginatedProducts, Product } from "@/features/products/types"
+import type {
+  PaginatedProducts,
+  Product,
+  ShortcutProduct,
+} from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
 import {
@@ -20,24 +30,8 @@ import {
 import { formatRupiah } from "../utils"
 import { PpobQuickAccess } from "./ppob-quick-access"
 
-interface ShortcutProduct {
-  id: number
-  barcode: string | null
-  sku: string | null
-  name: string
-  category_id: number | null
-  buy_price: number
-  sell_price: number
-  margin: number
-  stock: number
-  unit: string
-  min_stock: number | null
-  is_active: boolean
-  created_at: string | null
-  updated_at: string | null
-  is_pinned: boolean
-  select_count: number
-}
+/** How many shortcut tiles the cashier screen asks for. */
+const SHORTCUT_LIMIT = 30
 
 interface ProductSearchPanelProps {
   focusKey?: number
@@ -90,9 +84,14 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const { data: searchResults } = useTauriQuery<PaginatedProducts>(
-    "search_products",
-    { params: { query: debouncedQuery, per_page: 50 } },
+  const searchParams = useMemo(
+    () => ({ query: debouncedQuery, per_page: 50 }),
+    [debouncedQuery]
+  )
+
+  const { data: searchResults } = useApiQuery<PaginatedProducts>(
+    queryKeys.products.search(searchParams),
+    () => searchProducts(searchParams),
     { enabled: debouncedQuery.length > 0 }
   )
 
@@ -123,9 +122,9 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     [rankedSearchResults, selectedProductValue]
   )
 
-  const { data: shortcutProducts } = useTauriQuery<ShortcutProduct[]>(
-    "get_popular_products",
-    { limit: 30 }
+  const { data: shortcutProducts } = useApiQuery<ShortcutProduct[]>(
+    queryKeys.products.popular(SHORTCUT_LIMIT),
+    () => getPopularProducts(SHORTCUT_LIMIT)
   )
 
   const focusInput = useCallback(() => {
@@ -177,10 +176,13 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     focusInput()
   }, [focusKey, focusInput])
 
+  // Deliberately the narrowest key in the file. This fires on every item added
+  // to the cart, and invalidating all of `["products"]` here would refetch the
+  // search list on every scan.
   const trackSelection = useCallback(async (productId: number) => {
     try {
-      await invoke("track_product_selection", { productId })
-      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+      await trackProductSelection(productId)
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
     } catch {
       // Silent fail — tracking is non-critical
     }
@@ -188,9 +190,9 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
 
   const handleTogglePin = useCallback(async (productId: number) => {
     try {
-      const pinned = await invoke<boolean>("toggle_product_pin", { productId })
+      const pinned = await toggleProductPin(productId)
       toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
-      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
     } catch {
       toast.error("Gagal mengubah pin")
     }

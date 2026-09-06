@@ -46,8 +46,11 @@ export interface PaymentSplitInput {
   amount: number
 }
 
+/**
+ * The cashier is not named here. The sale is booked against whoever's session
+ * sends it — the old command took a `user_id` from the payload and believed it.
+ */
 export interface CheckoutTransactionInput {
-  user_id: number
   items: TransactionItemInput[]
   payment_method: string
   payment_amount: number

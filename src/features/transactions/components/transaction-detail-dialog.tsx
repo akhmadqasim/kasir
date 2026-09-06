@@ -1,6 +1,5 @@
 import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { invoke } from "@tauri-apps/api/core"
 import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -21,7 +20,16 @@ import {
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import {
+  getTransactionDetail,
+  retryPpobFulfillment,
+  updateTransactionPaymentMethod,
+  voidTransaction,
+} from "@/lib/api/transactions"
+import { printReceipt } from "@/lib/api/printers"
+import { errorMessage } from "@/lib/api/client"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -114,9 +122,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const [editPaymentReason, setEditPaymentReason] = useState("")
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false)
 
-  const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
-    "get_transaction_detail",
-    { transactionId: transaction?.id },
+  const { data: detail, isLoading } = useApiQuery<TransactionDetail>(
+    queryKeys.transactions.detail(transaction?.id ?? 0),
+    () => getTransactionDetail(transaction!.id),
     { enabled: !!transaction }
   )
 
@@ -133,10 +141,10 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const handlePrint = async () => {
     if (!transaction) return
     try {
-      await invoke("print_receipt", { transactionId: transaction.id })
+      await printReceipt(transaction.id)
       toast.success("Struk dicetak")
     } catch (e) {
-      toast.error(`Gagal cetak: ${e}`)
+      toast.error(`Gagal cetak: ${errorMessage(e)}`)
     }
   }
 
@@ -144,68 +152,67 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
     if (!ppobItem) return
     setIsRetrying(true)
     try {
-      await invoke("retry_ppob_fulfillment", { itemId: ppobItem.id })
+      await retryPpobFulfillment(ppobItem.id)
       toast.success("PPOB sedang diproses ulang di latar belakang")
-      queryClient.invalidateQueries({ queryKey: ["get_transaction_detail"] })
-      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+      // One prefix covers both the detail and the list; both live under
+      // `["transactions", ...]`.
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
     } catch (e) {
-      toast.error(`Gagal retry: ${e}`)
+      toast.error(`Gagal retry: ${errorMessage(e)}`)
     } finally {
       setIsRetrying(false)
     }
   }
 
   const handleDelete = async () => {
-    if (!transaction || !user) return
+    if (!transaction) return
     if (!deleteReason.trim()) {
       toast.error(id.transactions.reasonRequired)
       return
     }
     setIsDeleting(true)
     try {
-      await invoke("delete_transaction", {
-        input: {
-          transaction_id: transaction.id,
-          user_id: user.id,
-          reason: deleteReason.trim(),
-        },
-      })
+      await voidTransaction(transaction.id, deleteReason.trim())
       toast.success(id.transactions.deleteSuccess)
       setShowDeleteConfirm(false)
       setDeleteReason("")
       onClose()
-      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+      // Voiding a sale puts the stock back and changes every net figure.
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     } catch (e) {
-      toast.error(`${e}`)
+      toast.error(errorMessage(e))
     } finally {
       setIsDeleting(false)
     }
   }
 
   const handleUpdatePaymentMethod = async () => {
-    if (!transaction || !user) return
+    if (!transaction) return
     if (!editPaymentReason.trim()) {
       toast.error(id.transactions.reasonRequired)
       return
     }
     setIsUpdatingPayment(true)
     try {
-      await invoke("update_payment_method", {
-        input: {
-          transaction_id: transaction.id,
-          user_id: user.id,
-          payment_method: newPaymentMethod,
-          reason: editPaymentReason.trim(),
-        },
-      })
+      await updateTransactionPaymentMethod(
+        transaction.id,
+        newPaymentMethod,
+        editPaymentReason.trim()
+      )
       toast.success(id.transactions.editPaymentSuccess)
       setShowEditPayment(false)
       setNewPaymentMethod("")
       setEditPaymentReason("")
-      queryClient.invalidateQueries({ queryKey: ["get_transaction_detail"] })
-      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
+      // The payment-method report and the shift's drawer both read this.
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     } catch (e) {
-      toast.error(`${e}`)
+      toast.error(errorMessage(e))
     } finally {
       setIsUpdatingPayment(false)
     }

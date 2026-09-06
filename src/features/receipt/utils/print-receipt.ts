@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core"
 import { paymentSplitLabel } from "@/lib/labels"
 import type { ReceiptData } from "../types"
 
@@ -247,43 +246,18 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
 </html>`
 }
 
-export async function printReceipt(transactionId: number): Promise<void> {
-  const data = await invoke<ReceiptData>("get_receipt_data", { transactionId })
-  const settings = await invoke<{ paper_width: number | null }>(
-    "get_printer_settings_cmd"
-  )
-  const paperWidth = settings.paper_width ?? 58
-
-  const html = generateReceiptHtml(data, paperWidth)
-
-  // Create a hidden iframe for printing
-  const iframe = document.createElement("iframe")
-  iframe.style.position = "fixed"
-  iframe.style.top = "-10000px"
-  iframe.style.left = "-10000px"
-  iframe.style.width = "0"
-  iframe.style.height = "0"
-  iframe.style.border = "none"
-  document.body.appendChild(iframe)
-
-  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-  if (!iframeDoc) {
-    document.body.removeChild(iframe)
-    throw new Error("Gagal membuat iframe untuk print")
-  }
-
-  iframeDoc.open()
-  iframeDoc.write(html)
-  iframeDoc.close()
-
-  // Wait for content to render
-  await new Promise((resolve) => setTimeout(resolve, 300))
-
-  // Print
-  iframe.contentWindow?.print()
-
-  // Clean up after a delay
-  setTimeout(() => {
-    document.body.removeChild(iframe)
-  }, 2000)
-}
+/*
+ * There used to be a browser-side `printReceipt` here that drew this HTML into a
+ * hidden iframe and called `window.print()`. It is gone, and nothing lost a
+ * feature: neither of the two print buttons ever called it — both invoked the
+ * Tauri `print_receipt` command, which drives the ESC/POS printer.
+ *
+ * That distinction now matters more than it did. The printer is plugged into the
+ * till the server runs on, so printing is `POST /api/transactions/{id}/print`
+ * and the paper comes out there, whichever device pressed the button. A browser
+ * print dialog on a tablet in the back office would have printed to whatever
+ * that tablet happens to see, which is nothing.
+ *
+ * `generateReceiptHtml` stays: it is the on-screen receipt preview's renderer,
+ * and its HTML escaping is what keeps a product name from executing.
+ */

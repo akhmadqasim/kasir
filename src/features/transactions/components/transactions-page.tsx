@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Eye, Printer, RotateCcw, X } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
 import { keepPreviousData } from "@tanstack/react-query"
 import {
   Button,
@@ -21,7 +20,10 @@ import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { getTodayRange, type DateRange } from "@/lib/date-range"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { listTransactions } from "@/lib/api/transactions"
+import { printReceipt } from "@/lib/api/printers"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useDebounce } from "@/hooks/use-debounce"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
 import {
@@ -32,7 +34,11 @@ import {
 import { id } from "@/i18n/id"
 import { refundBlockedReason } from "../refund-window"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
-import type { PaginatedTransactions, TransactionListItem } from "../types"
+import type {
+  ListTransactionsInput,
+  PaginatedTransactions,
+  TransactionListItem,
+} from "../types"
 
 /** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
 const ALL = "all"
@@ -124,32 +130,30 @@ export function TransactionsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailTxn, setDetailTxn] = useState<TransactionListItem | null>(null)
 
-  const queryArgs = useMemo(() => ({
-    input: {
-      page,
-      per_page: 50,
-      search: debouncedSearch || undefined,
-      payment_method: paymentMethod || undefined,
-      status: status || undefined,
-      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
-    },
+  const queryParams = useMemo<ListTransactionsInput>(() => ({
+    page,
+    per_page: 50,
+    search: debouncedSearch || undefined,
+    payment_method: paymentMethod || undefined,
+    status: status || undefined,
+    date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+    date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
   }), [page, debouncedSearch, paymentMethod, status, dateRange])
 
-  const { data, isLoading, error } = useTauriQuery<PaginatedTransactions>(
-    "list_transactions",
-    queryArgs,
-    {
-      placeholderData: keepPreviousData,
-    }
+  const { data, isLoading, error } = useApiQuery<PaginatedTransactions>(
+    queryKeys.transactions.list(queryParams),
+    () => listTransactions(queryParams),
+    { placeholderData: keepPreviousData }
   )
 
+  // Printing happens on the server: the thermal printer is plugged into the till
+  // the server runs on, so this produces paper there whichever device pressed it.
   const handlePrint = useCallback(async (transactionId: number) => {
     try {
-      await invoke("print_receipt", { transactionId })
+      await printReceipt(transactionId)
       toast.success("Struk dicetak")
     } catch (e) {
-      toast.error(`Gagal cetak: ${e}`)
+      toast.error(`Gagal cetak: ${e instanceof Error ? e.message : e}`)
     }
   }, [])
 

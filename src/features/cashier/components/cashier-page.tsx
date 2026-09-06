@@ -31,7 +31,7 @@ export function CashierPage() {
   // Fetch active shift on mount / user change
   useEffect(() => {
     if (user) {
-      fetchActiveShift(user.id)
+      fetchActiveShift()
     }
   }, [user, fetchActiveShift])
 

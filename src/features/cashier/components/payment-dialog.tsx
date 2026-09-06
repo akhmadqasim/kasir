@@ -14,6 +14,7 @@ import {
   ToggleButton,
 } from "@heroui/react"
 import { selectedText } from "@/components/selected-text"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "../hooks/use-cart-store"
@@ -452,44 +453,46 @@ export function PaymentDialog({
 
     checkoutTransaction.mutate(
       {
-        input: {
-          user_id: user.id,
-          items: items.map((item) => ({
-            product_id: item.is_ppob ? undefined : item.product_id,
-            quantity: item.quantity,
-            product_name: item.is_ppob ? item.product_name : undefined,
-            product_price: item.is_ppob ? item.product_price : undefined,
-            buy_price: item.buy_price,
-            item_discount: getItemDiscountAmount(item.cart_id) || undefined,
-            service_type: item.service_type,
-            service_ref: item.service_ref,
-            ppob_product_id: item.ppob_product_id,
-            ppob_product_code: item.ppob_product_code,
-            ppob_inquiry_id: item.ppob_inquiry_id,
-            ppob_payment_code: item.ppob_payment_code,
-            ppob_flag_id: item.ppob_flag_id,
-          })),
-          payment_method: finalPaymentMethod,
-          payment_amount: finalPaymentAmount,
-          payment_breakdown:
-            selectedMethodCount > 1
+        items: items.map((item) => ({
+          product_id: item.is_ppob ? undefined : item.product_id,
+          quantity: item.quantity,
+          product_name: item.is_ppob ? item.product_name : undefined,
+          product_price: item.is_ppob ? item.product_price : undefined,
+          buy_price: item.buy_price,
+          item_discount: getItemDiscountAmount(item.cart_id) || undefined,
+          service_type: item.service_type,
+          service_ref: item.service_ref,
+          ppob_product_id: item.ppob_product_id,
+          ppob_product_code: item.ppob_product_code,
+          ppob_inquiry_id: item.ppob_inquiry_id,
+          ppob_payment_code: item.ppob_payment_code,
+          ppob_flag_id: item.ppob_flag_id,
+        })),
+        payment_method: finalPaymentMethod,
+        payment_amount: finalPaymentAmount,
+        payment_breakdown:
+          selectedMethodCount > 1
+            ? normalizedSplits
+            : primaryPaymentMethod === "transfer"
               ? normalizedSplits
-              : primaryPaymentMethod === "transfer"
-                ? normalizedSplits
-                : undefined,
-          transaction_discount: getTransactionDiscountAmount() || undefined,
-          shift_id: activeShift?.id,
-          notes: notes.trim() || undefined,
-        },
+              : undefined,
+        transaction_discount: getTransactionDiscountAmount() || undefined,
+        shift_id: activeShift?.id,
+        notes: notes.trim() || undefined,
       },
       {
-          onSuccess: (result) => {
-            queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
-            queryClient.invalidateQueries({ queryKey: ["search_products"] })
-            onSuccess(result)
-            setPaymentSplits(createInitialPaymentSplits())
-            setNotes("")
-          },
+        onSuccess: (result) => {
+          // A sale moves stock, the transaction list, the shift's drawer and
+          // every dashboard panel. The keys are prefixes, so one call each
+          // covers the whole resource.
+          queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+          onSuccess(result)
+          setPaymentSplits(createInitialPaymentSplits())
+          setNotes("")
+        },
         onError: (err) => {
           toast.error(`Gagal memproses transaksi: ${err.message}`)
         },
