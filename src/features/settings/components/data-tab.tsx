@@ -1,6 +1,5 @@
-import { useRef, useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useRef, useState, type ChangeEvent } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Download,
   Upload,
@@ -21,20 +20,34 @@ import {
   Button,
   Card,
   Chip,
-  Input,
   Label,
   ListBox,
   Select,
   Table,
-  TextField,
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import { BACKUP_LIST_QUERY_KEY, BACKUP_STATUS_QUERY_KEY, useCreateBackupMutation } from "../hooks/use-backup"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { errorMessage } from "@/lib/api/client"
+import {
+  deleteBackup,
+  exportDatabase,
+  getBackupStatus,
+  importDatabase,
+  listBackups,
+  restoreBackup,
+} from "@/lib/api/backups"
+import {
+  getAppSettings,
+  getDatabaseInfo,
+  toUpdateAppSettingsInput,
+  updateAppSettings,
+} from "@/lib/api/settings"
+import { queryKeys } from "@/lib/api/query-keys"
+import { useCreateBackupMutation } from "../hooks/use-backup"
 import type { AppSettings, BackupInfo, BackupStatus, DatabaseInfo } from "../types"
 
 function formatFileSize(bytes: number): string {
@@ -43,39 +56,17 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-interface FileDialogOptions {
-  defaultPath?: string
-  filters?: { name: string; extensions: string[] }[]
-}
-
-type FileDialogResult =
-  | { outcome: "selected"; path: string }
-  | { outcome: "cancelled" }
-  | { outcome: "failed"; message: string }
-  | { outcome: "unavailable" }
-
-/**
- * Open the Tauri file dialog, keeping apart the three outcomes a single `try` used to
- * conflate: the plugin is missing, the dialog itself failed, and the user cancelled.
- * Only `"unavailable"` may fall back to a manually typed path — otherwise a failed
- * dialog would silently hand the operation a file the user never chose.
+/*
+ * Export and import used to go through the Tauri file dialog, which handed the
+ * backend a path the client had chosen. That was already a path traversal
+ * waiting to happen, and it stopped being possible at all once the client can be
+ * a browser on another machine — the till's filesystem is not the tablet's.
+ *
+ * Both are now ordinary web transfers. Export is a download: the server
+ * checkpoints the WAL, streams `kasir.db`, and names it in `Content-Disposition`
+ * for the browser's download folder. Import is a `<input type="file">` and a
+ * multipart upload whose filename the server ignores entirely.
  */
-async function chooseFilePath(
-  mode: "open" | "save",
-  options: FileDialogOptions
-): Promise<FileDialogResult> {
-  const dialog = await import("@tauri-apps/plugin-dialog").catch(() => null)
-  if (!dialog) return { outcome: "unavailable" }
-
-  try {
-    const selected =
-      mode === "save" ? await dialog.save(options) : await dialog.open(options)
-    if (typeof selected !== "string" || !selected) return { outcome: "cancelled" }
-    return { outcome: "selected", path: selected }
-  } catch (error) {
-    return { outcome: "failed", message: String(error) }
-  }
-}
 
 const INTERVAL_OPTIONS = [
   { value: "1", label: "1 jam" },
@@ -108,23 +99,20 @@ function BackupSettingsInline({
   retentionDays: number
 }) {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettings>("get_app_settings"),
-  })
+  const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
 
-  const updateMutation = useMutation({
-    mutationFn: (settings: AppSettings) =>
-      invoke("update_app_settings", { settings, callerId: user!.id }),
-    onSuccess: () => {
-      toast.success("Pengaturan backup berhasil disimpan. Perubahan berlaku setelah restart.")
-      queryClient.invalidateQueries({ queryKey: ["app-settings"] })
-      queryClient.invalidateQueries({ queryKey: ["backup-status"] })
-    },
-    onError: (error) => toast.error(String(error)),
-  })
+  const updateMutation = useApiMutation<void, AppSettings>(
+    (settings) => updateAppSettings(toUpdateAppSettingsInput(settings)),
+    {
+      onSuccess: () => {
+        toast.success("Pengaturan backup berhasil disimpan. Perubahan berlaku setelah restart.")
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
+        queryClient.invalidateQueries({ queryKey: queryKeys.backups.status })
+      },
+      onError: (error) => toast.error(error.message),
+    }
+  )
 
   const handleChange = (field: "interval_hours" | "retention_days", value: string) => {
     // Same guard as the other tabs: the backend rewrites all four blocks, so a change
@@ -203,46 +191,39 @@ function BackupSettingsInline({
 }
 
 export function DataTab() {
-  const [exportPath, setExportPath] = useState("")
-  const [importPath, setImportPath] = useState("")
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [pendingBackup, setPendingBackup] = useState<PendingBackupAction | null>(null)
-  const [importConfirmOpen, setImportConfirmOpen] = useState(false)
+  /** The chosen upload, held between picking the file and confirming the import. */
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
   const exportSectionRef = useRef<HTMLDivElement | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
-  const dbInfoQuery = useQuery<DatabaseInfo>({
-    queryKey: ["database-info"],
-    queryFn: () => invoke<DatabaseInfo>("get_database_info"),
-  })
+  const dbInfoQuery = useApiQuery<DatabaseInfo>(
+    queryKeys.settings.database,
+    getDatabaseInfo
+  )
 
-  const backupStatusQuery = useQuery<BackupStatus>({
-    queryKey: BACKUP_STATUS_QUERY_KEY,
-    queryFn: () => invoke<BackupStatus>("get_backup_status"),
-  })
+  const backupStatusQuery = useApiQuery<BackupStatus>(
+    queryKeys.backups.status,
+    getBackupStatus
+  )
 
-  const backupListQuery = useQuery<BackupInfo[]>({
-    queryKey: BACKUP_LIST_QUERY_KEY,
-    queryFn: () => invoke<BackupInfo[]>("list_backups"),
-  })
+  const backupListQuery = useApiQuery<BackupInfo[]>(queryKeys.backups.list, listBackups)
   const createBackupMutation = useCreateBackupMutation()
 
-  const deleteBackupMutation = useMutation({
-    mutationFn: (filename: string) => invoke("delete_backup", { filename, callerId: user!.id }),
+  const deleteBackupMutation = useApiMutation<void, string>(deleteBackup, {
     onSuccess: () => {
       toast.success("Backup berhasil dihapus")
-      queryClient.invalidateQueries({ queryKey: ["backup-status"] })
-      queryClient.invalidateQueries({ queryKey: ["backup-list"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups.all })
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(error.message),
   })
 
-  const restoreBackupMutation = useMutation({
-    mutationFn: (filename: string) => invoke<string>("restore_backup", { filename, callerId: user!.id }),
+  const restoreBackupMutation = useApiMutation<string, string>(restoreBackup, {
     onSuccess: (message) => toast.success(message),
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(error.message),
   })
 
   const confirmPendingBackup = () => {
@@ -255,74 +236,41 @@ export function DataTab() {
     setPendingBackup(null)
   }
 
-  const handleExportWithDialog = async () => {
+  /** Stream the live database to the browser's download folder. */
+  const handleExport = async () => {
     setIsExporting(true)
     try {
-      const chosen = await chooseFilePath("save", {
-        defaultPath: "kasir-backup.db",
-        filters: [{ name: "SQLite Database", extensions: ["db"] }],
-      })
-
-      if (chosen.outcome === "cancelled") return
-      if (chosen.outcome === "failed") {
-        toast.error(`Gagal membuka dialog file: ${chosen.message}`)
-        return
-      }
-
-      // The manual textbox is a fallback for builds without the dialog plugin only.
-      // It must never stand in for a dialog the user actually used.
-      const targetPath =
-        chosen.outcome === "selected" ? chosen.path : exportPath.trim()
-      if (!targetPath) {
-        toast.error("Masukkan lokasi file export")
-        return
-      }
-
-      try {
-        await invoke<number>("export_database", {
-          exportPath: targetPath,
-          callerId: user!.id,
-        })
-        toast.success(id.settings.exportSuccess)
-      } catch (error) {
-        toast.error(String(error))
-      }
+      const filename = await exportDatabase()
+      toast.success(`${id.settings.exportSuccess}: ${filename}`)
+    } catch (error) {
+      toast.error(errorMessage(error))
     } finally {
       setIsExporting(false)
     }
   }
 
-  const handleImportWithDialog = async () => {
+  /**
+   * Picking a file does not import it. The file is held until the confirmation
+   * dialog is answered, because this replaces the whole shop's database.
+   */
+  const handleImportFileChosen = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    // Reset the input so choosing the same file twice still fires `change`.
+    event.target.value = ""
+    if (file) setPendingImportFile(file)
+  }
+
+  const handleImportConfirmed = async () => {
+    const file = pendingImportFile
+    setPendingImportFile(null)
+    if (!file) return
+
     setIsImporting(true)
     try {
-      const chosen = await chooseFilePath("open", {
-        filters: [{ name: "SQLite Database", extensions: ["db"] }],
-      })
-
-      if (chosen.outcome === "cancelled") return
-      if (chosen.outcome === "failed") {
-        toast.error(`Gagal membuka dialog file: ${chosen.message}`)
-        return
-      }
-
-      // Importing overwrites the production database, so the textbox fallback is
-      // reachable only when the dialog plugin itself is missing.
-      const sourcePath =
-        chosen.outcome === "selected" ? chosen.path : importPath.trim()
-      if (!sourcePath) {
-        toast.error("Masukkan lokasi file backup")
-        return
-      }
-
-      try {
-        await invoke<string>("import_database", {
-          importPath: sourcePath,
-          callerId: user!.id,
-        })
-        toast.success(id.settings.importSuccess)
-      } catch (error) {
-        toast.error(String(error))
-      }
+      const message = await importDatabase(file)
+      toast.success(message || id.settings.importSuccess)
+    } catch (error) {
+      toast.error(errorMessage(error))
     } finally {
       setIsImporting(false)
     }
@@ -351,7 +299,7 @@ export function DataTab() {
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <Button
                 isDisabled={createBackupMutation.isPending}
-                onPress={() => createBackupMutation.mutate()}
+                onPress={() => createBackupMutation.mutate(undefined)}
               >
                 <Shield className="mr-2 h-4 w-4" />
                 {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
@@ -448,7 +396,7 @@ export function DataTab() {
           <Button
             isDisabled={createBackupMutation.isPending}
             variant="outline"
-            onPress={() => createBackupMutation.mutate()}
+            onPress={() => createBackupMutation.mutate(undefined)}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${createBackupMutation.isPending ? "animate-spin" : ""}`} />
             {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
@@ -535,11 +483,11 @@ export function DataTab() {
           <Card.Description>{id.settings.exportDatabaseDesc}</Card.Description>
         </Card.Header>
         <Card.Content className="space-y-4">
-          <TextField fullWidth value={exportPath} onChange={setExportPath}>
-            <Label>Lokasi File</Label>
-            <Input placeholder="C:\backup\kasir-backup.db" />
-          </TextField>
-          <Button isDisabled={isExporting} onPress={handleExportWithDialog}>
+          <p className="text-sm text-muted">
+            Berkas database diunduh oleh browser ini. Di jendela aplikasi kasir, berkas
+            masuk ke folder unduhan PC kasir.
+          </p>
+          <Button isDisabled={isExporting} onPress={handleExport}>
             <Download className="mr-2 h-4 w-4" />
             {isExporting ? "Mengexport..." : id.settings.exportDatabase}
           </Button>
@@ -553,14 +501,23 @@ export function DataTab() {
           <Card.Description>{id.settings.importDatabaseDesc}</Card.Description>
         </Card.Header>
         <Card.Content className="space-y-4">
-          <TextField fullWidth value={importPath} onChange={setImportPath}>
-            <Label>Lokasi File Backup</Label>
-            <Input placeholder="C:\backup\kasir-backup.db" />
-          </TextField>
+          <p className="text-sm text-muted">
+            Pilih berkas <code>.db</code> hasil export. Berkasnya diunggah ke PC kasir
+            dan dipasang saat aplikasi dijalankan berikutnya.
+          </p>
+          {/* Hidden on purpose: the native file input cannot be styled to match
+              the rest of the screen, and the button below opens it. */}
+          <input
+            ref={importInputRef}
+            accept=".db,application/vnd.sqlite3,application/x-sqlite3"
+            className="hidden"
+            onChange={handleImportFileChosen}
+            type="file"
+          />
           <Button
             isDisabled={isImporting}
             variant="danger"
-            onPress={() => setImportConfirmOpen(true)}
+            onPress={() => importInputRef.current?.click()}
           >
             <Upload className="mr-2 h-4 w-4" />
             {isImporting ? "Mengimport..." : id.settings.importDatabase}
@@ -615,10 +572,12 @@ export function DataTab() {
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
 
+      {/* Opens once a file has been picked, not when the button is pressed: the
+          name of the file being installed is the thing worth confirming. */}
       <AlertDialog.Backdrop
         isKeyboardDismissDisabled={false}
-        isOpen={importConfirmOpen}
-        onOpenChange={setImportConfirmOpen}
+        isOpen={pendingImportFile !== null}
+        onOpenChange={(open) => !open && setPendingImportFile(null)}
       >
         <AlertDialog.Container size="sm">
           <AlertDialog.Dialog aria-label={id.settings.importDatabase}>
@@ -626,20 +585,19 @@ export function DataTab() {
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>{id.settings.importDatabase}</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body>
+            <AlertDialog.Body className="space-y-2">
               <p className="text-sm text-muted">{id.settings.importConfirm}</p>
+              {pendingImportFile && (
+                <p className="text-sm font-medium">
+                  {pendingImportFile.name} ({formatFileSize(pendingImportFile.size)})
+                </p>
+              )}
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setImportConfirmOpen(false)}>
+              <Button variant="outline" onPress={() => setPendingImportFile(null)}>
                 Batal
               </Button>
-              <Button
-                variant="danger"
-                onPress={() => {
-                  setImportConfirmOpen(false)
-                  void handleImportWithDialog()
-                }}
-              >
+              <Button variant="danger" onPress={() => void handleImportConfirmed()}>
                 Ya, Import
               </Button>
             </AlertDialog.Footer>

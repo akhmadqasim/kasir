@@ -1,6 +1,5 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
 import {
   Button,
@@ -16,21 +15,23 @@ import {
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import {
+  getAppSettings,
+  toUpdateAppSettingsInput,
+  updateAppSettings,
+} from "@/lib/api/settings"
+import { queryKeys } from "@/lib/api/query-keys"
 import type { AppSettings } from "../types"
 
 export function SalesSettingsTab() {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
 
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState("cash")
   const [initialized, setInitialized] = useState(false)
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettings>("get_app_settings"),
-  })
+  const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
 
   if (settingsQuery.data && !initialized) {
     const { sales } = settingsQuery.data
@@ -39,35 +40,33 @@ export function SalesSettingsTab() {
     setInitialized(true)
   }
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      // The backend rewrites all four blocks at once. Saving before the query
-      // resolves would post hardcoded defaults and wipe the PPOB credentials.
+  const saveMutation = useApiMutation<void, void>(
+    () => {
+      // The server rewrites all four blocks at once, so this tab has to send the
+      // other three back untouched. Saving before the query resolves would post
+      // hardcoded defaults over them.
       const current = settingsQuery.data
       if (!current) {
-        throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
+        return Promise.reject(new Error("Pengaturan belum dimuat, coba lagi sebentar"))
       }
-      return invoke("update_app_settings", {
-        settings: {
-          sales: {
-            allow_negative_stock: allowNegativeStock,
-            default_payment_method: defaultPaymentMethod,
-          },
-          security: current.security,
-          ppob: current.ppob,
-          backup: current.backup,
+      return updateAppSettings({
+        ...toUpdateAppSettingsInput(current),
+        sales: {
+          allow_negative_stock: allowNegativeStock,
+          default_payment_method: defaultPaymentMethod,
         },
-        callerId: user!.id,
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["app-settings"] })
-      toast.success(id.settings.salesSettingsSaved)
-    },
-    onError: (error) => {
-      toast.error(String(error))
-    },
-  })
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
+        toast.success(id.settings.salesSettingsSaved)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    }
+  )
 
   const isReady = settingsQuery.isSuccess && initialized
 
@@ -132,7 +131,7 @@ export function SalesSettingsTab() {
 
         <Button
           isDisabled={saveMutation.isPending || !isReady}
-          onPress={() => saveMutation.mutate()}
+          onPress={() => saveMutation.mutate(undefined)}
         >
           <Save className="mr-2 h-4 w-4" />
           {saveMutation.isPending ? "Menyimpan..." : "Simpan"}

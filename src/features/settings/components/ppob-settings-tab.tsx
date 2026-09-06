@@ -1,6 +1,5 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Save, RefreshCw } from "lucide-react"
 import {
   Button,
@@ -20,7 +19,16 @@ import {
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import {
+  getAppSettings,
+  toUpdateAppSettingsInput,
+  updateAppSettings,
+  updatePpobCredentials,
+} from "@/lib/api/settings"
+import { openPpobSession } from "@/lib/api/ppob"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { PpobSaldoResponse } from "@/features/ppob/types"
 import type { AppSettings, PpobMarkup, PpobMarkupConfig } from "../types"
 import { PpobCustomPrices } from "./ppob-custom-prices"
 
@@ -54,7 +62,6 @@ const MARKUP_TYPES = [
 
 export function PpobSettingsTab() {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
   const [enabled, setEnabled] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState("")
   const [password, setPassword] = useState("")
@@ -63,19 +70,22 @@ export function PpobSettingsTab() {
   const [markup, setMarkup] = useState<PpobMarkup>(DEFAULT_MARKUP)
   const [initialized, setInitialized] = useState(false)
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettings>("get_app_settings"),
-  })
+  const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
+
+  /**
+   * The password and the PIN are never sent back by the server, so the two
+   * fields below start empty every time and mean "leave what is stored alone".
+   * `has_credentials` is all this screen can know about them — enough to say
+   * whether any are stored, which is the only question an admin actually asks.
+   */
+  const hasStoredCredentials = settingsQuery.data?.ppob.has_credentials ?? false
 
   if (settingsQuery.data && !initialized) {
     const { ppob } = settingsQuery.data
     if (ppob) {
       setEnabled(ppob.enabled)
       setPhoneNumber(ppob.phone_number)
-      setPassword(ppob.password)
       setDeviceId(ppob.device_id)
-      setPin(ppob.pin)
       if (ppob.markup) {
         setMarkup({ ...DEFAULT_MARKUP, ...ppob.markup })
       }
@@ -83,51 +93,65 @@ export function PpobSettingsTab() {
     setInitialized(true)
   }
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      // The backend rewrites all four blocks at once, so posting hardcoded defaults
-      // for the blocks this tab does not own would silently reset them.
+  const saveMutation = useApiMutation<void, void>(
+    async () => {
+      // The server rewrites all four blocks at once, so posting hardcoded
+      // defaults for the blocks this tab does not own would silently reset them.
       const currentSettings = settingsQuery.data
       if (!currentSettings) {
         throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
       }
-      return invoke("update_app_settings", {
-        settings: {
-          sales: currentSettings.sales,
-          security: currentSettings.security,
-          backup: currentSettings.backup,
-          ppob: {
-            enabled,
-            phone_number: phoneNumber,
-            password,
-            device_id: deviceId,
-            pin,
-            markup,
-          },
+
+      // Credentials travel on their own request, and only when both were typed.
+      // `PUT /api/settings` cannot carry them at all, which is what stops a
+      // markup change from blanking a password by omission — the failure mode
+      // the old single-blob save had every time this form loaded before the
+      // query resolved.
+      const wantsCredentialChange = password.length > 0 || pin.length > 0
+      if (wantsCredentialChange && (password.length === 0 || pin.length === 0)) {
+        throw new Error("Isi password dan PIN sekaligus untuk menggantinya")
+      }
+
+      await updateAppSettings({
+        ...toUpdateAppSettingsInput(currentSettings),
+        ppob: {
+          enabled,
+          phone_number: phoneNumber,
+          device_id: deviceId,
+          markup,
         },
-        callerId: user!.id,
       })
+
+      if (wantsCredentialChange) {
+        await updatePpobCredentials({ password, pin })
+      }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["app-settings"] })
-      queryClient.invalidateQueries({ queryKey: ["ppob_get_saldo"] })
-      toast.success(id.ppob.settingsSaved)
-    },
-    onError: (error) => {
-      toast.error(String(error))
-    },
-  })
+    {
+      onSuccess: () => {
+        setPassword("")
+        setPin("")
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
+        // New credentials mean a different upstream account, so the cached
+        // balance is no longer about the same shop.
+        queryClient.invalidateQueries({ queryKey: queryKeys.ppob.all })
+        toast.success(id.ppob.settingsSaved)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    }
+  )
 
   const isReady = settingsQuery.isSuccess && initialized
 
-  const testMutation = useMutation({
-    mutationFn: () => invoke("ppob_login"),
-    onSuccess: (data: unknown) => {
-      const result = data as { saldo: number; username: string }
-      toast.success(`${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`)
+  const testMutation = useApiMutation<PpobSaldoResponse, void>(openPpobSession, {
+    onSuccess: (result) => {
+      toast.success(
+        `${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`
+      )
     },
     onError: (error) => {
-      toast.error(`${id.ppob.testConnectionFailed}: ${String(error)}`)
+      toast.error(`${id.ppob.testConnectionFailed}: ${error.message}`)
     },
   })
 
@@ -174,7 +198,13 @@ export function PpobSettingsTab() {
               onChange={setPassword}
             >
               <Label>{id.ppob.mitraPassword}</Label>
-              <Input placeholder={id.ppob.mitraPasswordPlaceholder} />
+              <Input
+                placeholder={
+                  hasStoredCredentials
+                    ? "Tersimpan — isi hanya jika ingin mengganti"
+                    : id.ppob.mitraPasswordPlaceholder
+                }
+              />
             </TextField>
 
             <div className="space-y-2">
@@ -215,14 +245,26 @@ export function PpobSettingsTab() {
               onChange={setPin}
             >
               <Label>{id.ppob.mitraPin}</Label>
-              <Input placeholder={id.ppob.mitraPinPlaceholder} />
+              <Input
+                placeholder={
+                  hasStoredCredentials
+                    ? "Tersimpan — isi hanya jika ingin mengganti"
+                    : id.ppob.mitraPinPlaceholder
+                }
+              />
             </TextField>
+
+            <p className="text-xs text-muted">
+              {hasStoredCredentials
+                ? "Password dan PIN sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan keduanya untuk mempertahankannya, atau isi keduanya sekaligus untuk mengganti."
+                : "Password dan PIN belum tersimpan. Isi keduanya untuk mengaktifkan layanan PPOB."}
+            </p>
           </div>
 
           <div className="flex gap-2">
             <Button
               isDisabled={saveMutation.isPending || !isReady}
-              onPress={() => saveMutation.mutate()}
+              onPress={() => saveMutation.mutate(undefined)}
             >
               <Save className="mr-2 h-4 w-4" />
               {saveMutation.isPending ? "Menyimpan..." : id.common.save}
@@ -233,7 +275,7 @@ export function PpobSettingsTab() {
               isDisabled={testMutation.isPending || !enabled || !phoneNumber}
               isPending={testMutation.isPending}
               variant="outline"
-              onPress={() => testMutation.mutate()}
+              onPress={() => testMutation.mutate(undefined)}
             >
               {({ isPending }) => (
                 <>
@@ -338,7 +380,7 @@ export function PpobSettingsTab() {
 
           <Button
             isDisabled={saveMutation.isPending || !isReady}
-            onPress={() => saveMutation.mutate()}
+            onPress={() => saveMutation.mutate(undefined)}
           >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : id.common.save}

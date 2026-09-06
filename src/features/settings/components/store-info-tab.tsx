@@ -1,17 +1,17 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Save, Info } from "lucide-react"
 import { Button, Card, Input, Label, TextField } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { getStoreInfo, updateStoreInfo } from "@/lib/api/settings"
+import { queryKeys } from "@/lib/api/query-keys"
 import type { StoreInfo } from "../types"
 
 export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
 
   const [name, setName] = useState("")
   const [address, setAddress] = useState("")
@@ -19,10 +19,10 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const [email, setEmail] = useState("")
   const [initialized, setInitialized] = useState(false)
 
-  const storeQuery = useQuery<StoreInfo | null>({
-    queryKey: ["store-info"],
-    queryFn: () => invoke<StoreInfo | null>("get_store_info"),
-  })
+  const storeQuery = useApiQuery<StoreInfo | null>(
+    queryKeys.settings.store,
+    getStoreInfo
+  )
 
   if (storeQuery.data && !initialized) {
     const s = storeQuery.data
@@ -38,27 +38,30 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   // resolves to null on a store that has no info yet, and saving then is a create.
   const isReady = storeQuery.isSuccess
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
+  const saveMutation = useApiMutation<StoreInfo, void>(
+    () => {
       if (!isReady) {
-        throw new Error("Informasi toko belum dimuat, coba lagi sebentar")
+        return Promise.reject(
+          new Error("Informasi toko belum dimuat, coba lagi sebentar")
+        )
       }
-      return invoke("update_store_info", {
+      return updateStoreInfo({
         name,
         address: address || null,
         phone: phone || null,
         email: email || null,
-        callerId: user!.id,
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store-info"] })
-      toast.success(id.settings.storeInfoSaved)
-    },
-    onError: (error) => {
-      toast.error(String(error))
-    },
-  })
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.store })
+        toast.success(id.settings.storeInfoSaved)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    }
+  )
 
   return (
     <Card>
@@ -111,7 +114,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin && (
           <Button
             isDisabled={saveMutation.isPending || !isReady || !name.trim()}
-            onPress={() => saveMutation.mutate()}
+            onPress={() => saveMutation.mutate(undefined)}
           >
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}

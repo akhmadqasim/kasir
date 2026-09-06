@@ -1,6 +1,5 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { RefreshCw, Save, TestTube } from "lucide-react"
 import {
   Button,
@@ -18,6 +17,14 @@ import {
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import {
+  getPrinterSettings,
+  listPrinters,
+  testPrint,
+  updatePrinterSettings,
+} from "@/lib/api/printers"
+import { queryKeys } from "@/lib/api/query-keys"
 import type { PrinterSettings, PrinterInfo } from "../types"
 
 export function PrinterSettingsTab() {
@@ -29,15 +36,14 @@ export function PrinterSettingsTab() {
   const [footerText, setFooterText] = useState("")
   const [initialized, setInitialized] = useState(false)
 
-  const printersQuery = useQuery<PrinterInfo[]>({
-    queryKey: ["printers"],
-    queryFn: () => invoke<PrinterInfo[]>("list_printers"),
-  })
+  // Printers are the ones the *till's* operating system can see: the server
+  // enumerates them, because that is where the paper comes out.
+  const printersQuery = useApiQuery<PrinterInfo[]>(queryKeys.printers.list, listPrinters)
 
-  const settingsQuery = useQuery<PrinterSettings>({
-    queryKey: ["printer-settings"],
-    queryFn: () => invoke<PrinterSettings>("get_printer_settings_cmd"),
-  })
+  const settingsQuery = useApiQuery<PrinterSettings>(
+    queryKeys.printers.settings,
+    getPrinterSettings
+  )
 
   if (settingsQuery.data && !initialized) {
     const s = settingsQuery.data
@@ -48,30 +54,22 @@ export function PrinterSettingsTab() {
     setInitialized(true)
   }
 
-  const saveMutation = useMutation({
-    mutationFn: (input: {
-      printer_id?: string
-      paper_width?: number
-      auto_print?: boolean
-      footer_text?: string
-    }) => invoke("update_printer_settings", { input }),
+  const saveMutation = useApiMutation<void, PrinterSettings>(updatePrinterSettings, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["printer-settings"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.printers.settings })
       toast.success(id.settings.printerSettingsSaved)
     },
     onError: (error) => {
-      toast.error(String(error))
+      toast.error(error.message)
     },
   })
 
-  const testPrintMutation = useMutation({
-    mutationFn: () => invoke("test_print"),
+  const testPrintMutation = useApiMutation<void, void>(testPrint, {
     onSuccess: () => {
       toast.success(id.settings.testPrintSuccess)
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : String(error)
-      toast.error(`${id.settings.testPrintFailed}: ${message}`)
+      toast.error(`${id.settings.testPrintFailed}: ${error.message}`)
     },
   })
 
@@ -85,7 +83,7 @@ export function PrinterSettingsTab() {
     // Rust `if let Some(...)` would keep the old value, making the field unclearable.
     saveMutation.mutate({
       printer_id: selectedPrinter,
-      paper_width: Number(paperWidth) || undefined,
+      paper_width: Number(paperWidth) || null,
       auto_print: autoPrint,
       footer_text: footerText,
     })
@@ -142,7 +140,7 @@ export function PrinterSettingsTab() {
               isDisabled={printersQuery.isFetching}
               isIconOnly
               variant="outline"
-              onPress={() => queryClient.invalidateQueries({ queryKey: ["printers"] })}
+              onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
             >
               <RefreshCw
                 className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`}
@@ -216,7 +214,7 @@ export function PrinterSettingsTab() {
           <Button
             isDisabled={testPrintMutation.isPending || !selectedPrinter}
             variant="outline"
-            onPress={() => testPrintMutation.mutate()}
+            onPress={() => testPrintMutation.mutate(undefined)}
           >
             <TestTube className="mr-2 h-4 w-4" />
             {testPrintMutation.isPending ? "Mengirim..." : id.settings.testPrint}
