@@ -19,6 +19,11 @@ const paymentColors: Record<string, string> = {
   transfer: "bg-[var(--chart-5)]",
 }
 
+function clampPercentage(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value))
+}
+
 export function PaymentMethodsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
 
@@ -63,9 +68,14 @@ export function PaymentMethodsPage() {
                   </span>
                 </div>
                 <div className="mt-2 h-2 w-full rounded-full bg-default">
+                  {/* Angka laporan sekarang bersih dari retur, jadi sebuah metode
+                      yang periode itu hanya kena retur muncul dengan nominal
+                      negatif — dan `width: -12%` adalah deklarasi CSS tidak sah
+                      yang diam-diam dibuang browser. Dijepit supaya bilahnya
+                      selalu punya lebar yang masuk akal. */}
                   <div
                     className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-[var(--muted-foreground)]"}`}
-                    style={{ width: `${row.percentage}%` }}
+                    style={{ width: `${clampPercentage(row.percentage)}%` }}
                   />
                 </div>
               </Card.Content>
@@ -111,7 +121,11 @@ export function PaymentMethodsPage() {
             <Table.Cell>Total</Table.Cell>
             <Table.Cell className="text-right">{totalTransactions}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(total)}</Table.Cell>
-            <Table.Cell className="text-right">100%</Table.Cell>
+            {/* Dijumlahkan, bukan ditulis "100%": sebuah metode bisa muncul dengan
+                nominal negatif sekarang, dan persentasenya tidak selalu genap. */}
+            <Table.Cell className="text-right">
+              {rows.reduce((sum, r) => sum + r.percentage, 0).toFixed(1)}%
+            </Table.Cell>
           </Table.Row>
         )}
       </ReportTable>

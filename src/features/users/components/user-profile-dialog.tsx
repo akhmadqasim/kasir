@@ -56,7 +56,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     if (!validate() || !user) return
 
     changePin.mutate(
-      { userId: user.id, currentPin, newPin },
+      { currentPin, newPin },
       {
         onSuccess: () => {
           resetForm()

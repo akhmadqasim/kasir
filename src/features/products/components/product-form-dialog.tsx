@@ -14,7 +14,6 @@ import {
 
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import type { Product, CreateProductInput, UpdateProductInput } from "../types"
@@ -121,7 +120,6 @@ function ProductFormBody({
   onCreateSuccess?: () => void
 }) {
   const isEditing = !!product
-  const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createProduct = useCreateProduct()
   const updateProduct = useUpdateProduct()
@@ -182,20 +180,14 @@ function ProductFormBody({
 
     if (isEditing && product) {
       const updateInput: UpdateProductInput = { ...input, id: product.id }
-      updateProduct.mutate(
-        { input: updateInput, callerId: user!.id },
-        { onSuccess: () => onOpenChange(false) }
-      )
+      updateProduct.mutate(updateInput, { onSuccess: () => onOpenChange(false) })
     } else {
-      createProduct.mutate(
-        { input, callerId: user!.id },
-        {
-          onSuccess: () => {
-            onCreateSuccess?.()
-            onOpenChange(false)
-          },
-        }
-      )
+      createProduct.mutate(input, {
+        onSuccess: () => {
+          onCreateSuccess?.()
+          onOpenChange(false)
+        },
+      })
     }
   }
 

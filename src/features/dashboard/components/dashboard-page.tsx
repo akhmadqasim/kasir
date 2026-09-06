@@ -256,7 +256,7 @@ function QuickActions() {
 
   useEffect(() => {
     if (user) {
-      void fetchActiveShift(user.id)
+      void fetchActiveShift()
     }
   }, [user, fetchActiveShift])
 
@@ -297,7 +297,7 @@ function QuickActions() {
       title: "Backup data sekarang",
       description: "Buat backup manual sebelum update atau perubahan besar.",
       icon: <DatabaseBackupIcon className="h-4 w-4" />,
-      onPress: () => createBackupMutation.mutate(),
+      onPress: () => createBackupMutation.mutate(undefined),
       label: createBackupMutation.isPending ? "Membuat Backup..." : "Backup Sekarang",
       variant: "outline" as const,
       visible: isAdmin,

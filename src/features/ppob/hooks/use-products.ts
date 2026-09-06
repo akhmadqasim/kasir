@@ -1,4 +1,15 @@
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import {
+  getEmoneyDenominations,
+  getPaymentPointSubMenu,
+  getPdamProducts,
+  getPlnDenominations,
+  getPpobMenu,
+  getPulsaDetails,
+  getTransferChannels,
+  getVoucherGroups,
+} from "@/lib/api/ppob"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useDebounce } from "@/hooks/use-debounce"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type {
@@ -13,7 +24,7 @@ import type {
 } from "../types"
 
 export function usePpobMenu() {
-  return useTauriQuery<PpobMenuGroup[]>("ppob_get_menu", undefined, {
+  return useApiQuery<PpobMenuGroup[]>(queryKeys.ppob.menu, getPpobMenu, {
     staleTime: 300000,
     retry: false,
   })
@@ -22,16 +33,16 @@ export function usePpobMenu() {
 /**
  * Look up the provider and product list for a phone number.
  *
- * Debounced because the query is enabled from ten digits on: an Indonesian mobile
- * number is 11-13 digits, so typing one straight through fired three to four
- * vendor calls for a single lookup. `CLAUDE.md` puts the debounce at 300 ms.
+ * Debounced because the query is enabled from ten digits on: an Indonesian
+ * mobile number is 11-13 digits, so typing one straight through fired three to
+ * four vendor calls for a single lookup. `CLAUDE.md` puts the debounce at 300 ms.
  */
 export function usePulsaDetails(phoneNumber: string) {
   const debouncedPhoneNumber = useDebounce(phoneNumber, SEARCH_DEBOUNCE_MS)
 
-  return useTauriQuery<PulsaDetailsResponse>(
-    "ppob_get_pulsa_details",
-    { phoneNumber: debouncedPhoneNumber },
+  return useApiQuery<PulsaDetailsResponse>(
+    queryKeys.ppob.pulsaDetails(debouncedPhoneNumber),
+    () => getPulsaDetails(debouncedPhoneNumber),
     {
       enabled: debouncedPhoneNumber.length >= 10,
       staleTime: 60000,
@@ -41,23 +52,23 @@ export function usePulsaDetails(phoneNumber: string) {
 }
 
 export function usePlnDenom() {
-  return useTauriQuery<PlnDenom[]>("ppob_get_pln_denom", undefined, {
+  return useApiQuery<PlnDenom[]>(queryKeys.ppob.plnDenominations, getPlnDenominations, {
     staleTime: 300000,
     retry: false,
   })
 }
 
 export function usePdamProducts() {
-  return useTauriQuery<PdamProduct[]>("ppob_get_pdam_products", undefined, {
+  return useApiQuery<PdamProduct[]>(queryKeys.ppob.pdamProducts, getPdamProducts, {
     staleTime: 300000,
     retry: false,
   })
 }
 
 export function useEmoneyDenom(productId: number) {
-  return useTauriQuery<EmoneyDenom[]>(
-    "ppob_get_emoney_denom",
-    { productId },
+  return useApiQuery<EmoneyDenom[]>(
+    queryKeys.ppob.emoneyDenominations(productId),
+    () => getEmoneyDenominations(productId),
     {
       enabled: productId > 0,
       staleTime: 300000,
@@ -67,9 +78,9 @@ export function useEmoneyDenom(productId: number) {
 }
 
 export function usePpSubMenu(ppId: number) {
-  return useTauriQuery<PpSubMenuItem[]>(
-    "ppob_get_pp_sub_menu",
-    { ppId },
+  return useApiQuery<PpSubMenuItem[]>(
+    queryKeys.ppob.paymentPointSubMenu(ppId),
+    () => getPaymentPointSubMenu(ppId),
     {
       enabled: ppId > 0,
       staleTime: 300000,
@@ -79,9 +90,9 @@ export function usePpSubMenu(ppId: number) {
 }
 
 export function useTransferChannels() {
-  return useTauriQuery<TransferChannelGroup[]>(
-    "ppob_get_transfer_channels",
-    undefined,
+  return useApiQuery<TransferChannelGroup[]>(
+    queryKeys.ppob.transferChannels,
+    getTransferChannels,
     {
       staleTime: 300000,
       retry: false,
@@ -90,12 +101,8 @@ export function useTransferChannels() {
 }
 
 export function useVoucherGroups() {
-  return useTauriQuery<VoucherGroup[]>(
-    "ppob_get_voucher_groups",
-    undefined,
-    {
-      staleTime: 300000,
-      retry: false,
-    }
-  )
+  return useApiQuery<VoucherGroup[]>(queryKeys.ppob.voucherGroups, getVoucherGroups, {
+    staleTime: 300000,
+    retry: false,
+  })
 }

@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query"
-import { invoke } from "@tauri-apps/api/core"
+import { useApiQuery } from "@/hooks/use-api"
+import * as reportsApi from "@/lib/api/reports"
+import { queryKeys } from "@/lib/api/query-keys"
 import type {
   DailySalesRow,
   MonthlySalesRow,
@@ -14,79 +15,89 @@ import type {
   CashFlowReportSummary,
 } from "../types"
 
+/**
+ * The eleven report screens.
+ *
+ * These were the last eleven raw `useQuery` + `invoke` pairs in the codebase,
+ * each spelling out its own key by hand. They go through the same two hooks as
+ * everything else now, with keys from the shared factory — which matters less
+ * for invalidation here (nothing invalidates a report) than for consistency:
+ * one place to look when a key is wrong.
+ */
+
 export function useSalesDaily(startDate: string, endDate: string) {
-  return useQuery<DailySalesRow[]>({
-    queryKey: ["reports", "sales-daily", startDate, endDate],
-    queryFn: () => invoke("report_sales_daily", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<DailySalesRow[]>(queryKeys.reports.salesDaily(range), () =>
+    reportsApi.reportSalesDaily(range)
+  )
 }
 
 export function useSalesMonthly(year: number) {
-  return useQuery<MonthlySalesRow[]>({
-    queryKey: ["reports", "sales-monthly", year],
-    queryFn: () => invoke("report_sales_monthly", { year }),
-  })
+  return useApiQuery<MonthlySalesRow[]>(queryKeys.reports.salesMonthly(year), () =>
+    reportsApi.reportSalesMonthly(year)
+  )
 }
 
 export function useSalesPeriod(startDate: string, endDate: string) {
-  return useQuery<PeriodSalesSummary>({
-    queryKey: ["reports", "sales-period", startDate, endDate],
-    queryFn: () => invoke("report_sales_period", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<PeriodSalesSummary>(queryKeys.reports.salesPeriod(range), () =>
+    reportsApi.reportSalesPeriod(range)
+  )
 }
 
 export function useSalesReceipt(startDate: string, endDate: string, search: string) {
-  return useQuery<ReceiptReport>({
-    queryKey: ["reports", "sales-receipt", startDate, endDate, search],
-    queryFn: () => invoke("report_sales_receipt", { startDate, endDate, search }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<ReceiptReport>(queryKeys.reports.salesReceipt(range, search), () =>
+    reportsApi.reportSalesReceipts(range, search)
+  )
 }
 
 export function usePaymentMethods(startDate: string, endDate: string) {
-  return useQuery<PaymentMethodRow[]>({
-    queryKey: ["reports", "payment-methods", startDate, endDate],
-    queryFn: () => invoke("report_payment_methods", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<PaymentMethodRow[]>(queryKeys.reports.paymentMethods(range), () =>
+    reportsApi.reportPaymentMethods(range)
+  )
 }
 
 export function useProductSales(startDate: string, endDate: string) {
-  return useQuery<ProductSalesRow[]>({
-    queryKey: ["reports", "product-sales", startDate, endDate],
-    queryFn: () => invoke("report_product_sales", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<ProductSalesRow[]>(queryKeys.reports.productSales(range), () =>
+    reportsApi.reportProductSales(range)
+  )
 }
 
 export function usePopularProducts(startDate: string, endDate: string, limit: number) {
-  return useQuery<PopularProductRow[]>({
-    queryKey: ["reports", "popular-products", startDate, endDate, limit],
-    queryFn: () => invoke("report_popular_products", { startDate, endDate, limit }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<PopularProductRow[]>(
+    queryKeys.reports.popularProducts(range, limit),
+    () => reportsApi.reportPopularProducts(range, limit)
+  )
 }
 
 export function useReturns(startDate: string, endDate: string) {
-  return useQuery<ReturnRow[]>({
-    queryKey: ["reports", "returns", startDate, endDate],
-    queryFn: () => invoke("report_returns", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<ReturnRow[]>(queryKeys.reports.returns(range), () =>
+    reportsApi.reportReturns(range)
+  )
 }
 
 export function useCurrentStock(search: string, filter: "all" | "low") {
-  return useQuery<CurrentStockReport>({
-    queryKey: ["reports", "current-stock", search, filter],
-    queryFn: () => invoke("report_current_stock", { search, filter }),
-  })
+  return useApiQuery<CurrentStockReport>(
+    queryKeys.reports.currentStock(search, filter),
+    () => reportsApi.reportCurrentStock(search, filter)
+  )
 }
 
 export function useLosses(startDate: string, endDate: string) {
-  return useQuery<LossSummary>({
-    queryKey: ["reports", "losses", startDate, endDate],
-    queryFn: () => invoke("report_losses", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<LossSummary>(queryKeys.reports.losses(range), () =>
+    reportsApi.reportLosses(range)
+  )
 }
 
 export function useCashFlows(startDate: string, endDate: string) {
-  return useQuery<CashFlowReportSummary>({
-    queryKey: ["reports", "cash-flows", startDate, endDate],
-    queryFn: () => invoke("report_cash_flows", { startDate, endDate }),
-  })
+  const range = { startDate, endDate }
+  return useApiQuery<CashFlowReportSummary>(queryKeys.reports.cashFlows(range), () =>
+    reportsApi.reportCashFlows(range)
+  )
 }

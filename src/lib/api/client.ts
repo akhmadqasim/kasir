@@ -89,6 +89,18 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError
 }
 
+/**
+ * Text to show the user for anything that was thrown.
+ *
+ * An {@link ApiError} already carries Indonesian prose written for the screen.
+ * Everything else is a programming fault that should not reach a toast, but a
+ * toast reading `[object Object]` helps nobody either.
+ */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
 /** True when `error` is an `ApiError` with this exact code. */
 export function hasApiErrorCode(error: unknown, code: ApiErrorCode): boolean {
   return isApiError(error) && error.code === code

@@ -13,7 +13,7 @@ const COLUMN_COUNT = 6
 
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { data: users, isLoading, isError, error } = useUsers(currentUser!.id)
+  const { data: users, isLoading, isError, error } = useUsers()
   const toggleActive = useToggleUserActive()
 
   const [search, setSearch] = useState("")
@@ -49,7 +49,6 @@ export function UsersPage() {
       toggleActive.mutate({
         userId: user.id,
         isActive: true,
-        currentUserId: currentUser?.id ?? 0,
       })
     } else {
       // Confirm deactivation
@@ -63,7 +62,6 @@ export function UsersPage() {
       {
         userId: deactivateUser.id,
         isActive: false,
-        currentUserId: currentUser.id,
       },
       { onSettled: () => setDeactivateUser(null) }
     )

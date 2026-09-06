@@ -16,5 +16,4 @@ export interface UpdateUserInput {
 export interface ToggleUserActiveInput {
   userId: number
   isActive: boolean
-  currentUserId: number
 }

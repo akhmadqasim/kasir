@@ -3,9 +3,15 @@ import { Autocomplete, FieldError, Label, ListBox, SearchField } from "@heroui/r
 
 import { selectedText } from "@/components/selected-text"
 import { useDebounce } from "@/hooks/use-debounce"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { searchProducts } from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
-import type { PaginatedProducts, Product } from "@/features/products/types"
+import type {
+  PaginatedProducts,
+  Product,
+  SearchProductsParams,
+} from "@/features/products/types"
 
 /** Di bawah ini backend dipanggil untuk hampir seluruh katalog, jadi jangan. */
 const MIN_QUERY_LENGTH = 2
@@ -60,19 +66,19 @@ export function ProductAutocomplete({
   const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
   const isSearching = debouncedQuery.trim().length >= MIN_QUERY_LENGTH
 
-  const searchArgs = useMemo(() => ({
-    params: {
-      query: debouncedQuery,
-      page: 1,
-      per_page: perPage,
-      sort_by: "name",
-      sort_order: "asc",
-    },
+  const searchParams = useMemo<SearchProductsParams>(() => ({
+    query: debouncedQuery,
+    page: 1,
+    per_page: perPage,
+    sort_by: "name",
+    sort_order: "asc",
   }), [debouncedQuery, perPage])
 
-  const { data } = useTauriQuery<PaginatedProducts>("search_products", searchArgs, {
-    enabled: isSearching,
-  })
+  const { data } = useApiQuery<PaginatedProducts>(
+    queryKeys.products.search(searchParams),
+    () => searchProducts(searchParams),
+    { enabled: isSearching }
+  )
 
   /**
    * Produk terpilih ikut masuk daftar meski tidak ada di hasil pencarian terakhir.

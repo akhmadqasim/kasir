@@ -1,11 +1,13 @@
 import { keepPreviousData } from "@tanstack/react-query"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { getPpobHistory, getPpobMutasi } from "@/lib/api/ppob"
+import { queryKeys } from "@/lib/api/query-keys"
 import type { HistoryPaymentItem, MutasiItem } from "../types"
 
 export function usePpobHistory(startDate: string, endDate: string) {
-  return useTauriQuery<HistoryPaymentItem[]>(
-    "ppob_get_history",
-    { startDate, endDate },
+  return useApiQuery<HistoryPaymentItem[]>(
+    queryKeys.ppob.history({ startDate, endDate }),
+    () => getPpobHistory(startDate, endDate),
     {
       enabled: !!startDate && !!endDate,
       placeholderData: keepPreviousData,
@@ -16,9 +18,9 @@ export function usePpobHistory(startDate: string, endDate: string) {
 }
 
 export function usePpobMutasi(startDate: string, endDate: string) {
-  return useTauriQuery<MutasiItem[]>(
-    "ppob_get_mutasi",
-    { startDate, endDate },
+  return useApiQuery<MutasiItem[]>(
+    queryKeys.ppob.mutasi({ startDate, endDate }),
+    () => getPpobMutasi(startDate, endDate),
     {
       enabled: !!startDate && !!endDate,
       placeholderData: keepPreviousData,

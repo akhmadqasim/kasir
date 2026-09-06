@@ -15,7 +15,6 @@ import {
 import { selectedText } from "@/components/selected-text"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
 import type { User } from "@/features/auth/types"
 
@@ -48,7 +47,6 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
 function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange: (open: boolean) => void }) {
   const isEdit = !!user
-  const currentUser = useAuthStore((s) => s.user)
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
 
@@ -89,27 +87,21 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
     if (isEdit && user) {
       updateUser.mutate(
         {
-          input: {
-            userId: user.id,
-            username: username.trim(),
-            fullName: fullName.trim(),
-            role,
-            ...(pin ? { newPin: pin } : {}),
-          },
-          callerId: currentUser!.id,
+          userId: user.id,
+          username: username.trim(),
+          fullName: fullName.trim(),
+          role,
+          ...(pin ? { newPin: pin } : {}),
         },
         { onSuccess: () => onOpenChange(false) }
       )
     } else {
       createUser.mutate(
         {
-          input: {
-            username: username.trim(),
-            fullName: fullName.trim(),
-            role,
-            pin,
-          },
-          callerId: currentUser!.id,
+          username: username.trim(),
+          fullName: fullName.trim(),
+          role,
+          pin,
         },
         { onSuccess: () => onOpenChange(false) }
       )

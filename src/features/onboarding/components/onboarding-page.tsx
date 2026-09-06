@@ -26,7 +26,7 @@ export function OnboardingPage() {
     setAdminData(data)
 
     completeMutation.mutate(
-      { input: { store: storeData, admin: data } },
+      { store: storeData, admin: data },
       {
         onSuccess: () => {
           toast.success(t.success)

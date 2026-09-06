@@ -137,12 +137,12 @@ export function PpobNotifications() {
   const handleItemPress = (item: NotificationItem) => {
     setSelectedItem(item)
     if (item.status === "unread") {
-      markRead.mutate({ inboxId: item.inboxId }, { onSuccess: () => refetch() })
+      markRead.mutate(item.inboxId, { onSuccess: () => refetch() })
     }
   }
 
   const handleMarkAllRead = () => {
-    markAllRead.mutate({}, { onSuccess: () => refetch() })
+    markAllRead.mutate(undefined, { onSuccess: () => refetch() })
   }
 
   return (

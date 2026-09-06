@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Pencil, Trash2, Pin } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { AlertDialog, Button, Table, Tooltip } from "@heroui/react"
 import type { SortDescriptor } from "@heroui/react"
@@ -9,11 +8,15 @@ import { toast } from "@/lib/toast"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useDeleteProduct } from "../hooks/use-products"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { getPopularProducts, toggleProductPin } from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
-import type { Product, Category } from "../types"
+import type { Product, Category, ShortcutProduct } from "../types"
+
+/** How many shortcut rows to read when deciding which products show a filled pin. */
+const SHORTCUT_LIMIT = 50
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -46,14 +49,14 @@ export function ProductTable({
   onSortChange,
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
-  const user = useAuthStore((s) => s.user)
   const deleteProduct = useDeleteProduct()
   const queryClient = useQueryClient()
 
-  // Fetch pinned product IDs
-  const { data: shortcuts } = useTauriQuery<Array<{ id: number; product_id: number; is_pinned: boolean }>>(
-    "get_popular_products",
-    { limit: 50 }
+  // Which products are pinned to the cashier's shortcut grid. The server
+  // flattens the product into the row, so `id` here is the product's own id.
+  const { data: shortcuts } = useApiQuery<ShortcutProduct[]>(
+    queryKeys.products.popular(SHORTCUT_LIMIT),
+    () => getPopularProducts(SHORTCUT_LIMIT)
   )
   const pinnedIds = new Set(
     (shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id)
@@ -61,9 +64,9 @@ export function ProductTable({
 
   const handleTogglePin = async (productId: number) => {
     try {
-      const pinned = await invoke<boolean>("toggle_product_pin", { productId })
+      const pinned = await toggleProductPin(productId)
       toast.success(pinned ? "Produk di-pin ke shortcut" : "Pin shortcut dihapus")
-      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
     } catch {
       toast.error("Gagal mengubah pin")
     }
@@ -86,7 +89,7 @@ export function ProductTable({
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteProduct.mutate({ id: deleteTarget.id, callerId: user!.id }, {
+    deleteProduct.mutate(deleteTarget.id, {
       onSettled: () => setDeleteTarget(null),
     })
   }

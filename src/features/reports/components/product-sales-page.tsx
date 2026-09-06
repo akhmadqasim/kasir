@@ -80,7 +80,12 @@ export function ProductSalesPage() {
             <Table.Cell className="text-right">{row.qtySold}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
-            <Table.Cell className="text-right font-medium text-success">
+            {/* Angka laporan sudah bersih dari retur, jadi produk yang periode itu
+                hanya diretur muncul dengan qty dan laba negatif. Laba negatif
+                dicetak hijau adalah kebohongan yang mudah dipercaya. */}
+            <Table.Cell
+              className={`text-right font-medium ${row.profit < 0 ? "text-danger" : "text-success"}`}
+            >
               {formatRupiah(row.profit)}
             </Table.Cell>
           </Table.Row>

@@ -16,8 +16,9 @@ import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
-import { useTauriMutation } from "@/hooks/use-tauri-command"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation } from "@/hooks/use-api"
+import { bulkCreateProducts, downloadImportTemplate } from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useQueryClient } from "@tanstack/react-query"
 import { parseIndonesianInteger, parseIndonesianNumber } from "@/lib/format"
 import type { BulkProductInput, BulkImportResult } from "../types"
@@ -123,21 +124,21 @@ function autoMapColumns(headers: string[]): Record<number, TargetFieldKey> {
   return result
 }
 
+/**
+ * The template is now generated and served by the server, and arrives as an
+ * ordinary browser download.
+ *
+ * The old command took the CSV text *and the filename* from this component and
+ * wrote them to the user's Desktop — a path the webview chose, which stopped
+ * being acceptable the moment the webview could be a tablet on the LAN. Nothing
+ * on this side writes a file any more.
+ */
 async function downloadSampleTemplate() {
-  const headers = ["Nama Produk", "Barcode", "Kategori", "Harga Beli", "Harga Jual", "Stok", "Satuan"]
-  const sampleRows = [
-    ["Indomie Goreng", "8996001010013", "Mie Instan", "2500", "3000", "100", "pcs"],
-    ["Gula Pasir 1kg", "8991002101036", "Bahan Pokok", "14000", "16000", "50", "pcs"],
-    ["Minyak Goreng 1L", "", "Minyak", "18000", "20000", "30", "pcs"],
-  ]
-  const csvContent = [headers, ...sampleRows].map((row) => row.join(",")).join("\n")
-
   try {
-    const { invoke } = await import("@tauri-apps/api/core")
-    await invoke("save_template_file", { content: csvContent, filename: "template-import-produk.csv" })
-    toast.success("Template berhasil disimpan di Desktop")
+    await downloadImportTemplate()
+    toast.success("Template diunduh")
   } catch (err) {
-    toast.error(typeof err === "string" ? err : "Gagal menyimpan template")
+    toast.error(err instanceof Error ? err.message : "Gagal mengunduh template")
   }
 }
 
@@ -155,10 +156,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [columnMap, setColumnMap] = useState<Record<number, TargetFieldKey>>({})
   const [result, setResult] = useState<BulkImportResult | null>(null)
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
 
-  const importMutation = useTauriMutation<BulkImportResult, { products: BulkProductInput[]; callerId: number }>(
-    "bulk_create_products"
+  const importMutation = useApiMutation<BulkImportResult, BulkProductInput[]>(
+    bulkCreateProducts
   )
 
   const resetState = useCallback(() => {
@@ -316,7 +316,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     }
 
     try {
-      const res = await importMutation.mutateAsync({ products, callerId: user!.id })
+      const res = await importMutation.mutateAsync(products)
       // Rows dropped here never reach the backend, so its counters cannot see them.
       // Fold them in so the totals add up to the number of rows in the file.
       setResult({
@@ -330,8 +330,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           : res.errors,
       })
       setStep("result")
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
-      queryClient.invalidateQueries({ queryKey: ["list_categories"] })
+      // A bulk import creates categories as well as products.
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories.all })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gagal import produk")
     }

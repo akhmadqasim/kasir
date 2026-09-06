@@ -30,6 +30,31 @@ export function getAppSettings(): Promise<AppSettings> {
 }
 
 /**
+ * Turn what was read into what can be written.
+ *
+ * `PUT /api/settings` rewrites all four blocks at once, so every settings tab
+ * has to send back the three it does not own. The only difference between the
+ * two shapes is `ppob.has_credentials`, which is a fact about the stored
+ * secrets rather than a value anything can set — dropping it here means no tab
+ * has to remember that.
+ */
+export function toUpdateAppSettingsInput(
+  current: AppSettings
+): UpdateAppSettingsInput {
+  return {
+    sales: current.sales,
+    security: current.security,
+    ppob: {
+      enabled: current.ppob.enabled,
+      phone_number: current.ppob.phone_number,
+      device_id: current.ppob.device_id,
+      markup: current.ppob.markup,
+    },
+    backup: current.backup,
+  }
+}
+
+/**
  * Save everything except the PPOB credentials. Those are kept as they were, so
  * saving a markup change cannot blank them.
  */

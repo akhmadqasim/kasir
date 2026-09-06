@@ -1,53 +1,56 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "@/lib/toast"
-import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import {
+  createCategory,
+  deleteCategory,
+  listCategories,
+  updateCategory,
+  type CreateCategoryInput,
+  type UpdateCategoryInput,
+} from "@/lib/api/categories"
+import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import type { Category } from "../types"
 
 export function useCategories() {
-  return useTauriQuery<Category[]>("list_categories")
+  return useApiQuery<Category[]>(queryKeys.categories.list, listCategories)
 }
 
 export function useCreateCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Category, { name: string; description?: string; callerId: number }>(
-    "create_category",
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_categories"] })
-        toast.success(id.products.categorySuccess)
-      },
-      onError: (error) => {
-        toast.error(error.message || id.common.error)
-      },
-    }
-  )
+  return useApiMutation<Category, CreateCategoryInput>(createCategory, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories.all })
+      toast.success(id.products.categorySuccess)
+    },
+    onError: (error) => {
+      toast.error(error.message || id.common.error)
+    },
+  })
 }
 
 export function useUpdateCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Category, { id: number; name: string; description?: string; callerId: number }>(
-    "update_category",
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["list_categories"] })
-        toast.success(id.products.categorySuccess)
-      },
-      onError: (error) => {
-        toast.error(error.message || id.common.error)
-      },
-    }
-  )
+  return useApiMutation<Category, UpdateCategoryInput>(updateCategory, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories.all })
+      toast.success(id.products.categorySuccess)
+    },
+    onError: (error) => {
+      toast.error(error.message || id.common.error)
+    },
+  })
 }
 
 export function useDeleteCategory() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<null, { id: number; callerId: number }>("delete_category", {
+  return useApiMutation<void, number>(deleteCategory, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["list_categories"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories.all })
       toast.success(id.products.categorySuccess)
     },
     onError: (error) => {

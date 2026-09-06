@@ -15,7 +15,7 @@ import { useSalesReceipt } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Penjualan per Struk"
-const COLUMN_COUNT = 7
+const COLUMN_COUNT = 9
 const SEARCH_PLACEHOLDER = "Cari no. struk..."
 
 export function SalesReceiptPage() {
@@ -72,6 +72,11 @@ export function SalesReceiptPage() {
             <Table.Column>Metode Bayar</Table.Column>
             <Table.Column>Status</Table.Column>
             <Table.Column className="text-right">Total</Table.Column>
+            {/* Struk berstatus `refunded` sekarang ikut tampil, jadi angka yang
+                dibaca kasir harus menjelaskan selisihnya sendiri: berapa yang
+                dikembalikan, dan berapa yang benar-benar tinggal di laci. */}
+            <Table.Column className="text-right">Retur</Table.Column>
+            <Table.Column className="text-right">Bersih</Table.Column>
           </>
         }
       >
@@ -93,8 +98,14 @@ export function SalesReceiptPage() {
                 {transactionStatusLabel(row.status)}
               </StatusBadge>
             </Table.Cell>
-            <Table.Cell className="text-right font-medium">
+            <Table.Cell className="text-right">
               {formatRupiah(row.totalAmount)}
+            </Table.Cell>
+            <Table.Cell className="text-right text-danger">
+              {row.refundAmount > 0 ? `-${formatRupiah(row.refundAmount)}` : "-"}
+            </Table.Cell>
+            <Table.Cell className="text-right font-medium">
+              {formatRupiah(row.netAmount)}
             </Table.Cell>
           </Table.Row>
         ))}

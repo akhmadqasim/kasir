@@ -1,4 +1,13 @@
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import {
+  getDailyRevenue,
+  getDashboardSummary,
+  getLowStockProducts,
+  getPaymentMethodStats,
+  getRecentTransactions,
+  getTopProducts,
+} from "@/lib/api/dashboard"
+import { queryKeys } from "@/lib/api/query-keys"
 import type {
   DashboardSummary,
   DailyRevenue,
@@ -9,31 +18,39 @@ import type {
 } from "../types"
 
 export function useDashboardSummary() {
-  return useTauriQuery<DashboardSummary>("get_dashboard_summary", undefined, {
+  return useApiQuery<DashboardSummary>(queryKeys.dashboard.summary, getDashboardSummary, {
     refetchInterval: 30000,
   })
 }
 
 export function useDailyRevenue(days: number = 7) {
-  return useTauriQuery<DailyRevenue[]>("get_daily_revenue", { days })
+  return useApiQuery<DailyRevenue[]>(queryKeys.dashboard.dailyRevenue(days), () =>
+    getDailyRevenue(days)
+  )
 }
 
 export function usePaymentMethodStats() {
-  return useTauriQuery<PaymentMethodStat[]>("get_payment_method_stats", undefined, {
-    refetchInterval: 30000,
-  })
+  return useApiQuery<PaymentMethodStat[]>(
+    queryKeys.dashboard.paymentMethods,
+    getPaymentMethodStats,
+    { refetchInterval: 30000 }
+  )
 }
 
 export function useTopProducts(limit: number = 10) {
-  return useTauriQuery<TopProduct[]>("get_top_products", { limit })
+  return useApiQuery<TopProduct[]>(queryKeys.dashboard.topProducts(limit), () =>
+    getTopProducts(limit)
+  )
 }
 
 export function useLowStockProducts() {
-  return useTauriQuery<LowStockProduct[]>("get_low_stock_products")
+  return useApiQuery<LowStockProduct[]>(queryKeys.dashboard.lowStock, getLowStockProducts)
 }
 
 export function useRecentTransactions() {
-  return useTauriQuery<RecentTransaction[]>("get_recent_transactions", undefined, {
-    refetchInterval: 15000,
-  })
+  return useApiQuery<RecentTransaction[]>(
+    queryKeys.dashboard.recentTransactions,
+    getRecentTransactions,
+    { refetchInterval: 15000 }
+  )
 }

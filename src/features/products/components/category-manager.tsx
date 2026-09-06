@@ -12,7 +12,6 @@ import {
 } from "@heroui/react"
 
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import {
   useCategories,
   useCreateCategory,
@@ -27,7 +26,6 @@ interface CategoryManagerProps {
 }
 
 export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
-  const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createCategory = useCreateCategory()
   const updateCategory = useUpdateCategory()
@@ -41,7 +39,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
   const handleCreate = () => {
     if (!newName.trim()) return
     createCategory.mutate(
-      { name: newName.trim(), callerId: user!.id },
+      { name: newName.trim() },
       { onSuccess: () => setNewName("") }
     )
   }
@@ -54,17 +52,16 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
   const handleSaveEdit = () => {
     if (!editingCategory || !editName.trim()) return
     updateCategory.mutate(
-      { id: editingCategory.id, name: editName.trim(), callerId: user!.id },
+      { id: editingCategory.id, name: editName.trim() },
       { onSuccess: () => setEditingCategory(null) }
     )
   }
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteCategory.mutate(
-      { id: deleteTarget.id, callerId: user!.id },
-      { onSettled: () => setDeleteTarget(null) }
-    )
+    deleteCategory.mutate(deleteTarget.id, {
+      onSettled: () => setDeleteTarget(null),
+    })
   }
 
   return (
