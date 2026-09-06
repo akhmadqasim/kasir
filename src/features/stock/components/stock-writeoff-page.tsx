@@ -108,10 +108,13 @@ export function StockWriteoffPage() {
   const rejectWriteoff = useRejectWriteoff()
   const deleteWriteoff = useDeleteWriteoff()
 
-  const handleFilterChange = useCallback((setter: (v: string) => void) => (value: string) => {
-    setter(value)
-    setPage(1)
-  }, [])
+  const handleFilterChange = useCallback(
+    (setter: (v: string) => void) => (value: string) => {
+      setter(value)
+      setPage(1)
+    },
+    [],
+  )
 
   const handleConfirm = () => {
     if (!confirmAction || !user) return
@@ -159,7 +162,8 @@ export function StockWriteoffPage() {
     },
   }
 
-  const isPending = approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
+  const isPending =
+    approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -256,11 +260,15 @@ export function StockWriteoffPage() {
                         <Table.Cell className="font-medium">{wo.productName}</Table.Cell>
                         <Table.Cell className="text-muted">{wo.cashierName}</Table.Cell>
                         <Table.Cell className="text-right">{wo.quantity}</Table.Cell>
-                        <Table.Cell><ReasonBadge reason={wo.reason} /></Table.Cell>
+                        <Table.Cell>
+                          <ReasonBadge reason={wo.reason} />
+                        </Table.Cell>
                         <Table.Cell className="text-right font-medium text-danger">
                           {formatRupiah(wo.lossValue)}
                         </Table.Cell>
-                        <Table.Cell><WriteoffStatusBadge status={wo.status} /></Table.Cell>
+                        <Table.Cell>
+                          <WriteoffStatusBadge status={wo.status} />
+                        </Table.Cell>
                         <Table.Cell className="text-sm text-muted">
                           {formatDateTime(wo.createdAt)}
                         </Table.Cell>
@@ -306,10 +314,20 @@ export function StockWriteoffPage() {
               </p>
               {confirmAction && (
                 <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
-                  <div><span className="text-muted">No. WO:</span> {confirmAction.writeoff.writeoffNumber}</div>
-                  <div><span className="text-muted">Produk:</span> {confirmAction.writeoff.productName}</div>
-                  <div><span className="text-muted">Qty:</span> {confirmAction.writeoff.quantity}</div>
-                  <div><span className="text-muted">Kerugian:</span> {formatRupiah(confirmAction.writeoff.lossValue)}</div>
+                  <div>
+                    <span className="text-muted">No. WO:</span>{" "}
+                    {confirmAction.writeoff.writeoffNumber}
+                  </div>
+                  <div>
+                    <span className="text-muted">Produk:</span> {confirmAction.writeoff.productName}
+                  </div>
+                  <div>
+                    <span className="text-muted">Qty:</span> {confirmAction.writeoff.quantity}
+                  </div>
+                  <div>
+                    <span className="text-muted">Kerugian:</span>{" "}
+                    {formatRupiah(confirmAction.writeoff.lossValue)}
+                  </div>
                 </div>
               )}
             </AlertDialog.Body>

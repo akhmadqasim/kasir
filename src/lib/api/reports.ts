@@ -53,10 +53,7 @@ export function reportSalesPeriod(range: DateRange): Promise<PeriodSalesSummary>
  * that totals a column has to total `netAmount`, not `totalAmount`, or the
  * returned money is counted as if it were still in the till.
  */
-export function reportSalesReceipts(
-  range: DateRange,
-  search: string
-): Promise<ReceiptReport> {
+export function reportSalesReceipts(range: DateRange, search: string): Promise<ReceiptReport> {
   return apiGet<ReceiptReport>("/reports/sales/receipts", {
     ...rangeQuery(range),
     search,
@@ -73,7 +70,7 @@ export function reportProductSales(range: DateRange): Promise<ProductSalesRow[]>
 
 export function reportPopularProducts(
   range: DateRange,
-  limit: number
+  limit: number,
 ): Promise<PopularProductRow[]> {
   return apiGet<PopularProductRow[]>("/reports/products/popular", {
     ...rangeQuery(range),
@@ -85,10 +82,7 @@ export function reportReturns(range: DateRange): Promise<ReturnRow[]> {
   return apiGet<ReturnRow[]>("/reports/returns", rangeQuery(range))
 }
 
-export function reportCurrentStock(
-  search: string,
-  filter: string
-): Promise<CurrentStockReport> {
+export function reportCurrentStock(search: string, filter: string): Promise<CurrentStockReport> {
   return apiGet<CurrentStockReport>("/reports/stock/current", { search, filter })
 }
 

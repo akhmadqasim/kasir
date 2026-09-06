@@ -125,7 +125,7 @@ function ProductFormBody({
   const updateProduct = useUpdateProduct()
 
   const [form, setForm] = useState<FormState>(() =>
-    product ? buildFormFromProduct(product) : emptyForm
+    product ? buildFormFromProduct(product) : emptyForm,
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -154,7 +154,8 @@ function ProductFormBody({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!form.name.trim()) newErrors.name = "Nama produk wajib diisi"
-    if (!form.sellPrice || Number(form.sellPrice) <= 0) newErrors.sellPrice = "Harga jual harus lebih dari 0"
+    if (!form.sellPrice || Number(form.sellPrice) <= 0)
+      newErrors.sellPrice = "Harga jual harus lebih dari 0"
     if (!form.buyPrice || Number(form.buyPrice) < 0) newErrors.buyPrice = "Harga modal tidak valid"
     if (form.stock === "" || Number(form.stock) < 0) newErrors.stock = "Stok tidak boleh negatif"
     setErrors(newErrors)
@@ -192,9 +193,12 @@ function ProductFormBody({
   }
 
   const isPending = createProduct.isPending || updateProduct.isPending
-  const actualMargin = Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
-    ? ((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice) * 100).toFixed(1)
-    : null
+  const actualMargin =
+    Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
+      ? (((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice)) * 100).toFixed(
+          1,
+        )
+      : null
 
   return (
     // validationBehavior="aria" menahan validasi di komponen ini. Dengan default
@@ -355,8 +359,12 @@ function ProductFormBody({
             </div>
             {(errors.buyPrice || errors.sellPrice) && (
               <div className="mt-2 space-y-1">
-                {errors.buyPrice && <p className="text-xs font-medium text-danger">{errors.buyPrice}</p>}
-                {errors.sellPrice && <p className="text-xs font-medium text-danger">{errors.sellPrice}</p>}
+                {errors.buyPrice && (
+                  <p className="text-xs font-medium text-danger">{errors.buyPrice}</p>
+                )}
+                {errors.sellPrice && (
+                  <p className="text-xs font-medium text-danger">{errors.sellPrice}</p>
+                )}
               </div>
             )}
             {actualMargin && (
@@ -364,7 +372,8 @@ function ProductFormBody({
                 <span>Margin aktual:</span>
                 <span className="font-semibold text-foreground">{actualMargin}%</span>
                 <span>
-                  (Rp {(Number(form.sellPrice) - Number(form.buyPrice)).toLocaleString("id-ID")} / item)
+                  (Rp {(Number(form.sellPrice) - Number(form.buyPrice)).toLocaleString("id-ID")} /
+                  item)
                 </span>
               </div>
             )}

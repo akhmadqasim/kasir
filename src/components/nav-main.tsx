@@ -37,7 +37,12 @@ export function NavMain({ items }: { items: NavItem[] }) {
       <SidebarMenu>
         {items.map((item) =>
           item.items ? (
-            <NavGroupItem key={item.title} item={item} items={item.items} pathname={location.pathname} />
+            <NavGroupItem
+              key={item.title}
+              item={item}
+              items={item.items}
+              pathname={location.pathname}
+            />
           ) : (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuLink
@@ -49,7 +54,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                 <SidebarLabel className="truncate">{item.title}</SidebarLabel>
               </SidebarMenuLink>
             </SidebarMenuItem>
-          )
+          ),
         )}
       </SidebarMenu>
     </SidebarGroup>

@@ -22,9 +22,7 @@ export function PpobHistory() {
 
   const [productFilter, setProductFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(
-    getDefaultDateRangeDates
-  )
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRangeDates)
 
   // The picker holds local dates; `toISOString()` here would send yesterday.
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start

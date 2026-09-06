@@ -157,10 +157,8 @@ export const queryKeys = {
     providers: ["ppob", "catalog", "providers"] as const,
     pulsaDetails: (phoneNumber: string) =>
       ["ppob", "catalog", "pulsa-details", phoneNumber] as const,
-    pulsaPrices: (providerUid: string) =>
-      ["ppob", "catalog", "pulsa-prices", providerUid] as const,
-    dataPrices: (providerUid: string) =>
-      ["ppob", "catalog", "data-prices", providerUid] as const,
+    pulsaPrices: (providerUid: string) => ["ppob", "catalog", "pulsa-prices", providerUid] as const,
+    dataPrices: (providerUid: string) => ["ppob", "catalog", "data-prices", providerUid] as const,
     plnDenominations: ["ppob", "catalog", "pln-denominations"] as const,
     pdamProducts: ["ppob", "catalog", "pdam-products"] as const,
     emoneyDenominations: (productId: number) =>

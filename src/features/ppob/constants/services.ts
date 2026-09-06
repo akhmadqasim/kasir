@@ -32,16 +32,35 @@ export interface PpobServiceDef {
 }
 
 /** Presentational color classes keyed by service — only import in UI components */
-export const PPOB_SERVICE_COLORS: Record<PpobServiceKey, { text: string; bg: string; bgMuted: string }> = {
-  pulsa:    { text: "text-blue-600",   bg: "bg-blue-500",   bgMuted: "bg-blue-100 dark:bg-blue-950" },
-  data:     { text: "text-purple-600", bg: "bg-purple-500", bgMuted: "bg-purple-100 dark:bg-purple-950" },
-  pln:      { text: "text-yellow-600", bg: "bg-yellow-500", bgMuted: "bg-yellow-100 dark:bg-yellow-950" },
-  pdam:     { text: "text-cyan-600",   bg: "bg-cyan-500",   bgMuted: "bg-cyan-100 dark:bg-cyan-950" },
-  bpjs:     { text: "text-red-600",    bg: "bg-red-500",    bgMuted: "bg-red-100 dark:bg-red-950" },
-  pp:       { text: "text-green-600",  bg: "bg-green-500",  bgMuted: "bg-green-100 dark:bg-green-950" },
-  transfer: { text: "text-orange-600", bg: "bg-orange-500", bgMuted: "bg-orange-100 dark:bg-orange-950" },
-  emoney:   { text: "text-pink-600",   bg: "bg-pink-500",   bgMuted: "bg-pink-100 dark:bg-pink-950" },
-  voucher:  { text: "text-indigo-600", bg: "bg-indigo-500", bgMuted: "bg-indigo-100 dark:bg-indigo-950" },
+export const PPOB_SERVICE_COLORS: Record<
+  PpobServiceKey,
+  { text: string; bg: string; bgMuted: string }
+> = {
+  pulsa: { text: "text-blue-600", bg: "bg-blue-500", bgMuted: "bg-blue-100 dark:bg-blue-950" },
+  data: {
+    text: "text-purple-600",
+    bg: "bg-purple-500",
+    bgMuted: "bg-purple-100 dark:bg-purple-950",
+  },
+  pln: {
+    text: "text-yellow-600",
+    bg: "bg-yellow-500",
+    bgMuted: "bg-yellow-100 dark:bg-yellow-950",
+  },
+  pdam: { text: "text-cyan-600", bg: "bg-cyan-500", bgMuted: "bg-cyan-100 dark:bg-cyan-950" },
+  bpjs: { text: "text-red-600", bg: "bg-red-500", bgMuted: "bg-red-100 dark:bg-red-950" },
+  pp: { text: "text-green-600", bg: "bg-green-500", bgMuted: "bg-green-100 dark:bg-green-950" },
+  transfer: {
+    text: "text-orange-600",
+    bg: "bg-orange-500",
+    bgMuted: "bg-orange-100 dark:bg-orange-950",
+  },
+  emoney: { text: "text-pink-600", bg: "bg-pink-500", bgMuted: "bg-pink-100 dark:bg-pink-950" },
+  voucher: {
+    text: "text-indigo-600",
+    bg: "bg-indigo-500",
+    bgMuted: "bg-indigo-100 dark:bg-indigo-950",
+  },
 }
 
 export const PPOB_SERVICES: PpobServiceDef[] = [
@@ -56,7 +75,14 @@ export const PPOB_SERVICES: PpobServiceDef[] = [
   { key: "voucher", icon: Ticket, label: id.ppob.voucher, path: "voucher" },
 ]
 
-const QUICK_ACCESS_KEYS: Set<PpobServiceKey> = new Set(["pulsa", "data", "pln", "pdam", "bpjs", "emoney"])
+const QUICK_ACCESS_KEYS: Set<PpobServiceKey> = new Set([
+  "pulsa",
+  "data",
+  "pln",
+  "pdam",
+  "bpjs",
+  "emoney",
+])
 
 export const QUICK_ACCESS_SERVICES = PPOB_SERVICES.filter(
   (svc): svc is PpobServiceDef & { key: QuickAccessServiceKey } => QUICK_ACCESS_KEYS.has(svc.key),

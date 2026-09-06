@@ -86,10 +86,7 @@ describe("resolveRangeSelection", () => {
   })
 
   it("falls back to the clicked day when only the end is set", () => {
-    const range = resolveRangeSelection(
-      { from: undefined, to: new Date(2026, 7, 31) },
-      clicked
-    )
+    const range = resolveRangeSelection({ from: undefined, to: new Date(2026, 7, 31) }, clicked)
 
     expect(range.from).toBe(clicked)
     expect(range.to).toBe(clicked)

@@ -49,16 +49,12 @@ export function useToggleUserActive() {
     {
       onSuccess: (_data, variables) => {
         queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
-        toast.success(
-          variables.isActive
-            ? id.users.activateSuccess
-            : id.users.deactivateSuccess
-        )
+        toast.success(variables.isActive ? id.users.activateSuccess : id.users.deactivateSuccess)
       },
       onError: (error) => {
         toast.error(error.message)
       },
-    }
+    },
   )
 }
 

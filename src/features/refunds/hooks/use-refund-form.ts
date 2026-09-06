@@ -65,7 +65,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const { data: detail, isLoading } = useApiQuery<TransactionDetail>(
     queryKeys.transactions.detail(Number(transactionId)),
     () => getTransactionDetail(Number(transactionId)),
-    { enabled: !!transactionId }
+    { enabled: !!transactionId },
   )
 
   /**
@@ -78,12 +78,12 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
    */
   const refundableItems = useMemo(
     () => (detail?.items ?? []).filter((item) => item.product_id !== null),
-    [detail]
+    [detail],
   )
 
   const nonRefundableItems = useMemo(
     () => (detail?.items ?? []).filter((item) => item.product_id === null),
-    [detail]
+    [detail],
   )
 
   useEffect(() => {
@@ -116,9 +116,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
    */
   const applyRemainingQuantityLimit = useCallback(
     (limit: RemainingQuantityLimit) => {
-      const affected = refundableItems.filter(
-        (item) => item.product_name === limit.productName
-      )
+      const affected = refundableItems.filter((item) => item.product_name === limit.productName)
       if (affected.length === 0) return
 
       setItemStates((prev) => {
@@ -136,7 +134,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
         return next
       })
     },
-    [refundableItems]
+    [refundableItems],
   )
 
   const setActionType = useCallback((type: ActionType) => {
@@ -151,22 +149,25 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
       const existing = prev.find((i) => i.product_id === product.id)
       if (existing) {
         return prev.map((i) =>
-          i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+          i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i,
         )
       }
-      return [...prev, {
-        product_id: product.id,
-        product_name: product.name,
-        sell_price: product.sell_price,
-        quantity: 1,
-        unit: product.unit,
-      }]
+      return [
+        ...prev,
+        {
+          product_id: product.id,
+          product_name: product.name,
+          sell_price: product.sell_price,
+          quantity: 1,
+          unit: product.unit,
+        },
+      ]
     })
   }, [])
 
   const updateExchangeQty = useCallback((productId: number, qty: number) => {
     setExchangeItems((prev) =>
-      prev.map((i) => i.product_id === productId ? { ...i, quantity: Math.max(1, qty) } : i)
+      prev.map((i) => (i.product_id === productId ? { ...i, quantity: Math.max(1, qty) } : i)),
     )
   }, [])
 
@@ -176,7 +177,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
 
   const selectedItems = useMemo(
     () => refundableItems.filter((item) => itemStates[item.id]?.checked),
-    [refundableItems, itemStates]
+    [refundableItems, itemStates],
   )
 
   // Money handed back is what the customer paid, not the list price. Mirrors
@@ -203,9 +204,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const hasEarlierRefund = detail?.transaction.status === "partial_refund"
 
   /** Why this sale cannot be refunded at all, or `null` when it can. */
-  const blockedReason = detail
-    ? refundBlockedReason(detail.transaction.created_at)
-    : null
+  const blockedReason = detail ? refundBlockedReason(detail.transaction.created_at) : null
 
   const handleSubmit = async () => {
     if (!transactionId || !userId) return
@@ -235,9 +234,10 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
           quantity: itemStates[item.id].quantity,
           condition: itemStates[item.id].condition,
         })),
-        exchange_items: actionType === "exchange"
-          ? exchangeItems.map((i) => ({ product_id: i.product_id, quantity: i.quantity }))
-          : undefined,
+        exchange_items:
+          actionType === "exchange"
+            ? exchangeItems.map((i) => ({ product_id: i.product_id, quantity: i.quantity }))
+            : undefined,
       }
 
       await createRefund(refundInput)

@@ -38,7 +38,11 @@ import {
   useEmoneyDenom,
   useEmoneyInquiry,
 } from "@/features/ppob/hooks"
-import { QUICK_ACCESS_SERVICES, PPOB_SERVICE_COLORS, type QuickAccessServiceKey } from "@/features/ppob/constants"
+import {
+  QUICK_ACCESS_SERVICES,
+  PPOB_SERVICE_COLORS,
+  type QuickAccessServiceKey,
+} from "@/features/ppob/constants"
 import type { PulsaDetailProduct, InquiryResult } from "@/features/ppob/types"
 import type { PpobMarkup, PpobMarkupConfig } from "@/features/ppob/types/auth"
 import { useCartStore } from "../hooks/use-cart-store"
@@ -64,12 +68,20 @@ interface BpjsParticipant {
 
 function getBpjsDataBook(rawData: Record<string, unknown> | undefined): string {
   const inquiry = rawData?.inquiry
-  if (inquiry && typeof inquiry === "object" && typeof (inquiry as { data_book?: unknown }).data_book === "string") {
+  if (
+    inquiry &&
+    typeof inquiry === "object" &&
+    typeof (inquiry as { data_book?: unknown }).data_book === "string"
+  ) {
     return (inquiry as { data_book: string }).data_book
   }
 
   const data = rawData?.data
-  if (data && typeof data === "object" && typeof (data as { data_book?: unknown }).data_book === "string") {
+  if (
+    data &&
+    typeof data === "object" &&
+    typeof (data as { data_book?: unknown }).data_book === "string"
+  ) {
     return (data as { data_book: string }).data_book
   }
 
@@ -129,9 +141,7 @@ export function PpobQuickAccess({
   showSaldoBar = true,
   wideLayout = false,
 }: PpobQuickAccessProps = {}) {
-  const [selectedService, setSelectedService] = useState<ServiceType | null>(
-    initialService ?? null
-  )
+  const [selectedService, setSelectedService] = useState<ServiceType | null>(initialService ?? null)
   const [markup, setMarkup] = useState<PpobMarkup | null>(null)
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({})
   const addPpobItem = useCartStore((s) => s.addPpobItem)
@@ -158,7 +168,9 @@ export function PpobQuickAccess({
 
   const getMarkupConfig = (serviceType: string): PpobMarkupConfig => {
     if (!markup) return DEFAULT_PPOB_MARKUP
-    return (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_PPOB_MARKUP
+    return (
+      (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_PPOB_MARKUP
+    )
   }
 
   const resolveSellPrice: ResolveSellPrice = ({ name, serviceType, vendorCost }) =>
@@ -227,23 +239,61 @@ export function PpobQuickAccess({
           </Button>
           <div className="flex items-center gap-2">
             {(() => {
-              const svc = QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)
+              const svc = QUICK_ACCESS_SERVICES.find((s) => s.key === selectedService)
               if (!svc) return null
               const Icon = svc.icon
               return <Icon className={`h-4 w-4 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
             })()}
             <span className="text-sm font-medium">
-              {QUICK_ACCESS_SERVICES.find(s => s.key === selectedService)?.label}
+              {QUICK_ACCESS_SERVICES.find((s) => s.key === selectedService)?.label}
             </span>
           </div>
         </div>
 
-        {selectedService === "pulsa" && <PulsaInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} productType="pulsa" wideLayout={wideLayout} />}
-        {selectedService === "data" && <PulsaInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} productType="data" wideLayout={wideLayout} />}
-        {selectedService === "pln" && <PlnInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
-        {selectedService === "pdam" && <PdamInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
-        {selectedService === "bpjs" && <BpjsInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
-        {selectedService === "emoney" && <EmoneyInput onAddToCart={handleAddToCart} resolveSellPrice={resolveSellPrice} wideLayout={wideLayout} />}
+        {selectedService === "pulsa" && (
+          <PulsaInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            productType="pulsa"
+            wideLayout={wideLayout}
+          />
+        )}
+        {selectedService === "data" && (
+          <PulsaInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            productType="data"
+            wideLayout={wideLayout}
+          />
+        )}
+        {selectedService === "pln" && (
+          <PlnInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            wideLayout={wideLayout}
+          />
+        )}
+        {selectedService === "pdam" && (
+          <PdamInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            wideLayout={wideLayout}
+          />
+        )}
+        {selectedService === "bpjs" && (
+          <BpjsInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            wideLayout={wideLayout}
+          />
+        )}
+        {selectedService === "emoney" && (
+          <EmoneyInput
+            onAddToCart={handleAddToCart}
+            resolveSellPrice={resolveSellPrice}
+            wideLayout={wideLayout}
+          />
+        )}
       </div>
     )
   }
@@ -335,11 +385,19 @@ function PulsaInput({
 
   const { data, isLoading, error } = usePulsaDetails(phoneNumber)
 
-  const filteredProducts = data?.products.filter((p) => {
-    if (p.isTrouble !== 0) return false
-    if (productType === "data") return p.description.toLowerCase().includes("data") || p.description.toLowerCase().includes("internet")
-    return !p.description.toLowerCase().includes("data") && !p.description.toLowerCase().includes("internet")
-  }) ?? []
+  const filteredProducts =
+    data?.products.filter((p) => {
+      if (p.isTrouble !== 0) return false
+      if (productType === "data")
+        return (
+          p.description.toLowerCase().includes("data") ||
+          p.description.toLowerCase().includes("internet")
+        )
+      return (
+        !p.description.toLowerCase().includes("data") &&
+        !p.description.toLowerCase().includes("internet")
+      )
+    }) ?? []
 
   const buildItemName = (product: PulsaDetailProduct) =>
     `${productType === "pulsa" ? "Pulsa" : "Data"} ${data?.provider ?? ""} - ${product.description.replace(/\n/g, " ")}`
@@ -366,15 +424,21 @@ function PulsaInput({
     })
   }
 
-  const confirmItems = selected ? [
-    { label: "Layanan", value: productType === "pulsa" ? "Pulsa" : "Paket Data" },
-    { label: "Provider", value: data?.provider ?? "-" },
-    { label: "Nomor HP", value: phoneNumber, mono: true },
-    { label: "Produk", value: selected.description.replace(/\n/g, " ") },
-    { label: "Modal", value: formatRupiah(selected.vendorPrice) },
-    { label: "Harga Jual", value: formatRupiah(selectedSellPrice), bold: true },
-    { label: "Margin", value: `+${formatRupiah(selectedSellPrice - selected.vendorPrice)}`, green: true },
-  ] : null
+  const confirmItems = selected
+    ? [
+        { label: "Layanan", value: productType === "pulsa" ? "Pulsa" : "Paket Data" },
+        { label: "Provider", value: data?.provider ?? "-" },
+        { label: "Nomor HP", value: phoneNumber, mono: true },
+        { label: "Produk", value: selected.description.replace(/\n/g, " ") },
+        { label: "Modal", value: formatRupiah(selected.vendorPrice) },
+        { label: "Harga Jual", value: formatRupiah(selectedSellPrice), bold: true },
+        {
+          label: "Margin",
+          value: `+${formatRupiah(selectedSellPrice - selected.vendorPrice)}`,
+          green: true,
+        },
+      ]
+    : null
 
   const inputSection = (
     <div className="space-y-4">
@@ -409,13 +473,13 @@ function PulsaInput({
       */}
       {phoneNumber.length >= 10 && !data && !error && (
         <div className={`grid gap-2 ${wideLayout ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
         </div>
       )}
 
-      {error && phoneNumber.length >= 10 && (
-        <p className="text-sm text-danger">{error.message}</p>
-      )}
+      {error && phoneNumber.length >= 10 && <p className="text-sm text-danger">{error.message}</p>}
 
       {/*
         A lookup that comes back with nothing to sell — every product flagged as
@@ -425,8 +489,7 @@ function PulsaInput({
       {data && !isLoading && filteredProducts.length === 0 && (
         <div className="rounded-lg border border-dashed p-6 text-center">
           <p className="text-sm font-medium">
-            Tidak ada produk {productType === "pulsa" ? "pulsa" : "paket data"} untuk
-            nomor ini
+            Tidak ada produk {productType === "pulsa" ? "pulsa" : "paket data"} untuk nomor ini
           </p>
           <p className="mt-1 text-xs text-muted">
             {data.provider
@@ -529,7 +592,7 @@ function PlnInput({
   const handleInquiry = () => {
     if (!customerId) return
     if (mode === "token" && selectedDenom === null) return
-    const denom = mode === "token" ? denoms?.find(d => d.id === selectedDenom) : null
+    const denom = mode === "token" ? denoms?.find((d) => d.id === selectedDenom) : null
     plnInquiry.mutate(
       {
         customerId,
@@ -540,7 +603,7 @@ function PlnInput({
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
-      }
+      },
     )
   }
 
@@ -549,9 +612,10 @@ function PlnInput({
   const itemName = (() => {
     const label = mode === "token" ? "PLN Token" : "PLN Bayar"
     const customerName = inquiryResult?.customerName ?? customerId
-    const denomLabel = mode === "token" && selectedDenom !== null
-      ? ` ${formatRupiah(parseFloat(denoms?.find(d => d.id === selectedDenom)?.denom ?? "0"))}`
-      : ""
+    const denomLabel =
+      mode === "token" && selectedDenom !== null
+        ? ` ${formatRupiah(parseFloat(denoms?.find((d) => d.id === selectedDenom)?.denom ?? "0"))}`
+        : ""
     return `${label}${denomLabel} - ${customerName}`
   })()
   const sellPrice = inquiryResult
@@ -572,23 +636,31 @@ function PlnInput({
     })
   }
 
-  const canInquiry = mode === "token"
-    ? customerId.length >= 8 && selectedDenom !== null
-    : customerId.length >= 8
+  const canInquiry =
+    mode === "token" ? customerId.length >= 8 && selectedDenom !== null : customerId.length >= 8
 
   const plnInquiryData = inquiryResult?.rawData?.inquiry as Record<string, string> | undefined
-  const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: mode === "token" ? "PLN Token" : "PLN Pascabayar" },
-    { label: "No. Meter/IDPEL", value: customerId, mono: true },
-    { label: "Nama", value: inquiryResult.customerName ?? "-" },
-    ...(plnInquiryData?.Golongan ? [{ label: "Tarif/Daya", value: `${plnInquiryData.Golongan}/${plnInquiryData.Kategori ?? ""}` }] : []),
-    { label: "Harga Token", value: formatRupiah(inquiryResult.amount) },
-    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    ...(sellPrice > vendorCost
-      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
-      : []),
-    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
-  ] : null
+  const confirmItems = inquiryResult
+    ? [
+        { label: "Layanan", value: mode === "token" ? "PLN Token" : "PLN Pascabayar" },
+        { label: "No. Meter/IDPEL", value: customerId, mono: true },
+        { label: "Nama", value: inquiryResult.customerName ?? "-" },
+        ...(plnInquiryData?.Golongan
+          ? [
+              {
+                label: "Tarif/Daya",
+                value: `${plnInquiryData.Golongan}/${plnInquiryData.Kategori ?? ""}`,
+              },
+            ]
+          : []),
+        { label: "Harga Token", value: formatRupiah(inquiryResult.amount) },
+        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        ...(sellPrice > vendorCost
+          ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+          : []),
+        { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
+      ]
+    : null
 
   const inputSection = (
     <div className="space-y-4">
@@ -636,14 +708,15 @@ function PlnInput({
         <p className="text-xs text-muted">
           {mode === "token"
             ? "Bisa pakai No. Meter (11 digit) atau IDPEL (12 digit) dari struk PLN."
-            : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."
-          }
+            : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."}
         </p>
       </div>
 
       {mode === "token" && denomsLoading && (
         <div className={`grid gap-2 ${wideLayout ? "grid-cols-4" : "grid-cols-3"}`}>
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12" />
+          ))}
         </div>
       )}
 
@@ -670,10 +743,16 @@ function PlnInput({
 
       {canInquiry && !inquiryResult && (
         <Button className="w-full" isDisabled={plnInquiry.isPending} onPress={handleInquiry}>
-          {plnInquiry.isPending
-            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {mode === "token" ? "Cek Info..." : "Cek Tagihan..."}</>
-            : mode === "token" ? "Cek Info Pelanggan" : "Cek Tagihan"
-          }
+          {plnInquiry.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+              {mode === "token" ? "Cek Info..." : "Cek Tagihan..."}
+            </>
+          ) : mode === "token" ? (
+            "Cek Info Pelanggan"
+          ) : (
+            "Cek Tagihan"
+          )}
         </Button>
       )}
 
@@ -736,19 +815,19 @@ function PdamInput({
 
   const handleInquiry = () => {
     if (!customerId || !selectedPdam) return
-    const pdam = pdamProducts?.find(p => p.plu === selectedPdam)
+    const pdam = pdamProducts?.find((p) => p.plu === selectedPdam)
     pdamInquiry.mutate(
       { customerId, productId: pdam?.id ?? 0, paymentCode: selectedPdam },
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
-      }
+      },
     )
   }
 
   // Yang dibayar toko ke vendor = tagihan + biaya admin.
   const vendorCost = inquiryResult?.total ?? 0
-  const pdamName = pdamProducts?.find(p => p.plu === selectedPdam)?.merchant ?? "PDAM"
+  const pdamName = pdamProducts?.find((p) => p.plu === selectedPdam)?.merchant ?? "PDAM"
   const itemName = `PDAM ${pdamName} - ${inquiryResult?.customerName ?? customerId}`
   const sellPrice = inquiryResult
     ? resolveSellPrice({ name: itemName, serviceType: "pdam", vendorCost })
@@ -762,23 +841,25 @@ function PdamInput({
       service_type: "pdam",
       service_ref: customerId,
       buy_price: vendorCost,
-      ppob_product_id: pdamProducts?.find(p => p.plu === selectedPdam)?.id,
+      ppob_product_id: pdamProducts?.find((p) => p.plu === selectedPdam)?.id,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: selectedPdam,
     })
   }
 
-  const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: "PDAM" },
-    { label: "ID Pelanggan", value: customerId, mono: true },
-    { label: "Nama", value: inquiryResult.customerName ?? "-" },
-    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    ...(sellPrice > vendorCost
-      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
-      : []),
-    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
-  ] : null
+  const confirmItems = inquiryResult
+    ? [
+        { label: "Layanan", value: "PDAM" },
+        { label: "ID Pelanggan", value: customerId, mono: true },
+        { label: "Nama", value: inquiryResult.customerName ?? "-" },
+        { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        ...(sellPrice > vendorCost
+          ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+          : []),
+        { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
+      ]
+    : null
 
   const inputSection = (
     <div className="space-y-4">
@@ -834,7 +915,13 @@ function PdamInput({
           isDisabled={pdamInquiry.isPending || customerId.length < 5}
           onPress={handleInquiry}
         >
-          {pdamInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...</> : "Cek Tagihan"}
+          {pdamInquiry.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...
+            </>
+          ) : (
+            "Cek Tagihan"
+          )}
         </Button>
       )}
 
@@ -905,16 +992,19 @@ function BpjsInput({
   const primaryParticipant =
     bpjsParticipants.find((participant) => participant.number === customerId) ?? bpjsParticipants[0]
   const displayCustomerName = primaryParticipant?.name ?? inquiryResult?.customerName ?? customerId
-  const selectedBpjsType = BPJS_TYPE_OPTIONS.find((option) => option.value === bpjsType) ?? BPJS_TYPE_OPTIONS[0]
+  const selectedBpjsType =
+    BPJS_TYPE_OPTIONS.find((option) => option.value === bpjsType) ?? BPJS_TYPE_OPTIONS[0]
   const customerIdLabel = selectedBpjsType.value === "BPJSKES" ? "Nomor VA" : "Nomor Kartu"
-  const customerIdPlaceholder = selectedBpjsType.value === "BPJSKES"
-    ? "Masukkan nomor VA BPJS"
-    : "Masukkan nomor kartu BPJS"
+  const customerIdPlaceholder =
+    selectedBpjsType.value === "BPJSKES" ? "Masukkan nomor VA BPJS" : "Masukkan nomor kartu BPJS"
   const bpjsPaymentCode = (() => {
-    const raw = inquiryResult?.rawData as { data?: Record<string, unknown>; payment_code?: unknown } | undefined
+    const raw = inquiryResult?.rawData as
+      | { data?: Record<string, unknown>; payment_code?: unknown }
+      | undefined
     const fromData = raw?.data?.payment_code
     if (typeof fromData === "string" && fromData.length > 0) return fromData
-    if (typeof raw?.payment_code === "string" && raw.payment_code.length > 0) return raw.payment_code
+    if (typeof raw?.payment_code === "string" && raw.payment_code.length > 0)
+      return raw.payment_code
     return customerId
   })()
 
@@ -931,7 +1021,7 @@ function BpjsInput({
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
-      }
+      },
     )
   }
 
@@ -957,22 +1047,26 @@ function BpjsInput({
     })
   }
 
-  const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: selectedBpjsType.serviceLabel },
-    { label: customerIdLabel, value: customerId, mono: true },
-    { label: "Nama Utama", value: displayCustomerName },
-    ...(bpjsParticipants.length > 1 ? [{ label: "Jumlah Peserta", value: String(bpjsParticipants.length) }] : []),
-    ...bpjsParticipants.map((participant, index) => ({
-      label: `Peserta ${index + 1}`,
-      value: participant.name || participant.number || "-",
-    })),
-    { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-    { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
-    ...(sellPrice > vendorCost
-      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
-      : []),
-    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
-  ] : null
+  const confirmItems = inquiryResult
+    ? [
+        { label: "Layanan", value: selectedBpjsType.serviceLabel },
+        { label: customerIdLabel, value: customerId, mono: true },
+        { label: "Nama Utama", value: displayCustomerName },
+        ...(bpjsParticipants.length > 1
+          ? [{ label: "Jumlah Peserta", value: String(bpjsParticipants.length) }]
+          : []),
+        ...bpjsParticipants.map((participant, index) => ({
+          label: `Peserta ${index + 1}`,
+          value: participant.name || participant.number || "-",
+        })),
+        { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        ...(sellPrice > vendorCost
+          ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+          : []),
+        { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
+      ]
+    : null
 
   const inputSection = (
     <div className="space-y-4">
@@ -1020,7 +1114,13 @@ function BpjsInput({
           isDisabled={bpjsInquiry.isPending || customerId.length < 10}
           onPress={handleInquiry}
         >
-          {bpjsInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...</> : "Cek Tagihan"}
+          {bpjsInquiry.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cek Tagihan...
+            </>
+          ) : (
+            "Cek Tagihan"
+          )}
         </Button>
       )}
 
@@ -1087,7 +1187,7 @@ function EmoneyInput({
       {
         onSuccess: (result) => setInquiryResult(result),
         onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
-      }
+      },
     )
   }
 
@@ -1111,18 +1211,23 @@ function EmoneyInput({
     })
   }
 
-  const confirmItems = inquiryResult ? [
-    { label: "Layanan", value: "E-Money" },
-    { label: "Nomor", value: phoneNumber, mono: true },
-    { label: "Nominal", value: selectedDenom?.denom ? formatRupiah(parseFloat(selectedDenom.denom)) : "-" },
-    ...(inquiryResult.adminFee > 0
-      ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
-      : []),
-    ...(sellPrice > vendorCost
-      ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
-      : []),
-    { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
-  ] : null
+  const confirmItems = inquiryResult
+    ? [
+        { label: "Layanan", value: "E-Money" },
+        { label: "Nomor", value: phoneNumber, mono: true },
+        {
+          label: "Nominal",
+          value: selectedDenom?.denom ? formatRupiah(parseFloat(selectedDenom.denom)) : "-",
+        },
+        ...(inquiryResult.adminFee > 0
+          ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
+          : []),
+        ...(sellPrice > vendorCost
+          ? [{ label: "Markup", value: `+${formatRupiah(sellPrice - vendorCost)}`, green: true }]
+          : []),
+        { label: "Total Bayar", value: formatRupiah(sellPrice), bold: true },
+      ]
+    : null
 
   const inputSection = (
     <div className="space-y-4">
@@ -1146,7 +1251,9 @@ function EmoneyInput({
 
       {isLoading && (
         <div className="grid grid-cols-3 gap-2">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12" />
+          ))}
         </div>
       )}
 
@@ -1177,7 +1284,13 @@ function EmoneyInput({
           isDisabled={emoneyInquiry.isPending || phoneNumber.length < 8}
           onPress={handleInquiry}
         >
-          {emoneyInquiry.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Memproses...</> : "Cek & Proses"}
+          {emoneyInquiry.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Memproses...
+            </>
+          ) : (
+            "Cek & Proses"
+          )}
         </Button>
       )}
 
@@ -1237,11 +1350,15 @@ function ConfirmSection({
         {items.map((item) => (
           <div key={item.label} className="flex justify-between text-sm">
             <span className="text-muted">{item.label}</span>
-            <span className={[
-              item.mono && "font-mono",
-              item.bold && "font-bold text-base",
-              item.green && "text-success font-medium",
-            ].filter(Boolean).join(" ")}>
+            <span
+              className={[
+                item.mono && "font-mono",
+                item.bold && "font-bold text-base",
+                item.green && "text-success font-medium",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               {item.value}
             </span>
           </div>

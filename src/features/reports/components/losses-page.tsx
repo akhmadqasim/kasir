@@ -80,9 +80,7 @@ export function LossesPage() {
                       </StatusBadge>
                       <span className="text-sm text-muted">{r.count}x</span>
                     </div>
-                    <p className="text-lg font-bold text-danger">
-                      {formatRupiah(r.totalValue)}
-                    </p>
+                    <p className="text-lg font-bold text-danger">{formatRupiah(r.totalValue)}</p>
                   </Card.Content>
                 </Card>
               ))}
@@ -133,9 +131,7 @@ export function LossesPage() {
                 {STATUS_LABELS[row.status] ?? row.status}
               </StatusBadge>
             </Table.Cell>
-            <Table.Cell className="text-sm text-muted">
-              {formatDayDate(row.createdAt)}
-            </Table.Cell>
+            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
           </Table.Row>
         ))}
       </ReportTable>

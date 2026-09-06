@@ -173,10 +173,7 @@ describe("invalidasi mencapai query yang dituju", () => {
 describe("invalidasi yang sempit tidak menyapu yang lain", () => {
   it("melacak pilihan produk tidak memuat ulang daftar pencarian", () => {
     expect(
-      invalidates(
-        queryKeys.products.search({ query: "indomie" }),
-        queryKeys.products.popularAll
-      )
+      invalidates(queryKeys.products.search({ query: "indomie" }), queryKeys.products.popularAll),
     ).toBe(false)
   })
 

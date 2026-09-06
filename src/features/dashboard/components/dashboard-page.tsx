@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Button,
-  Card,
-  Chip,
-  Label,
-  ListBox,
-  Select,
-  Table,
-} from "@heroui/react"
+import { Button, Card, Chip, Label, ListBox, Select, Table } from "@heroui/react"
 import {
   ChartContainer,
   ChartTooltip,
@@ -49,11 +41,7 @@ import {
   useRecentTransactions,
 } from "../hooks/use-dashboard"
 import { formatDateTime, formatRupiah } from "@/lib/format"
-import {
-  paymentMethodLabel,
-  transactionStatusLabel,
-  transactionStatusVariant,
-} from "@/lib/labels"
+import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 
 // --- Helpers ---
 
@@ -69,11 +57,9 @@ function formatNumber(value: number): string {
  * langsung ke tiap kartu. `dark:bg-card` lama ikut hilang karena Card HeroUI
  * sudah memakai `bg-surface` — nilai yang sama dengan `--card`.
  */
-const STAT_CARD_CLASS =
-  "@container/card bg-gradient-to-t from-accent/5 to-surface shadow-xs"
+const STAT_CARD_CLASS = "@container/card bg-gradient-to-t from-accent/5 to-surface shadow-xs"
 
-const STAT_VALUE_CLASS =
-  "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl"
+const STAT_VALUE_CLASS = "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl"
 
 /** Baris kosong tabel dashboard: satu pesan, bukan sel ber-`colSpan`. */
 function renderNoData() {
@@ -166,23 +152,19 @@ function SectionCards() {
                 <TrendingDownIcon className="size-3" />
               )}
               <Chip.Label>
-                {isUp ? "+" : ""}{revenueChange.toFixed(1)}%
+                {isUp ? "+" : ""}
+                {revenueChange.toFixed(1)}%
               </Chip.Label>
             </Chip>
           }
         />
         <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            {isUp ? t.dashboard.trendUp : t.dashboard.trendDown} {Math.abs(revenueChange).toFixed(1)}% {t.dashboard.vsYesterday}{" "}
-            {isUp ? (
-              <TrendingUpIcon className="size-4" />
-            ) : (
-              <TrendingDownIcon className="size-4" />
-            )}
+            {isUp ? t.dashboard.trendUp : t.dashboard.trendDown}{" "}
+            {Math.abs(revenueChange).toFixed(1)}% {t.dashboard.vsYesterday}{" "}
+            {isUp ? <TrendingUpIcon className="size-4" /> : <TrendingDownIcon className="size-4" />}
           </div>
-          <div className="text-muted">
-            {t.dashboard.revenueChartDescription}
-          </div>
+          <div className="text-muted">{t.dashboard.revenueChartDescription}</div>
         </Card.Footer>
       </Card>
       <Card className={STAT_CARD_CLASS}>
@@ -198,12 +180,9 @@ function SectionCards() {
         />
         <Card.Footer className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            Margin {marginPct.toFixed(1)}% dari penjualan{" "}
-            <TrendingUpIcon className="size-4" />
+            Margin {marginPct.toFixed(1)}% dari penjualan <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted">
-            {t.dashboard.todayRevenue}
-          </div>
+          <div className="text-muted">{t.dashboard.todayRevenue}</div>
         </Card.Footer>
       </Card>
       <Card className={STAT_CARD_CLASS}>
@@ -222,9 +201,7 @@ function SectionCards() {
             {formatNumber(summary?.todayTransactions ?? 0)} {t.dashboard.completedTransactions}{" "}
             <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted">
-            {t.dashboard.todayBreakdown}
-          </div>
+          <div className="text-muted">{t.dashboard.todayBreakdown}</div>
         </Card.Footer>
       </Card>
       <Card className={STAT_CARD_CLASS}>
@@ -237,9 +214,7 @@ function SectionCards() {
             {formatRupiah(summary?.todayAvgPerTransaction ?? 0)} {t.dashboard.perTransaction}{" "}
             <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted">
-            {t.dashboard.todayBreakdown}
-          </div>
+          <div className="text-muted">{t.dashboard.todayBreakdown}</div>
         </Card.Footer>
       </Card>
     </div>
@@ -330,9 +305,7 @@ function QuickActions() {
                   {action.icon}
                   {action.label}
                 </span>
-                <span className="text-base leading-tight font-semibold">
-                  {action.title}
-                </span>
+                <span className="text-base leading-tight font-semibold">{action.title}</span>
                 <span
                   className={`text-xs leading-relaxed ${
                     action.variant === "primary" ? "opacity-80" : "text-muted"
@@ -352,8 +325,7 @@ function QuickActions() {
 function ChartRevenueInteractive() {
   const [timeRange, setTimeRange] = useState<string>("7d")
 
-  const days =
-    TIME_RANGE_OPTIONS.find((option) => option.key === timeRange)?.days ?? 7
+  const days = TIME_RANGE_OPTIONS.find((option) => option.key === timeRange)?.days ?? 7
   const { data: dailyRevenue } = useDailyRevenue(days)
 
   const totalRevenue = useMemo(() => {
@@ -374,23 +346,17 @@ function ChartRevenueInteractive() {
       <Card.Header className="flex flex-col items-stretch border-b sm:flex-row">
         <div className="flex flex-1 flex-col justify-center gap-1 px-6 py-4 sm:py-0">
           <Card.Title>{t.dashboard.revenueChart}</Card.Title>
-          <Card.Description>
-            {t.dashboard.revenueChartDescription}
-          </Card.Description>
+          <Card.Description>{t.dashboard.revenueChartDescription}</Card.Description>
         </div>
         <div className="flex">
           <div className="flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
-            <span className="text-xs text-muted">
-              {t.dashboard.revenue}
-            </span>
+            <span className="text-xs text-muted">{t.dashboard.revenue}</span>
             <span className="text-lg leading-none font-bold sm:text-3xl">
               {formatRupiah(totalRevenue)}
             </span>
           </div>
           <div className="flex flex-1 flex-col justify-center gap-1 border-t border-l px-6 py-4 sm:border-t-0 sm:px-8 sm:py-6">
-            <span className="text-xs text-muted">
-              {t.dashboard.transactions}
-            </span>
+            <span className="text-xs text-muted">{t.dashboard.transactions}</span>
             <span className="text-lg leading-none font-bold sm:text-3xl">
               {formatNumber(totalTransactions)}
             </span>
@@ -421,15 +387,8 @@ function ChartRevenueInteractive() {
           </Select.Popover>
         </Select>
         {dailyRevenue && dailyRevenue.length > 0 ? (
-          <ChartContainer
-            config={revenueChartConfig}
-            className="aspect-auto h-[250px] w-full"
-          >
-            <LineChart
-              accessibilityLayer
-              data={dailyRevenue}
-              margin={{ left: 12, right: 12 }}
-            >
+          <ChartContainer config={revenueChartConfig} className="aspect-auto h-[250px] w-full">
+            <LineChart accessibilityLayer data={dailyRevenue} margin={{ left: 12, right: 12 }}>
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="date"
@@ -515,14 +474,8 @@ function ChartPaymentRadar() {
             className="mx-auto aspect-square max-h-[250px]"
           >
             <RadarChart data={radarData} outerRadius="70%">
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent />}
-              />
-              <PolarAngleAxis
-                dataKey="method"
-                tick={{ fontSize: 12 }}
-              />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+              <PolarAngleAxis dataKey="method" tick={{ fontSize: 12 }} />
               <PolarGrid />
               <Radar
                 dataKey="total"
@@ -548,14 +501,10 @@ function ChartPaymentRadar() {
               {topPaymentMethod.label} {t.dashboard.dominates} ({topPaymentMethod.pct}%)
               <TrendingUpIcon className="h-4 w-4" />
             </div>
-            <div className="leading-none text-muted">
-              {t.dashboard.todayBreakdown}
-            </div>
+            <div className="leading-none text-muted">{t.dashboard.todayBreakdown}</div>
           </>
         ) : (
-          <div className="leading-none text-muted">
-            {t.dashboard.noData}
-          </div>
+          <div className="leading-none text-muted">{t.dashboard.noData}</div>
         )}
       </Card.Footer>
     </Card>
@@ -625,9 +574,7 @@ function LowStockTable() {
               <Table.Body renderEmptyState={renderNoData}>
                 {(lowStock ?? []).map((p) => (
                   <Table.Row key={p.id} id={p.id} textValue={p.name}>
-                    <Table.Cell className="max-w-[150px] truncate font-medium">
-                      {p.name}
-                    </Table.Cell>
+                    <Table.Cell className="max-w-[150px] truncate font-medium">{p.name}</Table.Cell>
                     {/*
                       Setiap baris di sini sudah di bawah `min_stock`, jadi statusnya
                       peringatan; stok nol sudah kehabisan dan diberi warna error.
@@ -662,10 +609,7 @@ function RecentTransactionsTable() {
       <Card.Content>
         <Table variant="secondary">
           <Table.ScrollContainer>
-            <Table.Content
-              aria-label={t.dashboard.recentTransactions}
-              className="min-w-[720px]"
-            >
+            <Table.Content aria-label={t.dashboard.recentTransactions} className="min-w-[720px]">
               <Table.Header>
                 <Table.Column isRowHeader>{t.dashboard.receipt}</Table.Column>
                 <Table.Column>{t.dashboard.cashier}</Table.Column>

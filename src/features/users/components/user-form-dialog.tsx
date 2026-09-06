@@ -45,7 +45,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   )
 }
 
-function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange: (open: boolean) => void }) {
+function UserFormBody({
+  user,
+  onOpenChange,
+}: {
+  user?: User | null
+  onOpenChange: (open: boolean) => void
+}) {
   const isEdit = !!user
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -93,7 +99,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
           role,
           ...(pin ? { newPin: pin } : {}),
         },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false) },
       )
     } else {
       createUser.mutate(
@@ -103,7 +109,7 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
           role,
           pin,
         },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false) },
       )
     }
   }

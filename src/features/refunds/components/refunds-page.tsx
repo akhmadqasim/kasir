@@ -33,17 +33,20 @@ export function RefundsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailRefundId, setDetailRefundId] = useState<number | null>(null)
 
-  const queryParams = useMemo<ListRefundsInput>(() => ({
-    page,
-    per_page: 50,
-    refund_type: typeFilter || undefined,
-    date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
-    date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
-  }), [page, typeFilter, dateRange])
+  const queryParams = useMemo<ListRefundsInput>(
+    () => ({
+      page,
+      per_page: 50,
+      refund_type: typeFilter || undefined,
+      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
+    }),
+    [page, typeFilter, dateRange],
+  )
 
   const { data, isLoading, error } = useApiQuery<ListRefundsResult>(
     queryKeys.refunds.list(queryParams),
-    () => listRefunds(queryParams)
+    () => listRefunds(queryParams),
   )
 
   const resetFilters = useCallback(() => {
@@ -53,7 +56,8 @@ export function RefundsPage() {
   }, [])
 
   const today = toLocalDateString(new Date())
-  const hasFilters = typeFilter ||
+  const hasFilters =
+    typeFilter ||
     (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
     (dateRange?.to && toLocalDateString(dateRange.to) !== today)
 
@@ -108,7 +112,10 @@ export function RefundsPage() {
         <div className="ml-auto">
           <DateRangePicker
             value={dateRange}
-            onChange={(range) => { setDateRange(range); setPage(1) }}
+            onChange={(range) => {
+              setDateRange(range)
+              setPage(1)
+            }}
             align="start"
           />
         </div>
@@ -151,7 +158,9 @@ export function RefundsPage() {
                         onAction={() => setDetailRefundId(item.id)}
                       >
                         <Table.Cell className="font-mono text-sm">{item.refund_number}</Table.Cell>
-                        <Table.Cell className="font-mono text-sm">{item.transaction_receipt}</Table.Cell>
+                        <Table.Cell className="font-mono text-sm">
+                          {item.transaction_receipt}
+                        </Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={refundTypeVariant(item.refund_type)}>
                             {refundTypeLabel(item.refund_type)}
@@ -173,7 +182,9 @@ export function RefundsPage() {
                             : "—"}
                         </Table.Cell>
                         <Table.Cell>{item.cashier_name}</Table.Cell>
-                        <Table.Cell className="text-sm">{formatDateTime(item.created_at)}</Table.Cell>
+                        <Table.Cell className="text-sm">
+                          {formatDateTime(item.created_at)}
+                        </Table.Cell>
                         <Table.Cell className="text-right">
                           <Button
                             aria-label={id.refund.detail}
@@ -193,16 +204,9 @@ export function RefundsPage() {
         </Table>
       </div>
 
-      <TablePagination
-        page={page}
-        totalPages={data?.total_pages ?? 1}
-        onPageChange={setPage}
-      />
+      <TablePagination page={page} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
 
-      <RefundDetailDialog
-        refundId={detailRefundId}
-        onClose={() => setDetailRefundId(null)}
-      />
+      <RefundDetailDialog refundId={detailRefundId} onClose={() => setDetailRefundId(null)} />
     </div>
   )
 }

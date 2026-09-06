@@ -42,7 +42,7 @@ function renderDialog() {
   return render(
     <QueryClientProvider client={client}>
       <WriteoffFormDialog open onOpenChange={() => {}} />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 

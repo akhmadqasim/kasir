@@ -14,11 +14,15 @@ function line(overrides: Partial<PricedLine> = {}): PricedLine {
 
 describe("netLineAmount", () => {
   it("returns the list amount when nothing was discounted", () => {
-    expect(netLineAmount(line({ quantity: 2, subtotal: 20_000, net_subtotal: 20_000 }))).toBe(20_000)
+    expect(netLineAmount(line({ quantity: 2, subtotal: 20_000, net_subtotal: 20_000 }))).toBe(
+      20_000,
+    )
   })
 
   it("returns what was paid, not the list price", () => {
-    expect(netLineAmount(line({ quantity: 2, subtotal: 20_000, net_subtotal: 15_000 }))).toBe(15_000)
+    expect(netLineAmount(line({ quantity: 2, subtotal: 20_000, net_subtotal: 15_000 }))).toBe(
+      15_000,
+    )
   })
 
   // The whole point of the column: a receipt's lines must add up to its total.
@@ -49,13 +53,17 @@ describe("netAmountForQuantity", () => {
   })
 
   it("returns nothing for a zero quantity", () => {
-    expect(netAmountForQuantity(line({ quantity: 2, subtotal: 20_000, net_subtotal: 16_000 }), 0)).toBe(0)
+    expect(
+      netAmountForQuantity(line({ quantity: 2, subtotal: 20_000, net_subtotal: 16_000 }), 0),
+    ).toBe(0)
   })
 })
 
 describe("lineDiscountAmount", () => {
   it("covers the item discount and the prorated transaction discount together", () => {
-    expect(lineDiscountAmount(line({ quantity: 1, subtotal: 50_000, net_subtotal: 40_000 }))).toBe(10_000)
+    expect(lineDiscountAmount(line({ quantity: 1, subtotal: 50_000, net_subtotal: 40_000 }))).toBe(
+      10_000,
+    )
   })
 
   it("never reports a negative discount", () => {

@@ -322,9 +322,9 @@ describe("layar pengaturan", () => {
     useAuthStore.setState({ user: { ...ADMIN, role: "kasir" } })
     renderTab(<SettingsPage />)
 
-    const kasirTabs = within(
-      screen.getByRole("tablist", { name: "Pengaturan" })
-    ).getAllByRole("tab")
+    const kasirTabs = within(screen.getByRole("tablist", { name: "Pengaturan" })).getAllByRole(
+      "tab",
+    )
     expect(kasirTabs.map((tab) => tab.textContent)).toEqual(["Toko", "Printer"])
   })
 
@@ -342,9 +342,7 @@ describe("layar pengaturan", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Ya, Hapus" }))
     await vi.waitFor(() => {
-      expect(api.lastCall("DELETE /backups/*")?.path).toBe(
-        "/backups/kasir-20260905.db.gz"
-      )
+      expect(api.lastCall("DELETE /backups/*")?.path).toBe("/backups/kasir-20260905.db.gz")
     })
   })
 

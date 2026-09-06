@@ -21,7 +21,7 @@ import type { NotificationListResult } from "../types"
 export function usePpobNotifications(
   page: number = 1,
   perPage: number = 20,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
 ) {
   return useApiQuery<NotificationListResult>(
     queryKeys.ppob.notifications(page, perPage, forceRefresh),
@@ -31,7 +31,7 @@ export function usePpobNotifications(
       staleTime: 30000,
       refetchOnWindowFocus: false,
       retry: false,
-    }
+    },
   )
 }
 

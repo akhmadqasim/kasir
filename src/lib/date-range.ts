@@ -61,10 +61,7 @@ export function getTodayRange(): DateRange {
  * memilih dua tanggal, dan pemanggilnya sudah membaca `to` yang kosong sebagai
  * "sama dengan `from`".
  */
-export function resolveRangeSelection(
-  range: DateRange | undefined,
-  triggerDate: Date
-): DateRange {
+export function resolveRangeSelection(range: DateRange | undefined, triggerDate: Date): DateRange {
   return range?.from ? range : { from: triggerDate, to: triggerDate }
 }
 
@@ -89,9 +86,7 @@ function toLocalDate(value: DateValue): Date {
  * cara menampilkan ujung yang kosong, dan layar yang memanggilnya memang sudah
  * membaca `to` kosong sebagai "sama dengan `from`".
  */
-export function toCalendarDateRange(
-  range: DateRange | undefined
-): CalendarDateRange | null {
+export function toCalendarDateRange(range: DateRange | undefined): CalendarDateRange | null {
   if (!range?.from) return null
   const start = toCalendarDate(range.from)
   return { start, end: range.to ? toCalendarDate(range.to) : start }
@@ -99,7 +94,7 @@ export function toCalendarDateRange(
 
 /** Rentang React Aria → rentang aplikasi. `null` berarti pilihan dikosongkan. */
 export function fromCalendarDateRange(
-  value: { start: DateValue; end: DateValue } | null
+  value: { start: DateValue; end: DateValue } | null,
 ): DateRange | undefined {
   if (!value) return undefined
   return { from: toLocalDate(value.start), to: toLocalDate(value.end) }

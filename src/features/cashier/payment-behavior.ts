@@ -58,13 +58,9 @@ export const EMPTY_AMOUNT_ENTRY_TIMING: AmountEntryTiming = {
  * Keeps the start of the current typing burst. A gap longer than a scanner's
  * keystroke interval means the cashier is typing, so the burst restarts.
  */
-export function trackAmountEntry(
-  previous: AmountEntryTiming,
-  now: number
-): AmountEntryTiming {
+export function trackAmountEntry(previous: AmountEntryTiming, now: number): AmountEntryTiming {
   const isNewBurst =
-    previous.lastInputAt <= 0 ||
-    now - previous.lastInputAt > SCANNER_MAX_INPUT_DURATION_MS
+    previous.lastInputAt <= 0 || now - previous.lastInputAt > SCANNER_MAX_INPUT_DURATION_MS
 
   return {
     startedAt: isNewBurst ? now : previous.startedAt,

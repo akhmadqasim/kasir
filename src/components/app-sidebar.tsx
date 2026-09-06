@@ -109,9 +109,7 @@ export function AppSidebar({ style }: { style?: CSSProperties }) {
 
   // Keep the menu in step with AdminRouteGuard: a cashier should not see an entry
   // that redirects them straight back out.
-  const visibleNavMain = isAdmin
-    ? navMain
-    : navMain.filter((item) => !isAdminOnlyRoute(item.url))
+  const visibleNavMain = isAdmin ? navMain : navMain.filter((item) => !isAdminOnlyRoute(item.url))
 
   const handleToggleClick = () => {
     if (hoverExpanded) {

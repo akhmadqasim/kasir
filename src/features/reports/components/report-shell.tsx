@@ -63,9 +63,7 @@ export function ReportStatCard({ label, value, tone = "default" }: ReportStatCar
   return (
     <Card>
       <Card.Header className="pb-2">
-        <Card.Description className="text-sm font-medium text-muted">
-          {label}
-        </Card.Description>
+        <Card.Description className="text-sm font-medium text-muted">{label}</Card.Description>
       </Card.Header>
       <Card.Content>
         <p className={`text-2xl font-bold ${STAT_TONE_CLASS[tone]}`.trimEnd()}>{value}</p>

@@ -15,7 +15,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 1000,
         lastInputAt: 1090,
         submittedAt: 1100,
-      })
+      }),
     ).toBe(true)
   })
 
@@ -26,7 +26,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 1000,
         lastInputAt: 2400,
         submittedAt: 2600,
-      })
+      }),
     ).toBe(false)
   })
 
@@ -37,7 +37,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 1000,
         lastInputAt: 1090,
         submittedAt: 1900,
-      })
+      }),
     ).toBe(false)
   })
 
@@ -48,7 +48,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 1000,
         lastInputAt: 1080,
         submittedAt: 1100,
-      })
+      }),
     ).toBe(false)
   })
 
@@ -59,7 +59,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 0,
         lastInputAt: 0,
         submittedAt: 1100,
-      })
+      }),
     ).toBe(false)
   })
 
@@ -70,7 +70,7 @@ describe("isScannerBurstEntry", () => {
         startedAt: 1000,
         lastInputAt: 1090,
         submittedAt: 1100,
-      })
+      }),
     ).toBe(false)
   })
 })
@@ -130,7 +130,7 @@ describe("trackAmountEntry", () => {
         amount: "8991002103011",
         ...scannerTiming,
         submittedAt: scannerTiming.lastInputAt + 10,
-      })
+      }),
     ).toBe(true)
 
     let typedTiming = EMPTY_AMOUNT_ENTRY_TIMING
@@ -142,7 +142,7 @@ describe("trackAmountEntry", () => {
         amount: "100000",
         ...typedTiming,
         submittedAt: typedTiming.lastInputAt + 200,
-      })
+      }),
     ).toBe(false)
   })
 })

@@ -28,7 +28,7 @@ function renderNav(pathname: string) {
           <NavMain items={items} />
         </Sidebar>
       </SidebarProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

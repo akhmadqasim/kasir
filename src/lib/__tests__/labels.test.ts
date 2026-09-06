@@ -31,9 +31,7 @@ describe("payment method labels", () => {
   })
 
   it("covers exactly the valid methods", () => {
-    expect(Object.keys(PAYMENT_METHOD_LABELS).sort()).toEqual(
-      [...PAYMENT_METHODS].sort()
-    )
+    expect(Object.keys(PAYMENT_METHOD_LABELS).sort()).toEqual([...PAYMENT_METHODS].sort())
   })
 
   it("shows an unknown method as-is rather than blank", () => {

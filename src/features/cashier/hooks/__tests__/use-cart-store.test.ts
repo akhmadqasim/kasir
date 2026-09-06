@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import {
-  MAX_CART_QUANTITY,
-  migrateCartState,
-  useCartStore,
-  type HeldCart,
-} from "../use-cart-store"
+import { MAX_CART_QUANTITY, migrateCartState, useCartStore, type HeldCart } from "../use-cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeProduct(overrides: Partial<{ id: number; name: string; sell_price: number; stock: number; unit: string }> = {}) {
+function makeProduct(
+  overrides: Partial<{
+    id: number
+    name: string
+    sell_price: number
+    stock: number
+    unit: string
+  }> = {},
+) {
   return {
     id: 1,
     name: "Indomie Goreng",
@@ -901,7 +904,7 @@ describe("edge cases", () => {
 
     // 3333 * 33 / 100 = 1099.89 → round → 1100
     const disc = store().getItemDiscountAmount("product-1")
-    expect(disc).toBe(Math.round(3333 * 33 / 100))
+    expect(disc).toBe(Math.round((3333 * 33) / 100))
   })
 })
 
@@ -918,7 +921,7 @@ describe("persisted cart migration", () => {
         itemDiscounts: {},
         transactionDiscount: null,
       },
-      1
+      1,
     )
 
     expect(migrated.items.map((i) => i.cart_id)).toEqual(["product-1"])
@@ -940,7 +943,7 @@ describe("persisted cart migration", () => {
           },
         ],
       },
-      1
+      1,
     )
 
     expect(migrated.heldCarts[0].items.map((i) => i.cart_id)).toEqual(["product-2"])
@@ -953,7 +956,7 @@ describe("persisted cart migration", () => {
         itemDiscounts: { "product-1": { type: "percentage", value: 50 } },
         transactionDiscount: { type: "fixed", value: 5000 },
       },
-      0
+      0,
     )
 
     expect(migrated.itemDiscounts).toEqual({})
@@ -967,7 +970,7 @@ describe("persisted cart migration", () => {
         itemDiscounts: { "product-1": { type: "fixed", value: 1000 } },
         transactionDiscount: null,
       },
-      1
+      1,
     )
 
     expect(migrated.itemDiscounts).toEqual({
@@ -1077,7 +1080,7 @@ describe("checkout key", () => {
         transactionDiscount: null,
         checkoutKey: "kunci-tersimpan",
       },
-      1
+      1,
     )
 
     expect(migrated.checkoutKey).toBe("kunci-tersimpan")

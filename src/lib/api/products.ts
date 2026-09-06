@@ -8,14 +8,7 @@ import type {
   ShortcutProduct,
   UpdateProductInput,
 } from "@/features/products/types"
-import {
-  apiDelete,
-  apiDownload,
-  apiGet,
-  apiPost,
-  apiPut,
-  type QueryParams,
-} from "./client"
+import { apiDelete, apiDownload, apiGet, apiPost, apiPut, type QueryParams } from "./client"
 
 /**
  * Products.

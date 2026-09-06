@@ -78,12 +78,7 @@ interface CartStore {
 
 type PersistedCart = Pick<
   CartStore,
-  | "items"
-  | "ppobCounter"
-  | "heldCarts"
-  | "itemDiscounts"
-  | "transactionDiscount"
-  | "checkoutKey"
+  "items" | "ppobCounter" | "heldCarts" | "itemDiscounts" | "transactionDiscount" | "checkoutKey"
 >
 
 /**
@@ -138,9 +133,7 @@ export const useCartStore = create<CartStore>()(
 
       addItem: (product) => {
         const { items } = get()
-        const existing = items.find(
-          (item) => !item.is_ppob && item.product_id === product.id
-        )
+        const existing = items.find((item) => !item.is_ppob && item.product_id === product.id)
 
         if (existing) {
           // Move to top and increment quantity
@@ -216,9 +209,7 @@ export const useCartStore = create<CartStore>()(
 
         const validQty = Math.min(Math.max(1, Math.trunc(qty) || 1), MAX_CART_QUANTITY)
         set({
-          items: items.map((i) =>
-            i.cart_id === cartId ? { ...i, quantity: validQty } : i
-          ),
+          items: items.map((i) => (i.cart_id === cartId ? { ...i, quantity: validQty } : i)),
         })
       },
 
@@ -230,9 +221,7 @@ export const useCartStore = create<CartStore>()(
         const validPrice = Math.max(0, price)
         set({
           items: items.map((i) =>
-            i.cart_id === cartId
-              ? { ...i, product_price: validPrice, sell_price: validPrice }
-              : i
+            i.cart_id === cartId ? { ...i, product_price: validPrice, sell_price: validPrice } : i,
           ),
         })
       },
@@ -249,8 +238,7 @@ export const useCartStore = create<CartStore>()(
 
       setTransactionDiscount: (discount) => {
         set({
-          transactionDiscount:
-            discount && discount.value > 0 ? discount : null,
+          transactionDiscount: discount && discount.value > 0 ? discount : null,
         })
       },
 
@@ -265,7 +253,7 @@ export const useCartStore = create<CartStore>()(
         if (!item || !disc) return 0
         const lineTotal = item.product_price * item.quantity
         if (disc.type === "percentage") {
-          return Math.round(lineTotal * disc.value / 100)
+          return Math.round((lineTotal * disc.value) / 100)
         }
         return Math.min(disc.value, lineTotal)
       },
@@ -278,7 +266,7 @@ export const useCartStore = create<CartStore>()(
           if (!disc) continue
           const lineTotal = item.product_price * item.quantity
           if (disc.type === "percentage") {
-            total += Math.round(lineTotal * disc.value / 100)
+            total += Math.round((lineTotal * disc.value) / 100)
           } else {
             total += Math.min(disc.value, lineTotal)
           }
@@ -293,7 +281,7 @@ export const useCartStore = create<CartStore>()(
         const itemDiscTotal = get().getItemDiscountsTotal()
         const afterItemDisc = subtotal - itemDiscTotal
         if (transactionDiscount.type === "percentage") {
-          return Math.round(afterItemDisc * transactionDiscount.value / 100)
+          return Math.round((afterItemDisc * transactionDiscount.value) / 100)
         }
         return Math.min(transactionDiscount.value, afterItemDisc)
       },
@@ -308,7 +296,7 @@ export const useCartStore = create<CartStore>()(
           const disc = itemDiscounts[item.cart_id]
           if (disc) {
             if (disc.type === "percentage") {
-              itemDiscTotal += Math.round(lineTotal * disc.value / 100)
+              itemDiscTotal += Math.round((lineTotal * disc.value) / 100)
             } else {
               itemDiscTotal += Math.min(disc.value, lineTotal)
             }
@@ -316,9 +304,9 @@ export const useCartStore = create<CartStore>()(
         }
         const afterItemDisc = subtotal - itemDiscTotal
         const txnDiscAmount = transactionDiscount
-          ? (transactionDiscount.type === "percentage"
-              ? Math.round(afterItemDisc * transactionDiscount.value / 100)
-              : Math.min(transactionDiscount.value, afterItemDisc))
+          ? transactionDiscount.type === "percentage"
+            ? Math.round((afterItemDisc * transactionDiscount.value) / 100)
+            : Math.min(transactionDiscount.value, afterItemDisc)
           : 0
         const totalDiscount = itemDiscTotal + txnDiscAmount
         return { subtotal, totalDiscount, total: Math.max(0, subtotal - totalDiscount) }
@@ -469,6 +457,6 @@ export const useCartStore = create<CartStore>()(
         checkoutKey: state.checkoutKey,
       }),
       migrate: migrateCartState,
-    }
-  )
+    },
+  ),
 )

@@ -295,7 +295,8 @@ export const id = {
     importDatabase: "Import Database",
     importDatabaseDesc: "Restore database dari file backup. Aplikasi akan restart setelah import.",
     importSuccess: "Database berhasil diimport. Silakan restart aplikasi.",
-    importConfirm: "Yakin ingin menimpa database saat ini? Data yang ada akan diganti dengan backup.",
+    importConfirm:
+      "Yakin ingin menimpa database saat ini? Data yang ada akan diganti dengan backup.",
     databaseSize: "Ukuran Database",
     databasePath: "Lokasi Database",
     // General

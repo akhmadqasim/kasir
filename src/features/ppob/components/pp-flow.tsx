@@ -15,9 +15,7 @@ export function PpFlow() {
   const [paymentCode, setPaymentCode] = useState("")
 
   const { data: groups, isLoading: groupsLoading } = usePpobMenu()
-  const { data: subMenuItems, isLoading: subMenuLoading } = usePpSubMenu(
-    selectedGroup?.id ?? 0
-  )
+  const { data: subMenuItems, isLoading: subMenuLoading } = usePpSubMenu(selectedGroup?.id ?? 0)
 
   const filteredMerchants = useMemo(() => {
     if (!subMenuItems) return []
@@ -25,8 +23,7 @@ export function PpFlow() {
     const q = merchantSearch.toLowerCase()
     return subMenuItems.filter(
       (item) =>
-        item.merchant.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q)
+        item.merchant.toLowerCase().includes(q) || item.description.toLowerCase().includes(q),
     )
   }, [subMenuItems, merchantSearch])
 

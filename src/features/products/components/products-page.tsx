@@ -27,11 +27,13 @@ export function ProductsPage() {
   const effectiveSortBy =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "stock"
-      : sortBy ?? "created_at"
+      : (sortBy ?? "created_at")
   const effectiveSortOrder =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "asc"
-      : sortBy ? sortOrder : "desc"
+      : sortBy
+        ? sortOrder
+        : "desc"
 
   const { data: productsData, isLoading } = useSearchProducts({
     query: searchQuery || undefined,
@@ -52,7 +54,7 @@ export function ProductsPage() {
     const noBarcode = products.filter((product) => !product.barcode?.trim()).length
     const negativeStock = products.filter((product) => product.stock < 0).length
     const lowStock = products.filter(
-      (product) => product.stock >= 0 && product.stock <= product.min_stock
+      (product) => product.stock >= 0 && product.stock <= product.min_stock,
     ).length
 
     return { noBarcode, negativeStock, lowStock }
@@ -73,17 +75,20 @@ export function ProductsPage() {
     setPage(1)
   }, [])
 
-  const handleSortChange = useCallback((column: string) => {
-    if (sortBy !== column) {
-      setSortBy(column)
-      setSortOrder("asc")
-    } else if (sortOrder === "asc") {
-      setSortOrder("desc")
-    } else {
-      setSortBy(undefined)
-      setSortOrder("asc")
-    }
-  }, [sortBy, sortOrder])
+  const handleSortChange = useCallback(
+    (column: string) => {
+      if (sortBy !== column) {
+        setSortBy(column)
+        setSortOrder("asc")
+      } else if (sortOrder === "asc") {
+        setSortOrder("desc")
+      } else {
+        setSortBy(undefined)
+        setSortOrder("asc")
+      }
+    },
+    [sortBy, sortOrder],
+  )
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product)
@@ -168,15 +173,9 @@ export function ProductsPage() {
         onCreateSuccess={() => setPage(1)}
       />
 
-      <CategoryManager
-        open={categoryManagerOpen}
-        onOpenChange={setCategoryManagerOpen}
-      />
+      <CategoryManager open={categoryManagerOpen} onOpenChange={setCategoryManagerOpen} />
 
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-      />
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
 }

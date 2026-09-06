@@ -29,7 +29,7 @@ export function UsersPage() {
       (u) =>
         u.username.toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q)
+        u.role.toLowerCase().includes(q),
     )
   }, [users, search])
 
@@ -63,7 +63,7 @@ export function UsersPage() {
         userId: deactivateUser.id,
         isActive: false,
       },
-      { onSettled: () => setDeactivateUser(null) }
+      { onSettled: () => setDeactivateUser(null) },
     )
   }
 
@@ -76,9 +76,7 @@ export function UsersPage() {
       )
     }
     return (
-      <p className="py-8 text-center text-muted">
-        {search ? "Tidak ada hasil" : id.users.noUsers}
-      </p>
+      <p className="py-8 text-center text-muted">{search ? "Tidak ada hasil" : id.users.noUsers}</p>
     )
   }
 
@@ -182,11 +180,7 @@ export function UsersPage() {
         </Table.ScrollContainer>
       </Table>
 
-      <UserFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        user={editingUser}
-      />
+      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />
 
       <AlertDialog.Backdrop
         isKeyboardDismissDisabled={false}

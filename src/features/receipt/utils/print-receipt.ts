@@ -33,14 +33,11 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
         <td class="item-qty">${item.quantity} x ${formatRupiah(item.price)}</td>
         <td></td>
         <td class="item-subtotal">${formatRupiah(item.subtotal)}</td>
-      </tr>`
+      </tr>`,
     )
     .join("")
 
-  const paymentLabel = paymentSplitLabel(
-    data.payment_method,
-    data.payment_breakdown[0]?.bank_name
-  )
+  const paymentLabel = paymentSplitLabel(data.payment_method, data.payment_breakdown[0]?.bank_name)
   // `change_amount` alone decides whether there is money to hand back. A split
   // whose non-cash legs already cover the total drops its cash leg entirely, so
   // the sale carries a single non-cash entry while the cash on the counter comes
@@ -55,7 +52,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
       <td>Bayar (${escapeHtml(paymentSplitLabel(split.payment_method, split.bank_name))})</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(split.amount)}</td>
-    </tr>`
+    </tr>`,
           )
           .join("") +
         `${
@@ -233,8 +230,12 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
     ${paymentRowsHtml}
   </table>
 
-  ${data.notes ? `<div class="divider"></div>
-  <div style="font-size: 11px;">Catatan: ${escapeHtml(data.notes)}</div>` : ""}
+  ${
+    data.notes
+      ? `<div class="divider"></div>
+  <div style="font-size: 11px;">Catatan: ${escapeHtml(data.notes)}</div>`
+      : ""
+  }
   ${voidInfoHtml}
 
   <div class="divider-double"></div>

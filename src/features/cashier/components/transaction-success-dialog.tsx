@@ -84,9 +84,7 @@ export function TransactionSuccessDialog({
         // Biarkan kasir mencoba lagi lewat tombol "Cetak Struk"
         autoPrintedRef.current = null
         const message = errorMessage(error)
-        toast.error(
-          `Struk gagal dicetak otomatis: ${message}. Gunakan tombol "Cetak Struk".`
-        )
+        toast.error(`Struk gagal dicetak otomatis: ${message}. Gunakan tombol "Cetak Struk".`)
       } finally {
         if (!cancelled) setIsPrinting(false)
       }
@@ -132,9 +130,7 @@ export function TransactionSuccessDialog({
             <div className="space-y-3 rounded-lg bg-default p-4">
               <div className="text-center">
                 <p className="text-sm text-muted">No. Struk</p>
-                <p className="font-mono text-lg font-bold">
-                  {transaction.receipt_number}
-                </p>
+                <p className="font-mono text-lg font-bold">{transaction.receipt_number}</p>
               </div>
 
               <Separator />
@@ -151,7 +147,7 @@ export function TransactionSuccessDialog({
                 <span className="font-medium">
                   {formatPaymentSplitLabel(
                     transaction.payment_method,
-                    paymentBreakdown[0]?.bank_name
+                    paymentBreakdown[0]?.bank_name,
                   )}
                 </span>
               </div>
@@ -200,9 +196,7 @@ export function TransactionSuccessDialog({
                   <Separator />
                   <div className="flex items-center gap-2 text-sm text-accent">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>
-                      PPOB sedang diproses di latar belakang. Cek status di Riwayat.
-                    </span>
+                    <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
                   </div>
                 </>
               )}

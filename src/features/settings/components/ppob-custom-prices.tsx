@@ -33,9 +33,9 @@ export function PpobCustomPrices({
             .map(Number)
             .filter((n) => Number.isFinite(n) && n > 0),
           ...extraNominals,
-        ])
+        ]),
       ).sort((a, b) => a - b),
-    [customPrices, extraNominals]
+    [customPrices, extraNominals],
   )
 
   const rememberNominal = (nominal: number) => {
@@ -94,9 +94,7 @@ export function PpobCustomPrices({
           return (
             <div key={nominal} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium tabular-nums">
-                  {formatRupiah(nominal)}
-                </span>
+                <span className="text-sm font-medium tabular-nums">{formatRupiah(nominal)}</span>
                 {isCustomNominal && (
                   <Chip size="sm" variant="tertiary">
                     custom
@@ -117,7 +115,7 @@ export function PpobCustomPrices({
                 onChange={(value) =>
                   handlePriceChange(
                     nominal,
-                    value === undefined || Number.isNaN(value) ? undefined : value
+                    value === undefined || Number.isNaN(value) ? undefined : value,
                   )
                 }
               >

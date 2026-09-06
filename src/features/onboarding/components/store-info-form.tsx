@@ -1,15 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import {
-  Button,
-  Card,
-  Description,
-  FieldError,
-  Form,
-  Input,
-  Label,
-  TextField,
-} from "@heroui/react"
+import { Button, Card, Description, FieldError, Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
 import type { SetupStoreInput } from "../types"
 
@@ -57,18 +48,10 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
       >
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="text-2xl font-bold">{t.storeInfo}</h1>
-          <p className="text-sm text-balance text-muted">
-            Lengkapi data toko Anda untuk memulai
-          </p>
+          <p className="text-sm text-balance text-muted">Lengkapi data toko Anda untuk memulai</p>
           <p className="text-xs text-muted">{t.step1of2}</p>
         </div>
-        <TextField
-          autoFocus
-          fullWidth
-          isInvalid={Boolean(error)}
-          value={name}
-          onChange={setName}
-        >
+        <TextField autoFocus fullWidth isInvalid={Boolean(error)} value={name} onChange={setName}>
           <Label>{t.storeName} *</Label>
           <Input placeholder={t.storeNamePlaceholder} />
           <FieldError>{error}</FieldError>

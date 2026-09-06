@@ -83,9 +83,7 @@ export function getEmoneyDenominations(productId: number): Promise<EmoneyDenom[]
 }
 
 export function getPaymentPointSubMenu(paymentPointId: number): Promise<PpSubMenuItem[]> {
-  return apiGet<PpSubMenuItem[]>(
-    `/ppob/catalog/payment-points/${paymentPointId}/sub-menu`
-  )
+  return apiGet<PpSubMenuItem[]>(`/ppob/catalog/payment-points/${paymentPointId}/sub-menu`)
 }
 
 export function getTransferChannels(): Promise<TransferChannelGroup[]> {
@@ -139,9 +137,7 @@ export interface PaymentPointInquiryInput {
   productCode?: string
 }
 
-export function paymentPointInquiry(
-  input: PaymentPointInquiryInput
-): Promise<InquiryResult> {
+export function paymentPointInquiry(input: PaymentPointInquiryInput): Promise<InquiryResult> {
   return apiPost<InquiryResult>("/ppob/inquiries/pp", input)
 }
 
@@ -195,10 +191,7 @@ export interface PpobPaymentInput {
  * is fulfilled inside `POST /transactions` — so this exists to complete the
  * contract rather than because a screen calls it today.
  */
-export function payPpob(
-  input: PpobPaymentInput,
-  idempotencyKey: string
-): Promise<PaymentResult> {
+export function payPpob(input: PpobPaymentInput, idempotencyKey: string): Promise<PaymentResult> {
   return apiPost<PaymentResult>("/ppob/payments", input, { idempotencyKey })
 }
 
@@ -210,10 +203,7 @@ export interface PpobTopupInput {
 }
 
 /** Airtime or a data package bought outright — the request itself is the purchase. */
-export function topupPpob(
-  input: PpobTopupInput,
-  idempotencyKey: string
-): Promise<PaymentResult> {
+export function topupPpob(input: PpobTopupInput, idempotencyKey: string): Promise<PaymentResult> {
   return apiPost<PaymentResult>("/ppob/topups", input, { idempotencyKey })
 }
 
@@ -221,10 +211,7 @@ export function topupPpob(
 // History and notifications
 // ---------------------------------------------------------------------------
 
-export function getPpobHistory(
-  startDate: string,
-  endDate: string
-): Promise<HistoryPaymentItem[]> {
+export function getPpobHistory(startDate: string, endDate: string): Promise<HistoryPaymentItem[]> {
   return apiGet<HistoryPaymentItem[]>("/ppob/history", { startDate, endDate })
 }
 
@@ -247,7 +234,7 @@ export function getPpobMutasi(startDate: string, endDate: string): Promise<Mutas
 export function getPpobNotifications(
   page: number,
   perPage: number,
-  forceRefresh: boolean
+  forceRefresh: boolean,
 ): Promise<NotificationListResult> {
   return apiGet<NotificationListResult>("/ppob/notifications", {
     page,

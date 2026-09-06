@@ -42,7 +42,7 @@ export function PrinterSettingsTab() {
 
   const settingsQuery = useApiQuery<PrinterSettings>(
     queryKeys.printers.settings,
-    getPrinterSettings
+    getPrinterSettings,
   )
 
   if (settingsQuery.data && !initialized) {
@@ -117,11 +117,7 @@ export function PrinterSettingsTab() {
               <Select.Popover>
                 <ListBox>
                   {printers.length === 0 ? (
-                    <ListBox.Item
-                      id="_none"
-                      isDisabled
-                      textValue="Tidak ada printer tersedia"
-                    >
+                    <ListBox.Item id="_none" isDisabled textValue="Tidak ada printer tersedia">
                       <Label>Tidak ada printer tersedia</Label>
                     </ListBox.Item>
                   ) : (
@@ -142,9 +138,7 @@ export function PrinterSettingsTab() {
               variant="outline"
               onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
             >
-              <RefreshCw
-                className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
           <p className="text-xs text-muted">
@@ -204,10 +198,7 @@ export function PrinterSettingsTab() {
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button
-            isDisabled={saveMutation.isPending || !isReady}
-            onPress={handleSave}
-          >
+          <Button isDisabled={saveMutation.isPending || !isReady} onPress={handleSave}>
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
           </Button>

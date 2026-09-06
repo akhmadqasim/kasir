@@ -27,7 +27,7 @@ export function getActiveShift(): Promise<Shift | null> {
 
 export function closeShift(
   shiftId: number,
-  body: { closingCash?: number; notes?: string }
+  body: { closingCash?: number; notes?: string },
 ): Promise<ShiftSummary> {
   return apiPost<ShiftSummary>(`/shifts/${shiftId}/close`, body)
 }

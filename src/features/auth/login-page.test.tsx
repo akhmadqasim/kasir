@@ -13,7 +13,7 @@ function renderLoginPage() {
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 

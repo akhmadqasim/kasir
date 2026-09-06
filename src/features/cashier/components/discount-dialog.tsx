@@ -1,14 +1,5 @@
 import { useState } from "react"
-import {
-  Button,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  Separator,
-  TextField,
-} from "@heroui/react"
+import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
 import { useCartStore } from "../hooks/use-cart-store"
@@ -44,11 +35,7 @@ export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
   )
 }
 
-function DiscountDialogBody({
-  onOpenChange,
-}: {
-  onOpenChange: (open: boolean) => void
-}) {
+function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const transactionDiscount = useCartStore((s) => s.transactionDiscount)
   const setTransactionDiscount = useCartStore((s) => s.setTransactionDiscount)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
@@ -57,11 +44,9 @@ function DiscountDialogBody({
   const getItemDiscountsTotal = useCartStore((s) => s.getItemDiscountsTotal)
 
   const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(
-    transactionDiscount?.type ?? "fixed"
+    transactionDiscount?.type ?? "fixed",
   )
-  const [txnRaw, setTxnRaw] = useState(
-    transactionDiscount ? String(transactionDiscount.value) : ""
-  )
+  const [txnRaw, setTxnRaw] = useState(transactionDiscount ? String(transactionDiscount.value) : "")
 
   const subtotal = getSubtotal()
   const itemDiscountsTotal = getItemDiscountsTotal()
@@ -136,9 +121,7 @@ function DiscountDialogBody({
               <Input
                 className="h-9 text-right tabular-nums"
                 inputMode="numeric"
-                placeholder={
-                  txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"
-                }
+                placeholder={txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") onOpenChange(false)
                 }}

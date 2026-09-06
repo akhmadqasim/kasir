@@ -9,7 +9,7 @@ export { formatRupiah } from "@/lib/format"
  */
 export function getQuantityWarning(
   item: Pick<CartItem, "stock" | "unit"> & { is_ppob?: boolean },
-  quantity: number
+  quantity: number,
 ): string | null {
   if (item.is_ppob) return null
 

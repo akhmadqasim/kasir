@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  AlertDialog,
-  Button,
-  Card,
-  Input,
-  Label,
-  Spinner,
-  TextField,
-  Tooltip,
-} from "@heroui/react"
+import { AlertDialog, Button, Card, Input, Label, Spinner, TextField, Tooltip } from "@heroui/react"
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -63,7 +54,9 @@ export function CloseShiftPage() {
 
   useEffect(() => {
     getStoreInfo()
-      .then((info) => { if (info) setStoreName(info.name) })
+      .then((info) => {
+        if (info) setStoreName(info.name)
+      })
       .catch(() => {})
   }, [])
 
@@ -125,13 +118,17 @@ export function CloseShiftPage() {
   }
 
   const numericClosing = Number(closingCash) || 0
-  const cashDifference =
-    summary && closingCash ? numericClosing - summary.expectedCash : null
+  const cashDifference = summary && closingCash ? numericClosing - summary.expectedCash : null
 
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner aria-label="Memuat ringkasan shift" color="current" size="lg" className="text-muted" />
+        <Spinner
+          aria-label="Memuat ringkasan shift"
+          color="current"
+          size="lg"
+          className="text-muted"
+        />
       </div>
     )
   }
@@ -153,9 +150,7 @@ export function CloseShiftPage() {
       <ShiftCloseReport
         summary={closedSummary}
         storeName={storeName}
-        onBack={() =>
-          navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })
-        }
+        onBack={() => navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })}
         onLogout={() => {
           logout.mutate(undefined, {
             onSettled: () => navigate("/login", { replace: true }),
@@ -165,20 +160,14 @@ export function CloseShiftPage() {
     )
   }
 
-  const canDeleteCashFlow = (cf: CashFlow) =>
-    user?.role === "admin" || user?.id === cf.userId
+  const canDeleteCashFlow = (cf: CashFlow) => user?.role === "admin" || user?.id === cf.userId
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       {/* Page header */}
       <div className="flex items-center justify-between px-4 lg:px-6">
         <div className="flex items-center gap-3">
-          <Button
-            aria-label="Kembali"
-            isIconOnly
-            variant="ghost"
-            onPress={() => navigate(-1)}
-          >
+          <Button aria-label="Kembali" isIconOnly variant="ghost" onPress={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-2xl font-bold">Tutup Kasir</h1>
@@ -402,14 +391,8 @@ export function CloseShiftPage() {
               </p>
               <div className="space-y-2 rounded-md border bg-default/50 px-3 py-2 text-sm">
                 <SummaryRow label="Kasir" value={summary.shift.userName} />
-                <SummaryRow
-                  label="Total transaksi"
-                  value={String(summary.totalTransactions)}
-                />
-                <SummaryRow
-                  label="Saldo aplikasi"
-                  value={formatRupiah(summary.expectedCash)}
-                />
+                <SummaryRow label="Total transaksi" value={String(summary.totalTransactions)} />
+                <SummaryRow label="Saldo aplikasi" value={formatRupiah(summary.expectedCash)} />
                 {closingCash ? (
                   <SummaryRow label="Saldo aktual" value={formatRupiah(numericClosing)} />
                 ) : null}
@@ -452,12 +435,12 @@ export function CloseShiftPage() {
             </AlertDialog.Header>
             <AlertDialog.Body className="space-y-3">
               <p className="text-sm text-muted">
-                Shift akan ditutup sekarang dan laporan tutup kasir akan dibuat. Lanjutkan
-                hanya jika Anda benar-benar yakin.
+                Shift akan ditutup sekarang dan laporan tutup kasir akan dibuat. Lanjutkan hanya
+                jika Anda benar-benar yakin.
               </p>
               <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger-soft-foreground">
-                Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang
-                masih dalam proses pembayaran.
+                Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang masih
+                dalam proses pembayaran.
               </div>
             </AlertDialog.Body>
             <AlertDialog.Footer>
@@ -502,8 +485,7 @@ export function CloseShiftPage() {
                     {formatRupiah(cashFlowToDelete.amount)}
                   </div>
                   <div>
-                    <span className="text-muted">Keterangan:</span>{" "}
-                    {cashFlowToDelete.description}
+                    <span className="text-muted">Keterangan:</span> {cashFlowToDelete.description}
                   </div>
                 </div>
               )}

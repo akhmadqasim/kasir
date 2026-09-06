@@ -15,11 +15,7 @@ import {
 } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
-import type {
-  PaginatedProducts,
-  Product,
-  ShortcutProduct,
-} from "@/features/products/types"
+import type { PaginatedProducts, Product, ShortcutProduct } from "@/features/products/types"
 import { useCartStore } from "../hooks/use-cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
 import {
@@ -84,20 +80,17 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const searchParams = useMemo(
-    () => ({ query: debouncedQuery, per_page: 50 }),
-    [debouncedQuery]
-  )
+  const searchParams = useMemo(() => ({ query: debouncedQuery, per_page: 50 }), [debouncedQuery])
 
   const { data: searchResults } = useApiQuery<PaginatedProducts>(
     queryKeys.products.search(searchParams),
     () => searchProducts(searchParams),
-    { enabled: debouncedQuery.length > 0 }
+    { enabled: debouncedQuery.length > 0 },
   )
 
   const rankedSearchResults = useMemo(
     () => rankProductsForSearch(searchResults?.data ?? [], debouncedQuery),
-    [searchResults?.data, debouncedQuery]
+    [searchResults?.data, debouncedQuery],
   )
 
   // Turunan, bukan state tersinkron: hasil pencarian yang berubah otomatis
@@ -109,22 +102,17 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
       pickedProductValue !== undefined &&
       rankedSearchResults.some((product) => String(product.id) === pickedProductValue)
 
-    return isPickedStillListed
-      ? pickedProductValue
-      : String(rankedSearchResults[0].id)
+    return isPickedStillListed ? pickedProductValue : String(rankedSearchResults[0].id)
   }, [pickedProductValue, rankedSearchResults])
 
   const activeProduct = useMemo(
-    () =>
-      rankedSearchResults.find(
-        (product) => String(product.id) === selectedProductValue
-      ),
-    [rankedSearchResults, selectedProductValue]
+    () => rankedSearchResults.find((product) => String(product.id) === selectedProductValue),
+    [rankedSearchResults, selectedProductValue],
   )
 
   const { data: shortcutProducts } = useApiQuery<ShortcutProduct[]>(
     queryKeys.products.popular(SHORTCUT_LIMIT),
-    () => getPopularProducts(SHORTCUT_LIMIT)
+    () => getPopularProducts(SHORTCUT_LIMIT),
   )
 
   const focusInput = useCallback(() => {
@@ -151,8 +139,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     const previousTiming = inputTimingRef.current
     const isSingleCharacterAppend =
       value.length === previousValue.length + 1 && value.startsWith(previousValue)
-    const isContinuingFastInput =
-      isSingleCharacterAppend && now - previousTiming.lastInputAt <= 50
+    const isContinuingFastInput = isSingleCharacterAppend && now - previousTiming.lastInputAt <= 50
 
     searchQueryRef.current = value
 
@@ -179,46 +166,55 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   // Deliberately the narrowest key in the file. This fires on every item added
   // to the cart, and invalidating all of `["products"]` here would refetch the
   // search list on every scan.
-  const trackSelection = useCallback(async (productId: number) => {
-    try {
-      await trackProductSelection(productId)
-      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
-    } catch {
-      // Silent fail — tracking is non-critical
-    }
-  }, [queryClient])
+  const trackSelection = useCallback(
+    async (productId: number) => {
+      try {
+        await trackProductSelection(productId)
+        queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
+      } catch {
+        // Silent fail — tracking is non-critical
+      }
+    },
+    [queryClient],
+  )
 
-  const handleTogglePin = useCallback(async (productId: number) => {
-    try {
-      const pinned = await toggleProductPin(productId)
-      toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
-      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
-    } catch {
-      toast.error("Gagal mengubah pin")
-    }
-  }, [queryClient])
+  const handleTogglePin = useCallback(
+    async (productId: number) => {
+      try {
+        const pinned = await toggleProductPin(productId)
+        toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
+        queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
+      } catch {
+        toast.error("Gagal mengubah pin")
+      }
+    },
+    [queryClient],
+  )
 
   const HOLD_DURATION = 500
 
-  const startHoldUnpin = useCallback((e: React.PointerEvent, productId: number) => {
-    e.stopPropagation()
-    e.preventDefault()
-    setHoldingPinId(productId)
-    setHoldProgress(0)
-    holdStartRef.current = Date.now()
-    holdTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - holdStartRef.current
-      const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100)
-      setHoldProgress(pct)
-      if (elapsed >= HOLD_DURATION) {
-        clearInterval(holdTimerRef.current!)
-        holdTimerRef.current = null
-        setHoldingPinId(null)
-        setHoldProgress(0)
-        handleTogglePin(productId)
-      }
-    }, 16)
-  }, [handleTogglePin])
+  const startHoldUnpin = useCallback(
+    (e: React.PointerEvent, productId: number) => {
+      e.stopPropagation()
+      e.preventDefault()
+      setHoldingPinId(productId)
+      setHoldProgress(0)
+      holdStartRef.current = Date.now()
+      holdTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - holdStartRef.current
+        const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100)
+        setHoldProgress(pct)
+        if (elapsed >= HOLD_DURATION) {
+          clearInterval(holdTimerRef.current!)
+          holdTimerRef.current = null
+          setHoldingPinId(null)
+          setHoldProgress(0)
+          handleTogglePin(productId)
+        }
+      }, 16)
+    },
+    [handleTogglePin],
+  )
 
   const cancelHoldUnpin = useCallback(() => {
     if (holdTimerRef.current) {
@@ -229,15 +225,18 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     setHoldProgress(0)
   }, [])
 
-  const addToCart = useCallback((product: Product | ShortcutProduct, isManualSearch: boolean) => {
-    addItem(product)
-    if (product.stock <= 0) {
-      toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
-    }
-    if (isManualSearch) {
-      trackSelection(product.id)
-    }
-  }, [addItem, trackSelection])
+  const addToCart = useCallback(
+    (product: Product | ShortcutProduct, isManualSearch: boolean) => {
+      addItem(product)
+      if (product.stock <= 0) {
+        toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
+      }
+      if (isManualSearch) {
+        trackSelection(product.id)
+      }
+    },
+    [addItem, trackSelection],
+  )
 
   const handleProductSelect = (product: Product) => {
     addToCart(product, true)
@@ -249,11 +248,11 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   const moveActiveResult = (step: number) => {
     if (rankedSearchResults.length === 0) return
     const current = rankedSearchResults.findIndex(
-      (product) => String(product.id) === selectedProductValue
+      (product) => String(product.id) === selectedProductValue,
     )
     const next = Math.min(
       Math.max((current === -1 ? 0 : current) + step, 0),
-      rankedSearchResults.length - 1
+      rankedSearchResults.length - 1,
     )
     setPickedProductValue(String(rankedSearchResults[next].id))
   }
@@ -353,10 +352,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     <div className="flex h-full flex-col">
       {/* Search Bar */}
       <div
-        className={cn(
-          "flex flex-col border-b",
-          showSearchResults ? "min-h-0 flex-1" : "h-auto"
-        )}
+        className={cn("flex flex-col border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")}
       >
         <InputGroup className="rounded-none border-0 border-b shadow-none">
           <InputGroup.Prefix>
@@ -392,9 +388,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
           <div className="border-t px-4 py-2 text-xs text-muted">
             Enter akan pilih item aktif:{" "}
             <span className="font-medium text-foreground">{activeProduct.name}</span>{" "}
-            <span className="tabular-nums">
-              ({formatRupiah(activeProduct.sell_price)})
-            </span>
+            <span className="tabular-nums">({formatRupiah(activeProduct.sell_price)})</span>
           </div>
         )}
 
@@ -402,12 +396,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         {showSearchResults && (
           <ScrollShadow className="min-h-0 flex-1">
             {rankedSearchResults.length > 0 ? (
-              <ul
-                aria-label="Hasil pencarian produk"
-                className="p-1"
-                id={listboxId}
-                role="listbox"
-              >
+              <ul aria-label="Hasil pencarian produk" className="p-1" id={listboxId} role="listbox">
                 {rankedSearchResults.map((product) => {
                   const isActive = String(product.id) === selectedProductValue
                   return (
@@ -416,7 +405,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                       aria-selected={isActive}
                       className={cn(
                         "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm",
-                        isActive ? "bg-default text-default-foreground" : "hover:bg-default/60"
+                        isActive ? "bg-default text-default-foreground" : "hover:bg-default/60",
                       )}
                       id={optionId(product.id)}
                       role="option"
@@ -434,10 +423,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <StatusBadge
-                          size="sm"
-                          status={product.stock <= 0 ? "error" : "neutral"}
-                        >
+                        <StatusBadge size="sm" status={product.stock <= 0 ? "error" : "neutral"}>
                           {product.stock} {product.unit}
                         </StatusBadge>
                         <span className="min-w-[80px] text-right font-semibold tabular-nums">
@@ -449,9 +435,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                 })}
               </ul>
             ) : (
-              <p className="py-6 text-center text-sm text-muted">
-                Produk tidak ditemukan
-              </p>
+              <p className="py-6 text-center text-sm text-muted">Produk tidak ditemukan</p>
             )}
           </ScrollShadow>
         )}
@@ -486,11 +470,15 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                         <Button
                           key={product.id}
                           className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors"
-                          style={isHolding ? {
-                            borderColor: `color-mix(in srgb, var(--danger) ${holdProgress}%, var(--border))`,
-                            backgroundColor: `color-mix(in srgb, var(--danger) ${holdProgress * 0.15}%, transparent)`,
-                            boxShadow: `0 0 0 1px color-mix(in srgb, var(--danger) ${holdProgress * 0.5}%, transparent)`,
-                          } : undefined}
+                          style={
+                            isHolding
+                              ? {
+                                  borderColor: `color-mix(in srgb, var(--danger) ${holdProgress}%, var(--border))`,
+                                  backgroundColor: `color-mix(in srgb, var(--danger) ${holdProgress * 0.15}%, transparent)`,
+                                  boxShadow: `0 0 0 1px color-mix(in srgb, var(--danger) ${holdProgress * 0.5}%, transparent)`,
+                                }
+                              : undefined
+                          }
                           variant="outline"
                           onPress={() => !isHolding && handleShortcutSelect(product)}
                         >
@@ -541,8 +529,8 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                     <Search className="h-10 w-10 text-muted" />
                     <p className="font-medium">Cari Produk</p>
                     <p className="max-w-sm text-sm text-muted">
-                      Scan barcode, ketik nama produk, atau ketik sebagian barcode.
-                      Produk yang sering dicari akan tampil di sini.
+                      Scan barcode, ketik nama produk, atau ketik sebagian barcode. Produk yang
+                      sering dicari akan tampil di sini.
                     </p>
                   </div>
                 )}

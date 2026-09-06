@@ -61,20 +61,14 @@ export function isAdminOnlyRoute(pathname: string | null | undefined) {
   return ADMIN_ONLY_PREFIXES.some((prefix) => isPathWithin(normalized, prefix))
 }
 
-export function isRouteAllowedForRole(
-  pathname: string | null | undefined,
-  role: UserRole
-) {
+export function isRouteAllowedForRole(pathname: string | null | undefined, role: UserRole) {
   const normalized = normalizePathname(pathname)
   if (!normalized || !isResumableRoute(normalized)) return false
   if (role !== "admin" && isAdminOnlyRoute(normalized)) return false
   return true
 }
 
-export function resolveResumeRoute(
-  role: UserRole,
-  storedRoute: string | null | undefined
-) {
+export function resolveResumeRoute(role: UserRole, storedRoute: string | null | undefined) {
   return isRouteAllowedForRole(storedRoute, role)
     ? normalizePathname(storedRoute)!
     : getDefaultRouteForRole(role)
@@ -90,7 +84,7 @@ export function readStoredResumeRoute(storage: Pick<Storage, "getItem"> = localS
 
 export function storeResumeRoute(
   pathname: string,
-  storage: Pick<Storage, "setItem"> = localStorage
+  storage: Pick<Storage, "setItem"> = localStorage,
 ) {
   const normalized = normalizePathname(pathname)
   if (!normalized || !isResumableRoute(normalized)) return

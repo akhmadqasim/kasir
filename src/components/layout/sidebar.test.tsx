@@ -64,7 +64,7 @@ function renderShell() {
         </Sidebar>
         <SidebarInset>Konten</SidebarInset>
       </SidebarProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

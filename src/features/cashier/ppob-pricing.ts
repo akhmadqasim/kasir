@@ -25,9 +25,7 @@ export function extractNominal(name: string): number | null {
   let match: RegExpExecArray | null
   while ((match = NOMINAL_PATTERN.exec(name)) !== null) {
     const [raw, kDigits] = match
-    const value = kDigits
-      ? parseInt(kDigits, 10) * 1000
-      : parseInt(raw.replace(/\./g, ""), 10)
+    const value = kDigits ? parseInt(kDigits, 10) * 1000 : parseInt(raw.replace(/\./g, ""), 10)
 
     if (Number.isFinite(value) && value >= MIN_NOMINAL && value <= MAX_NOMINAL) {
       return value
@@ -43,7 +41,7 @@ export function extractNominal(name: string): number | null {
  */
 export function calculateSellPrice(
   vendorCost: number,
-  config: PpobMarkupConfig = DEFAULT_PPOB_MARKUP
+  config: PpobMarkupConfig = DEFAULT_PPOB_MARKUP,
 ): number {
   if (config.value <= 0) return vendorCost
   if (config.type === "fixed") return vendorCost + config.value
@@ -76,9 +74,7 @@ export function resolvePpobSellPrice({
   const customPrice = nominal !== null ? customPrices[String(nominal)] : undefined
 
   const sellPrice =
-    customPrice !== undefined && customPrice > 0
-      ? customPrice
-      : calculateSellPrice(cost, markup)
+    customPrice !== undefined && customPrice > 0 ? customPrice : calculateSellPrice(cost, markup)
 
   // Selling below cost is always a mistake, whatever the config says.
   return Math.max(sellPrice, cost)

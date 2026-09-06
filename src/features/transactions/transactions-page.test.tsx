@@ -108,7 +108,7 @@ function renderPage() {
       <MemoryRouter>
         <TransactionsPage />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -116,9 +116,7 @@ let api: ApiMock
 
 /** Nomor halaman dari setiap `GET /transactions`, urut waktu. */
 function requestedPages(): number[] {
-  return api
-    .callsFor("GET /transactions")
-    .map((call) => Number(call.query.get("page")))
+  return api.callsFor("GET /transactions").map((call) => Number(call.query.get("page")))
 }
 
 beforeEach(() => {

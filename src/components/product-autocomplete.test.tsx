@@ -59,7 +59,7 @@ function renderHarness(onSelect?: (product: Product | null) => void) {
   return render(
     <QueryClientProvider client={client}>
       <Harness onSelect={onSelect} />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 

@@ -1,14 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import {
-  Button,
-  Card,
-  FieldError,
-  Form,
-  Input,
-  Label,
-  TextField,
-} from "@heroui/react"
+import { Button, Card, FieldError, Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
 import { PinInput } from "@/features/auth/components/pin-input"
 import type { SetupAdminInput } from "../types"
@@ -20,12 +12,7 @@ interface AdminSetupFormProps {
   initialData?: SetupAdminInput | null
 }
 
-export function AdminSetupForm({
-  onSubmit,
-  onBack,
-  isLoading,
-  initialData,
-}: AdminSetupFormProps) {
+export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: AdminSetupFormProps) {
   const [fullName, setFullName] = useState(initialData?.full_name ?? "")
   const [username, setUsername] = useState(initialData?.username ?? "")
   const [pin, setPin] = useState(initialData?.pin ?? "")
@@ -131,11 +118,7 @@ export function AdminSetupForm({
           <p className="text-sm text-muted">{t.pinHint}</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            onPress={() => onBack(currentData)}
-          >
+          <Button type="button" variant="outline" onPress={() => onBack(currentData)}>
             {t.back}
           </Button>
           <Button isDisabled={isLoading} type="submit">

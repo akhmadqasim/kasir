@@ -23,7 +23,7 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
   const { data: detail, isLoading } = useApiQuery<RefundDetailResult>(
     queryKeys.refunds.detail(refundId ?? 0),
     () => getRefundDetail(refundId!),
-    { enabled: !!refundId }
+    { enabled: !!refundId },
   )
 
   const isExchange = detail?.refund.refund_type === "exchange"
@@ -98,7 +98,9 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                           return (
                             <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
                               <Table.Cell className="text-sm">{item.product_name}</Table.Cell>
-                              <Table.Cell className="text-center tabular-nums">{item.quantity}</Table.Cell>
+                              <Table.Cell className="text-center tabular-nums">
+                                {item.quantity}
+                              </Table.Cell>
                               <Table.Cell className="text-right tabular-nums">
                                 {formatRupiah(item.product_price)}
                               </Table.Cell>
@@ -107,7 +109,9 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                               </Table.Cell>
                               <Table.Cell>
                                 {condition ? (
-                                  <StatusBadge status={condition.variant}>{condition.label}</StatusBadge>
+                                  <StatusBadge status={condition.variant}>
+                                    {condition.label}
+                                  </StatusBadge>
                                 ) : (
                                   "—"
                                 )}
@@ -140,7 +144,9 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                             {detail.exchange_items.map((item) => (
                               <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
                                 <Table.Cell className="text-sm">{item.product_name}</Table.Cell>
-                                <Table.Cell className="text-center tabular-nums">{item.quantity}</Table.Cell>
+                                <Table.Cell className="text-center tabular-nums">
+                                  {item.quantity}
+                                </Table.Cell>
                                 <Table.Cell className="text-right tabular-nums">
                                   {formatRupiah(item.product_price)}
                                 </Table.Cell>
@@ -163,7 +169,9 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between font-semibold">
                   <span>{id.refund.totalRefund}</span>
-                  <span className="tabular-nums">{formatRupiah(detail.refund.total_refund_amount)}</span>
+                  <span className="tabular-nums">
+                    {formatRupiah(detail.refund.total_refund_amount)}
+                  </span>
                 </div>
                 {isExchange && (
                   <>

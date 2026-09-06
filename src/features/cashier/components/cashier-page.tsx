@@ -19,9 +19,7 @@ export function CashierPage() {
   // that used to push it open on every render where `needsShift` was true.
   const [shiftDialogDismissed, setShiftDialogDismissed] = useState(false)
   const [productSearchFocusKey, setProductSearchFocusKey] = useState(0)
-  const [successResult, setSuccessResult] = useState<TransactionResult | null>(
-    null
-  )
+  const [successResult, setSuccessResult] = useState<TransactionResult | null>(null)
   const clear = useCartStore((s) => s.clear)
   const hasItems = useCartStore((s) => s.items.length > 0)
   const user = useAuthStore((s) => s.user)
@@ -44,14 +42,17 @@ export function CashierPage() {
     setShiftDialogDismissed(!open)
   }, [])
 
-  const handlePaymentSuccess = useCallback((result: TransactionResult) => {
-    setPaymentOpen(false)
-    setSuccessResult(result)
-    // Barang sudah dibayar. Struk dirender dari `result`, bukan dari keranjang,
-    // jadi keranjang (dan salinannya di localStorage) harus langsung kosong
-    // supaya tidak bisa ditagih dua kali.
-    clear()
-  }, [clear])
+  const handlePaymentSuccess = useCallback(
+    (result: TransactionResult) => {
+      setPaymentOpen(false)
+      setSuccessResult(result)
+      // Barang sudah dibayar. Struk dirender dari `result`, bukan dari keranjang,
+      // jadi keranjang (dan salinannya di localStorage) harus langsung kosong
+      // supaya tidak bisa ditagih dua kali.
+      clear()
+    },
+    [clear],
+  )
 
   const requestProductSearchFocus = useCallback(() => {
     setProductSearchFocusKey((prev) => prev + 1)
@@ -68,12 +69,15 @@ export function CashierPage() {
     setPaymentOpen(true)
   }, [needsShift])
 
-  const handlePaymentOpenChange = useCallback((open: boolean) => {
-    setPaymentOpen(open)
-    if (!open) {
-      requestProductSearchFocus()
-    }
-  }, [requestProductSearchFocus])
+  const handlePaymentOpenChange = useCallback(
+    (open: boolean) => {
+      setPaymentOpen(open)
+      if (!open) {
+        requestProductSearchFocus()
+      }
+    },
+    [requestProductSearchFocus],
+  )
 
   // F4 shortcut to open payment dialog
   useEffect(() => {
@@ -136,10 +140,7 @@ export function CashierPage() {
         onNewTransaction={handleNewTransaction}
       />
 
-      <OpenShiftDialog
-        open={shiftDialogOpen}
-        onOpenChange={handleShiftDialogOpenChange}
-      />
+      <OpenShiftDialog open={shiftDialogOpen} onOpenChange={handleShiftDialogOpenChange} />
     </>
   )
 }

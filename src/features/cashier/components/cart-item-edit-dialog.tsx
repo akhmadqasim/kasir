@@ -1,14 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import {
-  Button,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  Separator,
-  TextField,
-} from "@heroui/react"
+import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } from "@heroui/react"
 import { Minus, Plus } from "lucide-react"
 
 import { selectedText } from "@/components/selected-text"
@@ -27,11 +18,7 @@ interface CartItemEditDialogProps {
   item: CartItem | null
 }
 
-export function CartItemEditDialog({
-  open,
-  onOpenChange,
-  item,
-}: CartItemEditDialogProps) {
+export function CartItemEditDialog({ open, onOpenChange, item }: CartItemEditDialogProps) {
   if (!item) return null
 
   return (
@@ -41,11 +28,7 @@ export function CartItemEditDialog({
           {/* Body hanya hidup selama dialog terbuka dan di-key per baris keranjang,
               jadi state form-nya lahir dari item yang benar tanpa perlu efek
               penyelaras yang bisa menimpa ketikan kasir. */}
-          <CartItemEditBody
-            key={item.cart_id}
-            item={item}
-            onOpenChange={onOpenChange}
-          />
+          <CartItemEditBody key={item.cart_id} item={item} onOpenChange={onOpenChange} />
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
@@ -128,8 +111,7 @@ function CartItemEditBody({
 
     // Update discount
     const parsedDisc = Number(discRaw) || 0
-    const clampedDisc =
-      discType === "percentage" ? Math.min(parsedDisc, 100) : parsedDisc
+    const clampedDisc = discType === "percentage" ? Math.min(parsedDisc, 100) : parsedDisc
     if (clampedDisc > 0) {
       setItemDiscount(item.cart_id, { type: discType, value: clampedDisc })
     } else {
@@ -190,11 +172,7 @@ function CartItemEditBody({
               >
                 <Minus className="h-4 w-4" />
               </Button>
-              <TextField
-                aria-label="Jumlah"
-                value={qtyRaw}
-                onChange={handleQtyInputChange}
-              >
+              <TextField aria-label="Jumlah" value={qtyRaw} onChange={handleQtyInputChange}>
                 <Input
                   ref={qtyInputRef}
                   className="h-9 w-20 text-center text-lg font-semibold tabular-nums"

@@ -71,7 +71,7 @@ function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
   return render(
     <QueryClientProvider client={client}>
       <PaymentDialog open onOpenChange={onOpenChange} onSuccess={() => {}} />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -165,9 +165,7 @@ describe("payment dialog", () => {
 
     fireEvent.change(field, { target: { value: "200000000" } })
 
-    expect(
-      await screen.findByText(/Nominal pembayaran melebihi/)
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/Nominal pembayaran melebihi/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
   })
 
@@ -199,7 +197,7 @@ describe("payment dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
 
     expect(
-      await screen.findByText("Isi nama bank untuk pembayaran transfer bank.")
+      await screen.findByText("Isi nama bank untuk pembayaran transfer bank."),
     ).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
   })

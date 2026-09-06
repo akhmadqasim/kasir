@@ -33,7 +33,7 @@ export function useListWriteoffs(params: ListWriteoffsParams) {
   return useApiQuery<ListWriteoffsResult>(
     queryKeys.stock.writeoffs(params),
     () => listWriteoffs(params),
-    { placeholderData: keepPreviousData }
+    { placeholderData: keepPreviousData },
   )
 }
 
@@ -50,7 +50,7 @@ export function useCreateWriteoff() {
       toast.success(
         writeoff.status === "pending"
           ? "Write-off dibuat dan stok sudah dikurangi. Menunggu persetujuan admin."
-          : "Write-off dibuat dan disetujui, stok sudah dikurangi"
+          : "Write-off dibuat dan disetujui, stok sudah dikurangi",
       )
     },
     onError: (error) => {
@@ -86,7 +86,7 @@ export function useRejectWriteoff() {
       toast.success(
         writeoff.refundId === null
           ? "Write-off ditolak, stok dikembalikan"
-          : "Write-off ditolak. Stok tidak dikembalikan karena berasal dari refund"
+          : "Write-off ditolak. Stok tidak dikembalikan karena berasal dari refund",
       )
     },
     onError: (error) => {

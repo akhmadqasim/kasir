@@ -31,7 +31,7 @@ function makeReceiptData(overrides: Partial<ReceiptData> = {}): ReceiptData {
 describe("escapeHtml", () => {
   it("escapes every character that can break out of markup", () => {
     expect(escapeHtml(`<img src=x onerror="alert('x')">&`)).toBe(
-      "&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt;&amp;"
+      "&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt;&amp;",
     )
   })
 })
@@ -49,7 +49,7 @@ describe("generateReceiptHtml", () => {
           },
         ],
       }),
-      58
+      58,
     )
 
     expect(html).not.toContain("<script>")
@@ -66,7 +66,7 @@ describe("generateReceiptHtml", () => {
         notes: "<script>1</script>",
         footer_text: "<script>2</script>",
       }),
-      58
+      58,
     )
 
     expect(html).not.toContain("<b>Toko</b>")
@@ -84,7 +84,7 @@ describe("generateReceiptHtml", () => {
           { payment_method: "transfer", bank_name: "<script>3</script>", amount: 6000 },
         ],
       }),
-      58
+      58,
     )
 
     expect(html).not.toContain("<script>")
@@ -98,7 +98,7 @@ describe("generateReceiptHtml", () => {
         total_amount: 8000,
         original_total_amount: 8000,
       }),
-      58
+      58,
     )
 
     expect(html).toContain("<td>Subtotal</td>")
@@ -125,7 +125,7 @@ describe("generateReceiptHtml", () => {
         change_amount: 20000,
         payment_breakdown: [{ payment_method: "qris", bank_name: null, amount: 6000 }],
       }),
-      58
+      58,
     )
 
     expect(html).toContain("<td>Kembalian</td>")
@@ -140,7 +140,7 @@ describe("generateReceiptHtml", () => {
         change_amount: 0,
         payment_breakdown: [{ payment_method: "qris", bank_name: null, amount: 6000 }],
       }),
-      58
+      58,
     )
 
     expect(html).not.toContain("<td>Kembalian</td>")

@@ -19,10 +19,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const [email, setEmail] = useState("")
   const [initialized, setInitialized] = useState(false)
 
-  const storeQuery = useApiQuery<StoreInfo | null>(
-    queryKeys.settings.store,
-    getStoreInfo
-  )
+  const storeQuery = useApiQuery<StoreInfo | null>(queryKeys.settings.store, getStoreInfo)
 
   if (storeQuery.data && !initialized) {
     const s = storeQuery.data
@@ -41,9 +38,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const saveMutation = useApiMutation<StoreInfo, void>(
     () => {
       if (!isReady) {
-        return Promise.reject(
-          new Error("Informasi toko belum dimuat, coba lagi sebentar")
-        )
+        return Promise.reject(new Error("Informasi toko belum dimuat, coba lagi sebentar"))
       }
       return updateStoreInfo({
         name,
@@ -60,7 +55,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
       onError: (error) => {
         toast.error(error.message)
       },
-    }
+    },
   )
 
   return (
@@ -79,13 +74,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
       <Card.Content className="space-y-4">
         {/* `isRequired` replaces the old `required` attribute: HeroUI's Label draws the
             asterisk itself, so the marker no longer has to be typed into the string. */}
-        <TextField
-          fullWidth
-          isDisabled={!isAdmin}
-          isRequired
-          value={name}
-          onChange={setName}
-        >
+        <TextField fullWidth isDisabled={!isAdmin} isRequired value={name} onChange={setName}>
           <Label>{id.settings.storeName}</Label>
           <Input />
         </TextField>
@@ -100,13 +89,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
           <Input />
         </TextField>
 
-        <TextField
-          fullWidth
-          isDisabled={!isAdmin}
-          type="email"
-          value={email}
-          onChange={setEmail}
-        >
+        <TextField fullWidth isDisabled={!isAdmin} type="email" value={email} onChange={setEmail}>
           <Label>{id.settings.storeEmail}</Label>
           <Input />
         </TextField>

@@ -5,11 +5,7 @@ import { DateRangePicker } from "@/components/date-range-picker"
 import { StatusBadge } from "@/components/status-badge"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
-import {
-  paymentMethodLabel,
-  transactionStatusLabel,
-  transactionStatusVariant,
-} from "@/lib/labels"
+import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSalesReceipt } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
@@ -53,8 +49,8 @@ export function SalesReceiptPage() {
     >
       {data && data.items.length < data.totalCount && (
         <p className="text-sm text-muted">
-          Menampilkan {data.items.length} dari {data.totalCount} struk. Persempit rentang
-          tanggal atau pencarian untuk melihat sisanya.
+          Menampilkan {data.items.length} dari {data.totalCount} struk. Persempit rentang tanggal
+          atau pencarian untuk melihat sisanya.
         </p>
       )}
 
@@ -84,9 +80,7 @@ export function SalesReceiptPage() {
           <Table.Row key={row.id} id={row.id} textValue={row.receiptNumber}>
             <Table.Cell className="font-mono text-sm">{row.receiptNumber}</Table.Cell>
             <Table.Cell>{row.cashierName}</Table.Cell>
-            <Table.Cell className="text-sm text-muted">
-              {formatDayDate(row.createdAt)}
-            </Table.Cell>
+            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
             <Table.Cell className="text-right">{row.itemCount}</Table.Cell>
             <Table.Cell>
               <Chip size="sm">{paymentMethodLabel(row.paymentMethod)}</Chip>
@@ -98,9 +92,7 @@ export function SalesReceiptPage() {
                 {transactionStatusLabel(row.status)}
               </StatusBadge>
             </Table.Cell>
-            <Table.Cell className="text-right">
-              {formatRupiah(row.totalAmount)}
-            </Table.Cell>
+            <Table.Cell className="text-right">{formatRupiah(row.totalAmount)}</Table.Cell>
             <Table.Cell className="text-right text-danger">
               {row.refundAmount > 0 ? `-${formatRupiah(row.refundAmount)}` : "-"}
             </Table.Cell>

@@ -240,7 +240,7 @@ describe("kerangka laporan", () => {
     render(
       <ReportPage title="Laporan Uji" filters={<button type="button">Filter</button>}>
         <p>Isi</p>
-      </ReportPage>
+      </ReportPage>,
     )
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Laporan Uji")
@@ -251,7 +251,7 @@ describe("kerangka laporan", () => {
     render(
       <ReportPage title="Laporan Uji">
         <ReportStatCard label="Laba Kotor" tone="success" value="Rp 50.000" />
-      </ReportPage>
+      </ReportPage>,
     )
 
     expect(screen.getByText("Laba Kotor")).toBeInTheDocument()
@@ -272,7 +272,7 @@ describe("kerangka laporan", () => {
     const { rerender } = render(
       <ReportTable label="Uji" columnCount={2} columns={columns} isLoading={false}>
         {[]}
-      </ReportTable>
+      </ReportTable>,
     )
     expect(screen.getByText("Tidak ada data")).toBeInTheDocument()
 
@@ -285,7 +285,7 @@ describe("kerangka laporan", () => {
         error={new Error("koneksi database putus")}
       >
         {[]}
-      </ReportTable>
+      </ReportTable>,
     )
     expect(screen.getByText("Error: koneksi database putus")).toBeInTheDocument()
     expect(screen.queryByText("Tidak ada data")).not.toBeInTheDocument()
@@ -306,7 +306,7 @@ describe("kerangka laporan", () => {
         expect(within(grid).getAllByRole("row")).toHaveLength(dataRows + 1)
       })
       expect(countCells(within(grid).getAllByRole("row")[1])).toBe(columns)
-    }
+    },
   )
 })
 

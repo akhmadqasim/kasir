@@ -1,26 +1,13 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import {
-  Button,
-  Card,
-  Description,
-  Label,
-  ListBox,
-  Select,
-  Separator,
-  Switch,
-} from "@heroui/react"
+import { Button, Card, Description, Label, ListBox, Select, Separator, Switch } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
-import {
-  getAppSettings,
-  toUpdateAppSettingsInput,
-  updateAppSettings,
-} from "@/lib/api/settings"
+import { getAppSettings, toUpdateAppSettingsInput, updateAppSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { AppSettings } from "../types"
 
@@ -65,7 +52,7 @@ export function SalesSettingsTab() {
       onError: (error) => {
         toast.error(error.message)
       },
-    }
+    },
   )
 
   const isReady = settingsQuery.isSuccess && initialized
@@ -87,20 +74,14 @@ export function SalesSettingsTab() {
         {/* The label now sits inside the Switch, so clicking the text toggles it and
             the description is wired up through aria-describedby — neither held with
             the old free-standing Label. */}
-        <Switch
-          className="w-full"
-          isSelected={allowNegativeStock}
-          onChange={setAllowNegativeStock}
-        >
+        <Switch className="w-full" isSelected={allowNegativeStock} onChange={setAllowNegativeStock}>
           <Switch.Content className="w-full justify-between">
             <span className="text-sm font-medium">{id.settings.allowNegativeStock}</span>
             <Switch.Control>
               <Switch.Thumb />
             </Switch.Control>
           </Switch.Content>
-          <Description className="text-xs">
-            {id.settings.allowNegativeStockDesc}
-          </Description>
+          <Description className="text-xs">{id.settings.allowNegativeStockDesc}</Description>
         </Switch>
 
         <Separator />

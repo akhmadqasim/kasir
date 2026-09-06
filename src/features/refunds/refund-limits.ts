@@ -15,8 +15,7 @@
  * mis-attributed reading cannot produce an over-refund.
  */
 
-const REMAINING_QUANTITY_PATTERN =
-  /melebihi sisa yang bisa di-refund \((\d+)\) untuk (.+)$/
+const REMAINING_QUANTITY_PATTERN = /melebihi sisa yang bisa di-refund \((\d+)\) untuk (.+)$/
 
 export interface RemainingQuantityLimit {
   /** Units of this product that may still be returned. */
@@ -26,7 +25,7 @@ export interface RemainingQuantityLimit {
 }
 
 export function parseRemainingQuantityError(
-  message: string | null | undefined
+  message: string | null | undefined,
 ): RemainingQuantityLimit | null {
   if (!message) return null
 

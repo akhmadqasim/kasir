@@ -127,9 +127,7 @@ export function CreateRefundPage() {
               <span className="text-sm font-medium">{detail.transaction.receipt_number}</span>
               <Chip size="sm">{detail.transaction.payment_method.toUpperCase()}</Chip>
             </div>
-            <p className="text-xs text-muted">
-              {formatDateTime(detail.transaction.created_at)}
-            </p>
+            <p className="text-xs text-muted">{formatDateTime(detail.transaction.created_at)}</p>
             <div className="flex items-center justify-between pt-1">
               <span className="text-xs text-muted">Total</span>
               <span className="text-sm font-semibold tabular-nums">
@@ -156,9 +154,9 @@ export function CreateRefundPage() {
               <Alert.Indicator />
               <Alert.Content>
                 <Alert.Description>
-                  Sebagian transaksi ini sudah pernah diretur. Jumlah maksimum di bawah
-                  masih memakai jumlah pembelian — sisa yang benar akan ditampilkan
-                  kalau jumlahnya kelebihan.
+                  Sebagian transaksi ini sudah pernah diretur. Jumlah maksimum di bawah masih
+                  memakai jumlah pembelian — sisa yang benar akan ditampilkan kalau jumlahnya
+                  kelebihan.
                 </Alert.Description>
               </Alert.Content>
             </Alert>
@@ -184,9 +182,7 @@ export function CreateRefundPage() {
             ))}
             {nonRefundableItems.length > 0 && (
               <div className="rounded-lg border border-dashed p-3">
-                <p className="text-xs font-medium text-muted">
-                  Tidak bisa diretur (layanan PPOB)
-                </p>
+                <p className="text-xs font-medium text-muted">Tidak bisa diretur (layanan PPOB)</p>
                 <ul className="mt-1.5 space-y-0.5">
                   {nonRefundableItems.map((item) => (
                     <li key={item.id} className="text-xs text-muted">
@@ -240,7 +236,9 @@ export function CreateRefundPage() {
                   searchPlaceholder={id.refund.searchProduct}
                   perPage={5}
                   value={null}
-                  onSelect={(product) => { if (product) addExchangeItem(product) }}
+                  onSelect={(product) => {
+                    if (product) addExchangeItem(product)
+                  }}
                   renderDetail={(product) =>
                     `Stok: ${product.stock} ${product.unit} · ${formatRupiah(product.sell_price)}`
                   }
@@ -284,7 +282,9 @@ export function CreateRefundPage() {
                                     isIconOnly
                                     size="sm"
                                     variant="outline"
-                                    onPress={() => updateExchangeQty(item.product_id, item.quantity - 1)}
+                                    onPress={() =>
+                                      updateExchangeQty(item.product_id, item.quantity - 1)
+                                    }
                                   >
                                     <Minus className="h-3 w-3" />
                                   </Button>
@@ -296,7 +296,9 @@ export function CreateRefundPage() {
                                     isIconOnly
                                     size="sm"
                                     variant="outline"
-                                    onPress={() => updateExchangeQty(item.product_id, item.quantity + 1)}
+                                    onPress={() =>
+                                      updateExchangeQty(item.product_id, item.quantity + 1)
+                                    }
                                   >
                                     <Plus className="h-3 w-3" />
                                   </Button>
@@ -349,9 +351,7 @@ export function CreateRefundPage() {
           <div className="space-y-2 rounded-lg border bg-default/50 p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted">{id.refund.totalRefund}</span>
-              <span className="text-sm font-medium tabular-nums">
-                {formatRupiah(totalRefund)}
-              </span>
+              <span className="text-sm font-medium tabular-nums">{formatRupiah(totalRefund)}</span>
             </div>
 
             {actionType === "exchange" && (
@@ -393,7 +393,9 @@ export function CreateRefundPage() {
             {selectedItems.length > 0 && (
               <p className="text-xs text-muted">
                 {selectedItems.length} item diretur
-                {actionType === "exchange" && exchangeItems.length > 0 && `, ${exchangeItems.length} item pengganti`}
+                {actionType === "exchange" &&
+                  exchangeItems.length > 0 &&
+                  `, ${exchangeItems.length} item pengganti`}
               </p>
             )}
           </div>

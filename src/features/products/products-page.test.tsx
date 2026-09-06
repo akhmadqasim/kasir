@@ -59,7 +59,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <ProductsPage />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -213,7 +213,7 @@ describe("halaman produk", () => {
       expect(query?.get("sort_order")).toBe("asc")
     })
     expect(grid.getByRole("columnheader", { name: id.products.barcode })).not.toHaveAttribute(
-      "aria-sort"
+      "aria-sort",
     )
   })
 
@@ -280,9 +280,7 @@ describe("halaman produk", () => {
 
     const dialog = within(await screen.findByRole("dialog", { name: "Import Produk" }))
     expect(dialog.getByText("Klik untuk memilih file")).toBeInTheDocument()
-    expect(
-      dialog.getByRole("button", { name: "Download contoh template" })
-    ).toBeInTheDocument()
+    expect(dialog.getByRole("button", { name: "Download contoh template" })).toBeInTheDocument()
   })
 
   // Tabel preview pindah ke `Table` majemuk HeroUI. Kolomnya dibangun dari
@@ -304,8 +302,6 @@ describe("halaman produk", () => {
     expect(preview.getByRole("columnheader", { name: "Produk (Nama)" })).toBeInTheDocument()
     expect(preview.getByRole("columnheader", { name: "Harga Jual" })).toBeInTheDocument()
     expect(preview.getByRole("rowheader", { name: "Kopi Sachet" })).toBeInTheDocument()
-    expect(
-      within(dialog).getByRole("button", { name: id.products.startImport })
-    ).toBeEnabled()
+    expect(within(dialog).getByRole("button", { name: id.products.startImport })).toBeEnabled()
   })
 })

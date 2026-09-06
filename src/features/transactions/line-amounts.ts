@@ -1,10 +1,7 @@
 import type { TransactionItem } from "./types"
 
 /** Just enough of a sold line to price it. */
-export type PricedLine = Pick<
-  TransactionItem,
-  "quantity" | "subtotal" | "net_subtotal"
->
+export type PricedLine = Pick<TransactionItem, "quantity" | "subtotal" | "net_subtotal">
 
 /**
  * Rupiah actually paid for a whole sold line.

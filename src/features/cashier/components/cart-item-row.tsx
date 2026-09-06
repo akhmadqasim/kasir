@@ -35,11 +35,7 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
   }
 
   return (
-    <Table.Row
-      id={item.cart_id}
-      textValue={item.product_name}
-      onAction={() => onEdit(item)}
-    >
+    <Table.Row id={item.cart_id} textValue={item.product_name} onAction={() => onEdit(item)}>
       <Table.Cell className="whitespace-normal">
         <div className="flex min-w-0 items-start gap-2">
           {/* Qty badge */}
@@ -48,7 +44,7 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
               "mt-0.5 inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-bold tabular-nums transition-colors",
               item.is_ppob
                 ? "border border-border bg-default text-muted"
-                : "bg-accent text-accent-foreground shadow-sm"
+                : "bg-accent text-accent-foreground shadow-sm",
             )}
           >
             {qty}
@@ -67,9 +63,7 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
                 {formatRupiah(item.product_price)} / {item.unit}
               </p>
             )}
-            {hasDiscount && (
-              <p className="text-xs font-medium text-danger">Diskon aktif</p>
-            )}
+            {hasDiscount && <p className="text-xs font-medium text-danger">Diskon aktif</p>}
           </div>
         </div>
       </Table.Cell>

@@ -68,9 +68,7 @@ export function CashFlowsPage() {
           const Icon = isIn ? ArrowDownCircle : ArrowUpCircle
           return (
             <Table.Row key={row.id} id={row.id} textValue={formatDayDate(row.createdAt)}>
-              <Table.Cell className="text-sm text-muted">
-                {formatDayDate(row.createdAt)}
-              </Table.Cell>
+              <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
               <Table.Cell>{row.cashierName}</Table.Cell>
               <Table.Cell>
                 <StatusBadge status={isIn ? "neutral" : "error"}>

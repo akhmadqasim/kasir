@@ -38,10 +38,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
 
   const handleCreate = () => {
     if (!newName.trim()) return
-    createCategory.mutate(
-      { name: newName.trim() },
-      { onSuccess: () => setNewName("") }
-    )
+    createCategory.mutate({ name: newName.trim() }, { onSuccess: () => setNewName("") })
   }
 
   const handleStartEdit = (category: Category) => {
@@ -53,7 +50,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
     if (!editingCategory || !editName.trim()) return
     updateCategory.mutate(
       { id: editingCategory.id, name: editName.trim() },
-      { onSuccess: () => setEditingCategory(null) }
+      { onSuccess: () => setEditingCategory(null) },
     )
   }
 

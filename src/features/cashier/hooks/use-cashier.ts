@@ -15,6 +15,6 @@ export { getProductByBarcode } from "@/lib/api/products"
  */
 export function useCheckoutTransaction() {
   return useApiMutation<TransactionResult, CheckoutTransactionInput>((input) =>
-    checkoutTransaction(input, useCartStore.getState().getCheckoutKey())
+    checkoutTransaction(input, useCartStore.getState().getCheckoutKey()),
   )
 }

@@ -13,7 +13,7 @@ export function usePpobHistory(startDate: string, endDate: string) {
       placeholderData: keepPreviousData,
       staleTime: 30000,
       retry: false,
-    }
+    },
   )
 }
 
@@ -26,6 +26,6 @@ export function usePpobMutasi(startDate: string, endDate: string) {
       placeholderData: keepPreviousData,
       staleTime: 30000,
       retry: false,
-    }
+    },
   )
 }

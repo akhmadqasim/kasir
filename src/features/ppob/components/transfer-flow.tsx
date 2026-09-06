@@ -101,9 +101,7 @@ export function TransferFlow() {
                       }}
                     >
                       <span className="font-medium">{ch.channel}</span>
-                      <span className="text-sm text-muted">
-                        {ch.details.length} tipe transfer
-                      </span>
+                      <span className="text-sm text-muted">{ch.details.length} tipe transfer</span>
                     </Button>
                   ))}
                 </div>

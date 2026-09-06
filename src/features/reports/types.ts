@@ -2,7 +2,7 @@
 
 export interface DateRangeFilter {
   startDate: string // YYYY-MM-DD
-  endDate: string   // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
 }
 
 // Penjualan per Hari

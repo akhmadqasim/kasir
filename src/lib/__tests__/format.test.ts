@@ -147,9 +147,7 @@ describe("parseBackendDate", () => {
   it("reads a bare backend timestamp as UTC, not local time", () => {
     // SQLite stores "YYYY-MM-DD HH:MM:SS" in UTC, and that string is not ISO-8601,
     // so `new Date(str)` reads it as local time and drifts by the UTC offset.
-    expect(parseBackendDate("2026-09-05 18:00:00")?.toISOString()).toBe(
-      "2026-09-05T18:00:00.000Z"
-    )
+    expect(parseBackendDate("2026-09-05 18:00:00")?.toISOString()).toBe("2026-09-05T18:00:00.000Z")
   })
 
   it("keeps a 01:00 WIB sale on the day the backend filed it", () => {
@@ -164,17 +162,15 @@ describe("parseBackendDate", () => {
   })
 
   it("accepts a timestamp that already carries a timezone", () => {
-    expect(parseBackendDate("2026-09-05T18:00:00Z")?.toISOString()).toBe(
-      "2026-09-05T18:00:00.000Z"
-    )
+    expect(parseBackendDate("2026-09-05T18:00:00Z")?.toISOString()).toBe("2026-09-05T18:00:00.000Z")
     expect(parseBackendDate("2026-09-06T01:00:00+07:00")?.toISOString()).toBe(
-      "2026-09-05T18:00:00.000Z"
+      "2026-09-05T18:00:00.000Z",
     )
   })
 
   it("accepts fractional seconds", () => {
     expect(parseBackendDate("2026-09-05 18:00:00.123")?.toISOString()).toBe(
-      "2026-09-05T18:00:00.123Z"
+      "2026-09-05T18:00:00.123Z",
     )
   })
 
@@ -188,12 +184,8 @@ describe("parseBackendDate", () => {
 
 describe("formatDateTime and formatDayDate", () => {
   it("formats a bare backend timestamp the same as its explicit UTC form", () => {
-    expect(formatDateTime("2026-09-05 18:00:00")).toBe(
-      formatDateTime("2026-09-05T18:00:00Z")
-    )
-    expect(formatDayDate("2026-09-05 18:00:00")).toBe(
-      formatDayDate("2026-09-05T18:00:00Z")
-    )
+    expect(formatDateTime("2026-09-05 18:00:00")).toBe(formatDateTime("2026-09-05T18:00:00Z"))
+    expect(formatDayDate("2026-09-05 18:00:00")).toBe(formatDayDate("2026-09-05T18:00:00Z"))
   })
 
   it("falls back for missing values", () => {

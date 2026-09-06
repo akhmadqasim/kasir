@@ -69,13 +69,13 @@ function renderApp(initialPath = "/cashier") {
         ],
       },
     ],
-    { initialEntries: [initialPath] }
+    { initialEntries: [initialPath] },
   )
 
   return render(
     <AppProviders>
       <RouterProvider router={router} />
-    </AppProviders>
+    </AppProviders>,
   )
 }
 
@@ -203,7 +203,7 @@ describe("identitas tidak dapat dipalsukan lewat localStorage", () => {
   it("mengabaikan entri kasir-auth yang ditanam", async () => {
     localStorage.setItem(
       "kasir-auth",
-      JSON.stringify({ state: { user: { ...KASIR, role: "admin" } } })
+      JSON.stringify({ state: { user: { ...KASIR, role: "admin" } } }),
     )
 
     renderApp("/settings")

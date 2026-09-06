@@ -31,19 +31,13 @@ export function TablePagination({ page, totalPages, onPageChange }: TablePaginat
       </Pagination.Summary>
       <Pagination.Content>
         <Pagination.Item>
-          <Pagination.Previous
-            isDisabled={page <= 1}
-            onPress={() => onPageChange(page - 1)}
-          >
+          <Pagination.Previous isDisabled={page <= 1} onPress={() => onPageChange(page - 1)}>
             <Pagination.PreviousIcon />
             <span>{id.transactions.prev}</span>
           </Pagination.Previous>
         </Pagination.Item>
         <Pagination.Item>
-          <Pagination.Next
-            isDisabled={page >= totalPages}
-            onPress={() => onPageChange(page + 1)}
-          >
+          <Pagination.Next isDisabled={page >= totalPages} onPress={() => onPageChange(page + 1)}>
             <span>{id.transactions.next}</span>
             <Pagination.NextIcon />
           </Pagination.Next>

@@ -60,12 +60,8 @@ export function PaymentMethodsPage() {
               <Card.Content>
                 <p className="text-2xl font-bold">{formatRupiah(row.totalAmount)}</p>
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-sm text-muted">
-                    {row.transactionCount} transaksi
-                  </span>
-                  <span className="text-sm font-medium">
-                    ({row.percentage.toFixed(1)}%)
-                  </span>
+                  <span className="text-sm text-muted">{row.transactionCount} transaksi</span>
+                  <span className="text-sm font-medium">({row.percentage.toFixed(1)}%)</span>
                 </div>
                 <div className="mt-2 h-2 w-full rounded-full bg-default">
                   {/* Angka laporan sekarang bersih dari retur, jadi sebuah metode
@@ -104,9 +100,7 @@ export function PaymentMethodsPage() {
             id={row.paymentMethod}
             textValue={paymentMethodLabel(row.paymentMethod)}
           >
-            <Table.Cell className="font-medium">
-              {paymentMethodLabel(row.paymentMethod)}
-            </Table.Cell>
+            <Table.Cell className="font-medium">{paymentMethodLabel(row.paymentMethod)}</Table.Cell>
             <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalAmount)}</Table.Cell>
             <Table.Cell className="text-right">{row.percentage.toFixed(1)}%</Table.Cell>

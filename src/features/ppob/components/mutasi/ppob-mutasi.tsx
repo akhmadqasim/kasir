@@ -1,22 +1,7 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  ArrowLeft,
-  ArrowDownCircle,
-  ArrowUpCircle,
-  Search,
-  RefreshCw,
-  Loader2,
-} from "lucide-react"
-import {
-  Button,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  Separator,
-  Skeleton,
-} from "@heroui/react"
+import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Search, RefreshCw, Loader2 } from "lucide-react"
+import { Button, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
 import { StatusBadge } from "@/components/status-badge"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { selectedText } from "@/components/selected-text"
@@ -98,25 +83,62 @@ const DISPLAY_LABELS: Record<string, string> = {
 
 // Fields to hide from detail view (verbose/internal)
 const HIDDEN_KEYS = new Set([
-  "device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin",
-  "receipt_text", "invoice_url", "invoice_string",
-  "id", "max_adjustment", "advice_id", "ref_id",
-  "amount_base_price", "complaint", "uid", "user_id", "flag_member",
-  "member_id", "flag_topup", "topup_type", "type_topup",
+  "device_id",
+  "inquiry_id",
+  "plu",
+  "igr_plu",
+  "plu_igr",
+  "margin",
+  "receipt_text",
+  "invoice_url",
+  "invoice_string",
+  "id",
+  "max_adjustment",
+  "advice_id",
+  "ref_id",
+  "amount_base_price",
+  "complaint",
+  "uid",
+  "user_id",
+  "flag_member",
+  "member_id",
+  "flag_topup",
+  "topup_type",
+  "type_topup",
 ])
 
 // Fields to show first (priority order)
 const PRIORITY_KEYS = [
-  "created_at", "formatted_date",
-  "product_name", "plu_desc", "igr_desc", "description",
-  "target", "raw_paymentcode", "customer_no", "phone_number",
-  "total", "amount", "sell_price",
-  "amount_fee", "admin_fee", "fee",
-  "base_price", "vendor_price", "profit",
-  "token_number", "serial_number", "kwh",
-  "no_ref", "trxid", "trx_id",
-  "provider", "merchant", "denom",
-  "payment_code", "status",
+  "created_at",
+  "formatted_date",
+  "product_name",
+  "plu_desc",
+  "igr_desc",
+  "description",
+  "target",
+  "raw_paymentcode",
+  "customer_no",
+  "phone_number",
+  "total",
+  "amount",
+  "sell_price",
+  "amount_fee",
+  "admin_fee",
+  "fee",
+  "base_price",
+  "vendor_price",
+  "profit",
+  "token_number",
+  "serial_number",
+  "kwh",
+  "no_ref",
+  "trxid",
+  "trx_id",
+  "provider",
+  "merchant",
+  "denom",
+  "payment_code",
+  "status",
 ]
 
 function formatRawValue(key: string, value: unknown): string | null {
@@ -126,7 +148,19 @@ function formatRawValue(key: string, value: unknown): string | null {
   const str = String(value)
   if (str === "-" || str === "0" || str === "0.0" || str.trim() === "") return null
 
-  const numKeys = ["total", "amount", "amount_fee", "admin_fee", "fee", "sell_price", "base_price", "vendor_price", "profit", "nominal", "topup_amount"]
+  const numKeys = [
+    "total",
+    "amount",
+    "amount_fee",
+    "admin_fee",
+    "fee",
+    "sell_price",
+    "base_price",
+    "vendor_price",
+    "profit",
+    "nominal",
+    "topup_amount",
+  ]
   if (numKeys.includes(key) && !isNaN(Number(value))) {
     return formatRupiah(Number(value))
   }
@@ -134,7 +168,11 @@ function formatRawValue(key: string, value: unknown): string | null {
   return str
 }
 
-function MutasiDetailDialog({ item, open, onOpenChange }: {
+function MutasiDetailDialog({
+  item,
+  open,
+  onOpenChange,
+}: {
   item: MutasiItem
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -152,7 +190,8 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
     seenKeys.add(key)
     const formatted = formatRawValue(key, val)
     if (!formatted) return
-    const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    const label =
+      DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     // Deduplicate by label — keep only first occurrence of each label
     if (seenLabels.has(label)) return
     seenLabels.add(label)
@@ -188,9 +227,7 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
           <Modal.Body className="space-y-3">
             <div className="flex items-center justify-between">
-              <span
-                className={`text-lg font-bold ${isIn ? "text-success" : "text-danger"}`}
-              >
+              <span className={`text-lg font-bold ${isIn ? "text-success" : "text-danger"}`}>
                 {isIn ? "+" : "-"}
                 {item.amount != null ? formatRupiah(item.amount) : "-"}
               </span>
@@ -201,10 +238,7 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 
             <div className="max-h-[400px] space-y-1 overflow-y-auto pr-1">
               {detailRows.map((row) => (
-                <div
-                  key={row.label}
-                  className="grid grid-cols-[120px_1fr] gap-2 py-0.5 text-sm"
-                >
+                <div key={row.label} className="grid grid-cols-[120px_1fr] gap-2 py-0.5 text-sm">
                   <span className="text-xs text-muted">{row.label}</span>
                   <span className="font-medium break-words">{row.value}</span>
                 </div>
@@ -221,13 +255,29 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
 function MutasiStatusBadge({ status, size }: { status: string | null; size?: "sm" }) {
   switch (normalizeStatus(status)) {
     case "sukses":
-      return <StatusBadge status="success" size={size}>Sukses</StatusBadge>
+      return (
+        <StatusBadge status="success" size={size}>
+          Sukses
+        </StatusBadge>
+      )
     case "gagal":
-      return <StatusBadge status="error" size={size}>Gagal</StatusBadge>
+      return (
+        <StatusBadge status="error" size={size}>
+          Gagal
+        </StatusBadge>
+      )
     case "proses":
-      return <StatusBadge status="warning" size={size}>Proses</StatusBadge>
+      return (
+        <StatusBadge status="warning" size={size}>
+          Proses
+        </StatusBadge>
+      )
     default:
-      return <StatusBadge status="neutral" size={size}>{status ?? "-"}</StatusBadge>
+      return (
+        <StatusBadge status="neutral" size={size}>
+          {status ?? "-"}
+        </StatusBadge>
+      )
   }
 }
 
@@ -271,9 +321,7 @@ function MutasiRow({ item, onPress }: { item: MutasiItem; onPress: () => void })
       </span>
 
       <span className="shrink-0 text-right">
-        <span
-          className={`block text-sm font-semibold ${isIn ? "text-success" : "text-danger"}`}
-        >
+        <span className={`block text-sm font-semibold ${isIn ? "text-success" : "text-danger"}`}>
           {isIn ? "+" : "-"}
           {item.amount != null ? formatRupiah(item.amount) : "-"}
         </span>
@@ -292,9 +340,7 @@ export function PpobMutasi() {
 
   const [typeFilter, setTypeFilter] = useState("all")
   const [selectedItem, setSelectedItem] = useState<MutasiItem | null>(null)
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(
-    getDefaultDateRangeDates
-  )
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRangeDates)
 
   // The picker holds local dates; `toISOString()` here would send yesterday.
   const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start
@@ -352,7 +398,7 @@ export function PpobMutasi() {
         }
         return acc
       },
-      { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 }
+      { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 },
     )
   }, [dateFilteredItems])
 
@@ -370,12 +416,7 @@ export function PpobMutasi() {
         </Button>
         <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.mutasiTitle}</h1>
         <div className="ml-auto">
-          <Button
-            isDisabled={isFetching}
-            size="sm"
-            variant="outline"
-            onPress={() => refetch()}
-          >
+          <Button isDisabled={isFetching} size="sm" variant="outline" onPress={() => refetch()}>
             {isFetching ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -390,15 +431,11 @@ export function PpobMutasi() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-lg border bg-surface p-4">
           <p className="text-xs text-muted">{i18n.ppob.saldo}</p>
-          <p className="text-xl font-bold">
-            {saldoData ? formatRupiah(saldoData.saldo) : "-"}
-          </p>
+          <p className="text-xl font-bold">{saldoData ? formatRupiah(saldoData.saldo) : "-"}</p>
         </div>
         <div className="rounded-lg border bg-surface p-4">
           <p className="text-xs text-muted">Total Masuk ({summary.countIn} trx)</p>
-          <p className="text-xl font-bold text-success">
-            +{formatRupiah(summary.totalIn)}
-          </p>
+          <p className="text-xl font-bold text-success">+{formatRupiah(summary.totalIn)}</p>
           {undatedIn > 0 && (
             <p className="mt-1 text-[11px] text-muted">
               Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
@@ -407,9 +444,7 @@ export function PpobMutasi() {
         </div>
         <div className="rounded-lg border bg-surface p-4">
           <p className="text-xs text-muted">Total Keluar ({summary.countOut} trx)</p>
-          <p className="text-xl font-bold text-danger">
-            -{formatRupiah(summary.totalOut)}
-          </p>
+          <p className="text-xl font-bold text-danger">-{formatRupiah(summary.totalOut)}</p>
         </div>
       </div>
 
@@ -465,11 +500,7 @@ export function PpobMutasi() {
       ) : (
         <div className="space-y-2">
           {filteredItems.map((item, index) => (
-            <MutasiRow
-              key={item.id ?? index}
-              item={item}
-              onPress={() => setSelectedItem(item)}
-            />
+            <MutasiRow key={item.id ?? index} item={item} onPress={() => setSelectedItem(item)} />
           ))}
         </div>
       )}
@@ -478,7 +509,9 @@ export function PpobMutasi() {
         <MutasiDetailDialog
           item={selectedItem}
           open={!!selectedItem}
-          onOpenChange={(open) => { if (!open) setSelectedItem(null) }}
+          onOpenChange={(open) => {
+            if (!open) setSelectedItem(null)
+          }}
         />
       )}
     </div>

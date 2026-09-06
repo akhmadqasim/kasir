@@ -32,7 +32,7 @@ export function ReturnsPage() {
 
   const totals = data?.reduce(
     (acc, r) => ({ count: acc.count + 1, amount: acc.amount + r.totalRefundAmount }),
-    { count: 0, amount: 0 }
+    { count: 0, amount: 0 },
   )
 
   return (
@@ -88,9 +88,7 @@ export function ReturnsPage() {
             <Table.Cell className="max-w-[200px] truncate text-sm text-muted">
               {row.reason ?? "-"}
             </Table.Cell>
-            <Table.Cell className="text-sm text-muted">
-              {formatDayDate(row.createdAt)}
-            </Table.Cell>
+            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
           </Table.Row>
         ))}
       </ReportTable>

@@ -229,7 +229,10 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                   <Separator />
                   <div className="flex items-center justify-between">
                     <span className="font-medium">Selisih</span>
-                    <StatusBadge className="tabular-nums" status={cashDifferenceStatus(cashDifference)}>
+                    <StatusBadge
+                      className="tabular-nums"
+                      status={cashDifferenceStatus(cashDifference)}
+                    >
                       {signedRupiah(cashDifference)}
                     </StatusBadge>
                   </div>
@@ -237,9 +240,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
               )}
             </div>
             {!hasClosingCash && (
-              <p className="mt-2 text-xs text-muted">
-                * Saldo aktual tidak diisi saat tutup kasir
-              </p>
+              <p className="mt-2 text-xs text-muted">* Saldo aktual tidak diisi saat tutup kasir</p>
             )}
           </Card.Content>
         </Card>

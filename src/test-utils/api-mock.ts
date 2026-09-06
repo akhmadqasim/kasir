@@ -58,11 +58,7 @@ export interface ApiErrorResponse {
 }
 
 /** Mark a route as failing, in the shape the server actually uses. */
-export function apiFailure(
-  status: number,
-  code: string,
-  message: string
-): ApiErrorResponse {
+export function apiFailure(status: number, code: string, message: string): ApiErrorResponse {
   return { status, code, message }
 }
 
@@ -100,7 +96,7 @@ function matches(pattern: string, method: string, path: string): boolean {
   if (patternSegments.length !== pathSegments.length) return false
 
   return patternSegments.every(
-    (segment, index) => segment === "*" || segment === pathSegments[index]
+    (segment, index) => segment === "*" || segment === pathSegments[index],
   )
 }
 
@@ -115,10 +111,10 @@ function jsonResponse(body: unknown): Response {
 }
 
 function errorResponse(failure: ApiErrorResponse): Response {
-  return new Response(
-    JSON.stringify({ code: failure.code, message: failure.message }),
-    { status: failure.status, headers: { "Content-Type": "application/json" } }
-  )
+  return new Response(JSON.stringify({ code: failure.code, message: failure.message }), {
+    status: failure.status,
+    headers: { "Content-Type": "application/json" },
+  })
 }
 
 /**
@@ -161,16 +157,12 @@ export function installApiMock(routes: ApiRoutes = {}): ApiMock {
     for (const [pattern, responder] of table) {
       if (!matches(pattern, method, path)) continue
       const result =
-        typeof responder === "function"
-          ? (responder as (c: ApiCall) => unknown)(call)
-          : responder
+        typeof responder === "function" ? (responder as (c: ApiCall) => unknown)(call) : responder
       const resolved = await result
       return isApiFailure(resolved) ? errorResponse(resolved) : jsonResponse(resolved)
     }
 
-    throw new Error(
-      `Tidak ada rute mock untuk ${method} ${path}. Tambahkan di installApiMock().`
-    )
+    throw new Error(`Tidak ada rute mock untuk ${method} ${path}. Tambahkan di installApiMock().`)
   })
 
   vi.stubGlobal("fetch", fetchMock)

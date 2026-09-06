@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  calculateSellPrice,
-  extractNominal,
-  resolvePpobSellPrice,
-} from "./ppob-pricing"
+import { calculateSellPrice, extractNominal, resolvePpobSellPrice } from "./ppob-pricing"
 
 describe("extractNominal", () => {
   it("reads an un-dotted nominal from a product name", () => {
@@ -66,7 +62,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 22500,
         markup: { type: "fixed", value: 0 },
         customPrices: {},
-      })
+      }),
     ).toBe(22500)
   })
 
@@ -78,7 +74,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 22500,
         markup: { type: "fixed", value: 1000 },
         customPrices: {},
-      })
+      }),
     ).toBe(23500)
   })
 
@@ -90,7 +86,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 5400,
         markup: { type: "fixed", value: 0 },
         customPrices: { "5000": 6000 },
-      })
+      }),
     ).toBe(6000)
   })
 
@@ -102,7 +98,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 5400,
         markup: { type: "fixed", value: 1000 },
         customPrices: { "10000": 11000 },
-      })
+      }),
     ).toBe(6400)
   })
 
@@ -114,7 +110,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 5400,
         markup: { type: "fixed", value: 0 },
         customPrices: { "5000": 5000 },
-      })
+      }),
     ).toBe(5400)
   })
 
@@ -126,7 +122,7 @@ describe("resolvePpobSellPrice", () => {
         vendorCost: 6500,
         markup: { type: "fixed", value: 0 },
         customPrices: { "5000": 5500 },
-      })
+      }),
     ).toBe(6500)
   })
 
@@ -136,7 +132,7 @@ describe("resolvePpobSellPrice", () => {
         name: "PDAM Kota - SITI",
         serviceType: "pdam",
         vendorCost: 87500,
-      })
+      }),
     ).toBe(87500)
   })
 })

@@ -62,7 +62,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
           resetForm()
           onOpenChange(false)
         },
-      }
+      },
     )
   }
 
@@ -89,10 +89,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                 <span className="text-muted">{id.users.fullName}</span>
                 <span className="font-medium">{user.full_name}</span>
                 <span className="text-muted">{id.users.role}</span>
-                <StatusBadge
-                  className="w-fit"
-                  status={user.role === "admin" ? "info" : "neutral"}
-                >
+                <StatusBadge className="w-fit" status={user.role === "admin" ? "info" : "neutral"}>
                   {user.role === "admin" ? id.users.admin : id.users.kasir}
                 </StatusBadge>
               </div>

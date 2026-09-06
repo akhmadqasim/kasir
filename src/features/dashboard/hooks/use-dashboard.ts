@@ -25,7 +25,7 @@ export function useDashboardSummary() {
 
 export function useDailyRevenue(days: number = 7) {
   return useApiQuery<DailyRevenue[]>(queryKeys.dashboard.dailyRevenue(days), () =>
-    getDailyRevenue(days)
+    getDailyRevenue(days),
   )
 }
 
@@ -33,13 +33,13 @@ export function usePaymentMethodStats() {
   return useApiQuery<PaymentMethodStat[]>(
     queryKeys.dashboard.paymentMethods,
     getPaymentMethodStats,
-    { refetchInterval: 30000 }
+    { refetchInterval: 30000 },
   )
 }
 
 export function useTopProducts(limit: number = 10) {
   return useApiQuery<TopProduct[]>(queryKeys.dashboard.topProducts(limit), () =>
-    getTopProducts(limit)
+    getTopProducts(limit),
   )
 }
 
@@ -51,6 +51,6 @@ export function useRecentTransactions() {
   return useApiQuery<RecentTransaction[]>(
     queryKeys.dashboard.recentTransactions,
     getRecentTransactions,
-    { refetchInterval: 15000 }
+    { refetchInterval: 15000 },
   )
 }

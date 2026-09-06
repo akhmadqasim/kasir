@@ -126,8 +126,8 @@ describe("pemetaan error", () => {
           new Response(JSON.stringify({ code: "rate_limited", message: "tunggu" }), {
             status: 429,
             headers: { "Content-Type": "application/json", "Retry-After": "40" },
-          })
-      )
+          }),
+      ),
     )
 
     const error = await failureOf(apiPost("/auth/login", {}))
@@ -238,9 +238,9 @@ describe("bentuk permintaan", () => {
    * every endpoint here treats it as "no filter", and that is a real answer.
    */
   it("membuang parameter undefined dan null, menyimpan string kosong", () => {
-    expect(
-      buildQueryString({ query: "", page: 1, category_id: undefined, sort_by: null })
-    ).toBe("?query=&page=1")
+    expect(buildQueryString({ query: "", page: 1, category_id: undefined, sort_by: null })).toBe(
+      "?query=&page=1",
+    )
     expect(buildQueryString()).toBe("")
     expect(buildQueryString({})).toBe("")
   })

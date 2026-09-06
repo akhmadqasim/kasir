@@ -50,9 +50,7 @@ export function getPpobMarkup(): Promise<PpobMarkup> {
  * secrets rather than a value anything can set — dropping it here means no tab
  * has to remember that.
  */
-export function toUpdateAppSettingsInput(
-  current: AppSettings
-): UpdateAppSettingsInput {
+export function toUpdateAppSettingsInput(current: AppSettings): UpdateAppSettingsInput {
   return {
     sales: current.sales,
     security: current.security,

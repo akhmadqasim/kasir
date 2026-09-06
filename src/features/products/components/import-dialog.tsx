@@ -1,16 +1,7 @@
 import { useState, useCallback } from "react"
 import { Upload, FileSpreadsheet, CheckCircle2, Download } from "lucide-react"
 import { read, utils, type WorkBook } from "xlsx"
-import {
-  Alert,
-  Button,
-  Label,
-  ListBox,
-  Modal,
-  ScrollShadow,
-  Select,
-  Table,
-} from "@heroui/react"
+import { Alert, Button, Label, ListBox, Modal, ScrollShadow, Select, Table } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
@@ -44,7 +35,7 @@ function isValidCheckDigit(code: string): boolean {
   const digits = code.split("").map(Number)
   const check = digits.pop()!
   const sum = digits.reduce((acc, d, i) => {
-    const weight = len === 13 ? (i % 2 === 0 ? 1 : 3) : (i % 2 === 0 ? 3 : 1)
+    const weight = len === 13 ? (i % 2 === 0 ? 1 : 3) : i % 2 === 0 ? 3 : 1
     return acc + d * weight
   }, 0)
   return (10 - (sum % 10)) % 10 === check
@@ -82,33 +73,33 @@ const TARGET_FIELDS = [
 type TargetFieldKey = (typeof TARGET_FIELDS)[number]["key"]
 
 const COLUMN_MAPPING: Record<string, TargetFieldKey> = {
-  "nama": "name",
+  nama: "name",
   "nama produk": "name",
-  "produk": "name",
-  "product": "name",
-  "name": "name",
-  "barcode": "barcode",
-  "kategori": "category_name",
+  produk: "name",
+  product: "name",
+  name: "name",
+  barcode: "barcode",
+  kategori: "category_name",
   "kategori produk": "category_name",
-  "category": "category_name",
+  category: "category_name",
   "harga beli": "buy_price",
   "harga modal": "buy_price",
-  "hpp": "buy_price",
+  hpp: "buy_price",
   "buy price": "buy_price",
-  "cost": "buy_price",
+  cost: "buy_price",
   "harga jual": "sell_price",
-  "harga": "sell_price",
+  harga: "sell_price",
   "sell price": "sell_price",
-  "price": "sell_price",
-  "stok": "stock",
-  "stock": "stock",
-  "satuan": "unit",
-  "unit": "unit",
-  "no": "skip",
-  "toko": "skip",
-  "pemasok": "skip",
-  "supplier": "skip",
-  "margin": "margin",
+  price: "sell_price",
+  stok: "stock",
+  stock: "stock",
+  satuan: "unit",
+  unit: "unit",
+  no: "skip",
+  toko: "skip",
+  pemasok: "skip",
+  supplier: "skip",
+  margin: "margin",
   "margin (%)": "margin",
 }
 
@@ -157,9 +148,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [result, setResult] = useState<BulkImportResult | null>(null)
   const queryClient = useQueryClient()
 
-  const importMutation = useApiMutation<BulkImportResult, BulkProductInput[]>(
-    bulkCreateProducts
-  )
+  const importMutation = useApiMutation<BulkImportResult, BulkProductInput[]>(bulkCreateProducts)
 
   const resetState = useCallback(() => {
     setStep("upload")
@@ -341,9 +330,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const mappedCount = getMappedFieldCount()
 
   function getMappedFieldCount() {
-    const mapped = new Set(
-      Object.values(columnMap).filter((v) => v !== "skip")
-    )
+    const mapped = new Set(Object.values(columnMap).filter((v) => v !== "skip"))
     return mapped.size
   }
 
@@ -367,7 +354,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           <Modal.Body className="flex flex-col gap-4">
             <p className="text-sm text-muted">
               {step === "upload" && "Upload file CSV atau Excel untuk mengimport produk"}
-              {step === "mapping" && `${rows.length} baris ditemukan — mapping kolom ke field produk`}
+              {step === "mapping" &&
+                `${rows.length} baris ditemukan — mapping kolom ke field produk`}
               {step === "result" && "Hasil import"}
             </p>
 
@@ -429,7 +417,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                               onChange={(value) =>
                                 handleColumnMapChange(
                                   idx,
-                                  (value === null ? "skip" : String(value)) as TargetFieldKey
+                                  (value === null ? "skip" : String(value)) as TargetFieldKey,
                                 )
                               }
                             >
@@ -463,9 +451,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   <Alert status="danger">
                     <Alert.Indicator />
                     <Alert.Content>
-                      <Alert.Description>
-                        Kolom "Produk (Nama)" wajib dimapping
-                      </Alert.Description>
+                      <Alert.Description>Kolom "Produk (Nama)" wajib dimapping</Alert.Description>
                     </Alert.Content>
                   </Alert>
                 )}
@@ -525,8 +511,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   <div>
                     <p className="text-lg font-semibold">Import Selesai</p>
                     <p className="text-sm text-muted">
-                      {result.imported} diimport, {result.updated} diupdate,{" "}
-                      {result.skipped} dilewati
+                      {result.imported} diimport, {result.updated} diupdate, {result.skipped}{" "}
+                      dilewati
                     </p>
                   </div>
                 </div>

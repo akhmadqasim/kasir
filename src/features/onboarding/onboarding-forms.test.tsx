@@ -31,9 +31,7 @@ describe("onboarding forms", () => {
 
   it("keeps the PIN numeric and reports mismatches", () => {
     const onSubmit = vi.fn()
-    render(
-      <AdminSetupForm isLoading={false} onBack={vi.fn()} onSubmit={onSubmit} />
-    )
+    render(<AdminSetupForm isLoading={false} onBack={vi.fn()} onSubmit={onSubmit} />)
     const pin = screen.getByLabelText(/^PIN/)
     fireEvent.change(pin, { target: { value: "12a34" } })
     expect(pin).toHaveValue("1234")

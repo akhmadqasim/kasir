@@ -43,11 +43,7 @@ export function PinInput({
       onChange={(next) => onChange(next.replace(/\D/g, ""))}
     >
       {label && <Label>{label}</Label>}
-      <Input
-        aria-label={label ? undefined : "PIN"}
-        inputMode="numeric"
-        placeholder={placeholder}
-      />
+      <Input aria-label={label ? undefined : "PIN"} inputMode="numeric" placeholder={placeholder} />
       {description && <Description>{description}</Description>}
       {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </TextField>

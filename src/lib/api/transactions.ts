@@ -19,9 +19,7 @@ function listQuery(params: ListTransactionsInput): QueryParams {
   }
 }
 
-export function listTransactions(
-  params: ListTransactionsInput
-): Promise<PaginatedTransactions> {
+export function listTransactions(params: ListTransactionsInput): Promise<PaginatedTransactions> {
   return apiGet<PaginatedTransactions>("/transactions", listQuery(params))
 }
 
@@ -44,7 +42,7 @@ export function getTransactionDetail(transactionId: number): Promise<Transaction
  */
 export function checkoutTransaction(
   input: CheckoutTransactionInput,
-  idempotencyKey: string
+  idempotencyKey: string,
 ): Promise<TransactionResult> {
   return apiPost<TransactionResult>("/transactions", input, { idempotencyKey })
 }
@@ -57,7 +55,7 @@ export function voidTransaction(transactionId: number, reason: string): Promise<
 export function updateTransactionPaymentMethod(
   transactionId: number,
   paymentMethod: string,
-  reason: string
+  reason: string,
 ): Promise<void> {
   return apiPatch<void>(`/transactions/${transactionId}/payment-method`, {
     payment_method: paymentMethod,

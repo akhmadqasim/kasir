@@ -100,7 +100,7 @@ function renderPage() {
           <Route path="/refund/:transactionId" element={<CreateRefundPage />} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -166,8 +166,9 @@ describe("halaman refund", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Minyak Goreng 2L/ }))
 
     // Pemicu kembali ke placeholder-nya: tidak ada pilihan yang tertinggal.
-    expect(screen.getByRole("button", { name: /Barang Pengganti$/ }))
-      .toHaveAccessibleName(/Tambah Barang/)
+    expect(screen.getByRole("button", { name: /Barang Pengganti$/ })).toHaveAccessibleName(
+      /Tambah Barang/,
+    )
 
     await searchReplacement("gula")
     fireEvent.click(await screen.findByRole("option", { name: /Gula Pasir 1kg/ }))
@@ -185,9 +186,7 @@ describe("halaman refund", () => {
     await searchReplacement("minyak")
     fireEvent.click(await screen.findByRole("option", { name: /Minyak Goreng 2L/ }))
 
-    fireEvent.click(
-      within(exchangeTable()).getByRole("button", { name: "Hapus Minyak Goreng 2L" })
-    )
+    fireEvent.click(within(exchangeTable()).getByRole("button", { name: "Hapus Minyak Goreng 2L" }))
 
     expect(screen.queryByRole("grid", { name: "Barang Pengganti" })).not.toBeInTheDocument()
   })

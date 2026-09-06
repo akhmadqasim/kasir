@@ -110,7 +110,7 @@ export function CartPanel({
       setRecallDialogOpen(false)
       toast.success("Transaksi dilanjutkan")
     },
-    [recallCart]
+    [recallCart],
   )
 
   /**
@@ -164,7 +164,8 @@ export function CartPanel({
   }, [recallDialogOpen, heldCarts, selectedIdx, handleRecall, removeHeldCart])
 
   // F1 = cash flow, F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = edit last item
-  const anyDialogOpen = holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
+  const anyDialogOpen =
+    holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Dialog pembayaran / struk sukses milik CashierPage: F3 di sana akan
@@ -210,7 +211,16 @@ export function CartPanel({
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [items, heldCarts.length, anyDialogOpen, shortcutsDisabled, activeShift, navigate, editItem, closeEditDialog])
+  }, [
+    items,
+    heldCarts.length,
+    anyDialogOpen,
+    shortcutsDisabled,
+    activeShift,
+    navigate,
+    editItem,
+    closeEditDialog,
+  ])
 
   return (
     <div className="flex h-full flex-col">
@@ -261,7 +271,9 @@ export function CartPanel({
           <Table variant="secondary">
             <Table.Content aria-label="Isi keranjang">
               <Table.Header>
-                <Table.Column isRowHeader id="product">Produk</Table.Column>
+                <Table.Column isRowHeader id="product">
+                  Produk
+                </Table.Column>
                 <Table.Column className="w-[90px] text-right" id="subtotal">
                   Subtotal
                 </Table.Column>
@@ -420,8 +432,12 @@ export function CartPanel({
                 <Table variant="secondary">
                   <Table.Content aria-label="Daftar transaksi tersimpan">
                     <Table.Header>
-                      <Table.Column className="w-[40px] text-center" id="index">#</Table.Column>
-                      <Table.Column className="w-[130px]" id="date">Tanggal</Table.Column>
+                      <Table.Column className="w-[40px] text-center" id="index">
+                        #
+                      </Table.Column>
+                      <Table.Column className="w-[130px]" id="date">
+                        Tanggal
+                      </Table.Column>
                       <Table.Column className="w-[130px]" isRowHeader id="label">
                         Label
                       </Table.Column>
@@ -442,9 +458,7 @@ export function CartPanel({
                           className={cn("align-top", idx === selectedIdx && "bg-default")}
                           textValue={held.label}
                         >
-                          <Table.Cell className="text-center font-semibold">
-                            {idx + 1}
-                          </Table.Cell>
+                          <Table.Cell className="text-center font-semibold">{idx + 1}</Table.Cell>
                           <Table.Cell className="whitespace-nowrap text-sm">
                             {formatHeldDate(held.heldAt)}
                           </Table.Cell>

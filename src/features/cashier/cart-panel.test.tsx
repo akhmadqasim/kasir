@@ -49,7 +49,7 @@ function renderPanel(props: Partial<Parameters<typeof CartPanel>[0]> = {}) {
   return render(
     <MemoryRouter>
       <CartPanel onPay={() => {}} {...props} />
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -93,9 +93,7 @@ describe("cart panel", () => {
 
     pressFunctionKey("F2")
 
-    expect(await screen.findByRole("dialog")).toHaveAccessibleName(
-      "Diskon Total Transaksi"
-    )
+    expect(await screen.findByRole("dialog")).toHaveAccessibleName("Diskon Total Transaksi")
   })
 
   it("ignores F2 while a page dialog covers the panel", () => {
@@ -112,9 +110,7 @@ describe("cart panel", () => {
     renderPanel()
 
     pressFunctionKey("F9")
-    expect(await screen.findByRole("dialog")).toHaveAccessibleName(
-      "Transaksi Tersimpan"
-    )
+    expect(await screen.findByRole("dialog")).toHaveAccessibleName("Transaksi Tersimpan")
 
     // Kalau penjaganya lepas, dialog diskon menumpuk di atas dialog recall.
     pressFunctionKey("F2")

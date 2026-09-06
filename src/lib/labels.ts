@@ -26,18 +26,12 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
  * `transaction_payments`, bukan metode yang bisa dipilih, dan backend menolaknya
  * dengan "Metode pembayaran tidak valid: mixed".
  */
-export const SELECTABLE_PAYMENT_METHODS = [
-  "cash",
-  "qris",
-  "debit",
-  "ewallet",
-  "transfer",
-] as const
+export const SELECTABLE_PAYMENT_METHODS = ["cash", "qris", "debit", "ewallet", "transfer"] as const
 
 export type SelectablePaymentMethod = (typeof SELECTABLE_PAYMENT_METHODS)[number]
 
 export function isSelectablePaymentMethod(
-  method: string | null | undefined
+  method: string | null | undefined,
 ): method is SelectablePaymentMethod {
   return SELECTABLE_PAYMENT_METHODS.includes(method as SelectablePaymentMethod)
 }
@@ -48,10 +42,7 @@ export function paymentMethodLabel(method: string): string {
 }
 
 /** "Transfer Bank (BCA)" — untuk baris split yang menyimpan nama bank. */
-export function paymentSplitLabel(
-  method: string,
-  bankName?: string | null
-): string {
+export function paymentSplitLabel(method: string, bankName?: string | null): string {
   const label = paymentMethodLabel(method)
   return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }

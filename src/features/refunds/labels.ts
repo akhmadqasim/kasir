@@ -31,7 +31,7 @@ const CONDITION_LABEL: Record<string, string> = {
 
 /** `null` untuk baris tanpa kondisi tercatat — dialog menampilkan "—". */
 export function refundConditionBadge(
-  condition: string | null | undefined
+  condition: string | null | undefined,
 ): { label: string; variant: StatusVariant } | null {
   if (!condition) return null
   const label = CONDITION_LABEL[condition]

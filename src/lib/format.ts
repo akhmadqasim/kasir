@@ -55,8 +55,7 @@ export function parseIndonesianNumber(value: unknown): number | null {
     const groupSeparator = decimalSeparator === "." ? "," : "."
     normalized = body.split(groupSeparator).join("").replace(decimalSeparator, ".")
   } else if (lastComma >= 0) {
-    normalized =
-      firstComma === lastComma ? body.replace(",", ".") : body.split(",").join("")
+    normalized = firstComma === lastComma ? body.replace(",", ".") : body.split(",").join("")
   } else if (lastDot >= 0) {
     const groups = body.split(".")
     const lastGroup = groups[groups.length - 1]
@@ -118,19 +117,13 @@ const dayDateFormatter = new Intl.DateTimeFormat("id-ID", {
 })
 
 /** "05 Sep 2026 01.00" — backend timestamp with time of day, in the local timezone. */
-export function formatDateTime(
-  value: string | null | undefined,
-  fallback = "—"
-): string {
+export function formatDateTime(value: string | null | undefined, fallback = "—"): string {
   const date = parseBackendDate(value)
   return date ? dateTimeFormatter.format(date) : fallback
 }
 
 /** "Sab, 6 Sep 2026" — backend timestamp as a calendar day, in the local timezone. */
-export function formatDayDate(
-  value: string | null | undefined,
-  fallback = "—"
-): string {
+export function formatDayDate(value: string | null | undefined, fallback = "—"): string {
   const date = parseBackendDate(value)
   return date ? dayDateFormatter.format(date) : fallback
 }

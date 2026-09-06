@@ -52,7 +52,7 @@ function renderPanel() {
       <MemoryRouter>
         <ProductSearchPanel />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -93,9 +93,7 @@ function searchResults(call: ApiCall): PaginatedProducts {
   const query = (call.query.get("query") ?? "").toLowerCase()
   return {
     data: CATALOGUE.filter(
-      (item) =>
-        item.name.toLowerCase().includes(query) ||
-        (item.barcode ?? "").includes(query)
+      (item) => item.name.toLowerCase().includes(query) || (item.barcode ?? "").includes(query),
     ),
     total: CATALOGUE.length,
     page: 1,
@@ -148,9 +146,7 @@ describe("product search panel", () => {
     await waitFor(() => expect(cartLines()).toHaveLength(1))
     expect(cartLines()[0].product_name).toBe("Indomie Goreng")
     expect(searchField()).toHaveValue("")
-    expect(api.lastCall("GET /products/barcode/*")?.path).toBe(
-      "/products/barcode/8991234567890"
-    )
+    expect(api.lastCall("GET /products/barcode/*")?.path).toBe("/products/barcode/8991234567890")
   })
 
   it("adds the same product twice when it is scanned twice", async () => {
@@ -242,7 +238,7 @@ describe("product search panel", () => {
         <MemoryRouter>
           <ProductSearchPanel focusKey={0} />
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     )
 
     searchField().blur()
@@ -253,7 +249,7 @@ describe("product search panel", () => {
         <MemoryRouter>
           <ProductSearchPanel focusKey={1} />
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     )
 
     await waitFor(() => expect(searchField()).toHaveFocus())

@@ -23,10 +23,7 @@ export function LoginPage() {
     <div className="flex min-h-svh flex-col items-center justify-center bg-default p-6 md:p-10">
       <div className="w-full max-w-sm md:max-w-4xl">
         <Card className="grid gap-0 overflow-hidden p-0 md:grid-cols-2">
-          <Form
-            className="flex flex-col gap-5 p-6 md:p-8"
-            onSubmit={handleSubmit}
-          >
+          <Form className="flex flex-col gap-5 p-6 md:p-8" onSubmit={handleSubmit}>
             <div className="flex items-center gap-2 self-center">
               <div className="flex size-6 items-center justify-center rounded-md bg-accent text-accent-foreground">
                 <Store className="size-4" />
@@ -35,9 +32,7 @@ export function LoginPage() {
             </div>
             <div className="flex flex-col items-center gap-2 text-center">
               <h1 className="text-2xl font-bold">{t.loginTitle}</h1>
-              <p className="text-sm text-balance text-muted">
-                {t.loginSubtitle}
-              </p>
+              <p className="text-sm text-balance text-muted">{t.loginSubtitle}</p>
             </div>
             <TextField
               autoFocus
@@ -57,11 +52,7 @@ export function LoginPage() {
               value={pin}
               onChange={setPin}
             />
-            <Button
-              fullWidth
-              isDisabled={loginMutation.isPending || !canSubmit}
-              type="submit"
-            >
+            <Button fullWidth isDisabled={loginMutation.isPending || !canSubmit} type="submit">
               {loginMutation.isPending ? id.common.loading : t.loginButton}
             </Button>
           </Form>

@@ -1,23 +1,11 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button, Modal, Pagination, Separator, Skeleton } from "@heroui/react"
-import {
-  ArrowLeft,
-  RefreshCw,
-  Loader2,
-  Bell,
-  Info,
-  CreditCard,
-  CheckCheck,
-} from "lucide-react"
+import { ArrowLeft, RefreshCw, Loader2, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
 import { StatusBadge } from "@/components/status-badge"
 import { id as i18n } from "@/i18n/id"
-import {
-  usePpobNotifications,
-  usePpobMarkAllRead,
-  usePpobMarkNotificationRead,
-} from "../../hooks"
+import { usePpobNotifications, usePpobMarkAllRead, usePpobMarkNotificationRead } from "../../hooks"
 import type { NotificationItem } from "../../types"
 
 const ITEMS_PER_PAGE = 20
@@ -33,10 +21,7 @@ function CategoryIcon({ category }: { category: string }) {
 /** Transaksi dan pengumuman dibedakan warnanya, bukan cuma teksnya. */
 function CategoryBadge({ category }: { category: string }) {
   return (
-    <StatusBadge
-      size="sm"
-      status={category.toUpperCase() === "TRANSAKSI" ? "info" : "warning"}
-    >
+    <StatusBadge size="sm" status={category.toUpperCase() === "TRANSAKSI" ? "info" : "warning"}>
       {category}
     </StatusBadge>
   )
@@ -122,7 +107,7 @@ export function PpobNotifications() {
   const { data, isLoading, error, refetch, isRefetching } = usePpobNotifications(
     currentPage,
     ITEMS_PER_PAGE,
-    forceRefresh
+    forceRefresh,
   )
   const markAllRead = usePpobMarkAllRead()
   const markRead = usePpobMarkNotificationRead()
@@ -240,9 +225,7 @@ export function PpobNotifications() {
                     {isUnread && <span className="h-2 w-2 rounded-full bg-danger" />}
                   </span>
                   <span
-                    className={`line-clamp-2 text-sm ${
-                      isUnread ? "font-medium" : "text-muted"
-                    }`}
+                    className={`line-clamp-2 text-sm ${isUnread ? "font-medium" : "text-muted"}`}
                   >
                     {item.message}
                   </span>
@@ -281,7 +264,7 @@ export function PpobNotifications() {
                         {page}
                       </Pagination.Link>
                     </Pagination.Item>
-                  )
+                  ),
                 )}
                 <Pagination.Item>
                   <Pagination.Next

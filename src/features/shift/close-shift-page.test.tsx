@@ -82,7 +82,7 @@ function renderPage() {
       <MemoryRouter initialEntries={["/close-shift"]}>
         <CloseShiftPage />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -194,9 +194,7 @@ describe("halaman tutup kasir", () => {
     renderPage()
 
     await screen.findByText("Tutup Shift")
-    fireEvent.click(
-      screen.getByRole("button", { name: "Hapus arus kas Bayar supplier telur" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Hapus arus kas Bayar supplier telur" }))
 
     const dialog = await screen.findByRole("alertdialog")
     expect(within(dialog).getByText("Hapus Arus Kas")).toBeInTheDocument()

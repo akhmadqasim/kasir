@@ -1,14 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import {
-  Button,
-  Form,
-  Input,
-  Label,
-  Modal,
-  TextField,
-  ToggleButton,
-} from "@heroui/react"
+import { Button, Form, Input, Label, Modal, TextField, ToggleButton } from "@heroui/react"
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 
 import { formatRupiah } from "@/lib/format"
@@ -45,10 +37,7 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
 
   const numericAmount = Number(amount) || 0
   const canSubmit =
-    flowType !== "" &&
-    numericAmount > 0 &&
-    description.trim().length > 0 &&
-    !isSubmitting
+    flowType !== "" && numericAmount > 0 && description.trim().length > 0 && !isSubmitting
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -108,9 +97,7 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
             </ToggleButton>
           </div>
           {flowType === "" ? (
-            <p className="mt-2 text-xs text-muted">
-              Pilih jenis arus kas terlebih dahulu.
-            </p>
+            <p className="mt-2 text-xs text-muted">Pilih jenis arus kas terlebih dahulu.</p>
           ) : null}
         </div>
 
@@ -141,11 +128,7 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
       </Modal.Body>
 
       <Modal.Footer>
-        <Button
-          className="h-12 w-full text-lg font-semibold"
-          isDisabled={!canSubmit}
-          type="submit"
-        >
+        <Button className="h-12 w-full text-lg font-semibold" isDisabled={!canSubmit} type="submit">
           {isSubmitting ? "Menyimpan..." : "Simpan"}
         </Button>
       </Modal.Footer>

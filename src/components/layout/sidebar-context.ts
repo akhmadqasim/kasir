@@ -78,7 +78,7 @@ const MENU_BUTTON_SIZE: Record<SidebarMenuSize, string> = {
 
 export function sidebarMenuButtonClass(
   size: SidebarMenuSize = "default",
-  className?: string
+  className?: string,
 ): string {
   return cn(MENU_BUTTON_BASE, MENU_BUTTON_SIZE[size], className)
 }
@@ -91,6 +91,6 @@ export function sidebarSubMenuButtonClass(className?: string): string {
     "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
     "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
     "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
-    className
+    className,
   )
 }

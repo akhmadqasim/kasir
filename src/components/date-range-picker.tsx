@@ -91,10 +91,7 @@ export function DateRangePicker({
                     ) : (
                       <div className="size-6" />
                     )}
-                    <RangeCalendar.Heading
-                      className="flex-none"
-                      offset={{ months: offset }}
-                    />
+                    <RangeCalendar.Heading className="flex-none" offset={{ months: offset }} />
                     {offset === months.length - 1 ? (
                       <RangeCalendar.NavButton slot="next" />
                     ) : (

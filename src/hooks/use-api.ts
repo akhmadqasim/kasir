@@ -26,7 +26,7 @@ import type { ApiError } from "@/lib/api/client"
 export function useApiQuery<TData>(
   queryKey: QueryKey,
   queryFn: () => Promise<TData>,
-  options?: Omit<UseQueryOptions<TData, ApiError, TData, QueryKey>, "queryKey" | "queryFn">
+  options?: Omit<UseQueryOptions<TData, ApiError, TData, QueryKey>, "queryKey" | "queryFn">,
 ) {
   return useQuery<TData, ApiError, TData, QueryKey>({
     queryKey,
@@ -37,7 +37,7 @@ export function useApiQuery<TData>(
 
 export function useApiMutation<TData, TVariables = void>(
   mutationFn: (variables: TVariables) => Promise<TData>,
-  options?: Omit<UseMutationOptions<TData, ApiError, TVariables>, "mutationFn">
+  options?: Omit<UseMutationOptions<TData, ApiError, TVariables>, "mutationFn">,
 ) {
   return useMutation<TData, ApiError, TVariables>({
     mutationFn,

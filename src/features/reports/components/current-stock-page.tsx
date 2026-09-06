@@ -31,7 +31,7 @@ export function CurrentStockPage() {
       lowStock: acc.lowStock + (r.stock <= r.minStock && r.minStock > 0 ? 1 : 0),
       value: acc.value + r.stockValue,
     }),
-    { lowStock: 0, value: 0 }
+    { lowStock: 0, value: 0 },
   )
   // Backend membatasi jumlah baris. Kartu di bawah dihitung dari baris yang
   // terkirim saja, jadi katakan apa adanya saat daftarnya terpotong.
@@ -82,18 +82,14 @@ export function CurrentStockPage() {
         <div className="space-y-2">
           <div className="grid grid-cols-3 gap-4">
             <ReportStatCard label="Total Produk" value={data.totalCount} />
-            <ReportStatCard
-              label="Produk Stok Menipis"
-              tone="danger"
-              value={totals.lowStock}
-            />
+            <ReportStatCard label="Produk Stok Menipis" tone="danger" value={totals.lowStock} />
             <ReportStatCard label="Total Nilai Stok" value={formatRupiah(totals.value)} />
           </div>
           {isTruncated && (
             <p className="text-sm text-muted">
-              Menampilkan {data.items.length} dari {data.totalCount} produk. Kartu stok
-              menipis dan nilai stok dihitung dari baris yang tampil saja — persempit
-              pencarian untuk angka yang utuh.
+              Menampilkan {data.items.length} dari {data.totalCount} produk. Kartu stok menipis dan
+              nilai stok dihitung dari baris yang tampil saja — persempit pencarian untuk angka yang
+              utuh.
             </p>
           )}
         </div>
@@ -129,14 +125,10 @@ export function CurrentStockPage() {
               textValue={row.productName}
             >
               <Table.Cell className="font-medium">{row.productName}</Table.Cell>
-              <Table.Cell className="font-mono text-sm text-muted">
-                {row.barcode ?? "-"}
-              </Table.Cell>
+              <Table.Cell className="font-mono text-sm text-muted">{row.barcode ?? "-"}</Table.Cell>
               <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
               <Table.Cell className="text-right">
-                <span className={isLow ? "font-bold text-danger" : "font-medium"}>
-                  {row.stock}
-                </span>
+                <span className={isLow ? "font-bold text-danger" : "font-medium"}>{row.stock}</span>
                 {isLow && (
                   <StatusBadge className="ml-2" size="sm" status="error">
                     Menipis

@@ -15,13 +15,29 @@ import {
 function PpobStatusBadge({ status }: { status: string | null }) {
   switch (normalizeStatus(status)) {
     case "sukses":
-      return <StatusBadge status="success" size="sm">Sukses</StatusBadge>
+      return (
+        <StatusBadge status="success" size="sm">
+          Sukses
+        </StatusBadge>
+      )
     case "gagal":
-      return <StatusBadge status="error" size="sm">Gagal</StatusBadge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Gagal
+        </StatusBadge>
+      )
     case "proses":
-      return <StatusBadge status="warning" size="sm">Proses</StatusBadge>
+      return (
+        <StatusBadge status="warning" size="sm">
+          Proses
+        </StatusBadge>
+      )
     default:
-      return <StatusBadge status="neutral" size="sm">{status ?? "-"}</StatusBadge>
+      return (
+        <StatusBadge status="neutral" size="sm">
+          {status ?? "-"}
+        </StatusBadge>
+      )
   }
 }
 
@@ -53,9 +69,7 @@ function TransactionDetailDialog({
   const service = item ? detectServiceType(item) : null
   const nominal = item ? getNominal(item) : null
   const profit =
-    item && item.amount != null && item.basePrice != null
-      ? item.amount - item.basePrice
-      : null
+    item && item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
 
   return (
     <Modal.Backdrop isOpen={!!item} onOpenChange={(open) => !open && onClose()}>
@@ -97,11 +111,7 @@ function TransactionDetailDialog({
                 <DetailRow label="No. Pelanggan" value={item.customerNo} mono />
                 <DetailRow label="No. Referensi" value={item.noRef} mono />
                 <DetailRow label="Kode Bayar" value={item.paymentCode} mono />
-                <DetailRow
-                  label="Token/SN"
-                  value={item.tokenNumber ?? item.serialNumber}
-                  mono
-                />
+                <DetailRow label="Token/SN" value={item.tokenNumber ?? item.serialNumber} mono />
                 <DetailRow label="Provider" value={item.provider} />
                 <DetailRow label="Denom" value={item.denom} />
                 <DetailRow label="Keterangan" value={item.igrDesc} />
@@ -127,9 +137,7 @@ function TransactionDetailDialog({
                     <span className="text-xs text-muted">Profit</span>
                     <span
                       className={
-                        profit >= 0
-                          ? "font-semibold text-success"
-                          : "font-semibold text-danger"
+                        profit >= 0 ? "font-semibold text-success" : "font-semibold text-danger"
                       }
                     >
                       {profit >= 0 ? "+" : ""}
@@ -163,10 +171,14 @@ export function HistoryTable({ items }: HistoryTableProps) {
         <Table.ScrollContainer>
           <Table.Content aria-label="Riwayat transaksi PPOB">
             <Table.Header>
-              <Table.Column isRowHeader id="service">Layanan</Table.Column>
+              <Table.Column isRowHeader id="service">
+                Layanan
+              </Table.Column>
               <Table.Column id="date">Tanggal</Table.Column>
               <Table.Column id="description">Deskripsi</Table.Column>
-              <Table.Column className="text-right" id="amount">Nominal</Table.Column>
+              <Table.Column className="text-right" id="amount">
+                Nominal
+              </Table.Column>
               <Table.Column id="status">Status</Table.Column>
             </Table.Header>
             <Table.Body renderEmptyState={renderEmptyState}>

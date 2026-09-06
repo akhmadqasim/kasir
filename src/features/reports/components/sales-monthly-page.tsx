@@ -27,7 +27,7 @@ export function SalesMonthlyPage() {
       cost: acc.cost + row.totalCost,
       profit: acc.profit + row.grossProfit,
     }),
-    { transactions: 0, revenue: 0, cost: 0, profit: 0 }
+    { transactions: 0, revenue: 0, cost: 0, profit: 0 },
   )
 
   return (
@@ -48,11 +48,7 @@ export function SalesMonthlyPage() {
             <Select.Popover>
               <ListBox>
                 {years.map((option) => (
-                  <ListBox.Item
-                    key={option}
-                    id={String(option)}
-                    textValue={String(option)}
-                  >
+                  <ListBox.Item key={option} id={String(option)} textValue={String(option)}>
                     <Label>{option}</Label>
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
@@ -68,11 +64,7 @@ export function SalesMonthlyPage() {
           <ReportStatCard label="Total Transaksi" value={totals.transactions} />
           <ReportStatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
           <ReportStatCard label="Total Modal" value={formatRupiah(totals.cost)} />
-          <ReportStatCard
-            label="Laba Kotor"
-            tone="success"
-            value={formatRupiah(totals.profit)}
-          />
+          <ReportStatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
         </div>
       )}
 

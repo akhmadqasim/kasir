@@ -22,7 +22,7 @@ export type RefundWindowState = "open" | "expired" | "unknown"
 
 export function refundWindowState(
   createdAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): RefundWindowState {
   const soldAt = parseBackendDate(createdAt)
   if (!soldAt) return "unknown"
@@ -33,7 +33,7 @@ export function refundWindowState(
 
 export function isWithinRefundWindow(
   createdAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): boolean {
   return refundWindowState(createdAt, now) === "open"
 }
@@ -41,7 +41,7 @@ export function isWithinRefundWindow(
 /** Why the refund button is disabled, or `null` when it is not. */
 export function refundBlockedReason(
   createdAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): string | null {
   switch (refundWindowState(createdAt, now)) {
     case "expired":

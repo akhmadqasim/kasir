@@ -1,12 +1,7 @@
 import { useQueryClient, keepPreviousData } from "@tanstack/react-query"
 import { toast } from "@/lib/toast"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
-import {
-  createProduct,
-  deleteProduct,
-  searchProducts,
-  updateProduct,
-} from "@/lib/api/products"
+import { createProduct, deleteProduct, searchProducts, updateProduct } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import type {
@@ -21,7 +16,7 @@ export function useSearchProducts(params: SearchProductsParams) {
   return useApiQuery<PaginatedProducts>(
     queryKeys.products.search(params),
     () => searchProducts(params),
-    { placeholderData: keepPreviousData }
+    { placeholderData: keepPreviousData },
   )
 }
 

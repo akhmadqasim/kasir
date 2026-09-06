@@ -85,7 +85,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
         reason,
         notes: notes.trim() || undefined,
       },
-      { onSuccess: () => onOpenChange(false) }
+      { onSuccess: () => onOpenChange(false) },
     )
   }
 
@@ -134,8 +134,8 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
               <span className="font-medium">{selectedProduct.name}</span>
               <span className="ml-2 text-muted">
-                · Stok: {selectedProduct.stock} {selectedProduct.unit}
-                · Modal: {formatRupiah(selectedProduct.buy_price)}
+                · Stok: {selectedProduct.stock} {selectedProduct.unit}· Modal:{" "}
+                {formatRupiah(selectedProduct.buy_price)}
               </span>
             </div>
           )}
@@ -207,7 +207,8 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">
-              {formatRupiah(selectedProduct?.buy_price ?? 0)} × {quantity ?? 0} {selectedProduct?.unit}
+              {formatRupiah(selectedProduct?.buy_price ?? 0)} × {quantity ?? 0}{" "}
+              {selectedProduct?.unit}
             </p>
           </div>
         )}

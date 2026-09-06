@@ -76,16 +76,14 @@ export function flushPendingLogs(): void {
 export function installGlobalErrorHandlers(): void {
   window.onerror = (_message, source, lineno, colno, error) => {
     logger.error(
-      `Unhandled error: ${error?.message ?? _message} at ${source}:${lineno}:${colno}\n${error?.stack ?? ""}`
+      `Unhandled error: ${error?.message ?? _message} at ${source}:${lineno}:${colno}\n${error?.stack ?? ""}`,
     )
   }
 
   window.onunhandledrejection = (event) => {
     const reason = event.reason
     const msg =
-      reason instanceof Error
-        ? `${reason.message}\n${reason.stack ?? ""}`
-        : String(reason)
+      reason instanceof Error ? `${reason.message}\n${reason.stack ?? ""}` : String(reason)
     logger.error(`Unhandled rejection: ${msg}`)
   }
 }

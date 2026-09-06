@@ -7,11 +7,7 @@ import { useApiQuery } from "@/hooks/use-api"
 import { searchProducts } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
-import type {
-  PaginatedProducts,
-  Product,
-  SearchProductsParams,
-} from "@/features/products/types"
+import type { PaginatedProducts, Product, SearchProductsParams } from "@/features/products/types"
 
 /** Di bawah ini backend dipanggil untuk hampir seluruh katalog, jadi jangan. */
 const MIN_QUERY_LENGTH = 2
@@ -66,18 +62,21 @@ export function ProductAutocomplete({
   const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
   const isSearching = debouncedQuery.trim().length >= MIN_QUERY_LENGTH
 
-  const searchParams = useMemo<SearchProductsParams>(() => ({
-    query: debouncedQuery,
-    page: 1,
-    per_page: perPage,
-    sort_by: "name",
-    sort_order: "asc",
-  }), [debouncedQuery, perPage])
+  const searchParams = useMemo<SearchProductsParams>(
+    () => ({
+      query: debouncedQuery,
+      page: 1,
+      per_page: perPage,
+      sort_by: "name",
+      sort_order: "asc",
+    }),
+    [debouncedQuery, perPage],
+  )
 
   const { data } = useApiQuery<PaginatedProducts>(
     queryKeys.products.search(searchParams),
     () => searchProducts(searchParams),
-    { enabled: isSearching }
+    { enabled: isSearching },
   )
 
   /**
@@ -92,9 +91,8 @@ export function ProductAutocomplete({
   }, [data, isSearching, value])
 
   const handleChange = (key: unknown) => {
-    const picked = key == null
-      ? null
-      : items.find((product) => String(product.id) === String(key)) ?? null
+    const picked =
+      key == null ? null : (items.find((product) => String(product.id) === String(key)) ?? null)
     onSelect(picked)
     setQuery("")
   }
@@ -108,7 +106,10 @@ export function ProductAutocomplete({
       placeholder={placeholder}
       value={value ? String(value.id) : null}
       onChange={handleChange}
-      onClear={() => { onSelect(null); setQuery("") }}
+      onClear={() => {
+        onSelect(null)
+        setQuery("")
+      }}
     >
       <Label>{label}</Label>
       <Autocomplete.Trigger>

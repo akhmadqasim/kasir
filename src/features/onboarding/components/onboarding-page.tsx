@@ -35,7 +35,7 @@ export function OnboardingPage() {
         onError: (error) => {
           toast.error(error.message || id.common.error)
         },
-      }
+      },
     )
   }
 

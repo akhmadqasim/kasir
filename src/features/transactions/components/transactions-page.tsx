@@ -26,19 +26,11 @@ import { printReceipt } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useDebounce } from "@/hooks/use-debounce"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
-import {
-  paymentMethodLabel,
-  transactionStatusLabel,
-  transactionStatusVariant,
-} from "@/lib/labels"
+import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { id } from "@/i18n/id"
 import { refundBlockedReason } from "../refund-window"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
-import type {
-  ListTransactionsInput,
-  PaginatedTransactions,
-  TransactionListItem,
-} from "../types"
+import type { ListTransactionsInput, PaginatedTransactions, TransactionListItem } from "../types"
 
 /** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
 const ALL = "all"
@@ -130,20 +122,23 @@ export function TransactionsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailTxn, setDetailTxn] = useState<TransactionListItem | null>(null)
 
-  const queryParams = useMemo<ListTransactionsInput>(() => ({
-    page,
-    per_page: 50,
-    search: debouncedSearch || undefined,
-    payment_method: paymentMethod || undefined,
-    status: status || undefined,
-    date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
-    date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
-  }), [page, debouncedSearch, paymentMethod, status, dateRange])
+  const queryParams = useMemo<ListTransactionsInput>(
+    () => ({
+      page,
+      per_page: 50,
+      search: debouncedSearch || undefined,
+      payment_method: paymentMethod || undefined,
+      status: status || undefined,
+      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
+    }),
+    [page, debouncedSearch, paymentMethod, status, dateRange],
+  )
 
   const { data, isLoading, error } = useApiQuery<PaginatedTransactions>(
     queryKeys.transactions.list(queryParams),
     () => listTransactions(queryParams),
-    { placeholderData: keepPreviousData }
+    { placeholderData: keepPreviousData },
   )
 
   // Printing happens on the server: the thermal printer is plugged into the till
@@ -166,7 +161,10 @@ export function TransactionsPage() {
   }, [])
 
   const today = toLocalDateString(new Date())
-  const hasFilters = search || paymentMethod || status ||
+  const hasFilters =
+    search ||
+    paymentMethod ||
+    status ||
     (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
     (dateRange?.to && toLocalDateString(dateRange.to) !== today)
 
@@ -176,9 +174,7 @@ export function TransactionsPage() {
     if (error) {
       return <p className="py-10 text-center text-danger">Error: {error.message}</p>
     }
-    return (
-      <p className="py-10 text-center text-muted">{id.transactions.noTransactions}</p>
-    )
+    return <p className="py-10 text-center text-muted">{id.transactions.noTransactions}</p>
   }
 
   return (
@@ -191,7 +187,10 @@ export function TransactionsPage() {
           aria-label={id.transactions.searchPlaceholder}
           className="w-64"
           value={search}
-          onChange={(value) => { setSearch(value); setPage(1) }}
+          onChange={(value) => {
+            setSearch(value)
+            setPage(1)
+          }}
         >
           <SearchField.Group>
             <SearchField.SearchIcon />
@@ -262,7 +261,10 @@ export function TransactionsPage() {
         <div className="ml-auto">
           <DateRangePicker
             value={dateRange}
-            onChange={(range) => { setDateRange(range); setPage(1) }}
+            onChange={(range) => {
+              setDateRange(range)
+              setPage(1)
+            }}
             align="start"
           />
         </div>
@@ -316,7 +318,9 @@ export function TransactionsPage() {
                           </div>
                         </Table.Cell>
                         <Table.Cell>{txn.cashier_name}</Table.Cell>
-                        <Table.Cell className="text-sm">{formatDateTime(txn.created_at)}</Table.Cell>
+                        <Table.Cell className="text-sm">
+                          {formatDateTime(txn.created_at)}
+                        </Table.Cell>
                         <Table.Cell className="text-center">{txn.item_count}</Table.Cell>
                         <Table.Cell>
                           <Chip size="sm">{paymentMethodLabel(txn.payment_method)}</Chip>
@@ -345,15 +349,21 @@ export function TransactionsPage() {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            {!txn.has_ppob && txn.status !== "refunded" && txn.status !== "deleted" && (
-                              <RefundActionButton
-                                blockedReason={refundBlockedReason(txn.created_at)}
-                                onPress={() => navigate(`/refund/${txn.id}`)}
-                              />
-                            )}
+                            {!txn.has_ppob &&
+                              txn.status !== "refunded" &&
+                              txn.status !== "deleted" && (
+                                <RefundActionButton
+                                  blockedReason={refundBlockedReason(txn.created_at)}
+                                  onPress={() => navigate(`/refund/${txn.id}`)}
+                                />
+                              )}
                             <Button
                               aria-label={id.transactions.printReceipt}
-                              isDisabled={txn.has_ppob && txn.status !== "completed" && txn.status !== "deleted"}
+                              isDisabled={
+                                txn.has_ppob &&
+                                txn.status !== "completed" &&
+                                txn.status !== "deleted"
+                              }
                               isIconOnly
                               size="sm"
                               variant="ghost"
@@ -371,16 +381,9 @@ export function TransactionsPage() {
         </Table>
       </div>
 
-      <TablePagination
-        page={page}
-        totalPages={data?.total_pages ?? 1}
-        onPageChange={setPage}
-      />
+      <TablePagination page={page} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
 
-      <TransactionDetailDialog
-        transaction={detailTxn}
-        onClose={() => setDetailTxn(null)}
-      />
+      <TransactionDetailDialog transaction={detailTxn} onClose={() => setDetailTxn(null)} />
     </div>
   )
 }

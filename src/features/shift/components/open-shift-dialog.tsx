@@ -46,7 +46,7 @@ function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void
         // The backend hands back the running shift instead of opening a new one,
         // and the modal awal typed in here is never stored. Say so.
         toast.warning(
-          `Shift sudah terbuka sejak ${formatDateTime(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`
+          `Shift sudah terbuka sejak ${formatDateTime(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`,
         )
       } else {
         toast.success("Shift dibuka")

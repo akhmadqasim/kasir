@@ -46,9 +46,7 @@ export const PPOB_STATUS_CONFIG: Record<string, PpobStatusConfig> = {
   },
 }
 
-export function ppobStatusConfig(
-  status: string | null | undefined
-): PpobStatusConfig | null {
+export function ppobStatusConfig(status: string | null | undefined): PpobStatusConfig | null {
   if (!status) return null
   return PPOB_STATUS_CONFIG[status] ?? null
 }

@@ -30,7 +30,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <UsersPage />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -73,9 +73,7 @@ describe("halaman manajemen user", () => {
     renderPage()
 
     await screen.findByText("kasir01")
-    expect(
-      screen.queryByRole("button", { name: /Nonaktifkan admin/ })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Nonaktifkan admin/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Nonaktifkan kasir01" }))
 
@@ -105,9 +103,7 @@ describe("halaman manajemen user", () => {
     const dialog = await screen.findByRole("alertdialog")
     fireEvent.keyDown(dialog, { key: "Escape" })
 
-    await vi.waitFor(() =>
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
-    )
+    await vi.waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
     expect(api.callsFor(TOGGLE_ACTIVE)).toHaveLength(0)
   })
 

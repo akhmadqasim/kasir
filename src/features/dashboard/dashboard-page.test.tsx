@@ -80,7 +80,7 @@ function renderPage() {
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -97,9 +97,7 @@ let api: ApiMock
 
 /** Parameter `days` dari setiap `GET /dashboard/revenue/daily`, urut waktu. */
 function requestedDays(): number[] {
-  return api
-    .callsFor("GET /dashboard/revenue/daily")
-    .map((call) => Number(call.query.get("days")))
+  return api.callsFor("GET /dashboard/revenue/daily").map((call) => Number(call.query.get("days")))
 }
 
 beforeEach(() => {

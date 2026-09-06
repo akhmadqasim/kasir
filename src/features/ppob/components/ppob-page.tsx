@@ -44,21 +44,14 @@ function SaldoCard() {
             <Skeleton className="h-8 w-48" />
           ) : (
             <>
-              <p className="text-2xl font-bold">
-                Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}
-              </p>
+              <p className="text-2xl font-bold">Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}</p>
               <p className="text-xs text-muted">
                 {id.ppob.connectionInfo}: {data?.username}
               </p>
             </>
           )}
         </div>
-        <Button
-          aria-label="Muat ulang saldo"
-          isIconOnly
-          variant="ghost"
-          onPress={() => refetch()}
-        >
+        <Button aria-label="Muat ulang saldo" isIconOnly variant="ghost" onPress={() => refetch()}>
           <RefreshCw className="h-4 w-4" />
         </Button>
       </Card.Content>

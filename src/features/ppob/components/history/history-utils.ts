@@ -55,7 +55,11 @@ export function detectServiceType(item: HistoryPaymentItem): ServiceInfo {
   const combined = `${desc} ${productName} ${serviceType}`
 
   // PLN detection (highest priority — unique keywords)
-  if (combined.includes("pln") || combined.includes("token listrik") || combined.includes("listrik"))
+  if (
+    combined.includes("pln") ||
+    combined.includes("token listrik") ||
+    combined.includes("listrik")
+  )
     return SERVICE_MAP.pln!
 
   // PDAM, BPJS, transfer, emoney — check before pulsa/data ambiguity
@@ -64,7 +68,8 @@ export function detectServiceType(item: HistoryPaymentItem): ServiceInfo {
   if (combined.includes("transfer")) return SERVICE_MAP.transfer!
   if (combined.includes("e-money") || combined.includes("emoney")) return SERVICE_MAP["e-money"]!
   if (combined.includes("voucher")) return SERVICE_MAP.voucher!
-  if (combined.includes("payment point") || combined.includes("payment_point")) return SERVICE_MAP.pp!
+  if (combined.includes("payment point") || combined.includes("payment_point"))
+    return SERVICE_MAP.pp!
 
   // Pulsa vs Data: check description for data-specific keywords
   const isDataPacket = /\b(data|paket data|internet|\d+\s*gb|\d+\s*mb)\b/.test(desc)
@@ -83,7 +88,8 @@ export type NormalizedStatus = "sukses" | "gagal" | "proses" | "unknown"
 
 export function normalizeStatus(status: string | null): NormalizedStatus {
   const s = (status ?? "").toLowerCase()
-  if (s === "sukses" || s === "success" || s === "berhasil" || s === "done" || s === "completed") return "sukses"
+  if (s === "sukses" || s === "success" || s === "berhasil" || s === "done" || s === "completed")
+    return "sukses"
   if (s === "gagal" || s === "failed" || s === "error") return "gagal"
   if (s === "pending" || s === "proses" || s === "processing" || s === "waiting") return "proses"
   return "unknown"
@@ -105,15 +111,17 @@ export function parseMutasiDate(value: string | null | undefined): Date | null {
   const trimmed = String(value).trim()
   if (!trimmed) return null
 
-  const dayFirst =
-    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(trimmed)
+  const dayFirst = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(
+    trimmed,
+  )
   if (dayFirst) {
     const [, day, month, year, hour, minute, second] = dayFirst
     return buildLocalDate(year, month, day, hour, minute, second)
   }
 
-  const yearFirst =
-    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(trimmed)
+  const yearFirst = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(
+    trimmed,
+  )
   if (yearFirst) {
     const [, year, month, day, hour, minute, second] = yearFirst
     return buildLocalDate(year, month, day, hour, minute, second)
@@ -129,7 +137,7 @@ function buildLocalDate(
   day: string,
   hour = "0",
   minute = "0",
-  second = "0"
+  second = "0",
 ): Date | null {
   const date = new Date(
     Number(year),
@@ -137,7 +145,7 @@ function buildLocalDate(
     Number(day),
     Number(hour ?? 0),
     Number(minute ?? 0),
-    Number(second ?? 0)
+    Number(second ?? 0),
   )
   return Number.isNaN(date.getTime()) ? null : date
 }
@@ -150,7 +158,7 @@ function buildLocalDate(
 export function isWithinLocalDateRange(
   value: string | null | undefined,
   startDate: string,
-  endDate: string
+  endDate: string,
 ): boolean {
   const date = parseMutasiDate(value)
   if (!date) return false

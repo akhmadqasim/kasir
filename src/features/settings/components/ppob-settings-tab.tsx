@@ -139,7 +139,7 @@ export function PpobSettingsTab() {
       onError: (error) => {
         toast.error(error.message)
       },
-    }
+    },
   )
 
   const isReady = settingsQuery.isSuccess && initialized
@@ -147,7 +147,7 @@ export function PpobSettingsTab() {
   const testMutation = useApiMutation<PpobSaldoResponse, void>(openPpobSession, {
     onSuccess: (result) => {
       toast.success(
-        `${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`
+        `${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`,
       )
     },
     onError: (error) => {
@@ -216,10 +216,7 @@ export function PpobSettingsTab() {
                   onChange={setDeviceId}
                 >
                   <Label>{id.ppob.mitraDeviceId}</Label>
-                  <Input
-                    className="font-mono"
-                    placeholder={id.ppob.mitraDeviceIdPlaceholder}
-                  />
+                  <Input className="font-mono" placeholder={id.ppob.mitraDeviceIdPlaceholder} />
                 </TextField>
                 <Button
                   aria-label="Generate Device ID"
@@ -327,11 +324,7 @@ export function PpobSettingsTab() {
                       <Select.Popover>
                         <ListBox>
                           {MARKUP_TYPES.map((option) => (
-                            <ListBox.Item
-                              key={option.key}
-                              id={option.key}
-                              textValue={option.label}
-                            >
+                            <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
                               <Label>{option.label}</Label>
                               <ListBox.ItemIndicator />
                             </ListBox.Item>
@@ -374,7 +367,9 @@ export function PpobSettingsTab() {
 
           <PpobCustomPrices
             customPrices={markup.custom_prices}
-            onCustomPricesChange={(prices) => setMarkup((prev) => ({ ...prev, custom_prices: prices }))}
+            onCustomPricesChange={(prices) =>
+              setMarkup((prev) => ({ ...prev, custom_prices: prices }))
+            }
             disabled={!enabled}
           />
 

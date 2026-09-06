@@ -56,11 +56,9 @@ export function ProductTable({
   // flattens the product into the row, so `id` here is the product's own id.
   const { data: shortcuts } = useApiQuery<ShortcutProduct[]>(
     queryKeys.products.popular(SHORTCUT_LIMIT),
-    () => getPopularProducts(SHORTCUT_LIMIT)
+    () => getPopularProducts(SHORTCUT_LIMIT),
   )
-  const pinnedIds = new Set(
-    (shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id)
-  )
+  const pinnedIds = new Set((shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id))
 
   const handleTogglePin = async (productId: number) => {
     try {
@@ -76,13 +74,25 @@ export function ProductTable({
 
   const getStockBadge = (product: Product) => {
     if (product.stock < 0) {
-      return <StatusBadge status="error" size="sm">Stok Minus</StatusBadge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Stok Minus
+        </StatusBadge>
+      )
     }
     if (product.stock === 0) {
-      return <StatusBadge status="error" size="sm">Stok Habis</StatusBadge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Stok Habis
+        </StatusBadge>
+      )
     }
     if (product.stock <= product.min_stock) {
-      return <StatusBadge status="warning" size="sm">{id.products.lowStock}</StatusBadge>
+      return (
+        <StatusBadge status="warning" size="sm">
+          {id.products.lowStock}
+        </StatusBadge>
+      )
     }
     return null
   }
@@ -152,20 +162,24 @@ export function ProductTable({
                       <div>{product.name}</div>
                       <div className="flex flex-wrap gap-1">
                         {!product.barcode?.trim() && (
-                          <StatusBadge status="neutral" size="sm">Tanpa Barcode</StatusBadge>
+                          <StatusBadge status="neutral" size="sm">
+                            Tanpa Barcode
+                          </StatusBadge>
                         )}
                         {!product.category_id && (
-                          <StatusBadge status="neutral" size="sm">Tanpa Kategori</StatusBadge>
+                          <StatusBadge status="neutral" size="sm">
+                            Tanpa Kategori
+                          </StatusBadge>
                         )}
                       </div>
                     </div>
                   </Table.Cell>
-                  <Table.Cell className="text-muted">
-                    {product.barcode?.trim() || "—"}
-                  </Table.Cell>
+                  <Table.Cell className="text-muted">{product.barcode?.trim() || "—"}</Table.Cell>
                   <Table.Cell>
                     <span className={cn(!product.category_id && "text-muted")}>
-                      {product.category_id ? categoryMap.get(product.category_id) || "—" : "Tanpa kategori"}
+                      {product.category_id
+                        ? categoryMap.get(product.category_id) || "—"
+                        : "Tanpa kategori"}
                     </span>
                   </Table.Cell>
                   <Table.Cell className="text-right">
@@ -173,10 +187,12 @@ export function ProductTable({
                   </Table.Cell>
                   <Table.Cell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <span className={cn(
-                        "tabular-nums",
-                        product.stock < 0 && "font-semibold text-danger"
-                      )}>
+                      <span
+                        className={cn(
+                          "tabular-nums",
+                          product.stock < 0 && "font-semibold text-danger",
+                        )}
+                      >
                         {product.stock}
                       </span>
                       {getStockBadge(product)}
@@ -254,13 +270,7 @@ export function ProductTable({
  * aktif, jadi `Tooltip` boleh membungkus `Button` langsung tanpa
  * `Tooltip.Trigger`: pembungkus itu menambah satu titik Tab yang tidak perlu.
  */
-function PinActionButton({
-  isPinned,
-  onPress,
-}: {
-  isPinned: boolean
-  onPress: () => void
-}) {
+function PinActionButton({ isPinned, onPress }: { isPinned: boolean; onPress: () => void }) {
   const label = isPinned ? "Hapus pin shortcut" : "Pin ke shortcut kasir"
 
   return (

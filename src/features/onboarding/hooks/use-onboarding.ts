@@ -9,7 +9,7 @@ export function useCheckOnboarding() {
   const { data, isLoading } = useApiQuery<boolean>(
     queryKeys.onboarding.status,
     getOnboardingStatus,
-    { retry: false }
+    { retry: false },
   )
 
   return {

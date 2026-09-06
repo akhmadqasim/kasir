@@ -21,7 +21,7 @@ function renderQuickAccess() {
       <MemoryRouter>
         <PpobQuickAccess />
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -56,15 +56,11 @@ describe("ppob quick access", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Token PLN" }))
 
-    expect(
-      await screen.findByRole("textbox", { name: "No. Meter / IDPEL" })
-    ).toBeInTheDocument()
+    expect(await screen.findByRole("textbox", { name: "No. Meter / IDPEL" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Kembali" }))
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Pulsa/ })).toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.getByRole("button", { name: /Pulsa/ })).toBeInTheDocument())
   })
 
   /**
@@ -87,9 +83,7 @@ describe("ppob quick access", () => {
 
     await waitFor(() => expect(postpaid).toHaveAttribute("aria-checked", "true"))
     // Mode pascabayar tidak punya nominal, dan labelnya ikut berganti.
-    expect(
-      await screen.findByRole("textbox", { name: "ID Pelanggan" })
-    ).toBeInTheDocument()
+    expect(await screen.findByRole("textbox", { name: "ID Pelanggan" })).toBeInTheDocument()
   })
 
   it("marks the chosen PLN denomination as pressed", async () => {

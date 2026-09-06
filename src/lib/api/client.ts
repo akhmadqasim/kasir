@@ -75,7 +75,7 @@ export class ApiError extends Error {
     code: ApiErrorCode,
     message: string,
     status: number,
-    retryAfterSeconds: number | null = null
+    retryAfterSeconds: number | null = null,
   ) {
     super(message)
     this.name = "ApiError"
@@ -179,9 +179,7 @@ function isErrorBody(value: unknown): value is ErrorBody {
 }
 
 function toErrorCode(code: string): ApiErrorCode {
-  return (API_ERROR_CODES as readonly string[]).includes(code)
-    ? (code as ApiErrorCode)
-    : "internal"
+  return (API_ERROR_CODES as readonly string[]).includes(code) ? (code as ApiErrorCode) : "internal"
 }
 
 /**
@@ -228,19 +226,14 @@ async function toApiError(response: Response): Promise<ApiError> {
   const retryAfter = parseRetryAfter(response)
 
   if (isErrorBody(body)) {
-    return new ApiError(
-      toErrorCode(body.code),
-      body.message,
-      response.status,
-      retryAfter
-    )
+    return new ApiError(toErrorCode(body.code), body.message, response.status, retryAfter)
   }
 
   return new ApiError(
     fallbackCode(response.status),
     fallbackMessage(response.status),
     response.status,
-    retryAfter
+    retryAfter,
   )
 }
 
@@ -268,7 +261,7 @@ async function send(
   method: HttpMethod,
   path: string,
   options: RequestOptions,
-  init: Pick<RequestInit, "body" | "headers">
+  init: Pick<RequestInit, "body" | "headers">,
 ): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set("Accept", "application/json")
@@ -291,11 +284,7 @@ async function send(
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error
     }
-    throw new ApiError(
-      "network",
-      "Tidak dapat menghubungi server. Periksa koneksi jaringan.",
-      0
-    )
+    throw new ApiError("network", "Tidak dapat menghubungi server. Periksa koneksi jaringan.", 0)
   }
 
   if (response.status === 401 && options.handleUnauthorized !== false) {
@@ -313,7 +302,7 @@ async function send(
 export async function request<T>(
   method: HttpMethod,
   path: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<T> {
   const hasBody = options.body !== undefined
   const response = await send(method, path, options, {
@@ -354,7 +343,7 @@ export function apiUpload<T>(
   path: string,
   file: File | Blob,
   fieldName = "file",
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<T> {
   const form = new FormData()
   form.append(fieldName, file)
@@ -384,13 +373,12 @@ function filenameFromDisposition(header: string | null): string | null {
 export async function apiDownload(
   path: string,
   fallbackFilename: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<string> {
   const response = await send("GET", path, options, {})
   const blob = await response.blob()
   const filename =
-    filenameFromDisposition(response.headers.get("Content-Disposition")) ??
-    fallbackFilename
+    filenameFromDisposition(response.headers.get("Content-Disposition")) ?? fallbackFilename
 
   const url = URL.createObjectURL(blob)
   try {

@@ -3,11 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Avatar, Dropdown, Label, Separator } from "@heroui/react"
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 
-import {
-  SidebarLabel,
-  SidebarMenu,
-  SidebarMenuItem,
-} from "@/components/layout/sidebar"
+import { SidebarLabel, SidebarMenu, SidebarMenuItem } from "@/components/layout/sidebar"
 import { sidebarMenuButtonClass, useSidebar } from "@/components/layout/sidebar-context"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -67,7 +63,7 @@ export function NavUser() {
               aria-label={id.profile.title}
               className={sidebarMenuButtonClass(
                 "lg",
-                "aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground"
+                "aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground",
               )}
             >
               <Avatar size="sm" className="rounded-lg">

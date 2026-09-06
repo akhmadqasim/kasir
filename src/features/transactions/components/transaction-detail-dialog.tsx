@@ -42,11 +42,7 @@ import {
   transactionStatusVariant,
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
-import {
-  isDiscountedLine,
-  lineDiscountAmount,
-  netLineAmount,
-} from "../line-amounts"
+import { isDiscountedLine, lineDiscountAmount, netLineAmount } from "../line-amounts"
 import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-status"
 import { refundBlockedReason } from "../refund-window"
 import type { TransactionDetail, TransactionListItem } from "../types"
@@ -70,9 +66,13 @@ function SummaryRow({
   valueClassName?: string
 }) {
   return (
-    <div className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm", rowClassName)}>
+    <div
+      className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm", rowClassName)}
+    >
       <span className="text-muted">{label}</span>
-      <span className={cn("min-w-0 text-right font-medium", mono && "font-mono", valueClassName)}>{value}</span>
+      <span className={cn("min-w-0 text-right font-medium", mono && "font-mono", valueClassName)}>
+        {value}
+      </span>
     </div>
   )
 }
@@ -125,13 +125,14 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const { data: detail, isLoading } = useApiQuery<TransactionDetail>(
     queryKeys.transactions.detail(transaction?.id ?? 0),
     () => getTransactionDetail(transaction!.id),
-    { enabled: !!transaction }
+    { enabled: !!transaction },
   )
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
   const isDeleted = detail?.transaction.status === "deleted"
-  const hasRefundAction = !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
+  const hasRefundAction =
+    !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
   const refundBlocked = detail ? refundBlockedReason(detail.transaction.created_at) : null
   const isSplitPayment = (detail?.payment_breakdown.length ?? 0) > 1
   const originalTotalAmount = detail
@@ -200,7 +201,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
       await updateTransactionPaymentMethod(
         transaction.id,
         newPaymentMethod,
-        editPaymentReason.trim()
+        editPaymentReason.trim(),
       )
       toast.success(id.transactions.editPaymentSuccess)
       setShowEditPayment(false)
@@ -249,17 +250,14 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                         label={id.transactions.date}
                         value={formatDateTime(detail.transaction.created_at)}
                       />
-                      <SummaryRow
-                        label={id.transactions.cashier}
-                        value={detail.cashier_name}
-                      />
+                      <SummaryRow label={id.transactions.cashier} value={detail.cashier_name} />
                       <SummaryRow
                         label={id.transactions.status}
-                        value={(
+                        value={
                           <StatusBadge status={transactionStatusVariant(detail.transaction.status)}>
                             {transactionStatusLabel(detail.transaction.status)}
                           </StatusBadge>
-                        )}
+                        }
                         rowClassName="items-center"
                       />
                     </div>
@@ -284,7 +282,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                             >
                               <div className="min-w-0 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-medium break-words">{item.product_name}</span>
+                                  <span className="font-medium break-words">
+                                    {item.product_name}
+                                  </span>
                                   <span className="text-muted">× {item.quantity}</span>
                                   {ppobStatus && (
                                     <StatusBadge size="sm" status={ppobStatus.variant}>
@@ -354,7 +354,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                           label={id.transactions.paymentMethod}
                           value={paymentSplitLabel(
                             detail.transaction.payment_method,
-                            detail.payment_breakdown[0]?.bank_name
+                            detail.payment_breakdown[0]?.bank_name,
                           )}
                           valueClassName="text-foreground"
                         />
@@ -399,7 +399,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                               <p className="text-xs font-medium uppercase tracking-wide text-muted">
                                 {id.transactions.notes}
                               </p>
-                              <p className="mt-2 text-sm leading-relaxed">{detail.transaction.notes}</p>
+                              <p className="mt-2 text-sm leading-relaxed">
+                                {detail.transaction.notes}
+                              </p>
                             </div>
                           )}
                           {detail.transaction.deleted_reason && (
@@ -419,7 +421,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                                 Status PPOB
                               </p>
                               {ppobItem.ppob_message && (
-                                <p className="mt-2 text-sm leading-relaxed">{ppobItem.ppob_message}</p>
+                                <p className="mt-2 text-sm leading-relaxed">
+                                  {ppobItem.ppob_message}
+                                </p>
                               )}
                               {ppobItem.ppob_serial_number && (
                                 <p className="mt-2 font-mono text-xs text-muted">
@@ -428,8 +432,8 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                               )}
                               {isPpobInFlight(ppobItem.ppob_status) && (
                                 <p className="mt-2 text-xs text-muted">
-                                  Masih diproses ke penyedia. Tunggu hasilnya — retry
-                                  baru bisa dilakukan kalau statusnya gagal.
+                                  Masih diproses ke penyedia. Tunggu hasilnya — retry baru bisa
+                                  dilakukan kalau statusnya gagal.
                                 </p>
                               )}
                             </div>
@@ -443,11 +447,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 <Modal.Footer className="flex-col items-stretch gap-3 border-t bg-default/30 xl:flex-row xl:items-center xl:justify-between">
                   <div className="flex flex-wrap gap-2">
                     {isAdmin && !isDeleted && (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onPress={() => setShowDeleteConfirm(true)}
-                      >
+                      <Button size="sm" variant="danger" onPress={() => setShowDeleteConfirm(true)}>
                         <Trash2 className="mr-2 h-4 w-4" />
                         {id.common.delete}
                       </Button>
@@ -463,7 +463,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                           setNewPaymentMethod(
                             isSelectablePaymentMethod(detail.transaction.payment_method)
                               ? detail.transaction.payment_method
-                              : ""
+                              : "",
                           )
                           setShowEditPayment(true)
                         }}
@@ -535,17 +535,17 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 value={deleteReason}
                 onChange={setDeleteReason}
               >
-                <TextArea
-                  placeholder={id.transactions.deleteReasonPlaceholder}
-                  rows={3}
-                />
+                <TextArea placeholder={id.transactions.deleteReasonPlaceholder} rows={3} />
               </TextField>
             </AlertDialog.Body>
             <AlertDialog.Footer>
               <Button
                 isDisabled={isDeleting}
                 variant="outline"
-                onPress={() => { setDeleteReason(""); setShowDeleteConfirm(false) }}
+                onPress={() => {
+                  setDeleteReason("")
+                  setShowDeleteConfirm(false)
+                }}
               >
                 {id.common.cancel}
               </Button>
@@ -576,9 +576,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   <Alert.Indicator />
                   <Alert.Content>
                     <Alert.Description>
-                      Transaksi ini dibayar dengan beberapa metode. Menyimpan metode
-                      tunggal akan mengganti seluruh rincian pembayarannya menjadi satu
-                      baris sebesar total transaksi.
+                      Transaksi ini dibayar dengan beberapa metode. Menyimpan metode tunggal akan
+                      mengganti seluruh rincian pembayarannya menjadi satu baris sebesar total
+                      transaksi.
                     </Alert.Description>
                   </Alert.Content>
                 </Alert>
@@ -597,11 +597,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 <Select.Popover>
                   <ListBox>
                     {SELECTABLE_PAYMENT_METHODS.map((method) => (
-                      <ListBox.Item
-                        key={method}
-                        id={method}
-                        textValue={paymentMethodLabel(method)}
-                      >
+                      <ListBox.Item key={method} id={method} textValue={paymentMethodLabel(method)}>
                         <Label>{paymentMethodLabel(method)}</Label>
                         <ListBox.ItemIndicator />
                       </ListBox.Item>
@@ -615,16 +611,16 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 value={editPaymentReason}
                 onChange={setEditPaymentReason}
               >
-                <TextArea
-                  placeholder={id.transactions.editPaymentReasonPlaceholder}
-                  rows={3}
-                />
+                <TextArea placeholder={id.transactions.editPaymentReasonPlaceholder} rows={3} />
               </TextField>
             </Modal.Body>
             <Modal.Footer>
               <Button
                 variant="outline"
-                onPress={() => { setEditPaymentReason(""); setShowEditPayment(false) }}
+                onPress={() => {
+                  setEditPaymentReason("")
+                  setShowEditPayment(false)
+                }}
               >
                 {id.common.cancel}
               </Button>

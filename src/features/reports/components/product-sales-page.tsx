@@ -73,9 +73,7 @@ export function ProductSalesPage() {
         {filtered.map((row) => (
           <Table.Row key={row.productId} id={row.productId} textValue={row.productName}>
             <Table.Cell className="font-medium">{row.productName}</Table.Cell>
-            <Table.Cell className="font-mono text-sm text-muted">
-              {row.barcode ?? "-"}
-            </Table.Cell>
+            <Table.Cell className="font-mono text-sm text-muted">{row.barcode ?? "-"}</Table.Cell>
             <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
             <Table.Cell className="text-right">{row.qtySold}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>

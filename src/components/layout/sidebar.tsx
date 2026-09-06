@@ -166,7 +166,7 @@ export function SidebarProvider({ children, className, style }: SidebarProviderP
       beginHoverExpand,
       endHoverExpand,
       pinSidebar,
-    ]
+    ],
   )
 
   return (
@@ -191,15 +191,23 @@ interface SidebarProps {
 }
 
 export function Sidebar({ children, className, style, label }: SidebarProps) {
-  const { state, open, isMobile, openMobile, setOpenMobile, hoverExpanded, beginHoverExpand, endHoverExpand } =
-    useSidebar()
+  const {
+    state,
+    open,
+    isMobile,
+    openMobile,
+    setOpenMobile,
+    hoverExpanded,
+    beginHoverExpand,
+    endHoverExpand,
+  } = useSidebar()
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(
     () => () => {
       if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     },
-    []
+    [],
   )
 
   if (isMobile) {
@@ -229,7 +237,7 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
       className={cn(
         "group/sidebar hidden shrink-0 flex-col p-2 transition-[width] duration-200 ease-linear md:flex",
         open ? "w-64" : "w-[4.125rem]",
-        className
+        className,
       )}
       style={style}
       onMouseEnter={() => {
@@ -260,7 +268,7 @@ export function SidebarInset({
       className={cn(
         "relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background",
         "md:my-2 md:mr-2 md:rounded-xl md:shadow-sm",
-        className
+        className,
       )}
     >
       {children}
@@ -294,7 +302,7 @@ export function SidebarContent({
       data-slot="sidebar-content"
       className={cn(
         "scrollbar-none flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
-        className
+        className,
       )}
     >
       {children}
@@ -346,7 +354,7 @@ export function SidebarGroupLabel({
       className={cn(
         "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70",
         "transition-opacity duration-200 ease-linear group-data-[state=collapsed]/sidebar:opacity-0",
-        className
+        className,
       )}
     >
       {children}
@@ -393,7 +401,10 @@ export function SidebarLabel({
   return (
     <span
       data-slot="sidebar-label"
-      className={cn("min-w-0 flex-1 text-left group-data-[state=collapsed]/sidebar:hidden", className)}
+      className={cn(
+        "min-w-0 flex-1 text-left group-data-[state=collapsed]/sidebar:hidden",
+        className,
+      )}
     >
       {children}
     </span>
@@ -429,7 +440,13 @@ export function SidebarMenuButton({
 
   if (!showTooltip) {
     return (
-      <button type="button" data-slot="sidebar-menu-button" data-active={isActive} className={classes} {...props}>
+      <button
+        type="button"
+        data-slot="sidebar-menu-button"
+        data-active={isActive}
+        className={classes}
+        {...props}
+      >
         {children}
       </button>
     )
@@ -519,7 +536,7 @@ export function SidebarSubMenu({
       className={cn(
         "mx-3.5 flex min-w-0 flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5",
         "group-data-[state=collapsed]/sidebar:hidden",
-        className
+        className,
       )}
     >
       {children}
@@ -527,7 +544,10 @@ export function SidebarSubMenu({
   )
 }
 
-type SidebarSubMenuLinkProps = Omit<React.ComponentProps<typeof NavLink>, "className" | "children"> & {
+type SidebarSubMenuLinkProps = Omit<
+  React.ComponentProps<typeof NavLink>,
+  "className" | "children"
+> & {
   isActive?: boolean
   className?: string
   children: React.ReactNode

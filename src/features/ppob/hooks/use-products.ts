@@ -47,7 +47,7 @@ export function usePulsaDetails(phoneNumber: string) {
       enabled: debouncedPhoneNumber.length >= 10,
       staleTime: 60000,
       retry: false,
-    }
+    },
   )
 }
 
@@ -73,7 +73,7 @@ export function useEmoneyDenom(productId: number) {
       enabled: productId > 0,
       staleTime: 300000,
       retry: false,
-    }
+    },
   )
 }
 
@@ -85,19 +85,15 @@ export function usePpSubMenu(ppId: number) {
       enabled: ppId > 0,
       staleTime: 300000,
       retry: false,
-    }
+    },
   )
 }
 
 export function useTransferChannels() {
-  return useApiQuery<TransferChannelGroup[]>(
-    queryKeys.ppob.transferChannels,
-    getTransferChannels,
-    {
-      staleTime: 300000,
-      retry: false,
-    }
-  )
+  return useApiQuery<TransferChannelGroup[]>(queryKeys.ppob.transferChannels, getTransferChannels, {
+    staleTime: 300000,
+    retry: false,
+  })
 }
 
 export function useVoucherGroups() {

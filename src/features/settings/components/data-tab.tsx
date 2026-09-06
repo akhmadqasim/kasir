@@ -111,7 +111,7 @@ function BackupSettingsInline({
         queryClient.invalidateQueries({ queryKey: queryKeys.backups.status })
       },
       onError: (error) => toast.error(error.message),
-    }
+    },
   )
 
   const handleChange = (field: "interval_hours" | "retention_days", value: string) => {
@@ -200,15 +200,9 @@ export function DataTab() {
   const exportSectionRef = useRef<HTMLDivElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
-  const dbInfoQuery = useApiQuery<DatabaseInfo>(
-    queryKeys.settings.database,
-    getDatabaseInfo
-  )
+  const dbInfoQuery = useApiQuery<DatabaseInfo>(queryKeys.settings.database, getDatabaseInfo)
 
-  const backupStatusQuery = useApiQuery<BackupStatus>(
-    queryKeys.backups.status,
-    getBackupStatus
-  )
+  const backupStatusQuery = useApiQuery<BackupStatus>(queryKeys.backups.status, getBackupStatus)
 
   const backupListQuery = useApiQuery<BackupInfo[]>(queryKeys.backups.list, listBackups)
   const createBackupMutation = useCreateBackupMutation()
@@ -293,8 +287,9 @@ export function DataTab() {
               Update normal tidak menghapus data kasir.
             </Alert.Title>
             <Alert.Description>
-              Database disimpan terpisah dari file aplikasi dan backup otomatis tetap berjalan.
-              Jika pindah dari versi debug/portable ke installer, gunakan Export Database lalu Import Database.
+              Database disimpan terpisah dari file aplikasi dan backup otomatis tetap berjalan. Jika
+              pindah dari versi debug/portable ke installer, gunakan Export Database lalu Import
+              Database.
             </Alert.Description>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <Button
@@ -350,8 +345,8 @@ export function DataTab() {
             Backup Otomatis
           </Card.Title>
           <Card.Description>
-            Backup otomatis setiap {status?.settings.interval_hours ?? 3} jam.
-            Tersimpan selama {status?.settings.retention_days ?? 90} hari, file terkompresi (gzip).
+            Backup otomatis setiap {status?.settings.interval_hours ?? 3} jam. Tersimpan selama{" "}
+            {status?.settings.retention_days ?? 90} hari, file terkompresi (gzip).
           </Card.Description>
         </Card.Header>
         <Card.Content className="space-y-4">
@@ -398,7 +393,9 @@ export function DataTab() {
             variant="outline"
             onPress={() => createBackupMutation.mutate(undefined)}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${createBackupMutation.isPending ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${createBackupMutation.isPending ? "animate-spin" : ""}`}
+            />
             {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
           </Button>
         </Card.Content>
@@ -410,7 +407,8 @@ export function DataTab() {
           <Card.Header>
             <Card.Title>Daftar Backup</Card.Title>
             <Card.Description>
-              {backups.length} backup tersedia. Backup lama otomatis dihapus setelah {status?.settings.retention_days ?? 90} hari.
+              {backups.length} backup tersedia. Backup lama otomatis dihapus setelah{" "}
+              {status?.settings.retention_days ?? 90} hari.
             </Card.Description>
           </Card.Header>
           <Card.Content>
@@ -484,8 +482,8 @@ export function DataTab() {
         </Card.Header>
         <Card.Content className="space-y-4">
           <p className="text-sm text-muted">
-            Berkas database diunduh oleh browser ini. Di jendela aplikasi kasir, berkas
-            masuk ke folder unduhan PC kasir.
+            Berkas database diunduh oleh browser ini. Di jendela aplikasi kasir, berkas masuk ke
+            folder unduhan PC kasir.
           </p>
           <Button isDisabled={isExporting} onPress={handleExport}>
             <Download className="mr-2 h-4 w-4" />
@@ -502,8 +500,8 @@ export function DataTab() {
         </Card.Header>
         <Card.Content className="space-y-4">
           <p className="text-sm text-muted">
-            Pilih berkas <code>.db</code> hasil export. Berkasnya diunggah ke PC kasir
-            dan dipasang saat aplikasi dijalankan berikutnya.
+            Pilih berkas <code>.db</code> hasil export. Berkasnya diunggah ke PC kasir dan dipasang
+            saat aplikasi dijalankan berikutnya.
           </p>
           {/* Hidden on purpose: the native file input cannot be styled to match
               the rest of the screen, and the button below opens it. */}
@@ -535,9 +533,7 @@ export function DataTab() {
         onOpenChange={(open) => !open && setPendingBackup(null)}
       >
         <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog
-            aria-label={isDeletePending ? "Hapus Backup" : "Pulihkan Backup"}
-          >
+          <AlertDialog.Dialog aria-label={isDeletePending ? "Hapus Backup" : "Pulihkan Backup"}>
             <AlertDialog.Header>
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>
@@ -547,13 +543,14 @@ export function DataTab() {
             <AlertDialog.Body>
               {isDeletePending ? (
                 <p className="text-sm text-muted">
-                  Hapus backup <strong>{pendingBackup?.filename}</strong>? Tindakan ini tidak dapat dibatalkan.
+                  Hapus backup <strong>{pendingBackup?.filename}</strong>? Tindakan ini tidak dapat
+                  dibatalkan.
                 </p>
               ) : (
                 <p className="text-sm text-muted">
                   Database akan diganti dengan backup <strong>{pendingBackup?.filename}</strong>.
-                  Data saat ini akan hilang. Pastikan sudah membuat backup terbaru.
-                  Aplikasi perlu di-restart setelah pemulihan.
+                  Data saat ini akan hilang. Pastikan sudah membuat backup terbaru. Aplikasi perlu
+                  di-restart setelah pemulihan.
                 </p>
               )}
             </AlertDialog.Body>

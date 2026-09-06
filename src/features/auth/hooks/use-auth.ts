@@ -107,15 +107,12 @@ export function useLogout() {
 
 /** Change your own PIN. The current one is the proof; no id is sent. */
 export function useChangeOwnPin() {
-  return useApiMutation<void, authApi.ChangeOwnPinInput>(
-    (input) => authApi.changeOwnPin(input),
-    {
-      onSuccess: () => {
-        toast.success(id.profile.pinChanged)
-      },
-      onError: (error) => {
-        toast.error(error.message)
-      },
-    }
-  )
+  return useApiMutation<void, authApi.ChangeOwnPinInput>((input) => authApi.changeOwnPin(input), {
+    onSuccess: () => {
+      toast.success(id.profile.pinChanged)
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
 }
