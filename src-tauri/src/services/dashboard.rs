@@ -5,8 +5,8 @@ use chrono::Local;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 
 use crate::domain::dashboard::{
-    DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodStat, RecentTransaction,
-    TopProduct,
+    DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodDaily, PaymentMethodStat,
+    RecentTransaction, TopProduct,
 };
 use crate::services::reports::{refund_adjust_cte, SALE_STATUSES};
 use crate::utils::AppError;
@@ -297,6 +297,111 @@ pub async fn payment_method_stats(
     Ok(result)
 }
 
+/// A day-by-day breakdown of [`payment_method_stats`], for the line chart: one
+/// row per `(date, method)` pair over the window, net of returns on the day
+/// and method they were paid back on.
+///
+/// The bucket the sales side groups by and the one `refund_adjust_cte` groups
+/// by are the same string, `"<date>|<method>"` — `refund_adjust_cte` only
+/// takes a single grouping column, so date and method are packed together and
+/// split back apart in Rust. `split_once('|')` is safe here because
+/// `date(...)` never contains `|` and payment methods are a small fixed set of
+/// plain identifiers (`cash`, `qris`, `debit`, `ewallet`, `transfer`,
+/// `mixed`).
+pub async fn payment_method_daily(
+    db: &DatabaseConnection,
+    days: Option<i64>,
+) -> Result<Vec<PaymentMethodDaily>, AppError> {
+    let days = days.unwrap_or(7).clamp(1, 365);
+
+    // Same window convention as `daily_revenue`: `today-(days-1)..today`
+    // inclusive, filtered on the raw `created_at` column via precomputed UTC
+    // boundaries so `idx_transactions_date` stays usable.
+    let today = Local::now().date_naive();
+    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(days - 1));
+    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
+
+    // Mirrors `payment_method_stats`'s read of `transaction_payments` (with the
+    // fallback to `transactions.payment_method` for transactions that never got
+    // a split row), but grouped by day as well as method.
+    let sql = format!(
+        "WITH payment_method_rows AS ( \
+           SELECT tp.payment_method as payment_method, tp.amount as amount, \
+                  date(t.created_at, 'localtime') as d \
+           FROM transaction_payments tp \
+           JOIN transactions t ON t.id = tp.transaction_id \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+           UNION ALL \
+           SELECT t.payment_method as payment_method, t.total_amount as amount, \
+                  date(t.created_at, 'localtime') as d \
+           FROM transactions t \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+             AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
+         ), \
+         sales AS ( \
+           SELECT d || '|' || payment_method as bucket, COALESCE(SUM(amount), 0) as total \
+           FROM payment_method_rows \
+           GROUP BY bucket \
+         ), \
+         {refund_adjust}, \
+         buckets AS (SELECT bucket FROM sales UNION SELECT bucket FROM refund_adjust) \
+         SELECT buckets.bucket, \
+                COALESCE(sales.total, 0) - COALESCE(refund_adjust.revenue, 0) as total \
+         FROM buckets \
+         LEFT JOIN sales ON sales.bucket = buckets.bucket \
+         LEFT JOIN refund_adjust ON refund_adjust.bucket = buckets.bucket",
+        refund_adjust = refund_adjust_cte(
+            "date(r.created_at, 'localtime') || '|' || COALESCE(r.payment_method, t.payment_method)",
+            "date(r.created_at, 'localtime') || '|' || COALESCE(r.payment_method, t.payment_method)",
+            "$1",
+            "$2",
+        ),
+    );
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            &sql,
+            vec![start_utc.into(), end_utc.into()],
+        ))
+        .await?;
+
+    let mut totals: std::collections::HashMap<(String, String), f64> =
+        std::collections::HashMap::new();
+    let mut methods: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for row in &rows {
+        let bucket: String = row.try_get_by_index(0).unwrap_or_default();
+        let total: f64 = row.try_get_by_index(1).unwrap_or(0.0);
+        let Some((date, method)) = bucket.split_once('|') else {
+            continue;
+        };
+        methods.insert(method.to_string());
+        totals.insert((date.to_string(), method.to_string()), total);
+    }
+
+    // Every method seen anywhere in the window gets a row for every day in the
+    // window, zero-filled where there was no activity — otherwise the line
+    // chart would show gaps instead of a flat line at zero.
+    let mut result = Vec::with_capacity(days as usize * methods.len());
+    for i in (0..days).rev() {
+        let date = today - chrono::Duration::days(i);
+        let date_str = date.format("%Y-%m-%d").to_string();
+        for method in &methods {
+            let total = totals
+                .get(&(date_str.clone(), method.clone()))
+                .copied()
+                .unwrap_or(0.0);
+            result.push(PaymentMethodDaily {
+                date: date_str.clone(),
+                method: method.clone(),
+                total,
+            });
+        }
+    }
+
+    Ok(result)
+}
+
 pub async fn top_products(
     db: &DatabaseConnection,
     limit: Option<i64>,
@@ -447,11 +552,13 @@ pub async fn recent_transactions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::transactions;
     use crate::services::reports;
     use crate::test_support::{
         insert_product, insert_refund, insert_refund_item, insert_transaction,
         insert_transaction_item, setup_test_db, utc_at_local_noon, RefundSpec,
     };
+    use sea_orm::{ActiveModelTrait, Set};
 
     /// A Rp 300.000 sale of three Rp 100.000 items (cost Rp 60.000 each), with
     /// `returned` of them handed straight back the same day.
@@ -600,5 +707,118 @@ mod tests {
         let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
         assert_eq!(statuses, vec!["completed", "partial_refund"]);
+    }
+
+    /// Two sales on the same day, paid two different ways, land in two separate
+    /// rows rather than being merged into one method.
+    #[tokio::test]
+    async fn payment_method_daily_splits_same_day_totals_by_method() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(Local::now().date_naive());
+        insert_transaction(&conn, 1, 50_000.0, "completed", &created_at).await;
+        let qris_txn = insert_transaction(&conn, 1, 70_000.0, "completed", &created_at).await;
+        let mut active: transactions::ActiveModel = qris_txn.into();
+        active.payment_method = Set("qris".to_string());
+        active.update(&conn).await.expect("update payment method");
+
+        let rows = payment_method_daily(&conn, Some(1)).await.expect("query");
+        let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
+
+        assert_eq!(rows.len(), 2);
+        let cash = rows.iter().find(|r| r.method == "cash").expect("cash row");
+        let qris = rows.iter().find(|r| r.method == "qris").expect("qris row");
+        assert_eq!(cash.date, today);
+        assert_eq!(cash.total, 50_000.0);
+        assert_eq!(qris.date, today);
+        assert_eq!(qris.total, 70_000.0);
+    }
+
+    /// A day with no transactions still gets a zero row for every method seen
+    /// elsewhere in the window, so the line chart does not show a gap.
+    #[tokio::test]
+    async fn payment_method_daily_zero_fills_days_without_transactions() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(Local::now().date_naive());
+        insert_transaction(&conn, 1, 40_000.0, "completed", &created_at).await;
+
+        let rows = payment_method_daily(&conn, Some(3)).await.expect("query");
+        let today = Local::now().date_naive();
+
+        // Only one method ever appears in the window, so three days times one
+        // method is the whole result.
+        assert_eq!(rows.len(), 3);
+        let two_days_ago = (today - chrono::Duration::days(2))
+            .format("%Y-%m-%d")
+            .to_string();
+        let row = rows
+            .iter()
+            .find(|r| r.date == two_days_ago)
+            .expect("day present even without a transaction");
+        assert_eq!(row.method, "cash");
+        assert_eq!(row.total, 0.0);
+    }
+
+    /// A refund paid back on a different day, in a different method, than the
+    /// original sale comes off that day and that method only.
+    #[tokio::test]
+    async fn payment_method_daily_deducts_refund_on_its_own_day_and_method() {
+        let conn = setup_test_db().await;
+        let today = Local::now().date_naive();
+        let sale_day = today - chrono::Duration::days(2);
+        let sale_created_at = utc_at_local_noon(sale_day);
+        let refund_created_at = utc_at_local_noon(today);
+
+        let product = insert_product(&conn, "Beras 5kg", 60_000.0, 100_000.0, 100).await;
+        let txn = insert_transaction(&conn, 1, 300_000.0, "completed", &sale_created_at).await;
+        let item = insert_transaction_item(
+            &conn,
+            txn.id,
+            Some(product.id),
+            "Beras 5kg",
+            100_000.0,
+            60_000.0,
+            3,
+        )
+        .await;
+
+        let refund = insert_refund(
+            &conn,
+            RefundSpec {
+                transaction_id: txn.id,
+                user_id: 1,
+                refund_type: "refund",
+                total_refund_amount: 100_000.0,
+                total_exchange_amount: 0.0,
+                difference_amount: 100_000.0,
+                payment_method: "qris",
+                shift_id: None,
+                created_at: &refund_created_at,
+            },
+        )
+        .await;
+        insert_refund_item(&conn, refund.id, item.id, product.id, 1, 100_000.0).await;
+
+        let rows = payment_method_daily(&conn, Some(3)).await.expect("query");
+
+        let sale_date = sale_day.format("%Y-%m-%d").to_string();
+        let refund_date = today.format("%Y-%m-%d").to_string();
+
+        let sale_row = rows
+            .iter()
+            .find(|r| r.date == sale_date && r.method == "cash")
+            .expect("sale day/method row");
+        assert_eq!(sale_row.total, 300_000.0);
+
+        let refund_row = rows
+            .iter()
+            .find(|r| r.date == refund_date && r.method == "qris")
+            .expect("refund day/method row");
+        assert_eq!(refund_row.total, -100_000.0);
+
+        let untouched = rows
+            .iter()
+            .find(|r| r.date == sale_date && r.method == "qris")
+            .expect("qris row still present on the sale day, zero-filled");
+        assert_eq!(untouched.total, 0.0);
     }
 }

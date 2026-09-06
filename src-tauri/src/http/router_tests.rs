@@ -1747,6 +1747,7 @@ async fn every_dashboard_panel_answers_a_session() {
         "/api/dashboard/summary",
         "/api/dashboard/revenue/daily?days=7",
         "/api/dashboard/payment-methods",
+        "/api/dashboard/payment-methods/daily?days=7",
         "/api/dashboard/products/top?limit=5",
         "/api/dashboard/products/low-stock",
         "/api/dashboard/transactions/recent",

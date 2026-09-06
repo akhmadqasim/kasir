@@ -9,8 +9,8 @@ use axum::Router;
 use serde::Deserialize;
 
 use crate::domain::dashboard::{
-    DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodStat, RecentTransaction,
-    TopProduct,
+    DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodDaily, PaymentMethodStat,
+    RecentTransaction, TopProduct,
 };
 use crate::http::error::ApiResult;
 use crate::http::extract::Query;
@@ -22,6 +22,10 @@ pub fn session() -> Router<AppState> {
         .route("/dashboard/summary", get(summary))
         .route("/dashboard/revenue/daily", get(daily_revenue))
         .route("/dashboard/payment-methods", get(payment_methods))
+        .route(
+            "/dashboard/payment-methods/daily",
+            get(payment_methods_daily),
+        )
         .route("/dashboard/products/top", get(top_products))
         .route("/dashboard/products/low-stock", get(low_stock))
         .route("/dashboard/transactions/recent", get(recent_transactions))
@@ -56,6 +60,15 @@ async fn payment_methods(
 #[derive(Debug, Deserialize)]
 struct LimitParam {
     limit: Option<i64>,
+}
+
+async fn payment_methods_daily(
+    State(state): State<AppState>,
+    Query(params): Query<DaysParam>,
+) -> ApiResult<axum::Json<Vec<PaymentMethodDaily>>> {
+    Ok(axum::Json(
+        services::dashboard::payment_method_daily(&state.db, params.days).await?,
+    ))
 }
 
 async fn top_products(

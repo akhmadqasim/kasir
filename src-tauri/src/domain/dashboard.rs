@@ -34,6 +34,14 @@ pub struct PaymentMethodStat {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PaymentMethodDaily {
+    pub date: String,
+    pub method: String,
+    pub total: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TopProduct {
     pub product_id: i64,
     pub product_name: String,
