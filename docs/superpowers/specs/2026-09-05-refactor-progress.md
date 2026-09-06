@@ -18,9 +18,10 @@ Nomor migrasi berikutnya yang bebas: **023**.
 | Gerbang | Awal | Sekarang |
 |---|---|---|
 | `cargo test --lib` | 39 | 268 |
-| `bun run test` | 123 | 357+ |
+| `bun run test` | 123 | 447 (40 berkas) |
 | `bunx tsc -b` | bersih | bersih |
 | `bun run lint` | 5 error, 2 warning | **0 error, 0 warning** |
+| `bun run build` | berhasil | berhasil |
 | `cargo clippy --lib` | 21 warning | 10 warning, semuanya pre-existing |
 
 Vitest dibatasi `maxWorkers: "50%"`. Satu worker per core membuat file test berebut CPU
@@ -34,18 +35,26 @@ justru lebih cepat karena tidak ada waktu terbuang untuk saling menunggu.
 | P0 | Perbaikan bug dari audit | selesai |
 | P1 | Ekstrak `domain/` + `services/` dari `commands/` | selesai |
 | P2 | axum, session server-side, seluruh route, static embed | selesai |
-| P3 | Frontend: API client, browser router, auth lewat `/me` | **belum** |
+| P3 | Frontend: API client, browser router, auth lewat `/me` | selesai |
 | P4 | Migrasi HeroUI per halaman | gelombang terakhir berjalan |
 | P5 | Pembersihan menyeluruh, dokumentasi, gerbang hijau serentak | belum |
 
-Setelah P3, layer `commands/` dan 113 Tauri command dihapus seluruhnya.
+P3 selesai, jadi layer `commands/` dan 113 Tauri command sekarang bebas dihapus.
 
 ## Kondisi backend
 
 `services/` memegang seluruh business logic dan terbukti bersih dari `tauri` maupun
 `axum`. Seluruh API tersedia di `src-tauri/src/http/` dengan sesi server-side; identitas
 selalu datang dari cookie, tidak pernah dari isi request. `Actor::unverified` tinggal ada
-di `commands/`, dan hilang bersama layer itu di P3.
+di `commands/`, dan hilang bersama layer itu.
+
+## Kondisi frontend
+
+Tidak ada lagi `@tauri-apps` di `src/`. Satu klien `fetch` di `src/lib/api/client.ts`,
+satu modul bertipe per resource di sebelahnya, dan kunci query terstruktur di
+`src/lib/api/query-keys.ts`. `scripts/check-api-routes.mjs` mencocokkan setiap path yang
+dipanggil klien dengan tabel rute axum — saat ini **111 rute, 111 terpakai, nol selisih
+di kedua arah**.
 
 Mode web masih opt-in lewat `KASIR_WEB_MODE=1` karena frontend belum memakai `fetch`.
 Menyalakannya sekarang memberi server yang jalan dan jendela kosong — berguna untuk
@@ -53,21 +62,26 @@ menguji API dengan `curl`, belum untuk kasir.
 
 ## Sisa yang harus dikerjakan jalur frontend
 
-Semua berasal dari perubahan backend yang sudah masuk.
+Semua sudah diserap di P3: status PPOB `processing` dan retry khusus `failed`,
+`net_subtotal`, `payment_breakdown` tanpa baris tunai, `ShiftSummaryResponse.cashRefunds`,
+`ReceiptRow.refundAmount`/`netAmount` beserta struk `refunded` yang kini ikut tampil,
+`refunds.shift_id`, angka laporan yang bisa nol atau negatif, dan
+`GET /api/settings` yang hanya mengirim `has_credentials`.
 
-1. **Status PPOB `processing`** perlu entri di `PPOB_STATUS_CONFIG`, dan `ppobCanRetry`
-   harus jadi `failed` saja — `pending` kini ditolak backend.
-2. **`net_subtotal`** ada di item transaksi; pakai untuk menampilkan baris berdiskon.
-3. **`payment_breakdown` bisa tanpa baris tunai** kalau pembayarannya seluruhnya non-tunai.
-4. **`ShiftSummaryResponse.cashRefunds`** baru; `expectedCash` sudah dikurangi angka itu.
-5. **`ReceiptRow.refundAmount` dan `netAmount`** baru. Daftar struk kini **menampilkan
-   struk berstatus `refunded`**; kalau UI menjumlahkan kolom, jumlahkan `netAmount`.
-6. **`refunds.shift_id`** baru di model refund.
-7. **Angka laporan berubah jadi bersih.** `PaymentMethodRow` bisa muncul dengan
-   `transactionCount: 0` dan nominal negatif untuk metode yang periode itu hanya kena
-   retur; `ProductSalesRow.qtySold` bisa nol atau negatif.
-8. **`GET /api/settings` tidak lagi mengirim kredensial PPOB** — hanya `hasCredentials`.
-   Tulis kredensial lewat `PUT /api/settings/ppob/credentials`.
+## Yang masih ditunggu frontend dari jalur Rust
+
+1. **Markup PPOB tidak terbaca kasir.** `GET /api/settings` ada di grup `admin`, tapi
+   yang membutuhkannya adalah layar kasir: `PpobQuickAccess` memakai `ppob.markup` untuk
+   menghitung harga jual. Kasir kena 403 dan jatuh ke `DEFAULT_PPOB_MARKUP` — nol —
+   sehingga PPOB terjual seharga modal. Markup-nya bukan rahasia; yang rahasia adalah
+   password dan PIN, dan keduanya memang sudah tidak pernah dikirim. Perlu satu endpoint
+   di grup `session`, misal `GET /api/settings/ppob/markup`.
+2. **`commands/` dan 113 Tauri command** sudah tidak dipakai siapa pun di `src/` dan bisa
+   dihapus. `Actor::unverified` hilang bersamanya.
+3. **Plugin `tauri-plugin-dialog`** sudah tidak dipanggil frontend; sisi Rust-nya bisa
+   dicabut. `@tauri-apps/api` dan `@tauri-apps/plugin-dialog` sudah dilepas dari
+   `package.json`; `@tauri-apps/cli` tetap karena itu alat build yang dipakai
+   `scripts/release.ps1`.
 
 ## Keputusan yang sudah diambil dan alasannya
 
@@ -115,10 +129,17 @@ baris lama, karena `discount_amount` mencampur keduanya tanpa jejak pembagiannya
 dengan menjumlahkan balik dari `exchange_items`; menuliskannya sebagai penjualan sungguhan
 adalah keputusan produk yang belum diambil.
 
-**Verifikasi visual belum pernah dilakukan.** Aplikasi masih boot lewat Tauri command, dan
-ekstensi Chrome meminta manusia memilih di antara dua browser yang terhubung. Semua bukti
-sejauh ini berasal dari test, bukan dari mata. Setelah P3 aplikasi jalan di
-`http://127.0.0.1:17720` dan pengecekan visual jadi mudah.
+**Verifikasi visual belum pernah dilakukan.** Ekstensi Chrome meminta manusia memilih di
+antara dua browser yang terhubung, jadi tidak ada agen yang bisa membuka layarnya sendiri.
+Semua bukti sejauh ini berasal dari test, bukan dari mata.
+
+**Aplikasi belum pernah dijalankan dengan frontend baru.** Tidak ada `kasir.exe` hasil
+build sesudah P1: `src-tauri/target` hanya berisi `kasir_lib` dari `cargo test --lib`, dan
+biner di checkout `master` bertanggal 23 Juni — jauh sebelum ada HTTP server. Jalur
+frontend tidak boleh menjalankan `cargo`, jadi P3 diverifikasi lewat empat gerbangnya
+plus `scripts/check-api-routes.mjs`, bukan lewat `curl` ke server yang hidup. Sekali
+jalur Rust menghasilkan biner, `KASIR_WEB_MODE=1` sudah cukup untuk membukanya di
+`http://127.0.0.1:17720`.
 
 ## Koreksi terhadap dokumen lain
 

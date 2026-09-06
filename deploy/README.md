@@ -23,15 +23,20 @@ persis sama.
 
 ## Status: mode web masih opt-in
 
-> HTTP server-nya sudah ada, frontend-nya belum pindah. Sampai fase migrasi
-> frontend selesai, `kasir.exe` **default-nya tetap desktop-only**: jendela
-> memuat aset bawaan dan berbicara lewat Tauri command seperti sebelumnya, dan
-> HTTP server tidak dijalankan sama sekali.
+> Frontend sudah sepenuhnya memakai `fetch` ke `/api`; tidak ada Tauri command
+> yang tersisa di sisi browser. Yang masih menahan mode web sebagai opt-in
+> adalah lapisan `commands/` di sisi Rust, yang dihapus setelah fase ini.
 >
 > Set `KASIR_WEB_MODE=1` untuk menyalakan server sekaligus mengarahkan jendela
-> desktop ke `http://127.0.0.1:<port>`. Selama frontend belum memakai `fetch`,
-> menyalakannya menghasilkan server yang jalan dan jendela yang kosong — berguna
-> untuk menguji API dengan `curl`, belum untuk dipakai kasir.
+> desktop ke `http://127.0.0.1:<port>`. Tanpa variabel itu jendela memuat aset
+> bawaan dan tidak ada server yang jalan, jadi aplikasinya tidak punya API untuk
+> dipanggil.
+>
+> Untuk `bun run dev`, SPA disajikan di `http://localhost:5173` dan Vite
+> mem-proxy `/api` ke `127.0.0.1:17720`. Origin yang sampai ke server tetap
+> `http://localhost:5173`, jadi jalankan aplikasinya dengan
+> `KASIR_ALLOWED_ORIGINS=http://localhost:5173` supaya request pengubah data
+> tidak tertolak oleh Origin check.
 
 ## Menjalankan
 
