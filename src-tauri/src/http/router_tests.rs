@@ -968,6 +968,79 @@ async fn the_settings_read_is_closed_to_a_cashier() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
+/// The one slice of `/api/settings` a cashier is allowed to read: the markup
+/// table `PpobQuickAccess` needs to price a top-up. Everything the admin-only
+/// read withholds must stay withheld here too.
+#[tokio::test]
+async fn a_cashier_can_read_the_ppob_markup_but_not_the_credentials() {
+    let db = setup_test_db().await;
+    let store = insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+    let mut settings: Value =
+        serde_json::from_str(store.additional_info.as_deref().unwrap_or("{}")).expect("json");
+    settings["ppob"]["markup"] = json!({
+        "pulsa": { "type": "percentage", "value": 5.0 },
+        "data": { "type": "fixed", "value": 1000.0 },
+        "pln": { "type": "fixed", "value": 2500.0 },
+        "pdam": { "type": "fixed", "value": 2500.0 },
+        "bpjs": { "type": "fixed", "value": 2500.0 },
+        "emoney": { "type": "percentage", "value": 2.0 },
+        "custom_prices": {},
+    });
+    let mut active: store_info::ActiveModel = store.into();
+    active.additional_info = Set(Some(settings.to_string()));
+    active.update(&db).await.expect("store update");
+
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/settings/ppob/markup")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let text = body_text(response).await;
+    assert!(
+        !text.contains("rahasia-sekali"),
+        "the PPOB password must not be in the response: {text}"
+    );
+    assert!(
+        !text.contains("424242"),
+        "the PPOB PIN must not be in the response: {text}"
+    );
+
+    let body: Value = serde_json::from_str(&text).expect("json");
+    assert!(body.get("password").is_none());
+    assert!(body.get("pin").is_none());
+    assert_eq!(body["pulsa"]["type"], json!("percentage"));
+    assert_eq!(body["pulsa"]["value"], json!(5.0));
+}
+
+/// No session at all — the endpoint still requires login, it is just open to
+/// every role once logged in.
+#[tokio::test]
+async fn the_ppob_markup_route_requires_a_session() {
+    let db = setup_test_db().await;
+    insert_store_with_ppob_credentials(&db, "rahasia-sekali", "424242").await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(Method::GET, "/api/settings/ppob/markup")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 /// Because the client never receives the credentials, it cannot send them back
 /// — so a settings save must not read their absence as "clear them".
 #[tokio::test]

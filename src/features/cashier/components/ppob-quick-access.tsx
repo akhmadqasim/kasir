@@ -12,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { toast } from "@/lib/toast"
-import { getAppSettings } from "@/lib/api/settings"
+import { getPpobMarkup } from "@/lib/api/settings"
 import { useNavigate } from "react-router-dom"
 import {
   Button,
@@ -140,22 +140,17 @@ export function PpobQuickAccess({
    * The shop's PPOB markup, which is what turns the provider's cost into the
    * price on the counter.
    *
-   * Known gap: `GET /api/settings` is admin-only, and this screen is a cashier's.
-   * A cashier therefore gets a 403 here and falls through to
-   * `DEFAULT_PPOB_MARKUP`, which is zero — selling at cost. The old Tauri command
-   * checked no role at all, which is exactly why it moved behind `require_admin`:
-   * it used to hand out the PPOB password with the same call. The markup itself
-   * is not a secret and needs an endpoint of its own in the session group; until
-   * there is one, this degrades quietly rather than blocking the sale.
+   * Fetched from the session-scoped `/settings/ppob/markup` endpoint rather
+   * than `/settings`, which is admin-only. `/settings` used to be the only
+   * source and 403'd for a cashier, silently falling back to
+   * `DEFAULT_PPOB_MARKUP` — zero — so every top-up sold at cost.
    */
   useEffect(() => {
-    getAppSettings()
-      .then((settings) => {
-        if (settings.ppob?.markup) {
-          setMarkup(settings.ppob.markup)
-          if (settings.ppob.markup.custom_prices) {
-            setCustomPrices(settings.ppob.markup.custom_prices)
-          }
+    getPpobMarkup()
+      .then((markup) => {
+        setMarkup(markup)
+        if (markup.custom_prices) {
+          setCustomPrices(markup.custom_prices)
         }
       })
       .catch(() => {})

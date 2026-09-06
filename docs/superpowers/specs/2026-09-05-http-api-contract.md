@@ -38,6 +38,7 @@ Prefix `/api`. Role `session` berarti perlu login; `admin` berarti perlu role ad
 | | `/onboarding` | POST | publik, sekali saja |
 | **settings** | `/store` | GET session, PUT admin | |
 | | `/settings` | GET admin, PUT admin | kredensial PPOB diredaksi di GET |
+| | `/settings/ppob/markup` | GET | session — hanya tabel markup, ditambahkan P5 |
 | | `/settings/database` | GET | admin |
 | **products** | `/products` | GET session, POST admin | |
 | | `/products/:id` | PUT, DELETE | admin |

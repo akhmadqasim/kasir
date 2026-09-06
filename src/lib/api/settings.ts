@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   DatabaseInfo,
+  PpobMarkup,
   StoreInfo,
   UpdateAppSettingsInput,
   UpdatePpobCredentialsInput,
@@ -27,6 +28,17 @@ export function updateStoreInfo(input: UpdateStoreInfoInput): Promise<StoreInfo>
 /** Never contains the PPOB password or PIN — only `ppob.has_credentials`. */
 export function getAppSettings(): Promise<AppSettings> {
   return apiGet<AppSettings>("/settings")
+}
+
+/**
+ * The PPOB markup table only, open to any cashier session.
+ *
+ * `getAppSettings` is admin-only, but `PpobQuickAccess` is a cashier screen
+ * that needs the markup to price a top-up. This hits the session-scoped
+ * endpoint instead of falling back to a zero markup on a 403.
+ */
+export function getPpobMarkup(): Promise<PpobMarkup> {
+  return apiGet<PpobMarkup>("/settings/ppob/markup")
 }
 
 /**

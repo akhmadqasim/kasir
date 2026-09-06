@@ -3,6 +3,11 @@
 //! `/store` is the shop's name and address — every till needs it to draw a
 //! receipt header, so a cashier may read it and only an admin may change it.
 //!
+//! `/settings/ppob/markup` is the one slice of the settings blob a cashier may
+//! read directly: the PPOB markup table, needed by `PpobQuickAccess` to price
+//! a top-up. It carries none of the fields `/settings` withholds, so it is
+//! safe in the `session` group rather than `admin`.
+//!
 //! `/settings` is the whole configuration blob, and it is admin-only on both
 //! sides for one specific reason: it used to contain the PPOB password and PIN
 //! in the clear. `get_app_settings` deobfuscates them and checks no role, so
@@ -22,8 +27,8 @@ use axum::Extension;
 use axum::Router;
 
 use crate::domain::settings::{
-    DatabaseInfo, PublicAppSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput,
-    UpdateStoreInfoInput,
+    DatabaseInfo, PpobMarkup, PublicAppSettings, UpdateAppSettingsInput,
+    UpdatePpobCredentialsInput, UpdateStoreInfoInput,
 };
 use crate::domain::Actor;
 use crate::entity::store_info;
@@ -33,7 +38,9 @@ use crate::http::AppState;
 use crate::services;
 
 pub fn session() -> Router<AppState> {
-    Router::new().route("/store", get(get_store))
+    Router::new()
+        .route("/store", get(get_store))
+        .route("/settings/ppob/markup", get(get_ppob_markup))
 }
 
 pub fn admin() -> Router<AppState> {
@@ -68,6 +75,13 @@ async fn get_settings(
 ) -> ApiResult<axum::Json<PublicAppSettings>> {
     Ok(axum::Json(
         services::settings::public_app_settings(&state.db, &actor).await?,
+    ))
+}
+
+/// The PPOB markup table only — no password, no PIN, open to any session.
+async fn get_ppob_markup(State(state): State<AppState>) -> ApiResult<axum::Json<PpobMarkup>> {
+    Ok(axum::Json(
+        services::settings::ppob_markup(&state.db).await?,
     ))
 }
 

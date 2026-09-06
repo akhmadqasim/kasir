@@ -26,13 +26,13 @@ function renderQuickAccess() {
 }
 
 beforeEach(() => {
-  // `GET /api/settings` is admin-only and this is a cashier's screen, so the
-  // component treats a failure there as "no markup configured". An empty object
-  // is the same answer without the 403, which is what the old mock did too.
+  // Session-scoped, unlike `GET /api/settings` which is admin-only — this is
+  // a cashier's screen. An empty object is "no markup configured", the same
+  // answer a 403 used to fall back to.
   installApiMock({
     "GET /ppob/balance": { saldo: 1_500_000, username: "toko" },
     "GET /ppob/catalog/pln/denominations": PLN_DENOMS,
-    "GET /settings": {},
+    "GET /settings/ppob/markup": {},
   })
   useCartStore.setState({
     items: [],

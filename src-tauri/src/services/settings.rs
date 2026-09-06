@@ -6,8 +6,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::settings::{
-    obfuscate, parse_app_settings, AppSettings, ChangePinInput, DatabaseInfo, PpobSettings,
-    PublicAppSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput,
+    obfuscate, parse_app_settings, AppSettings, ChangePinInput, DatabaseInfo, PpobMarkup,
+    PpobSettings, PublicAppSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput,
+    UpdateStoreInfoInput,
 };
 use crate::domain::Actor;
 use crate::entity::{store_info, users};
@@ -78,6 +79,18 @@ pub async fn public_app_settings(
 ) -> Result<PublicAppSettings, AppError> {
     guard::require_admin(actor)?;
     Ok(PublicAppSettings::from(get_app_settings(db).await?))
+}
+
+/// Just the PPOB markup table, open to any logged-in session.
+///
+/// `GET /api/settings` is admin-only because it is the one place the PPOB
+/// password and PIN used to leak; the markup that turns a vendor's cost into a
+/// counter price is not a secret, and `PpobQuickAccess` is a cashier screen
+/// that needs it to price a sale. Reusing [`get_app_settings`] and returning
+/// only `ppob.markup` keeps this endpoint from ever being able to grow a
+/// credential field by accident.
+pub async fn ppob_markup(db: &DatabaseConnection) -> Result<PpobMarkup, AppError> {
+    Ok(get_app_settings(db).await?.ppob.markup)
 }
 
 /// Save the settings a client is allowed to send, keeping the stored PPOB
