@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Table } from "@heroui/react"
 
 import { installApiMock, type ApiRoutes } from "@/test-utils/api-mock"
+import { formatRupiah } from "@/lib/format"
 
 import { ReportPage, ReportStatCard, ReportTable } from "./components/report-shell"
 import { CashFlowsPage } from "./components/cash-flows-page"
@@ -24,6 +25,15 @@ function renderWithQuery(node: React.ReactNode) {
     defaultOptions: { queries: { retry: false } },
   })
   return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>)
+}
+
+/**
+ * `Intl` puts a non-breaking space after "Rp". Testing Library normalises that
+ * to an ordinary space in the DOM text but not in the string it is matched
+ * against, so an unmodified `formatRupiah` result never matches.
+ */
+function rupiahText(amount: number) {
+  return formatRupiah(amount).replace(/\s/g, " ")
 }
 
 /** Sel baris = satu sel header baris + sisanya sel data. */
@@ -298,4 +308,66 @@ describe("kerangka laporan", () => {
       expect(countCells(within(grid).getAllByRole("row")[1])).toBe(columns)
     }
   )
+})
+
+/**
+ * Report figures are now net of refunds, and a return is subtracted on the day
+ * it was taken rather than the day of the sale. A period that saw only returns
+ * therefore produces rows nothing in these screens used to expect: a payment
+ * method with no transactions and a negative total, and a product with a
+ * negative quantity sold.
+ *
+ * They are not broken rows, they are the answer — so what matters is that the
+ * screens render them as numbers a shopkeeper can read rather than as a bar
+ * pointing the wrong way or a loss printed in green.
+ */
+describe("angka bersih yang negatif", () => {
+  it("Jenis Pembayaran: baris tanpa transaksi dan bernilai negatif tetap tampil", async () => {
+    installApiMock({
+      ...REPORT_ROUTES,
+      "GET /reports/payment-methods": [
+        { paymentMethod: "cash", transactionCount: 3, totalAmount: 150000, percentage: 125 },
+        { paymentMethod: "qris", transactionCount: 0, totalAmount: -30000, percentage: -25 },
+      ],
+    })
+
+    renderWithQuery(<PaymentMethodsPage />)
+
+    // The figure appears in the card above the table as well as in the row, so
+    // finding it at all is the proof the negative amount rendered.
+    expect(await screen.findAllByText(rupiahText(-30000))).not.toHaveLength(0)
+    expect(await screen.findByText("-25.0%")).toBeInTheDocument()
+    // The bar is decorative and the percentage is written out beside it; a
+    // negative width is an invalid CSS declaration the browser drops silently,
+    // so it is clamped rather than passed through.
+    const bars = document.querySelectorAll<HTMLElement>("[style*='width']")
+    for (const bar of bars) {
+      const width = Number.parseFloat(bar.style.width)
+      expect(width).toBeGreaterThanOrEqual(0)
+      expect(width).toBeLessThanOrEqual(100)
+    }
+  })
+
+  it("Penjualan Produk: laba negatif ditandai merah, bukan hijau", async () => {
+    installApiMock({
+      ...REPORT_ROUTES,
+      "GET /reports/products/sales": [
+        {
+          productId: 1,
+          productName: "Gula Pasir",
+          barcode: "8991234567890",
+          categoryName: "Bahan Pokok",
+          qtySold: -2,
+          totalRevenue: -30000,
+          totalCost: -24000,
+          profit: -6000,
+        },
+      ],
+    })
+
+    renderWithQuery(<ProductSalesPage />)
+
+    expect(await screen.findByText("-2")).toBeInTheDocument()
+    expect(screen.getByText(rupiahText(-6000))).toHaveClass("text-danger")
+  })
 })
