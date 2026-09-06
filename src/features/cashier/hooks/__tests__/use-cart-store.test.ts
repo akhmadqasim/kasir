@@ -32,6 +32,7 @@ beforeEach(() => {
     heldCarts: [],
     itemDiscounts: {},
     transactionDiscount: null,
+    checkoutKey: null,
   })
 })
 
@@ -980,5 +981,110 @@ describe("persisted cart migration", () => {
     expect(migrated.items).toEqual([])
     expect(migrated.heldCarts).toEqual([])
     expect(migrated.ppobCounter).toBe(0)
+  })
+})
+
+// =====================================================================
+// checkout key (Idempotency-Key)
+// =====================================================================
+
+/**
+ * The key's lifetime is the whole of what makes it useful.
+ *
+ * Over IPC a checkout either happened or it did not. Over HTTP there is a third
+ * outcome — the sale committed and the reply was lost on shop wifi — and a
+ * retry from that state is indistinguishable from a request that never arrived.
+ * One key per cart, reused by every attempt at that cart, is what lets the
+ * server tell the two apart. A key per retry would defeat it entirely; a key
+ * per cashier session would make the second genuine sale of the day come back
+ * as a replay of the first.
+ */
+describe("checkout key", () => {
+  it("is absent until the first checkout attempt", () => {
+    store().addItem(makeProduct())
+
+    expect(store().checkoutKey).toBeNull()
+  })
+
+  it("keeps the same key across retries of the same cart", () => {
+    store().addItem(makeProduct())
+
+    const first = store().getCheckoutKey()
+
+    expect(store().getCheckoutKey()).toBe(first)
+    expect(store().getCheckoutKey()).toBe(first)
+  })
+
+  /**
+   * A failed attempt releases the key on the server, so correcting the cart and
+   * trying again under the same key is allowed — and is what a cashier does
+   * after "stok tidak cukup".
+   */
+  it("survives the cart being edited after a failed attempt", () => {
+    store().addItem(makeProduct())
+    const key = store().getCheckoutKey()
+
+    store().addItem(makeProduct({ id: 2, name: "Gula Pasir" }))
+    store().updateQuantity(store().items[0].cart_id, 3)
+
+    expect(store().getCheckoutKey()).toBe(key)
+  })
+
+  it("starts a new key once the cart is emptied", () => {
+    store().addItem(makeProduct())
+    const first = store().getCheckoutKey()
+
+    store().clear()
+    store().addItem(makeProduct())
+
+    expect(store().checkoutKey).toBeNull()
+    expect(store().getCheckoutKey()).not.toBe(first)
+  })
+
+  it("starts a new key when the cart is held for another customer", () => {
+    store().addItem(makeProduct())
+    const first = store().getCheckoutKey()
+
+    store().holdCart("Pelanggan A")
+    store().addItem(makeProduct({ id: 2 }))
+
+    expect(store().getCheckoutKey()).not.toBe(first)
+  })
+
+  it("starts a new key when a held cart is recalled", () => {
+    store().addItem(makeProduct())
+    store().holdCart("Pelanggan A")
+    store().addItem(makeProduct({ id: 2 }))
+    const active = store().getCheckoutKey()
+
+    store().recallCart(store().heldCarts[0].id)
+
+    expect(store().getCheckoutKey()).not.toBe(active)
+  })
+
+  /**
+   * A reload in the middle of a checkout is exactly the case the key exists
+   * for: the cart comes back from `localStorage`, and so must the key that
+   * stops it being rung up a second time.
+   */
+  it("is carried through a persisted cart", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        ppobCounter: 0,
+        heldCarts: [],
+        itemDiscounts: {},
+        transactionDiscount: null,
+        checkoutKey: "kunci-tersimpan",
+      },
+      1
+    )
+
+    expect(migrated.checkoutKey).toBe("kunci-tersimpan")
+  })
+
+  it("defaults to no key for carts persisted before it existed", () => {
+    expect(migrateCartState({ items: [] }, 1).checkoutKey).toBeNull()
+    expect(migrateCartState(undefined, 0).checkoutKey).toBeNull()
   })
 })

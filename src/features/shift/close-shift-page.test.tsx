@@ -1,15 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import type { Shift, ShiftSummary } from "./types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "./hooks/use-shift-store"
@@ -43,6 +39,7 @@ const SUMMARY: ShiftSummary = {
   totalTransactions: 12,
   cashIn: 50_000,
   cashOut: 20_000,
+  cashRefunds: 0,
   expectedCash: 980_000,
   cashFlows: [
     {
@@ -72,11 +69,20 @@ const CLOSED_SUMMARY: ShiftSummary = {
   shift: { ...SHIFT, closingCash: 980_000, closedAt: "2026-09-05 09:00:00", status: "closed" },
 }
 
+/**
+ * The page logs out through a mutation now, and a mutation needs a client — the
+ * Tauri version called the store directly and needed no provider here.
+ */
 function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  })
   return render(
-    <MemoryRouter initialEntries={["/close-shift"]}>
-      <CloseShiftPage />
-    </MemoryRouter>
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/close-shift"]}>
+        <CloseShiftPage />
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -87,14 +93,15 @@ async function openCloseChain() {
   return screen.findByRole("alertdialog")
 }
 
+let api: ApiMock
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "get_store_info") return Promise.resolve({ name: "Toko Berkah" })
-    if (command === "get_shift_summary") return Promise.resolve(SUMMARY)
-    if (command === "close_shift") return Promise.resolve(CLOSED_SUMMARY)
-    if (command === "delete_cash_flow") return Promise.resolve(null)
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /store": { name: "Toko Berkah" },
+    "GET /shifts/*/summary": SUMMARY,
+    "POST /shifts/*/close": CLOSED_SUMMARY,
+    "DELETE /cash-flows/*": null,
+    "POST /auth/logout": null,
   })
   useAuthStore.setState({ user: ADMIN })
   useShiftStore.setState({ activeShift: SHIFT })
@@ -103,7 +110,7 @@ beforeEach(() => {
 /**
  * Menutup shift tidak bisa dibatalkan: kas terkunci dan laporan langsung dibuat.
  * Yang dijaga di sini adalah rantai konfirmasinya — dua dialog berurutan, dan
- * `close_shift` baru dipanggil setelah keduanya dilewati.
+ * `POST /shifts/:id/close` baru dipanggil setelah keduanya dilewati.
  */
 describe("halaman tutup kasir", () => {
   it("meminta dua konfirmasi sebelum menutup shift", async () => {
@@ -113,21 +120,22 @@ describe("halaman tutup kasir", () => {
     expect(within(review).getByText("Konfirmasi Tutup Kasir")).toBeInTheDocument()
     // Ringkasan yang dibaca ulang kasir sebelum lanjut.
     expect(within(review).getByText("Saldo aplikasi")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("close_shift", expect.anything())
+    expect(api.callsFor("POST /shifts/*/close")).toHaveLength(0)
 
     fireEvent.click(within(review).getByRole("button", { name: "Lanjutkan" }))
 
     const final = await screen.findByRole("alertdialog")
     expect(within(final).getByText("Verifikasi Terakhir")).toBeInTheDocument()
     expect(screen.queryByText("Konfirmasi Tutup Kasir")).not.toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("close_shift", expect.anything())
+    expect(api.callsFor("POST /shifts/*/close")).toHaveLength(0)
 
     fireEvent.click(within(final).getByRole("button", { name: "Ya, Tutup Kasir" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("close_shift", {
-        input: { shiftId: 9, closingCash: undefined, notes: undefined },
-      })
+      const call = api.lastCall("POST /shifts/*/close")
+      expect(call?.path).toBe("/shifts/9/close")
+      // Saldo dan catatan dibiarkan kosong, jadi keduanya tidak ikut terkirim.
+      expect(call?.body).toEqual({})
     })
     // Rantai selesai: laporan menggantikan formulir, dialog ikut tertutup.
     expect(await screen.findByText("Laporan Tutup Kasir")).toBeInTheDocument()
@@ -143,7 +151,7 @@ describe("halaman tutup kasir", () => {
     await vi.waitFor(() => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     })
-    expect(invoke).not.toHaveBeenCalledWith("close_shift", expect.anything())
+    expect(api.callsFor("POST /shifts/*/close")).toHaveLength(0)
   })
 
   it("membatalkan di langkah kedua membuang seluruh rantai, bukan mundur satu langkah", async () => {
@@ -158,7 +166,7 @@ describe("halaman tutup kasir", () => {
     await vi.waitFor(() => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     })
-    expect(invoke).not.toHaveBeenCalledWith("close_shift", expect.anything())
+    expect(api.callsFor("POST /shifts/*/close")).toHaveLength(0)
   })
 
   it("mengirim saldo aktual yang diketik dan menampilkan selisihnya", async () => {
@@ -176,9 +184,9 @@ describe("halaman tutup kasir", () => {
     fireEvent.click(within(final).getByRole("button", { name: "Ya, Tutup Kasir" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("close_shift", {
-        input: { shiftId: 9, closingCash: 1_000_000, notes: undefined },
-      })
+      const call = api.lastCall("POST /shifts/*/close")
+      expect(call?.path).toBe("/shifts/9/close")
+      expect(call?.body).toEqual({ closingCash: 1_000_000 })
     })
   })
 
@@ -192,15 +200,13 @@ describe("halaman tutup kasir", () => {
 
     const dialog = await screen.findByRole("alertdialog")
     expect(within(dialog).getByText("Hapus Arus Kas")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("delete_cash_flow", expect.anything())
+    expect(api.callsFor("DELETE /cash-flows/*")).toHaveLength(0)
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Hapus" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("delete_cash_flow", {
-        cashFlowId: 2,
-        callerId: 1,
-      })
+      // Pemiliknya diambil dari sesi, jadi yang tersisa cuma id entrinya di path.
+      expect(api.lastCall("DELETE /cash-flows/*")?.path).toBe("/cash-flows/2")
     })
   })
 })

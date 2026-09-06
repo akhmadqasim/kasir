@@ -1,14 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
-
+import { installApiMock } from "@/test-utils/api-mock"
 import { useCartStore } from "./hooks/use-cart-store"
 import { PpobQuickAccess } from "./components/ppob-quick-access"
 
@@ -31,14 +26,13 @@ function renderQuickAccess() {
 }
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "ppob_get_saldo") {
-      return Promise.resolve({ saldo: 1_500_000, username: "toko" })
-    }
-    if (command === "ppob_get_pln_denom") return Promise.resolve(PLN_DENOMS)
-    if (command === "get_app_settings") return Promise.resolve({})
-    return Promise.resolve(null)
+  // `GET /api/settings` is admin-only and this is a cashier's screen, so the
+  // component treats a failure there as "no markup configured". An empty object
+  // is the same answer without the 403, which is what the old mock did too.
+  installApiMock({
+    "GET /ppob/balance": { saldo: 1_500_000, username: "toko" },
+    "GET /ppob/catalog/pln/denominations": PLN_DENOMS,
+    "GET /settings": {},
   })
   useCartStore.setState({
     items: [],

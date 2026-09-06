@@ -2,12 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
-
 const toastWarning = vi.fn()
 
 vi.mock("@/lib/toast", () => ({
@@ -18,12 +12,13 @@ vi.mock("@/lib/toast", () => ({
   },
 }))
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "./hooks/use-cart-store"
 import { PaymentDialog } from "./components/payment-dialog"
-import type { CartItem } from "./types"
+import type { CartItem, TransactionResult } from "./types"
 
 const KASIR: User = {
   id: 2,
@@ -43,6 +38,30 @@ const LINE: CartItem = {
   quantity: 2,
   stock: 50,
   unit: "pcs",
+}
+
+/** What `POST /api/transactions` answers with. The dialog only passes it on. */
+const CHECKOUT_RESULT: TransactionResult = {
+  transaction: {
+    id: 1,
+    receipt_number: "TRX-20260905-0001",
+    user_id: KASIR.id,
+    total_amount: 6000,
+    subtotal_amount: 6000,
+    discount_amount: 0,
+    payment_method: "cash",
+    payment_amount: 50000,
+    change_amount: 44000,
+    status: "completed",
+    notes: null,
+    deleted_at: null,
+    deleted_by: null,
+    deleted_reason: null,
+    updated_at: null,
+    created_at: "2026-09-05 01:00:00",
+  },
+  items: [],
+  payment_breakdown: [],
 }
 
 function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
@@ -82,9 +101,12 @@ function scanIntoField(field: HTMLElement, barcode: string) {
   pressEnter(field, 1000 + barcode.length * 10 + 20)
 }
 
+let api: ApiMock
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockResolvedValue(null)
+  api = installApiMock({
+    "POST /transactions": CHECKOUT_RESULT,
+  })
   toastWarning.mockReset()
   useAuthStore.setState({ user: KASIR })
   useShiftStore.setState({ activeShift: null })
@@ -113,7 +135,7 @@ describe("payment dialog", () => {
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalled())
     expect(toastWarning.mock.lastCall![0]).toMatch(/Barcode terbaca di kolom nominal/)
-    expect(invoke).not.toHaveBeenCalledWith("checkout_transaction", expect.anything())
+    expect(api.callsFor("POST /transactions")).toHaveLength(0)
     // Nominal barcode dibuang, kasir tidak boleh menagih angka itu.
     expect(field).toHaveValue("")
   })
@@ -127,9 +149,14 @@ describe("payment dialog", () => {
     typeAmount(field, "50000", 1000)
     pressEnter(field, 3000)
 
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("checkout_transaction", expect.anything())
-    )
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+
+    // The cashier is the session, not a number in the payload.
+    const checkout = api.lastCall("POST /transactions")
+    expect(checkout?.body).not.toHaveProperty("user_id")
+    // The key belongs to the cart and is minted on the first attempt, so what
+    // can be held here is that one travelled at all — not which one.
+    expect(checkout?.headers.get("Idempotency-Key")).toBeTruthy()
   })
 
   it("blocks an implausible amount at the Bayar button", async () => {

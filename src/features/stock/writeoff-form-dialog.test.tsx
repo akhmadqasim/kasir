@@ -2,13 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { WriteoffFormDialog } from "./components/writeoff-form-dialog"
@@ -68,14 +63,16 @@ function setQuantity(value: string) {
   fireEvent.blur(input)
 }
 
+let api: ApiMock
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "search_products") return Promise.resolve(SEARCH_RESULTS)
-    if (command === "create_stock_writeoff") {
-      return Promise.resolve({ ...SEARCH_RESULTS.data[0], status: "approved", refundId: null })
-    }
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /products": SEARCH_RESULTS,
+    "POST /stock/writeoffs": {
+      ...SEARCH_RESULTS.data[0],
+      status: "approved",
+      refundId: null,
+    },
   })
   useAuthStore.setState({
     user: {
@@ -136,9 +133,12 @@ describe("formulir write-off", () => {
     fireEvent.click(screen.getByRole("button", { name: "Buat Write-off" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("create_stock_writeoff", {
-        input: { productId: 5, quantity: 2, reason: "damaged", notes: undefined },
-        callerId: 1,
+      // Endpoint stok memakai camelCase, mengikuti struct Rust-nya. Pencatatnya
+      // diambil dari sesi, jadi tidak ada lagi id pemanggil di badan permintaan.
+      expect(api.lastCall("POST /stock/writeoffs")?.body).toEqual({
+        productId: 5,
+        quantity: 2,
+        reason: "damaged",
       })
     })
   })
@@ -151,7 +151,7 @@ describe("formulir write-off", () => {
     fireEvent.click(screen.getByRole("button", { name: "Buat Write-off" }))
 
     expect(await screen.findByText("Pilih alasan write-off")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("create_stock_writeoff", expect.anything())
+    expect(api.callsFor("POST /stock/writeoffs")).toHaveLength(0)
   })
 
   it("mengosongkan produk lewat tombol hapus", async () => {

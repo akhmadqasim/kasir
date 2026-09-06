@@ -1,14 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import type { Shift } from "./types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "./hooks/use-shift-store"
@@ -37,13 +32,14 @@ const SHIFT: Shift = {
   status: "open",
 }
 
+let api: ApiMock
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "get_active_shift") return Promise.resolve(null)
-    if (command === "open_shift") return Promise.resolve(SHIFT)
-    if (command === "create_cash_flow") return Promise.resolve(null)
-    return Promise.resolve(null)
+  api = installApiMock({
+    // Membuka shift bertanya dulu apakah sudah ada yang terbuka; belum ada.
+    "GET /shifts/active": null,
+    "POST /shifts": SHIFT,
+    "POST /shifts/*/cash-flows": null,
   })
   useAuthStore.setState({ user: KASIR })
   useShiftStore.setState({ activeShift: null })
@@ -71,9 +67,8 @@ describe("dialog buka kasir", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mulai Shift" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("open_shift", {
-        input: { userId: 2, openingCash: 1_250_000 },
-      })
+      // Pemilik shift diambil dari sesi, jadi yang dikirim tinggal modal awalnya.
+      expect(api.lastCall("POST /shifts")?.body).toEqual({ openingCash: 1_250_000 })
     })
   })
 
@@ -84,9 +79,7 @@ describe("dialog buka kasir", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mulai Shift" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("open_shift", {
-        input: { userId: 2, openingCash: undefined },
-      })
+      expect(api.lastCall("POST /shifts")?.body).toEqual({})
     })
   })
 })
@@ -113,14 +106,13 @@ describe("dialog arus kas", () => {
     fireEvent.click(save)
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("create_cash_flow", {
-        input: {
-          shiftId: 9,
-          userId: 2,
-          flowType: "out",
-          amount: 25_000,
-          description: "Bayar supplier",
-        },
+      // Shift-nya ada di path, penulisnya di sesi; sisanya yang jadi badan.
+      const call = api.lastCall("POST /shifts/*/cash-flows")
+      expect(call?.path).toBe("/shifts/9/cash-flows")
+      expect(call?.body).toEqual({
+        flowType: "out",
+        amount: 25_000,
+        description: "Bayar supplier",
       })
     })
   })

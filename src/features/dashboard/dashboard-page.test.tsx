@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { formatRupiah } from "@/lib/format"
 import type {
   DailyRevenue,
@@ -12,12 +13,6 @@ import type {
   RecentTransaction,
   TopProduct,
 } from "./types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { DashboardPage } from "./components/dashboard-page"
@@ -98,24 +93,25 @@ function rupiah(amount: number): string {
   return formatRupiah(amount).split(String.fromCharCode(160)).join(" ")
 }
 
-/** Argumen `days` dari setiap panggilan `get_daily_revenue`, urut waktu. */
+let api: ApiMock
+
+/** Parameter `days` dari setiap `GET /dashboard/revenue/daily`, urut waktu. */
 function requestedDays(): number[] {
-  return invoke.mock.calls
-    .filter(([command]) => command === "get_daily_revenue")
-    .map(([, args]) => (args as { days: number }).days)
+  return api
+    .callsFor("GET /dashboard/revenue/daily")
+    .map((call) => Number(call.query.get("days")))
 }
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "get_dashboard_summary") return Promise.resolve(SUMMARY)
-    if (command === "get_daily_revenue") return Promise.resolve(DAILY_REVENUE)
-    if (command === "get_payment_method_stats") return Promise.resolve(PAYMENT_STATS)
-    if (command === "get_top_products") return Promise.resolve(TOP_PRODUCTS)
-    if (command === "get_low_stock_products") return Promise.resolve(LOW_STOCK)
-    if (command === "get_recent_transactions") return Promise.resolve(RECENT)
-    if (command === "get_active_shift") return Promise.resolve(null)
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /dashboard/summary": SUMMARY,
+    "GET /dashboard/revenue/daily": DAILY_REVENUE,
+    "GET /dashboard/payment-methods": PAYMENT_STATS,
+    "GET /dashboard/products/top": TOP_PRODUCTS,
+    "GET /dashboard/products/low-stock": LOW_STOCK,
+    "GET /dashboard/transactions/recent": RECENT,
+    // Aksi cepat menanyakan shift yang sedang terbuka; belum ada satu pun.
+    "GET /shifts/active": null,
   })
   useAuthStore.setState({
     user: {

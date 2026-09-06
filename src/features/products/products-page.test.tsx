@@ -2,14 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import type { Category, PaginatedProducts, Product } from "./types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -97,20 +92,23 @@ function openCategoryList() {
   fireEvent.click(screen.getByRole("button", { name: /Kategori$/ }))
 }
 
+let api: ApiMock
+
 function createdProductInput() {
-  const call = invoke.mock.calls.find(([command]) => command === "create_product")
-  return call?.[1]?.input as Record<string, unknown> | undefined
+  return api.lastCall("POST /products")?.body as Record<string, unknown> | undefined
 }
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "search_products") return Promise.resolve(PRODUCTS)
-    if (command === "list_categories") return Promise.resolve(CATEGORIES)
-    if (command === "get_popular_products") return Promise.resolve([])
-    if (command === "create_product") return Promise.resolve(PRODUCTS.data[0])
-    if (command === "delete_product") return Promise.resolve(null)
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /products": PRODUCTS,
+    "GET /products/popular": [],
+    "GET /categories": CATEGORIES,
+    "POST /products": PRODUCTS.data[0],
+    "DELETE /products/*": null,
+    "POST /categories": CATEGORIES[0],
+    "PUT /categories/*": CATEGORIES[0],
+    "DELETE /categories/*": null,
+    "POST /products/bulk": { imported: 1, updated: 0, skipped: 0, errors: [] },
   })
   useAuthStore.setState({ user: ADMIN })
 })
@@ -172,12 +170,32 @@ describe("halaman produk", () => {
 
     const confirm = await screen.findByRole("alertdialog")
     expect(within(confirm).getByText("Yakin ingin menghapus produk ini?")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("delete_product", expect.anything())
+    expect(api.callsFor("DELETE /products/*")).toHaveLength(0)
 
     fireEvent.click(within(confirm).getByRole("button", { name: "Hapus" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("delete_product", { id: 1, callerId: 1 })
+      expect(api.lastCall("DELETE /products/*")?.path).toBe("/products/1")
+    })
+  })
+
+  /**
+   * The full invalidation path, end to end: a save has to make the list refetch.
+   *
+   * This is the one that used to break silently. The list is cached under
+   * `["products","search",params]` and the create mutation invalidates
+   * `["products"]`; if either side drifts, nothing errors — the table simply
+   * keeps showing what it showed before the save.
+   */
+  it("memuat ulang daftar produk setelah produk baru disimpan", async () => {
+    const dialog = await openFilledForm()
+    const listCallsBefore = api.callsFor("GET /products").length
+
+    fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+    await vi.waitFor(() => expect(createdProductInput()).toBeDefined())
+    await vi.waitFor(() => {
+      expect(api.callsFor("GET /products").length).toBeGreaterThan(listCallsBefore)
     })
   })
 
@@ -190,12 +208,9 @@ describe("halaman produk", () => {
     fireEvent.click(grid.getByRole("columnheader", { name: /Nama Produk/ }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        "search_products",
-        expect.objectContaining({
-          params: expect.objectContaining({ sort_by: "name", sort_order: "asc" }),
-        })
-      )
+      const query = api.lastCall("GET /products")?.query
+      expect(query?.get("sort_by")).toBe("name")
+      expect(query?.get("sort_order")).toBe("asc")
     })
     expect(grid.getByRole("columnheader", { name: id.products.barcode })).not.toHaveAttribute(
       "aria-sort"
@@ -224,17 +239,14 @@ describe("halaman produk", () => {
     fireEvent.click(addButton)
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("create_category", {
-        name: "Minuman",
-        callerId: 1,
-      })
+      expect(api.lastCall("POST /categories")?.body).toEqual({ name: "Minuman" })
     })
 
     fireEvent.click(drawer.getByRole("button", { name: "Hapus Mie Instan" }))
 
     const confirm = await screen.findByRole("alertdialog")
     expect(within(confirm).getByText("Yakin ingin menghapus kategori ini?")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("delete_category", expect.anything())
+    expect(api.callsFor("DELETE /categories/*")).toHaveLength(0)
   })
 
   it("menyunting kategori di tempat: fokus langsung ke kolom, Enter menyimpan", async () => {
@@ -253,11 +265,9 @@ describe("halaman produk", () => {
     fireEvent.keyDown(field, { key: "Enter" })
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("update_category", {
-        id: 7,
-        name: "Mie & Bihun",
-        callerId: 1,
-      })
+      const call = api.lastCall("PUT /categories/*")
+      expect(call?.path).toBe("/categories/7")
+      expect(call?.body).toEqual({ id: 7, name: "Mie & Bihun" })
     })
   })
 

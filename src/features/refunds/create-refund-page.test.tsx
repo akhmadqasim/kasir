@@ -1,16 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 
+import { installApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import type { TransactionDetail, TransactionItem } from "@/features/transactions/types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { CreateRefundPage } from "./components/create-refund-page"
@@ -127,11 +122,9 @@ function exchangeTable() {
 }
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "get_transaction_detail") return Promise.resolve(DETAIL)
-    if (command === "search_products") return Promise.resolve(SEARCH_RESULTS)
-    return Promise.resolve(null)
+  installApiMock({
+    "GET /transactions/*": DETAIL,
+    "GET /products": SEARCH_RESULTS,
   })
   useAuthStore.setState({
     user: {

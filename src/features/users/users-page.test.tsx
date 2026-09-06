@@ -2,13 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { UsersPage } from "./components/users-page"
@@ -43,13 +38,16 @@ function usersTable() {
   return screen.getByRole("grid", { name: "Manajemen User" })
 }
 
+let api: ApiMock
+
+/** Panggilan aktivasi/penonaktifan; user yang dituju ada di URL-nya, bukan di body. */
+const TOGGLE_ACTIVE = "PATCH /users/*/active"
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "list_users") return Promise.resolve(USERS)
-    if (command === "toggle_user_active") return Promise.resolve(USERS[1])
-    if (command === "create_user") return Promise.resolve(USERS[1])
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /users": USERS,
+    [TOGGLE_ACTIVE]: USERS[1],
+    "POST /users": USERS[1],
   })
   useAuthStore.setState({ user: ADMIN })
 })
@@ -83,16 +81,14 @@ describe("halaman manajemen user", () => {
 
     const dialog = await screen.findByRole("alertdialog")
     expect(within(dialog).getByText("Yakin ingin menonaktifkan user ini?")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("toggle_user_active", expect.anything())
+    expect(api.callsFor(TOGGLE_ACTIVE)).toHaveLength(0)
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Nonaktifkan" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("toggle_user_active", {
-        userId: 2,
-        isActive: false,
-        currentUserId: 1,
-      })
+      const call = api.lastCall(TOGGLE_ACTIVE)
+      expect(call?.path).toBe("/users/2/active")
+      expect(call?.body).toEqual({ isActive: false })
     })
   })
 
@@ -112,7 +108,7 @@ describe("halaman manajemen user", () => {
     await vi.waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     )
-    expect(invoke).not.toHaveBeenCalledWith("toggle_user_active", expect.anything())
+    expect(api.callsFor(TOGGLE_ACTIVE)).toHaveLength(0)
   })
 
   it("mengaktifkan kembali user nonaktif tanpa konfirmasi", async () => {
@@ -122,11 +118,9 @@ describe("halaman manajemen user", () => {
     fireEvent.click(screen.getByRole("button", { name: "Aktifkan kasir02" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("toggle_user_active", {
-        userId: 3,
-        isActive: true,
-        currentUserId: 1,
-      })
+      const call = api.lastCall(TOGGLE_ACTIVE)
+      expect(call?.path).toBe("/users/3/active")
+      expect(call?.body).toEqual({ isActive: true })
     })
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
   })
@@ -147,7 +141,7 @@ describe("halaman manajemen user", () => {
 
     fireEvent.click(form.getByRole("button", { name: "Simpan" }))
     expect(await form.findByText("PIN tidak cocok")).toBeInTheDocument()
-    expect(invoke).not.toHaveBeenCalledWith("create_user", expect.anything())
+    expect(api.callsFor("POST /users")).toHaveLength(0)
 
     // React Aria memblokir submit berikutnya kalau field invalid memakai validasi
     // native, jadi form harus tetap bisa dikirim setelah errornya diperbaiki.
@@ -155,14 +149,11 @@ describe("halaman manajemen user", () => {
     fireEvent.click(form.getByRole("button", { name: "Simpan" }))
 
     await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("create_user", {
-        input: {
-          username: "kasir03",
-          fullName: "Kasir Tiga",
-          role: "kasir",
-          pin: "1234",
-        },
-        callerId: 1,
+      expect(api.lastCall("POST /users")?.body).toEqual({
+        username: "kasir03",
+        fullName: "Kasir Tiga",
+        role: "kasir",
+        pin: "1234",
       })
     })
   })

@@ -3,12 +3,6 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
-
 const toastError = vi.fn()
 
 vi.mock("@/lib/toast", () => ({
@@ -19,7 +13,8 @@ vi.mock("@/lib/toast", () => ({
   },
 }))
 
-import type { Product } from "@/features/products/types"
+import { installApiMock, type ApiCall, type ApiMock } from "@/test-utils/api-mock"
+import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "./hooks/use-cart-store"
 import { ProductSearchPanel } from "./components/product-search-panel"
 
@@ -89,32 +84,40 @@ function cartLines() {
   return useCartStore.getState().items
 }
 
+/** `GET /products/barcode/{barcode}` — the barcode is the last path segment. */
+function scannedBarcode(call: ApiCall): string {
+  return decodeURIComponent(call.path.split("/").pop() ?? "")
+}
+
+function searchResults(call: ApiCall): PaginatedProducts {
+  const query = (call.query.get("query") ?? "").toLowerCase()
+  return {
+    data: CATALOGUE.filter(
+      (item) =>
+        item.name.toLowerCase().includes(query) ||
+        (item.barcode ?? "").includes(query)
+    ),
+    total: CATALOGUE.length,
+    page: 1,
+    per_page: 50,
+    total_pages: 1,
+  }
+}
+
+let api: ApiMock
+
 beforeEach(() => {
   nowMs = 1_000_000
   vi.spyOn(Date, "now").mockImplementation(() => nowMs)
-  invoke.mockReset()
-  invoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-    if (command === "get_popular_products") return Promise.resolve([])
-    if (command === "search_products") {
-      const params = (args?.params ?? {}) as { query?: string }
-      const query = (params.query ?? "").toLowerCase()
-      return Promise.resolve({
-        data: CATALOGUE.filter(
-          (item) =>
-            item.name.toLowerCase().includes(query) ||
-            (item.barcode ?? "").includes(query)
-        ),
-        total: CATALOGUE.length,
-        page: 1,
-        per_page: 50,
-        total_pages: 1,
-      })
-    }
-    if (command === "get_product_by_barcode") {
-      const barcode = args?.barcode as string
-      return Promise.resolve(CATALOGUE.find((item) => item.barcode === barcode) ?? null)
-    }
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /products/popular": [],
+    "GET /products": searchResults,
+    // The handler answers `null` for a barcode it does not know, rather than 404.
+    "GET /products/barcode/*": (call) =>
+      CATALOGUE.find((item) => item.barcode === scannedBarcode(call)) ?? null,
+    // Fired for every line added from the search list, to teach the shortcut
+    // grid what sells. Nothing on this screen waits for its answer.
+    "POST /products/*/select": null,
   })
   toastError.mockReset()
   useCartStore.setState({
@@ -145,9 +148,9 @@ describe("product search panel", () => {
     await waitFor(() => expect(cartLines()).toHaveLength(1))
     expect(cartLines()[0].product_name).toBe("Indomie Goreng")
     expect(searchField()).toHaveValue("")
-    expect(invoke).toHaveBeenCalledWith("get_product_by_barcode", {
-      barcode: "8991234567890",
-    })
+    expect(api.lastCall("GET /products/barcode/*")?.path).toBe(
+      "/products/barcode/8991234567890"
+    )
   })
 
   it("adds the same product twice when it is scanned twice", async () => {

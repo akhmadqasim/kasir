@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(() => Promise.resolve(null)),
-}))
-
+import { installApiMock } from "@/test-utils/api-mock"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore, type HeldCart } from "./hooks/use-cart-store"
 import { CartPanel } from "./components/cart-panel"
@@ -62,6 +59,12 @@ function pressFunctionKey(key: string) {
 }
 
 beforeEach(() => {
+  // The panel reads the cart and the shift out of stores and asks the server for
+  // nothing on its own — the one request it can produce, a cash-flow entry, only
+  // leaves once that dialog is submitted. An empty route table therefore states
+  // the expectation rather than merely tolerating it: any request from this
+  // panel fails the test instead of quietly resolving to null.
+  installApiMock()
   resetStore()
   useShiftStore.setState({ activeShift: null })
 })

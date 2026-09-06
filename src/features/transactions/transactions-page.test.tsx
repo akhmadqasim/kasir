@@ -3,13 +3,8 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
-import type { PaginatedTransactions } from "./types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import type { PaginatedTransactions, TransactionDetail } from "./types"
 
 import { TransactionsPage } from "./components/transactions-page"
 
@@ -69,6 +64,41 @@ const PAGE: PaginatedTransactions = {
   total_pages: 3,
 }
 
+/**
+ * Isi dialog detail untuk transaksi pertama.
+ *
+ * Dulu detailnya cukup dibalas `null`; sekarang `GET /transactions/{id}` harus
+ * membalas bentuk yang utuh, karena badan kosong berarti 204 dan React Query
+ * menolak data `undefined`.
+ */
+const DETAIL: TransactionDetail = {
+  transaction: {
+    id: 1,
+    receipt_number: "TRX-20260905-0001",
+    user_id: 1,
+    total_amount: 25000,
+    subtotal_amount: 25000,
+    discount_amount: 0,
+    payment_method: "cash",
+    payment_amount: 25000,
+    change_amount: 0,
+    status: "completed",
+    notes: null,
+    deleted_at: null,
+    deleted_by: null,
+    deleted_reason: null,
+    updated_at: null,
+    created_at: "2026-09-05 03:00:00",
+  },
+  items: [],
+  cashier_name: "Ahmad",
+  has_ppob: false,
+  ppob_status: null,
+  ppob_message: null,
+  ppob_serial_number: null,
+  payment_breakdown: [{ payment_method: "cash", amount: 25000 }],
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -82,12 +112,19 @@ function renderPage() {
   )
 }
 
+let api: ApiMock
+
+/** Nomor halaman dari setiap `GET /transactions`, urut waktu. */
+function requestedPages(): number[] {
+  return api
+    .callsFor("GET /transactions")
+    .map((call) => Number(call.query.get("page")))
+}
+
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "list_transactions") return Promise.resolve(PAGE)
-    if (command === "get_transaction_detail") return Promise.resolve(null)
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /transactions": PAGE,
+    "GET /transactions/*": DETAIL,
   })
 })
 
@@ -140,9 +177,6 @@ describe("halaman riwayat transaksi", () => {
     fireEvent.click(next)
 
     await screen.findByText("TRX-20260905-0001")
-    const pages = invoke.mock.calls
-      .filter(([command]) => command === "list_transactions")
-      .map(([, args]) => (args as { input: { page: number } }).input.page)
-    expect(pages).toContain(2)
+    await vi.waitFor(() => expect(requestedPages()).toContain(2))
   })
 })

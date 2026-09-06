@@ -3,13 +3,8 @@ import { useState } from "react"
 import { act, render, screen, fireEvent } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
+import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
-
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
 
 import { ProductAutocomplete } from "./product-autocomplete"
 
@@ -88,15 +83,15 @@ async function settleDebounce() {
   })
 }
 
+let api: ApiMock
+
 function searchCallCount() {
-  return invoke.mock.calls.filter(([command]) => command === "search_products").length
+  return api.callsFor("GET /products").length
 }
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) => {
-    if (command === "search_products") return Promise.resolve(RESULTS)
-    return Promise.resolve(null)
+  api = installApiMock({
+    "GET /products": RESULTS,
   })
 })
 
@@ -117,6 +112,7 @@ describe("pencarian produk", () => {
     fireEvent.change(input, { target: { value: "beras" } })
     expect(await screen.findByRole("option", { name: /Beras Pandan Wangi/ })).toBeInTheDocument()
     expect(searchCallCount()).toBeGreaterThan(0)
+    expect(api.lastCall("GET /products")?.query.get("query")).toBe("beras")
   })
 
   it("mengembalikan produk yang dipilih dan menampilkannya di pemicu", async () => {

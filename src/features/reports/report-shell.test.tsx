@@ -1,14 +1,10 @@
 import type { ComponentType } from "react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Table } from "@heroui/react"
 
-const invoke = vi.fn()
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
-}))
+import { installApiMock, type ApiRoutes } from "@/test-utils/api-mock"
 
 import { ReportPage, ReportStatCard, ReportTable } from "./components/report-shell"
 import { CashFlowsPage } from "./components/cash-flows-page"
@@ -46,9 +42,13 @@ const DAILY_ROWS = [
   },
 ]
 
-const REPORT_DATA: Record<string, unknown> = {
-  report_sales_daily: DAILY_ROWS,
-  report_sales_monthly: [
+/**
+ * Satu rute per layar. Rute yang tidak terdaftar membuat permintaannya gagal,
+ * sama seperti perintah tak terduga dulu ditolak.
+ */
+const REPORT_ROUTES: ApiRoutes = {
+  "GET /reports/sales/daily": DAILY_ROWS,
+  "GET /reports/sales/monthly": [
     {
       month: "2026-09",
       transactionCount: 3,
@@ -57,7 +57,7 @@ const REPORT_DATA: Record<string, unknown> = {
       grossProfit: 50000,
     },
   ],
-  report_sales_period: {
+  "GET /reports/sales/period": {
     totalTransactions: 3,
     totalRevenue: 150000,
     totalCost: 100000,
@@ -65,7 +65,9 @@ const REPORT_DATA: Record<string, unknown> = {
     avgPerTransaction: 50000,
     dailyBreakdown: DAILY_ROWS,
   },
-  report_sales_receipt: {
+  // Struk yang sudah diretur ikut terdaftar sekarang, jadi tiap baris membawa
+  // nilai returnya sendiri dan nilai bersih yang benar-benar tinggal di laci.
+  "GET /reports/sales/receipts": {
     items: [
       {
         id: 1,
@@ -76,15 +78,29 @@ const REPORT_DATA: Record<string, unknown> = {
         status: "completed",
         itemCount: 2,
         createdAt: "2026-09-01 10:00:00",
+        refundAmount: 0,
+        netAmount: 50000,
+      },
+      {
+        id: 2,
+        receiptNumber: "TRX-20260901-0002",
+        cashierName: "Ani",
+        totalAmount: 25000,
+        paymentMethod: "qris",
+        status: "refunded",
+        itemCount: 1,
+        createdAt: "2026-09-01 13:00:00",
+        refundAmount: 25000,
+        netAmount: 0,
       },
     ],
-    totalCount: 1,
+    totalCount: 2,
   },
-  report_payment_methods: [
+  "GET /reports/payment-methods": [
     { paymentMethod: "cash", transactionCount: 2, totalAmount: 100000, percentage: 66.7 },
     { paymentMethod: "qris", transactionCount: 1, totalAmount: 50000, percentage: 33.3 },
   ],
-  report_product_sales: [
+  "GET /reports/products/sales": [
     {
       productId: 1,
       productName: "Gula Pasir",
@@ -96,7 +112,7 @@ const REPORT_DATA: Record<string, unknown> = {
       profit: 20000,
     },
   ],
-  report_popular_products: [
+  "GET /reports/products/popular": [
     {
       rank: 1,
       productId: 1,
@@ -106,7 +122,7 @@ const REPORT_DATA: Record<string, unknown> = {
       totalRevenue: 60000,
     },
   ],
-  report_returns: [
+  "GET /reports/returns": [
     {
       id: 1,
       refundNumber: "RFD-20260901-0001",
@@ -118,7 +134,7 @@ const REPORT_DATA: Record<string, unknown> = {
       createdAt: "2026-09-01 11:00:00",
     },
   ],
-  report_current_stock: {
+  "GET /reports/stock/current": {
     items: [
       {
         productId: 1,
@@ -135,7 +151,7 @@ const REPORT_DATA: Record<string, unknown> = {
     ],
     totalCount: 1,
   },
-  report_losses: {
+  "GET /reports/losses": {
     totalWriteoffs: 1,
     totalQuantity: 2,
     totalLossValue: 20000,
@@ -155,7 +171,7 @@ const REPORT_DATA: Record<string, unknown> = {
       },
     ],
   },
-  report_cash_flows: {
+  "GET /reports/cash-flows": {
     totalIn: 100000,
     totalOut: 40000,
     netTotal: 60000,
@@ -185,7 +201,8 @@ const REPORT_PAGES: ReportCase[] = [
   { Page: SalesDailyPage, title: "Penjualan per Hari", columns: 5, dataRows: 1 },
   { Page: SalesMonthlyPage, title: "Penjualan per Bulan", columns: 5, dataRows: 1 },
   { Page: SalesPeriodPage, title: "Penjualan per Periode", columns: 5, dataRows: 1 },
-  { Page: SalesReceiptPage, title: "Penjualan per Struk", columns: 7, dataRows: 1 },
+  // Tujuh kolom lama plus kolom Retur dan Bersih; dua struk, satu di antaranya diretur.
+  { Page: SalesReceiptPage, title: "Penjualan per Struk", columns: 9, dataRows: 2 },
   // Dua metode pembayaran plus baris total di kakinya.
   { Page: PaymentMethodsPage, title: "Jenis Pembayaran", columns: 4, dataRows: 3 },
   { Page: ProductSalesPage, title: "Penjualan Produk", columns: 7, dataRows: 1 },
@@ -197,12 +214,7 @@ const REPORT_PAGES: ReportCase[] = [
 ]
 
 beforeEach(() => {
-  invoke.mockReset()
-  invoke.mockImplementation((command: string) =>
-    command in REPORT_DATA
-      ? Promise.resolve(REPORT_DATA[command])
-      : Promise.reject(new Error(`perintah tak terduga: ${command}`))
-  )
+  installApiMock(REPORT_ROUTES)
 })
 
 /**
