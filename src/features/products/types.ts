@@ -81,3 +81,14 @@ export interface BulkImportResult {
   skipped: number
   errors: string[]
 }
+
+/**
+ * A row of the cashier's shortcut grid: a whole product plus how it got there.
+ *
+ * The server flattens the product into the same object rather than nesting it,
+ * so `id` is the product's id — there is no separate `product_id`.
+ */
+export interface ShortcutProduct extends Product {
+  is_pinned: boolean
+  select_count: number
+}
