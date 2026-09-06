@@ -17,12 +17,17 @@ Nomor migrasi berikutnya yang bebas: **023**.
 
 | Gerbang | Awal | Sekarang |
 |---|---|---|
-| `cargo test --lib` | 39 | 268 |
-| `bun run test` | 123 | 447 (40 berkas) |
+| `cargo test --lib` | 39 | 258 |
+| `bun run test` | 123 | 449 (40 berkas) |
 | `bunx tsc -b` | bersih | bersih |
 | `bun run lint` | 5 error, 2 warning | **0 error, 0 warning** |
 | `bun run build` | berhasil | berhasil |
-| `cargo clippy --lib` | 21 warning | 10 warning, semuanya pre-existing |
+| `cargo clippy --lib` | 21 warning | **0 warning** |
+| `cargo fmt --check` | — | bersih |
+
+`cargo test --lib` turun dari 268 ke 258 di P5: 8 test milik `utils/auth_guard.rs`
+dan 2 test milik `services::dashboard::weekly_stats` hilang bersama kode yang mereka
+uji, bukan karena regresi.
 
 Vitest dibatasi `maxWorkers: "50%"`. Satu worker per core membuat file test berebut CPU
 sampai `findBy*` kehabisan waktu, dan file yang gagal berpindah tiap run. Setengah core
@@ -36,52 +41,69 @@ justru lebih cepat karena tidak ada waktu terbuang untuk saling menunggu.
 | P1 | Ekstrak `domain/` + `services/` dari `commands/` | selesai |
 | P2 | axum, session server-side, seluruh route, static embed | selesai |
 | P3 | Frontend: API client, browser router, auth lewat `/me` | selesai |
-| P4 | Migrasi HeroUI per halaman | gelombang terakhir berjalan |
-| P5 | Pembersihan menyeluruh, dokumentasi, gerbang hijau serentak | belum |
-
-P3 selesai, jadi layer `commands/` dan 113 Tauri command sekarang bebas dihapus.
+| P4 | Migrasi HeroUI per halaman | selesai |
+| P5 | Pembersihan menyeluruh, dokumentasi, gerbang hijau serentak | selesai |
 
 ## Kondisi backend
 
 `services/` memegang seluruh business logic dan terbukti bersih dari `tauri` maupun
 `axum`. Seluruh API tersedia di `src-tauri/src/http/` dengan sesi server-side; identitas
-selalu datang dari cookie, tidak pernah dari isi request. `Actor::unverified` tinggal ada
-di `commands/`, dan hilang bersama layer itu.
+selalu datang dari cookie, tidak pernah dari isi request.
+
+Layer `commands/` dan seluruh Tauri command sudah dihapus di P5, bersama
+`Actor::unverified`, `utils/auth_guard.rs`, dan `tauri-plugin-dialog`. `Actor` sekarang
+hanya bisa dibangun dari sesi (`http::session`) atau, di test, lewat `Actor::new` yang
+di-gate `#[cfg(test)]`. Mode web bukan lagi opt-in: `run()` selalu menjalankan server
+axum lalu selalu mengarahkan jendela ke `http://127.0.0.1:<port>`; `KASIR_BIND=127.0.0.1`
+tetap tersedia sebagai jalan keluar untuk membatasi ke akses lokal saja.
+
+Penghapusan `commands/` menyeret beberapa kode mati yang tidak ada di daftar audit awal
+tapi baru mati setelah pemangkasan: `services::backup::stage_restore_from_file` (hanya
+dipakai `settings::import_database`, yang sendiri sudah mati dan ikut dihapus) dan
+`Actor::new` (satu-satunya pemanggil non-test adalah `Actor::unverified`).
 
 ## Kondisi frontend
 
 Tidak ada lagi `@tauri-apps` di `src/`. Satu klien `fetch` di `src/lib/api/client.ts`,
 satu modul bertipe per resource di sebelahnya, dan kunci query terstruktur di
 `src/lib/api/query-keys.ts`. `scripts/check-api-routes.mjs` mencocokkan setiap path yang
-dipanggil klien dengan tabel rute axum — saat ini **111 rute, 111 terpakai, nol selisih
-di kedua arah**.
+dipanggil klien dengan tabel rute axum — saat ini **112 rute, 112 terpakai, nol selisih
+di kedua arah** (naik dari 111 karena `GET /api/settings/ppob/markup`).
 
-Mode web masih opt-in lewat `KASIR_WEB_MODE=1` karena frontend belum memakai `fetch`.
-Menyalakannya sekarang memberi server yang jalan dan jendela kosong — berguna untuk
-menguji API dengan `curl`, belum untuk kasir.
+Mode web adalah satu-satunya mode. `bun run build` lalu build Rust menghasilkan
+`kasir.exe` yang langsung bisa dijalankan tanpa variabel lingkungan apa pun.
 
-## Sisa yang harus dikerjakan jalur frontend
+## Perbaikan P5
 
-Semua sudah diserap di P3: status PPOB `processing` dan retry khusus `failed`,
-`net_subtotal`, `payment_breakdown` tanpa baris tunai, `ShiftSummaryResponse.cashRefunds`,
-`ReceiptRow.refundAmount`/`netAmount` beserta struk `refunded` yang kini ikut tampil,
-`refunds.shift_id`, angka laporan yang bisa nol atau negatif, dan
-`GET /api/settings` yang hanya mengirim `has_credentials`.
+1. **Markup PPOB tidak terbaca kasir — diperbaiki.** `GET /api/settings/ppob/markup`
+   ditambahkan ke grup `session`, mengembalikan hanya `PpobMarkup` (tidak ada
+   `password`/`pin` di path mana pun). `PpobQuickAccess` sekarang memanggil endpoint ini,
+   bukan `GET /api/settings`. Diverifikasi lewat test router (`a_cashier_can_read_the_ppob_markup_but_not_the_credentials`,
+   `the_ppob_markup_route_requires_a_session`) dan lewat `curl` terhadap server yang benar-benar hidup.
+2. **`commands/` dan seluruh Tauri command — dihapus.**
+3. **`tauri-plugin-dialog` — dicabut**, dari `Cargo.toml`, `lib.rs`, dan
+   `capabilities/default.json` (`dialog:allow-save`, `dialog:allow-open`).
 
-## Yang masih ditunggu frontend dari jalur Rust
+## Verifikasi runtime (pertama kali aplikasi ini benar-benar dijalankan)
 
-1. **Markup PPOB tidak terbaca kasir.** `GET /api/settings` ada di grup `admin`, tapi
-   yang membutuhkannya adalah layar kasir: `PpobQuickAccess` memakai `ppob.markup` untuk
-   menghitung harga jual. Kasir kena 403 dan jatuh ke `DEFAULT_PPOB_MARKUP` — nol —
-   sehingga PPOB terjual seharga modal. Markup-nya bukan rahasia; yang rahasia adalah
-   password dan PIN, dan keduanya memang sudah tidak pernah dikirim. Perlu satu endpoint
-   di grup `session`, misal `GET /api/settings/ppob/markup`.
-2. **`commands/` dan 113 Tauri command** sudah tidak dipakai siapa pun di `src/` dan bisa
-   dihapus. `Actor::unverified` hilang bersamanya.
-3. **Plugin `tauri-plugin-dialog`** sudah tidak dipanggil frontend; sisi Rust-nya bisa
-   dicabut. `@tauri-apps/api` dan `@tauri-apps/plugin-dialog` sudah dilepas dari
-   `package.json`; `@tauri-apps/cli` tetap karena itu alat build yang dipakai
-   `scripts/release.ps1`.
+`bun run build` → `cargo build` → `kasir.exe` dijalankan dengan `KASIR_DATA_DIR` menunjuk
+ke folder kerja. Terhadap server hidup di `http://127.0.0.1:17720`, dengan `curl`:
+
+- Login dengan PIN salah → `401`, tanpa `Set-Cookie`. Login benar → `200` +
+  `Set-Cookie: kasir_session=...; HttpOnly; SameSite=Lax; Path=/`.
+- `GET /api/auth/me` → `200` dengan cookie, `401` tanpa cookie.
+- `POST` tanpa header `Origin`/`Referer` → `403 {"code":"csrf"}`.
+- Sesi kasir memanggil `/api/settings` atau `/api/users` (admin) → `403 forbidden`;
+  memanggil `/api/settings/ppob/markup` → `200`.
+- Path SPA yang tidak dikenal → `200` `index.html`; `/api/...` yang tidak dikenal →
+  `404 {"code":"not_found"}`.
+- `POST /api/transactions` dua kali dengan `Idempotency-Key` yang sama dan body yang
+  sama → transaksi pertama `201`, yang kedua `201` + header `Idempotency-Replayed: true`,
+  `id` dan `receipt_number` sama persis, dan `GET /api/transactions` menunjukkan hanya
+  satu baris.
+- Penjadwal backup berjalan sejak start-up (buktinya: `data/backups/*.db.gz` muncul
+  otomatis tanpa dipicu klien mana pun) — mengonfirmasi pemindahan pemanggilan
+  `run_scheduler` ke `lib.rs` tidak diam-diam berhenti bekerja.
 
 ## Keputusan yang sudah diambil dan alasannya
 
@@ -129,23 +151,21 @@ baris lama, karena `discount_amount` mencampur keduanya tanpa jejak pembagiannya
 dengan menjumlahkan balik dari `exchange_items`; menuliskannya sebagai penjualan sungguhan
 adalah keputusan produk yang belum diambil.
 
-**Verifikasi visual belum pernah dilakukan.** Ekstensi Chrome meminta manusia memilih di
-antara dua browser yang terhubung, jadi tidak ada agen yang bisa membuka layarnya sendiri.
-Semua bukti sejauh ini berasal dari test, bukan dari mata.
-
-**Aplikasi belum pernah dijalankan dengan frontend baru.** Tidak ada `kasir.exe` hasil
-build sesudah P1: `src-tauri/target` hanya berisi `kasir_lib` dari `cargo test --lib`, dan
-biner di checkout `master` bertanggal 23 Juni — jauh sebelum ada HTTP server. Jalur
-frontend tidak boleh menjalankan `cargo`, jadi P3 diverifikasi lewat empat gerbangnya
-plus `scripts/check-api-routes.mjs`, bukan lewat `curl` ke server yang hidup. Sekali
-jalur Rust menghasilkan biner, `KASIR_WEB_MODE=1` sudah cukup untuk membukanya di
-`http://127.0.0.1:17720`.
+**Verifikasi visual belum pernah dilakukan.** P5 membuktikan `kasir.exe` hidup dan
+menjawab benar lewat HTTP end-to-end (lihat "Verifikasi runtime" di atas: login, sesi,
+CSRF, role, fallback SPA, idempotency, semuanya lewat `curl` terhadap server yang
+sungguhan jalan) — tapi itu belum sama dengan membuka jendela desktopnya dan memakai
+layar kasir dengan mouse dan keyboard. Ekstensi Chrome untuk verifikasi visual meminta
+manusia memilih di antara dua browser yang terhubung, jadi tidak ada agen yang bisa
+membuka layarnya sendiri; bukti visual masih menunggu.
 
 ## Koreksi terhadap dokumen lain
 
 `CLAUDE.md` menulis "Selisih positif → pelanggan bayar", padahal kodenya menghitung
 `total_refund_amount - total_exchange_amount` sehingga selisih positif berarti toko yang
-membayar. Kodenya konsisten dan sudah dikunci test; **dokumennya yang terbalik**, dan
-diperbaiki di P5.
+membayar. Kodenya konsisten dan sudah dikunci test; **dokumennya yang terbalik**. Belum
+diperbaiki — di luar cakupan gelombang P5 ini (fokusnya bug markup PPOB, penghapusan
+`commands/`, dan mode web default), jadi masih menunggu gelombang berikutnya.
 
-Jumlah Tauri command yang benar adalah **113** setelah `create_transaction` dicabut.
+Jumlah Tauri command yang benar adalah **113** setelah `create_transaction` dicabut, dan
+sekarang **0** setelah P5 menghapus seluruh layer `commands/`.

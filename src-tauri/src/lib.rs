@@ -14,23 +14,6 @@ use std::sync::Arc;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
 
-/// Set `KASIR_WEB_MODE=1` to run the embedded HTTP server and point the desktop
-/// window at it.
-///
-/// Off by default, and that default is load-bearing for now: the frontend still
-/// talks to the Tauri commands, and it would find none of them behind an
-/// `http://127.0.0.1` origin. Turning the flag on before the frontend has moved
-/// to `fetch` gives you a working server and a blank window. The switch flips
-/// for good in the phase that rewrites the frontend's transport; until then this
-/// is how the HTTP surface is exercised against a real database.
-const WEB_MODE_ENV: &str = "KASIR_WEB_MODE";
-
-fn web_mode_enabled() -> bool {
-    std::env::var(WEB_MODE_ENV)
-        .map(|value| value.trim() == "1")
-        .unwrap_or(false)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_dir = utils::paths::get_data_dir();
@@ -90,9 +73,10 @@ pub fn run() {
 
     // The HTTP server is started before the Tauri builder because the window's
     // URL depends on the port it actually got, and the port is only known once
-    // the listener is bound.
+    // the listener is bound. There is no longer a window path that does not
+    // need it: the frontend speaks nothing but `fetch` to `/api`.
     let http_server = start_http_server(&database, &mitra_client, &backup_scheduler);
-    let http_port = http_server.as_ref().map(|server| server.port);
+    let http_port = http_server.port;
 
     let backup_scheduler_clone = backup_scheduler.clone();
     #[allow(unused_mut)]
@@ -116,31 +100,22 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    if let Some(server) = http_server {
-        server.shutdown();
-    }
+    http_server.shutdown();
 
     utils::logging::log_startup("App shutdown");
 }
 
-/// Bind the embedded HTTP server, or `None` when web mode is off.
+/// Bind the embedded HTTP server. The window has nothing to load without it,
+/// so this always runs — there is no longer an opt-in flag.
 ///
-/// A failure here aborts the launch on purpose. Web mode is opt-in, so if it was
-/// asked for and could not be provided, carrying on would silently produce a
-/// desktop-only app that the LAN clients cannot reach — a much harder thing to
-/// notice than a refusal to start.
+/// A failure here aborts the launch on purpose: carrying on would produce a
+/// window pointed at a server that is not there, which is a much harder thing
+/// to notice than a refusal to start.
 fn start_http_server(
     database: &sea_orm::DatabaseConnection,
     mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
     backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
-) -> Option<http::ServerHandle> {
-    if !web_mode_enabled() {
-        utils::logging::log_startup(&format!(
-            "HTTP server disabled (set {WEB_MODE_ENV}=1 to enable web mode)"
-        ));
-        return None;
-    }
-
+) -> http::ServerHandle {
     // Pay for the login timing-equaliser's one-off bcrypt hash now, so the first
     // login attempt against an unknown username is not the request that pays it.
     services::auth::warm_password_verifier();
@@ -148,7 +123,7 @@ fn start_http_server(
     let state = http::AppState::new(database.clone(), http::ServerConfig::from_env())
         .sharing(mitra_client.clone(), backup_scheduler.clone());
     match tauri::async_runtime::block_on(http::start(state)) {
-        Ok(server) => Some(server),
+        Ok(server) => server,
         Err(e) => {
             let msg = format!("Failed to start the HTTP server: {e}");
             utils::logging::log_error(&msg);
@@ -158,23 +133,16 @@ fn start_http_server(
     }
 }
 
-/// Create the one window the app has.
+/// Create the one window the app has, pointed at the embedded server.
 ///
-/// It is built here rather than declared in `tauri.conf.json` because in web
-/// mode its URL contains the port the server just bound, which no static config
-/// can know. With web mode off the window loads the bundled frontend exactly as
-/// the removed config block did, so the Tauri commands keep working untouched.
-fn build_main_window(app: &tauri::App, http_port: Option<u16>) -> tauri::Result<()> {
-    let url = match http_port {
-        Some(port) => {
-            let origin = format!("http://127.0.0.1:{port}");
-            utils::logging::log_startup(&format!("Window will load {origin}"));
-            WebviewUrl::External(origin.parse().expect("a bound port makes a valid URL"))
-        }
-        // Must stay "index.html": the label `main` and this entry point are what
-        // `capabilities/default.json` grants permissions to.
-        None => WebviewUrl::App("index.html".into()),
-    };
+/// It is built here rather than declared in `tauri.conf.json` because its URL
+/// contains the port the server just bound, which no static config can know
+/// ahead of time — the default port is tried first, but a busy machine walks
+/// up to the next one.
+fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
+    let origin = format!("http://127.0.0.1:{http_port}");
+    utils::logging::log_startup(&format!("Window will load {origin}"));
+    let url = WebviewUrl::External(origin.parse().expect("a bound port makes a valid URL"));
 
     WebviewWindowBuilder::new(app, "main", url)
         .title("POS Toko Sembako")

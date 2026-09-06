@@ -21,27 +21,27 @@ persis sama.
      tablet kasir              PC kantor
 ```
 
-## Status: mode web masih opt-in
+## Status: mode web selalu aktif
 
-> Frontend sudah sepenuhnya memakai `fetch` ke `/api`; tidak ada Tauri command
-> yang tersisa di sisi browser. Yang masih menahan mode web sebagai opt-in
-> adalah lapisan `commands/` di sisi Rust, yang dihapus setelah fase ini.
->
-> Set `KASIR_WEB_MODE=1` untuk menyalakan server sekaligus mengarahkan jendela
-> desktop ke `http://127.0.0.1:<port>`. Tanpa variabel itu jendela memuat aset
-> bawaan dan tidak ada server yang jalan, jadi aplikasinya tidak punya API untuk
-> dipanggil.
->
-> Untuk `bun run dev`, SPA disajikan di `http://localhost:5173` dan Vite
-> mem-proxy `/api` ke `127.0.0.1:17720`. Origin yang sampai ke server tetap
-> `http://localhost:5173`, jadi jalankan aplikasinya dengan
-> `KASIR_ALLOWED_ORIGINS=http://localhost:5173` supaya request pengubah data
-> tidak tertolak oleh Origin check.
+Frontend memakai `fetch` ke `/api` untuk semuanya; tidak ada Tauri command yang
+tersisa, baik di sisi browser maupun di sisi Rust — lapisan `commands/` sudah
+dihapus. Karena itu server dan jendela desktop tidak lagi punya jalur terpisah:
+`kasir.exe` selalu menjalankan server, lalu jendela selalu memuat
+`http://127.0.0.1:<port>`. Tidak ada variabel yang perlu diset untuk
+menyalakannya.
+
+Untuk `bun run dev`, SPA disajikan di `http://localhost:5173` dan Vite
+mem-proxy `/api` ke `127.0.0.1:17720`. Origin yang sampai ke server tetap
+`http://localhost:5173`, jadi jalankan aplikasinya dengan
+`KASIR_ALLOWED_ORIGINS=http://localhost:5173` supaya request pengubah data
+tidak tertolak oleh Origin check.
 
 ## Menjalankan
 
-1. Jalankan `kasir.exe` di PC kasir dengan `KASIR_WEB_MODE=1`. Server ikut hidup
-   bersama aplikasi dan mati bersama aplikasi.
+1. Jalankan `kasir.exe` di PC kasir. Server ikut hidup bersama aplikasi dan mati
+   bersama aplikasi — tidak ada langkah tambahan untuk menyalakannya. Set
+   `KASIR_BIND=127.0.0.1` bila PC ini tidak boleh diakses dari LAN sama sekali
+   (lihat tabel variabel di bawah).
 2. Port default **17720**. Kalau terpakai, aplikasi mencoba 17721 sampai 17729 dan
    menulis port final ke `data/logs/startup.log`.
 3. Pasang nginx di PC yang sama (atau PC lain di LAN yang bisa menjangkau port itu),
@@ -51,7 +51,6 @@ persis sama.
 
 | Variabel | Default | Guna |
 |---|---|---|
-| `KASIR_WEB_MODE` | tidak aktif | Set `1` untuk menjalankan HTTP server dan mengarahkan jendela desktop ke server itu |
 | `KASIR_PORT` | `17720` | Port pertama yang dicoba HTTP server |
 | `KASIR_BIND` | `0.0.0.0` | Set ke `127.0.0.1` bila hanya ingin akses lokal |
 | `KASIR_TRUST_PROXY` | tidak aktif | Set `1` hanya bila di belakang nginx. Mengaktifkan pembacaan `X-Forwarded-For`, `X-Forwarded-Proto`, dan `X-Forwarded-Host` |

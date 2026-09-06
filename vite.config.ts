@@ -20,9 +20,9 @@ export default defineConfig({
      * `changeOrigin` stays off deliberately: rewriting the `Host` header would
      * make the server expect an `Origin` of `127.0.0.1:17720` and reject every
      * write. Run the app with
-     * `KASIR_WEB_MODE=1 KASIR_ALLOWED_ORIGINS=http://localhost:5173` to let the
-     * dev server's origin through. A production build needs none of this: it is
-     * served by the same process as the API.
+     * `KASIR_ALLOWED_ORIGINS=http://localhost:5173` to let the dev server's
+     * origin through. A production build needs none of this: it is served by
+     * the same process as the API.
      */
     proxy: {
       "/api": {
