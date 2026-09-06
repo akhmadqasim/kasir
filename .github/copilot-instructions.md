@@ -2,7 +2,7 @@
 
 ## Project Context
 
-This is a **Point of Sale (POS)** desktop application for a grocery store (toko sembako) in Indonesia. Built with **Tauri v2 + React + TypeScript + shadcn/ui + SQLite**.
+This is a **Point of Sale (POS)** desktop application for a grocery store (toko sembako) in Indonesia. Built with **Tauri v2 + axum + React + TypeScript + HeroUI + SQLite**.
 
 Key characteristics:
 - Single terminal, local-first, offline-capable
@@ -12,11 +12,11 @@ Key characteristics:
 
 ## Tech Stack
 
-- **Desktop framework**: Tauri v2 (Rust backend + webview)
-- **Frontend**: React 18 + TypeScript (strict mode)
-- **UI**: shadcn/ui + Tailwind CSS
-- **State**: Zustand (per-feature stores)
-- **Database**: SQLite via rusqlite (Rust-side)
+- **Desktop framework**: Tauri v2 — the Rust backend runs an embedded axum HTTP API under `/api`; the window loads `http://127.0.0.1:<port>`. No Tauri IPC commands.
+- **Frontend**: React 19 + TypeScript (strict mode)
+- **UI**: HeroUI v3 + Tailwind CSS v4 (only `src/components/ui/chart.tsx` remains from shadcn/ui, as a recharts wrapper)
+- **State**: Zustand (per-feature stores) + TanStack Query
+- **Database**: SQLite via `sea-orm` (`sqlx-sqlite` backend); `rusqlite` for the backup reader only
 - **i18n**: Indonesian (primary), English (later)
 - **Package manager**: Bun
 
@@ -29,15 +29,17 @@ Key characteristics:
 - No `any` — use proper types
 - Prefer `const` over `let`
 - Destructure props and state
-- Use shadcn/ui components as base — do not create custom primitives
+- Use HeroUI v3 components as base — do not create custom primitives
 - Tailwind CSS for all styling
+- Talk to the backend through `src/lib/api/` (`fetch`-based client) — there is no Tauri `invoke`
 
 ### Rust
-- Tauri commands as the IPC API layer
-- All SQL queries in `src-tauri/src/db/` module
-- Use `serde::{Serialize, Deserialize}` for all command return types
+- axum HTTP routes under `src-tauri/src/http/routes/` as the API layer — no Tauri commands
+- Identity comes from the server-side session cookie (`http::session`), never from the request body
+- DB queries live in `src-tauri/src/services/`, built on `sea-orm` entities (`src-tauri/src/entity/`)
+- Use `serde::{Serialize, Deserialize}` for all response types
 - Error handling with `thiserror` crate
-- Return `Result<T, AppError>` from all commands
+- Return `Result<T, AppError>` from all services/handlers
 
 ### Naming
 - Code identifiers: **English** (variables, functions, types, database columns)
@@ -93,6 +95,6 @@ Key characteristics:
 - Do not use default exports (except page components)
 - Do not use `any` type in TypeScript
 - Do not store raw PINs (always hash with bcrypt)
-- Do not put SQL queries in frontend code (all DB access through Tauri commands)
+- Do not put SQL queries in frontend code (all DB access goes through the HTTP API)
 - Do not hardcode store information (comes from onboarding/settings)
 - Do not use Indonesian for code identifiers (only for UI strings)

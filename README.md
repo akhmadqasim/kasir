@@ -4,9 +4,9 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 
 ## Tech Stack
 
-- **Framework**: [Tauri v2](https://v2.tauri.app/) (Rust backend + webview frontend)
+- **Framework**: [Tauri v2](https://v2.tauri.app/) — the Rust backend runs an embedded axum HTTP API under `/api`; the window just loads `http://127.0.0.1:<port>`. There are no Tauri IPC commands.
 - **Frontend**: React 19 + TypeScript (strict mode)
-- **UI**: [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4
+- **UI**: [HeroUI v3](https://www.heroui.com/) + Tailwind CSS v4 (only `src/components/ui/chart.tsx` survives from shadcn/ui, as a recharts wrapper)
 - **State**: Zustand + TanStack Query
 - **Database**: SQLite via [sea-orm](https://www.sea-ql.org/SeaORM/) / sqlx-sqlite (WAL mode); `rusqlite` for the backup reader
 - **Package Manager**: Bun
@@ -24,10 +24,12 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 # Install dependencies
 bun install
 
-# Start development (frontend + Tauri)
-bun run tauri dev
+# Start development (frontend + Tauri). KASIR_ALLOWED_ORIGINS lets the Vite
+# dev server's origin (localhost:5173) pass the server's CSRF check — see
+# deploy/README.md.
+KASIR_ALLOWED_ORIGINS=http://localhost:5173 bun run tauri dev
 
-# Run frontend only
+# Run frontend only (talks to a server already running on 127.0.0.1:17720)
 bun run dev
 
 # Run tests
@@ -67,7 +69,7 @@ land in `src-tauri/target/release/bundle/{msi,nsis}/` and are currently
 ```
 src/                    # Frontend (React + TypeScript)
 ├── app/                # App entry, router, providers
-├── components/ui/      # shadcn/ui components
+├── components/ui/      # chart.tsx — the one non-HeroUI wrapper (recharts needs it)
 ├── features/           # Feature modules
 │   ├── auth/           # Login, session
 │   ├── cashier/        # POS terminal
@@ -81,12 +83,16 @@ src/                    # Frontend (React + TypeScript)
 │   └── settings/       # App settings
 ├── hooks/              # Shared hooks
 ├── lib/                # Utilities, constants, types
+│   └── api/            # fetch client + one typed module per resource
 └── i18n/               # Translations
 
 src-tauri/              # Backend (Rust)
 ├── src/
-│   ├── commands/       # Tauri IPC commands
-│   ├── db/             # Database, migrations, models
+│   ├── domain/         # Core types (Actor, business entities)
+│   ├── entity/         # sea-orm entities
+│   ├── services/       # Business logic + DB queries — no tauri or axum here
+│   ├── http/           # axum router, routes/, session, CSRF, idempotency
+│   ├── db/             # DB setup + migration runner
 │   ├── printing/       # ESC/POS thermal printer
 │   └── utils/          # Error handling, helpers
 └── migrations/         # SQL migration files
