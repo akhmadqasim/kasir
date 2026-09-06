@@ -7,12 +7,14 @@ import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { getTodayRange, type DateRange } from "@/lib/date-range"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { listRefunds } from "@/lib/api/refunds"
+import { queryKeys } from "@/lib/api/query-keys"
 import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
 import { id } from "@/i18n/id"
 import { differenceToneClass, refundTypeLabel, refundTypeVariant } from "../labels"
 import { RefundDetailDialog } from "./refund-detail-dialog"
-import type { ListRefundsResult } from "../types"
+import type { ListRefundsInput, ListRefundsResult } from "../types"
 
 /** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
 const ALL = "all"
@@ -31,20 +33,17 @@ export function RefundsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailRefundId, setDetailRefundId] = useState<number | null>(null)
 
-  const queryArgs = useMemo(() => ({
-    input: {
-      page,
-      per_page: 50,
-      refund_type: typeFilter || undefined,
-      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
-    },
+  const queryParams = useMemo<ListRefundsInput>(() => ({
+    page,
+    per_page: 50,
+    refund_type: typeFilter || undefined,
+    date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+    date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
   }), [page, typeFilter, dateRange])
 
-  const { data, isLoading, error } = useTauriQuery<ListRefundsResult>(
-    "list_refunds",
-    queryArgs,
-    { enabled: true }
+  const { data, isLoading, error } = useApiQuery<ListRefundsResult>(
+    queryKeys.refunds.list(queryParams),
+    () => listRefunds(queryParams)
   )
 
   const resetFilters = useCallback(() => {

@@ -41,7 +41,7 @@ function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void
     setIsSubmitting(true)
     try {
       const cash = openingCash ? Number(openingCash) : undefined
-      const { shift, alreadyOpen } = await openShift(user.id, cash)
+      const { shift, alreadyOpen } = await openShift(cash)
       if (alreadyOpen) {
         // The backend hands back the running shift instead of opening a new one,
         // and the modal awal typed in here is never stored. Say so.

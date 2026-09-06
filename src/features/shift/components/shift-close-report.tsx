@@ -44,6 +44,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
     cashFlows,
     cashIn,
     cashOut,
+    cashRefunds,
     expectedCash,
   } = summary
   const closingCash = shift.closingCash ?? 0
@@ -206,6 +207,17 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                 <div className="flex justify-between">
                   <span className="text-muted">Inputan Kasir</span>
                   <span className="font-medium tabular-nums">{formatRupiah(closingCash)}</span>
+                </div>
+              )}
+              {/* Retur tunai sudah dipotong dari `expectedCash`. Ditulis
+                  sendiri supaya saldo aplikasi yang lebih kecil dari penjualan
+                  punya penjelasan di halaman yang sama. */}
+              {cashRefunds > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted">Retur Tunai</span>
+                  <span className="font-medium tabular-nums text-danger">
+                    {signedRupiah(-cashRefunds)}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between">

@@ -121,22 +121,13 @@ export function StockWriteoffPage() {
 
     switch (type) {
       case "approve":
-        approveWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        approveWriteoff.mutate(writeoff.id, { onSettled })
         break
       case "reject":
-        rejectWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        rejectWriteoff.mutate(writeoff.id, { onSettled })
         break
       case "delete":
-        deleteWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        deleteWriteoff.mutate(writeoff.id, { onSettled })
         break
     }
   }

@@ -80,13 +80,10 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
 
     createWriteoff.mutate(
       {
-        input: {
-          productId: selectedProduct.id,
-          quantity,
-          reason,
-          notes: notes.trim() || undefined,
-        },
-        callerId: user.id,
+        productId: selectedProduct.id,
+        quantity,
+        reason,
+        notes: notes.trim() || undefined,
       },
       { onSuccess: () => onOpenChange(false) }
     )

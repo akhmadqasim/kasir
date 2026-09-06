@@ -1,6 +1,5 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { invoke } from "@tauri-apps/api/core"
 import {
   Button,
   Form,
@@ -14,10 +13,9 @@ import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { createCashFlow } from "@/lib/api/shifts"
 import { useShiftStore } from "../hooks/use-shift-store"
 import { groupDigits, toDigits } from "../utils"
-import type { CashFlow } from "../types"
 
 interface CashFlowDialogProps {
   open: boolean
@@ -44,7 +42,6 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const [description, setDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const activeShift = useShiftStore((s) => s.activeShift)
-  const user = useAuthStore((s) => s.user)
 
   const numericAmount = Number(amount) || 0
   const canSubmit =
@@ -55,17 +52,14 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!canSubmit || !activeShift || !user) return
+    if (!canSubmit || !activeShift) return
     setIsSubmitting(true)
     try {
-      await invoke<CashFlow>("create_cash_flow", {
-        input: {
-          shiftId: activeShift.id,
-          userId: user.id,
-          flowType,
-          amount: numericAmount,
-          description: description.trim(),
-        },
+      await createCashFlow({
+        shiftId: activeShift.id,
+        flowType,
+        amount: numericAmount,
+        description: description.trim(),
       })
       const label = flowType === "in" ? "Uang masuk" : "Uang keluar"
       toast.success(`${label} ${formatRupiah(numericAmount)} tercatat`)

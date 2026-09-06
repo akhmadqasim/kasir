@@ -1,7 +1,9 @@
 import { Button, Modal, Separator, Skeleton, Table } from "@heroui/react"
 
 import { StatusBadge } from "@/components/status-badge"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { getRefundDetail } from "@/lib/api/refunds"
+import { queryKeys } from "@/lib/api/query-keys"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import {
@@ -18,9 +20,9 @@ interface RefundDetailDialogProps {
 }
 
 export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProps) {
-  const { data: detail, isLoading } = useTauriQuery<RefundDetailResult>(
-    "get_refund_detail",
-    { refundId },
+  const { data: detail, isLoading } = useApiQuery<RefundDetailResult>(
+    queryKeys.refunds.detail(refundId ?? 0),
+    () => getRefundDetail(refundId!),
     { enabled: !!refundId }
   )
 

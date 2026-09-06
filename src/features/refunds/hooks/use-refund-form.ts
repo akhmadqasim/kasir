@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { invoke } from "@tauri-apps/api/core"
 import { useQueryClient } from "@tanstack/react-query"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { useApiQuery } from "@/hooks/use-api"
+import { createRefund } from "@/lib/api/refunds"
+import { getTransactionDetail } from "@/lib/api/transactions"
+import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import { netAmountForQuantity } from "@/features/transactions/line-amounts"
 import { refundBlockedReason } from "@/features/transactions/refund-window"
@@ -13,7 +15,7 @@ import {
   type RemainingQuantityLimit,
 } from "../refund-limits"
 import type { Product } from "@/features/products/types"
-import type { CreateRefundInput, RefundResult } from "../types"
+import type { CreateRefundInput } from "../types"
 
 export type Condition = "good" | "damaged" | "expired"
 export type ActionType = "refund" | "exchange"
@@ -46,6 +48,7 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 interface UseRefundFormOptions {
   transactionId: number | null
+  /** Only used to keep the form disabled until the session has resolved. */
   userId: number | null
   onSuccess?: () => void
 }
@@ -59,9 +62,9 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const [actionType, setActionTypeRaw] = useState<ActionType>("refund")
   const [exchangeItems, setExchangeItems] = useState<ExchangeItem[]>([])
 
-  const { data: detail, isLoading } = useTauriQuery<TransactionDetail>(
-    "get_transaction_detail",
-    { transactionId: Number(transactionId) },
+  const { data: detail, isLoading } = useApiQuery<TransactionDetail>(
+    queryKeys.transactions.detail(Number(transactionId)),
+    () => getTransactionDetail(Number(transactionId)),
     { enabled: !!transactionId }
   )
 
@@ -226,7 +229,6 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     try {
       const refundInput: CreateRefundInput = {
         transaction_id: Number(transactionId),
-        user_id: userId,
         reason: reason || undefined,
         items: selectedItems.map((item) => ({
           transaction_item_id: item.id,
@@ -238,10 +240,15 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
           : undefined,
       }
 
-      await invoke<RefundResult>("create_refund", { input: refundInput })
-      queryClient.invalidateQueries({ queryKey: ["list_transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["list_refunds"] })
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
+      await createRefund(refundInput)
+      // A return moves the sale's status, the refund list, stock, and — because
+      // report figures are net of refunds — every report and dashboard panel.
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.refunds.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
       toast.success(actionType === "exchange" ? id.refund.exchangeSuccess : id.refund.refundSuccess)
       onSuccess?.()
     } catch (e) {

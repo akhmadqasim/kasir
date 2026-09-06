@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import { invoke } from "@tauri-apps/api/core"
 import {
   AlertDialog,
   Button,
@@ -28,6 +27,9 @@ import {
 import { StatusBadge } from "@/components/status-badge"
 import { getDefaultRouteForRole } from "@/app/resume-route"
 import { useAuthStore } from "@/features/auth"
+import { useLogout } from "@/features/auth/hooks/use-auth"
+import * as shiftsApi from "@/lib/api/shifts"
+import { getStoreInfo } from "@/lib/api/settings"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
 import { toast } from "@/lib/toast"
@@ -45,6 +47,7 @@ type CloseStep = "idle" | "review" | "final"
 export function CloseShiftPage() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const logout = useLogout()
   const [closingCash, setClosingCash] = useState("")
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -59,15 +62,14 @@ export function CloseShiftPage() {
   const clearShift = useShiftStore((s) => s.clearShift)
 
   useEffect(() => {
-    invoke<{ name: string } | null>("get_store_info")
+    getStoreInfo()
       .then((info) => { if (info) setStoreName(info.name) })
       .catch(() => {})
   }, [])
 
   const loadSummary = useCallback(async () => {
     if (!activeShift) return
-    const s = await invoke<ShiftSummary>("get_shift_summary", { shiftId: activeShift.id })
-    setSummary(s)
+    setSummary(await shiftsApi.getShiftSummary(activeShift.id))
   }, [activeShift])
 
   useEffect(() => {
@@ -92,10 +94,7 @@ export function CloseShiftPage() {
 
     setIsDeletingCashFlow(true)
     try {
-      await invoke("delete_cash_flow", {
-        cashFlowId: cashFlowToDelete.id,
-        callerId: user.id,
-      })
+      await shiftsApi.deleteCashFlow(cashFlowToDelete.id)
       await loadSummary()
       toast.success("Arus kas berhasil dihapus")
       setCashFlowToDelete(null)
@@ -110,12 +109,9 @@ export function CloseShiftPage() {
     if (!activeShift) return
     setIsSubmitting(true)
     try {
-      const result = await invoke<ShiftSummary>("close_shift", {
-        input: {
-          shiftId: activeShift.id,
-          closingCash: closingCash ? Number(closingCash) : undefined,
-          notes: notes.trim() || undefined,
-        },
+      const result = await shiftsApi.closeShift(activeShift.id, {
+        closingCash: closingCash ? Number(closingCash) : undefined,
+        notes: notes.trim() || undefined,
       })
       clearShift()
       toast.success("Shift ditutup")
@@ -161,8 +157,9 @@ export function CloseShiftPage() {
           navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })
         }
         onLogout={() => {
-          useAuthStore.getState().logout()
-          navigate("/login", { replace: true })
+          logout.mutate(undefined, {
+            onSettled: () => navigate("/login", { replace: true }),
+          })
         }}
       />
     )
@@ -313,6 +310,17 @@ export function CloseShiftPage() {
                     {signedRupiah(summary.cashIn - summary.cashOut)}
                   </span>
                 </div>
+                {/* Retur tunai bukan arus kas manual, tapi sudah dipotong dari
+                    saldo tutup kasir. Tanpa barisnya, laci kurang dan tidak ada
+                    yang menjelaskan kenapa. */}
+                {summary.cashRefunds > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted">Retur tunai</span>
+                    <span className="text-sm font-semibold tabular-nums text-danger">
+                      {signedRupiah(-summary.cashRefunds)}
+                    </span>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-sm text-muted">Tidak ada arus kas</p>
