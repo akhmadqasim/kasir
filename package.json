@@ -21,8 +21,6 @@
     "@heroui/styles": "3.2.4",
     "@internationalized/date": "^3.12.4",
     "@tanstack/react-query": "^5.91.0",
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-dialog": "^2.6.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.577.0",
