@@ -3,6 +3,7 @@ import {
   getDailyRevenue,
   getDashboardSummary,
   getLowStockProducts,
+  getPaymentMethodDaily,
   getPaymentMethodStats,
   getRecentTransactions,
   getTopProducts,
@@ -11,6 +12,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import type {
   DashboardSummary,
   DailyRevenue,
+  PaymentMethodDaily,
   PaymentMethodStat,
   TopProduct,
   LowStockProduct,
@@ -34,6 +36,12 @@ export function usePaymentMethodStats() {
     queryKeys.dashboard.paymentMethods,
     getPaymentMethodStats,
     { refetchInterval: 30000 },
+  )
+}
+
+export function usePaymentMethodDaily(days: number = 7) {
+  return useApiQuery<PaymentMethodDaily[]>(queryKeys.dashboard.paymentMethodsDaily(days), () =>
+    getPaymentMethodDaily(days),
   )
 }
 

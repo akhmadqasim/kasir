@@ -9,6 +9,28 @@ export function formatRupiah(amount: number): string {
   return rupiahFormatter.format(amount)
 }
 
+const numberFormatter = new Intl.NumberFormat("id-ID")
+
+/** Bilangan cacah dengan pemisah ribuan gaya Indonesia: `1.234`. */
+export function formatNumber(value: number): string {
+  return numberFormatter.format(value)
+}
+
+const compactRupiahFormatter = new Intl.NumberFormat("id-ID", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
+/**
+ * Nominal singkat untuk label sumbu grafik: `1,2 jt`, `450 rb`.
+ *
+ * Tanpa "Rp" karena label sumbu diulang lima sampai sepuluh kali dan awalannya
+ * hanya menghabiskan lebar; satuan mata uangnya sudah jelas dari judul kartunya.
+ */
+export function formatCompactRupiah(value: number): string {
+  return compactRupiahFormatter.format(value)
+}
+
 /**
  * Parse a number written with Indonesian conventions (`.` groups thousands, `,` marks
  * decimals) as well as plain and English-formatted input. Returns `null` when the value

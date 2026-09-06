@@ -2,6 +2,7 @@ import type {
   DailyRevenue,
   DashboardSummary,
   LowStockProduct,
+  PaymentMethodDaily,
   PaymentMethodStat,
   RecentTransaction,
   TopProduct,
@@ -18,6 +19,10 @@ export function getDailyRevenue(days: number): Promise<DailyRevenue[]> {
 
 export function getPaymentMethodStats(): Promise<PaymentMethodStat[]> {
   return apiGet<PaymentMethodStat[]>("/dashboard/payment-methods")
+}
+
+export function getPaymentMethodDaily(days: number): Promise<PaymentMethodDaily[]> {
+  return apiGet<PaymentMethodDaily[]>("/dashboard/payment-methods/daily", { days })
 }
 
 export function getTopProducts(limit: number): Promise<TopProduct[]> {

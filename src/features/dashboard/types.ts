@@ -55,3 +55,14 @@ export interface RecentTransaction {
   createdAt: string
   totalItems: number
 }
+
+/**
+ * Satu titik pada grafik tren metode pembayaran: nilai bersih satu metode di
+ * satu hari. Backend mengisi hari kosong dengan `0`, jadi setiap metode punya
+ * baris untuk setiap hari dalam rentang dan garisnya tidak pernah terputus.
+ */
+export interface PaymentMethodDaily {
+  date: string
+  method: string
+  total: number
+}

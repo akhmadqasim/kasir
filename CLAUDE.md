@@ -303,6 +303,13 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 
 ## Coding Conventions
 
+> **UI work: read [`DESIGN.md`](DESIGN.md) first.** It is the binding reference for design
+> tokens, component variants, layout patterns, Indonesian copy and number formats, and the
+> per-feature file structure. The rules below cover the rest of the codebase.
+>
+> The HeroUI v3 MCP server is configured in `.mcp.json` (`list_components`,
+> `get_component_docs`, `get_theme_variables`) — use it instead of guessing a component's API.
+
 ### General
 - Bahasa kode: **English** (variable names, functions, comments)
 - Bahasa UI: **Indonesian** (labels, messages, placeholders)

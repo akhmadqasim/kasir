@@ -70,163 +70,166 @@
   }
 }
 
-/* Theme tokens.
+/* Token tema — palet resmi HeroUI v3.
  *
- * These blocks are deliberately unlayered so they win over the `@layer base`
- * declarations shipped by `@heroui/styles`. Two systems read from them:
+ * Blok ini sengaja tidak dibungkus `@layer` supaya menang atas deklarasi
+ * `@layer base` bawaan `@heroui/styles`.
  *
- *   - shadcn/ui (the screens not migrated yet): --background, --card, --popover,
- *     --primary, --secondary, --muted-foreground, --destructive, --input, --ring,
- *     --sidebar-*, --chart-1..5.
- *   - HeroUI v3: --background, --foreground, --surface*, --overlay, --default,
- *     --muted, --accent, --field-*, --border, --separator, --focus, --radius.
+ * ARAHNYA SEKARANG TERBALIK. Dulu nilai shadcn yang ditulis lebih dulu dan nama
+ * HeroUI menunjuk ke sana. Setelah seluruh layar pindah, yang tersisa dari
+ * shadcn hanya `components/ui/chart.tsx` (recharts butuh pembungkus) dan
+ * utilitas `--sidebar-*` milik shell aplikasi — jadi palet HeroUI yang menjadi
+ * sumber kebenaran dan nama shadcn yang menumpang di bawahnya. Warna baru cukup
+ * ditambahkan di blok atas; blok turunan ikut dengan sendirinya.
  *
- * Three names mean different things in the two systems, so the shadcn side was
- * moved onto HeroUI's vocabulary instead of inventing new names:
- *
- *   shadcn `--muted` (a light surface)  -> `--default`   (`bg-muted`  -> `bg-default`)
- *   shadcn `--accent` (a hover surface) -> `--default`   (`bg-accent` -> `bg-default`)
- *   shadcn `--accent-foreground`        -> `--default-foreground`
- *
- * `--muted` now carries HeroUI's meaning (secondary *text* colour) and `--accent`
- * HeroUI's meaning (the brand colour), both pointed at the equivalent shadcn value
- * so the palette on screen is unchanged. `--muted-foreground` is untouched because
- * HeroUI never reads it.
+ * Hue 253.83 dipakai juga oleh seluruh netralnya, bukan abu-abu murni. Itu yang
+ * membuat permukaannya terasa sewarna dengan aksen birunya, bukan abu-abu mati.
  */
-:root {
-  /* Canvas */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --radius: 0.625rem;
+:root,
+.light,
+[data-theme="light"] {
+  /* Kanvas */
+  --background: oklch(97.02% 0.0015 253.83);
+  --foreground: oklch(21.03% 0.0015 253.83);
+  --muted: oklch(55.17% 0.003 253.83);
+  --border: oklch(90% 0.0015 253.83);
+  --separator: oklch(92% 0.0015 253.83);
+  --scrollbar: oklch(87.1% 0.0015 253.83);
+  --focus: oklch(62.04% 0.195 253.83);
 
-  /* shadcn surfaces */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Permukaan bertingkat */
+  --surface: oklch(100% 0.0008 253.83);
+  --surface-foreground: oklch(21.03% 0.0015 253.83);
+  --surface-secondary: oklch(95.24% 0.0012 253.83);
+  --surface-secondary-foreground: oklch(21.03% 0.0015 253.83);
+  --surface-tertiary: oklch(93.73% 0.0012 253.83);
+  --surface-tertiary-foreground: oklch(21.03% 0.0015 253.83);
+  --overlay: oklch(100% 0.0004 253.83);
+  --overlay-foreground: oklch(21.03% 0.0015 253.83);
 
-  /* Sidebar (shadcn only) */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Netral interaktif: latar hover, chip diam, wadah tab */
+  --default: oklch(94% 0.0015 253.83);
+  --default-foreground: oklch(21.03% 0.0059 253.83);
+  --segment: oklch(100% 0.0015 253.83);
+  --segment-foreground: oklch(21.03% 0.0015 253.83);
 
-  /* Recharts reads these directly, see components/ui/chart.tsx */
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  /* Warna makna */
+  --accent: oklch(62.04% 0.195 253.83);
+  --accent-foreground: oklch(99.11% 0 0);
+  --success: oklch(73.29% 0.1941 150.81);
+  --success-foreground: oklch(21.03% 0.0059 150.81);
+  --warning: oklch(78.19% 0.159 72.33);
+  --warning-foreground: oklch(21.03% 0.0059 72.33);
+  --danger: oklch(65.32% 0.2335 25.74);
+  --danger-foreground: oklch(99.11% 0 0);
 
-  /* HeroUI surfaces */
-  --surface: var(--card);
-  --surface-foreground: var(--card-foreground);
-  --surface-secondary: oklch(0.97 0 0);
-  --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: oklch(0.95 0 0);
-  --surface-tertiary-foreground: var(--foreground);
-  --overlay: var(--popover);
-  --overlay-foreground: var(--popover-foreground);
-
-  /* HeroUI neutral — the old shadcn `muted` / `accent` surface */
-  --default: oklch(0.97 0 0);
-  --default-foreground: oklch(0.205 0 0);
-
-  /* HeroUI secondary text */
-  --muted: var(--muted-foreground);
-
-  /* HeroUI brand — the old shadcn `primary` */
-  --accent: var(--primary);
-  --accent-foreground: var(--primary-foreground);
-
-  /* HeroUI form fields, kept bordered like the shadcn Input */
-  --field-background: var(--background);
-  --field-foreground: var(--foreground);
-  --field-border: var(--input);
+  /* Kolom isian. Bordernya transparan, bukan tidak ada: lebarnya tetap 1px
+     supaya kotaknya tidak berubah ukuran ketika fokus memberinya warna. */
+  --field-background: oklch(100% 0.0008 253.83);
+  --field-foreground: oklch(21.03% 0.0015 253.83);
+  --field-placeholder: oklch(55.17% 0.003 253.83);
+  --field-border: transparent;
   --field-border-width: 1px;
 
-  /* HeroUI misc */
-  --separator: var(--border);
-  --focus: var(--ring);
+  --radius: 0.75rem;
+  --field-radius: 0.75rem;
 }
 
 .dark,
 [data-theme="dark"] {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  color-scheme: dark;
 
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(12% 0.0015 253.83);
+  --foreground: oklch(99.11% 0.0015 253.83);
+  --muted: oklch(70.5% 0.003 253.83);
+  --border: oklch(28% 0.0015 253.83);
+  --separator: oklch(25% 0.0015 253.83);
+  --scrollbar: oklch(70.5% 0.0015 253.83);
+  --focus: oklch(62.04% 0.195 253.83);
 
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --surface: oklch(21.03% 0.003 253.83);
+  --surface-foreground: oklch(99.11% 0.0015 253.83);
+  --surface-secondary: oklch(25.7% 0.0023 253.83);
+  --surface-secondary-foreground: oklch(99.11% 0.0015 253.83);
+  --surface-tertiary: oklch(27.21% 0.0023 253.83);
+  --surface-tertiary-foreground: oklch(99.11% 0.0015 253.83);
+  --overlay: oklch(21.03% 0.003 253.83);
+  --overlay-foreground: oklch(99.11% 0.0015 253.83);
 
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  --default: oklch(27.4% 0.0015 253.83);
+  --default-foreground: oklch(99.11% 0 0);
+  --segment: oklch(39.64% 0.0015 253.83);
+  --segment-foreground: oklch(99.11% 0.0015 253.83);
 
-  --surface: var(--card);
-  --surface-foreground: var(--card-foreground);
-  --surface-secondary: oklch(0.269 0 0);
-  --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: oklch(0.32 0 0);
-  --surface-tertiary-foreground: var(--foreground);
-  --overlay: var(--popover);
-  --overlay-foreground: var(--popover-foreground);
+  --accent: oklch(62.04% 0.195 253.83);
+  --accent-foreground: oklch(99.11% 0 0);
+  --success: oklch(73.29% 0.1941 150.81);
+  --success-foreground: oklch(21.03% 0.0059 150.81);
+  --warning: oklch(82.03% 0.1392 76.34);
+  --warning-foreground: oklch(21.03% 0.0059 76.34);
+  --danger: oklch(59.4% 0.1973 24.63);
+  --danger-foreground: oklch(99.11% 0 0);
 
-  --default: oklch(0.269 0 0);
-  --default-foreground: oklch(0.985 0 0);
-
-  --muted: var(--muted-foreground);
-
-  --accent: var(--primary);
-  --accent-foreground: var(--primary-foreground);
-
-  --field-background: var(--card);
-  --field-foreground: var(--foreground);
-  --field-border: var(--input);
+  --field-background: oklch(21.03% 0.003 253.83);
+  --field-foreground: oklch(99.11% 0.0015 253.83);
+  --field-placeholder: oklch(70.5% 0.003 253.83);
+  --field-border: transparent;
   --field-border-width: 1px;
-
-  --separator: var(--border);
-  --focus: var(--ring);
 }
 
-/* Tailwind token bridge for the shadcn-only variables. HeroUI's own bridge lives
- * in @heroui/styles and is merged with this one; only the names below are
- * redefined here. The radius scale keeps the shadcn ratios so the screens that
- * have not been migrated yet render exactly as before.
+/* Nama shadcn yang masih terpakai, seluruhnya turunan dari palet di atas.
+ *
+ * Hanya dua tempat yang benar-benar membacanya: `components/ui/chart.tsx`
+ * (`--card`, `--background`, `--muted-foreground`, `--chart-1..5`) dan utilitas
+ * `--sidebar-*` dari `shadcn/tailwind.css` yang dipakai shell aplikasi. Sisanya
+ * ikut didefinisikan karena `@theme inline` di bawah menjembatani semuanya
+ * menjadi utilitas Tailwind, dan nama yang menganga menghasilkan warna kosong.
+ *
+ * Semua nilainya `var()`, jadi blok ini tidak perlu diulang untuk mode gelap.
+ */
+:root {
+  --card: var(--surface);
+  --card-foreground: var(--surface-foreground);
+  --popover: var(--overlay);
+  --popover-foreground: var(--overlay-foreground);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-secondary);
+  --secondary-foreground: var(--surface-secondary-foreground);
+  --muted-foreground: var(--muted);
+  --destructive: var(--danger);
+  --input: var(--border);
+  --ring: var(--focus);
+
+  /* Sidebar menyatu dengan kanvas; kartu di sebelahnyalah yang lebih terang. */
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-foreground);
+  --sidebar-accent: var(--default);
+  --sidebar-accent-foreground: var(--default-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--focus);
+
+  /* Warna grafik, dibaca langsung recharts lewat `components/ui/chart.tsx`.
+   *
+   * Bukan gradasi satu warna: grafik metode pembayaran menggambar sampai lima
+   * garis sekaligus, dan lima tingkat biru yang berdekatan tidak terbedakan
+   * begitu garisnya bersinggungan. Jadi seri pertama memakai aksen dan sisanya
+   * memutari roda warna pada lightness yang setara, supaya tidak ada satu garis
+   * pun yang tampak lebih penting dari yang lain. Dua terakhir sengaja dipinjam
+   * dari `--warning` dan `--success` agar paletnya tetap satu bahasa.
+   */
+  --chart-1: var(--accent);
+  --chart-2: oklch(70% 0.14 195);
+  --chart-3: oklch(62% 0.19 295);
+  --chart-4: oklch(78.19% 0.159 72.33);
+  --chart-5: oklch(73.29% 0.1941 150.81);
+}
+
+/* Jembatan token untuk nama-nama shadcn di atas. Jembatan milik HeroUI ada di
+ * `@heroui/styles` dan digabung dengan yang ini; hanya nama di bawah yang
+ * didefinisikan ulang di sini.
  */
 @theme inline {
   --color-sidebar: var(--sidebar);

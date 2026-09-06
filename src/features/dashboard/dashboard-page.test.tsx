@@ -9,6 +9,7 @@ import type {
   DailyRevenue,
   DashboardSummary,
   LowStockProduct,
+  PaymentMethodDaily,
   PaymentMethodStat,
   RecentTransaction,
   TopProduct,
@@ -37,6 +38,13 @@ const DAILY_REVENUE: DailyRevenue[] = [
 const PAYMENT_STATS: PaymentMethodStat[] = [
   { method: "cash", count: 8, total: 200_000 },
   { method: "qris", count: 4, total: 50_000 },
+]
+
+const PAYMENT_DAILY: PaymentMethodDaily[] = [
+  { date: "2026-09-04", method: "cash", total: 80_000 },
+  { date: "2026-09-04", method: "qris", total: 20_000 },
+  { date: "2026-09-05", method: "cash", total: 120_000 },
+  { date: "2026-09-05", method: "qris", total: 30_000 },
 ]
 
 const TOP_PRODUCTS: TopProduct[] = [
@@ -95,9 +103,14 @@ function rupiah(amount: number): string {
 
 let api: ApiMock
 
-/** Parameter `days` dari setiap `GET /dashboard/revenue/daily`, urut waktu. */
-function requestedDays(): number[] {
-  return api.callsFor("GET /dashboard/revenue/daily").map((call) => Number(call.query.get("days")))
+/** Parameter `days` dari setiap permintaan ke sebuah rute, urut waktu. */
+function requestedDays(route: string): number[] {
+  return api.callsFor(route).map((call) => Number(call.query.get("days")))
+}
+
+/** Membuka salah satu tab dashboard dan menunggu panelnya tergambar. */
+function openTab(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }))
 }
 
 beforeEach(() => {
@@ -105,10 +118,11 @@ beforeEach(() => {
     "GET /dashboard/summary": SUMMARY,
     "GET /dashboard/revenue/daily": DAILY_REVENUE,
     "GET /dashboard/payment-methods": PAYMENT_STATS,
+    "GET /dashboard/payment-methods/daily": PAYMENT_DAILY,
     "GET /dashboard/products/top": TOP_PRODUCTS,
     "GET /dashboard/products/low-stock": LOW_STOCK,
     "GET /dashboard/transactions/recent": RECENT,
-    // Aksi cepat menanyakan shift yang sedang terbuka; belum ada satu pun.
+    // Kepala halaman menanyakan shift yang sedang terbuka; belum ada satu pun.
     "GET /shifts/active": null,
   })
   useAuthStore.setState({
@@ -126,9 +140,9 @@ beforeEach(() => {
 
 /**
  * Dashboard adalah layar pertama yang dilihat kasir tiap pagi, dan satu-satunya
- * yang masih memakai recharts di atas komponen HeroUI. Yang dijaga di sini adalah
- * hal-hal yang bisa hilang diam-diam saat pindah: angkanya, filter periode grafik
- * yang sekarang jadi `Select` React Aria, dan status baris transaksi.
+ * yang masih memakai recharts di atas komponen HeroUI. Yang dijaga di sini
+ * adalah hal-hal yang bisa hilang diam-diam: angkanya, kejujuran lencana tren,
+ * rentang periode yang harus sama untuk kedua grafik, dan isi tiap tab.
  */
 describe("halaman dashboard", () => {
   it("menampilkan angka KPI hari ini beserta trennya", async () => {
@@ -142,16 +156,43 @@ describe("halaman dashboard", () => {
     expect(screen.getByText("20.0%")).toBeInTheDocument()
   })
 
-  it("meminta rentang hari baru ke backend saat periode grafik diganti", async () => {
+  /**
+   * Regresi yang mudah kembali: versi lama menempelkan panah naik pada keempat
+   * kartu, jadi jumlah transaksi tampak tumbuh padahal tidak pernah ada angka
+   * kemarin untuk dibandingkan.
+   */
+  it("tidak menampilkan tren pada angka yang tidak punya pembanding", async () => {
+    api.route("GET /dashboard/summary", { ...SUMMARY, yesterdayRevenue: 0 })
     renderPage()
 
     await screen.findByText(rupiah(150_000))
-    expect(requestedDays()).toEqual([7])
+    expect(screen.queryByText(/^[+-]\d/)).not.toBeInTheDocument()
+    expect(screen.getByText("Belum ada angka kemarin")).toBeInTheDocument()
+  })
+
+  it("mengirim rentang hari yang sama ke kedua grafik saat periode diganti", async () => {
+    renderPage()
+
+    await screen.findByText(rupiah(150_000))
+    expect(requestedDays("GET /dashboard/revenue/daily")).toEqual([7])
+    expect(requestedDays("GET /dashboard/payment-methods/daily")).toEqual([7])
 
     fireEvent.click(screen.getByRole("button", { name: /Rentang waktu grafik/ }))
     fireEvent.click(await screen.findByRole("option", { name: "1 Bulan" }))
 
-    await vi.waitFor(() => expect(requestedDays()).toContain(30))
+    await vi.waitFor(() => {
+      expect(requestedDays("GET /dashboard/revenue/daily")).toContain(30)
+      expect(requestedDays("GET /dashboard/payment-methods/daily")).toContain(30)
+    })
+  })
+
+  it("memberi satu garis per metode pembayaran pada grafik tren", async () => {
+    renderPage()
+
+    await screen.findByText(rupiah(150_000))
+    const legend = screen.getByRole("list", { name: "Legenda metode pembayaran" })
+    expect(within(legend).getByText("Tunai")).toBeInTheDocument()
+    expect(within(legend).getByText("QRIS")).toBeInTheDocument()
   })
 
   it("hanya menandai transaksi yang belum tuntas di tabel terakhir", async () => {
@@ -164,8 +205,25 @@ describe("halaman dashboard", () => {
     expect(table.queryByText("Selesai")).not.toBeInTheDocument()
   })
 
-  it("membedakan stok habis dari stok menipis", async () => {
+  it("menyimpan produk terlaris dan rincian pembayaran di tab Penjualan", async () => {
     renderPage()
+
+    await screen.findByText(rupiah(150_000))
+    expect(screen.queryByText("Beras Pandan Wangi 5kg")).not.toBeInTheDocument()
+
+    openTab("Penjualan")
+
+    expect(await screen.findByText("Beras Pandan Wangi 5kg")).toBeInTheDocument()
+    const table = within(screen.getByRole("grid", { name: "Metode Pembayaran" }))
+    // 200rb dari 250rb yang beredar hari ini.
+    expect(table.getByText("80%")).toBeInTheDocument()
+  })
+
+  it("membedakan stok habis dari stok menipis di tab Stok", async () => {
+    renderPage()
+
+    await screen.findByText(rupiah(150_000))
+    openTab("Stok")
 
     await screen.findByText("Gula Pasir 1kg")
     const table = within(screen.getByRole("grid", { name: "Stok Rendah" }))

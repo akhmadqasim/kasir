@@ -125,6 +125,7 @@ export const queryKeys = {
     summary: ["dashboard", "summary"] as const,
     dailyRevenue: (days: number) => ["dashboard", "daily-revenue", days] as const,
     paymentMethods: ["dashboard", "payment-methods"] as const,
+    paymentMethodsDaily: (days: number) => ["dashboard", "payment-methods", "daily", days] as const,
     topProducts: (limit: number) => ["dashboard", "top-products", limit] as const,
     lowStock: ["dashboard", "low-stock"] as const,
     recentTransactions: ["dashboard", "recent-transactions"] as const,
