@@ -1,6 +1,6 @@
-//! Frontend log entries and the paths the app writes to.
+//! Frontend log entries.
 
-use crate::utils::{logging, paths};
+use crate::utils::logging;
 
 /// Record a line the frontend produced. An unknown level is treated as `info`
 /// rather than dropped, because losing a log line is worse than filing it under
@@ -13,12 +13,4 @@ pub fn write_entry(level: &str, message: &str) {
         "error" => logging::log_error(message),
         _ => logging::log_info(message),
     }
-}
-
-pub fn log_dir() -> String {
-    paths::get_log_dir().to_string_lossy().to_string()
-}
-
-pub fn data_dir() -> String {
-    paths::get_data_dir().to_string_lossy().to_string()
 }

@@ -249,26 +249,6 @@ pub async fn change_pin(
     Ok(())
 }
 
-/// Copy the live database to `export_path`, returning the bytes written.
-pub fn export_database(actor: &Actor, export_path: &str) -> Result<u64, AppError> {
-    guard::require_admin(actor)?;
-
-    let db_path = get_db_path();
-
-    if !db_path.exists() {
-        return Err(AppError::NotFound("File database tidak ditemukan".into()));
-    }
-
-    // B18: WAL is on, so everything committed since the last checkpoint lives in
-    // `kasir.db-wal` and a bare copy of `kasir.db` leaves it behind — silently
-    // losing the day's sales in the very flow the UI banner recommends for
-    // moving between versions. `create_backup_file` already did this correctly.
-    backup::checkpoint_database_wal(&db_path);
-
-    std::fs::copy(&db_path, export_path)
-        .map_err(|e| AppError::Internal(format!("Gagal mengekspor database: {}", e)))
-}
-
 /// The live database, ready to be sent to a browser.
 pub struct DatabaseExport {
     /// Where to read the bytes from. Always the server's own database path —
@@ -325,28 +305,6 @@ pub fn import_database_bytes(actor: &Actor, data: &[u8]) -> Result<String, AppEr
     guard::require_admin(actor)?;
 
     backup::stage_restore_bytes(&get_db_path(), data)?;
-
-    Ok("Database berhasil diimpor. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
-}
-
-pub fn import_database(actor: &Actor, import_path: &str) -> Result<String, AppError> {
-    guard::require_admin(actor)?;
-
-    let import = std::path::Path::new(import_path);
-
-    if !import.exists() {
-        return Err(AppError::NotFound("File import tidak ditemukan".into()));
-    }
-
-    let db_path = get_db_path();
-
-    // B19: this used to `fs::copy` straight over the live `kasir.db`. The
-    // sea-orm pool still holds that file open, and the old `-wal`/`-shm`
-    // survived, so the previous WAL was replayed over the import on the next
-    // start. Staging the file makes the swap happen in `run()` before the pool
-    // exists, with the sidecars removed; the header is checked first so a file
-    // that is not a database is refused instead of bricking the app.
-    backup::stage_restore_from_file(&db_path, import)?;
 
     Ok("Database berhasil diimpor. Tutup dan buka kembali aplikasi untuk menerapkannya.".into())
 }

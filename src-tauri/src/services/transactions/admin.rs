@@ -223,8 +223,9 @@ mod tests {
     }
 
     /// Voiding a sale is admin-only. Whether the account is still *active* is
-    /// decided when the actor is resolved, one layer up; see the
-    /// `resolve_actor` tests in `commands/mod.rs`.
+    /// decided when the actor is resolved, one layer up; see
+    /// `a_session_belonging_to_a_deactivated_user_is_rejected` in
+    /// `http/session.rs`.
     #[tokio::test]
     async fn kasir_cannot_void_a_transaction() {
         let conn = setup_test_db().await;

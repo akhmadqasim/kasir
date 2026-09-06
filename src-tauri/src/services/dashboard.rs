@@ -6,7 +6,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 
 use crate::domain::dashboard::{
     DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodStat, RecentTransaction,
-    TopProduct, WeeklyStats,
+    TopProduct,
 };
 use crate::services::reports::{refund_adjust_cte, SALE_STATUSES};
 use crate::utils::AppError;
@@ -175,8 +175,7 @@ pub async fn daily_revenue(
     let start_utc = local_date_start_to_utc(today - chrono::Duration::days(days - 1));
     let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
     // Net of returns, dated to the day the money went back — the same rule the
-    // sales reports use, so the chart and `weekly_stats` agree with them and
-    // with each other.
+    // sales reports use, so the chart agrees with them.
     let sql = format!(
         "WITH sales AS ( \
            SELECT date(t.created_at, 'localtime') as d, \
@@ -445,100 +444,6 @@ pub async fn recent_transactions(
     Ok(result)
 }
 
-pub async fn weekly_stats(db: &DatabaseConnection) -> Result<WeeklyStats, AppError> {
-    // `today - 7 days` with no upper bound spans 8 calendar days, while the
-    // chart `get_daily_revenue` draws next to this card covers `today-6..today`.
-    // Use the same closed 7-day window so the card total matches the chart.
-    let today = Local::now().date_naive();
-    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(6));
-    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
-
-    // Revenue and profit net of the week's returns, computed exactly as
-    // `reports::query_sales_buckets` does over the same window, so the card
-    // agrees with the chart beside it and with the sales report behind it.
-    let sales_sql = format!(
-        "WITH sales AS ( \
-           SELECT COALESCE(SUM(t.total_amount), 0) as revenue, COUNT(*) as cnt \
-           FROM transactions t \
-           WHERE t.created_at >= $1 AND t.created_at < $2 \
-           AND {SALE_STATUSES} \
-         ), \
-         cost AS ( \
-           SELECT COALESCE(SUM(ti.quantity * COALESCE(ti.buy_price, p.buy_price, 0)), 0) as cost \
-           FROM transaction_items ti \
-           JOIN transactions t ON ti.transaction_id = t.id \
-           LEFT JOIN products p ON p.id = ti.product_id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 \
-           AND {SALE_STATUSES} \
-         ), \
-         {refund_adjust}, \
-         adjust AS ( \
-           SELECT COALESCE(SUM(revenue), 0) as revenue, COALESCE(SUM(cost), 0) as cost \
-           FROM refund_adjust \
-         ) \
-         SELECT sales.revenue - adjust.revenue, \
-                sales.cnt, \
-                (sales.revenue - adjust.revenue) - (cost.cost - adjust.cost) \
-         FROM sales, cost, adjust",
-        refund_adjust = refund_adjust_cte("1", "1", "$1", "$2"),
-    );
-
-    let sales_row = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            &sales_sql,
-            vec![start_utc.clone().into(), end_utc.clone().into()],
-        ))
-        .await?;
-
-    let (total_revenue, total_transactions, gross_profit) = match &sales_row {
-        Some(row) => (
-            row.try_get_by_index::<f64>(0).unwrap_or(0.0),
-            row.try_get_by_index::<i64>(1).unwrap_or(0),
-            row.try_get_by_index::<f64>(2).unwrap_or(0.0),
-        ),
-        None => (0.0, 0, 0.0),
-    };
-
-    let avg_items_sql = format!(
-        "SELECT COALESCE(AVG(item_count), 0) FROM ( \
-           SELECT COUNT(*) as item_count \
-           FROM transaction_items ti \
-           JOIN transactions t ON ti.transaction_id = t.id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 \
-           AND {SALE_STATUSES} \
-           GROUP BY ti.transaction_id \
-         )"
-    );
-
-    let avg_items_row = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            &avg_items_sql,
-            vec![start_utc.into(), end_utc.into()],
-        ))
-        .await?;
-
-    let avg_items_per_transaction = match &avg_items_row {
-        Some(row) => row.try_get_by_index::<f64>(0).unwrap_or(0.0),
-        None => 0.0,
-    };
-
-    let avg_value_per_transaction = if total_transactions > 0 {
-        total_revenue / total_transactions as f64
-    } else {
-        0.0
-    };
-
-    Ok(WeeklyStats {
-        total_revenue,
-        gross_profit,
-        total_transactions,
-        avg_items_per_transaction,
-        avg_value_per_transaction,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,20 +554,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_revenue_chart_and_the_weekly_card_are_net_and_agree() {
-        let conn = setup_test_db().await;
-        sale_with_return(&conn, 2).await;
-
-        let chart = daily_revenue(&conn, Some(7)).await.expect("chart");
-        let stats = weekly_stats(&conn).await.expect("weekly stats");
-
-        let chart_revenue: f64 = chart.iter().map(|d| d.revenue).sum();
-        assert_eq!(chart_revenue, 100_000.0);
-        assert_eq!(stats.total_revenue, chart_revenue);
-        assert_eq!(stats.gross_profit, 40_000.0);
-    }
-
-    #[tokio::test]
     async fn top_products_drop_the_units_that_came_back() {
         let conn = setup_test_db().await;
         sale_with_return(&conn, 2).await;
@@ -709,45 +600,5 @@ mod tests {
         let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
         assert_eq!(statuses, vec!["completed", "partial_refund"]);
-    }
-
-    /// The weekly card and the 7-day chart must cover the same window. The card
-    /// used to start at `today - 7` with no upper bound, so it counted 8
-    /// calendar days and could never match the chart.
-    #[tokio::test]
-    async fn weekly_stats_cover_the_same_seven_days_as_the_chart() {
-        let conn = setup_test_db().await;
-        let today = Local::now().date_naive();
-
-        // Outside the 7-day window the chart draws.
-        insert_transaction(
-            &conn,
-            1,
-            999_000.0,
-            "completed",
-            &utc_at_local_noon(today - chrono::Duration::days(7)),
-        )
-        .await;
-        // First and last day of the window.
-        insert_transaction(
-            &conn,
-            1,
-            60_000.0,
-            "completed",
-            &utc_at_local_noon(today - chrono::Duration::days(6)),
-        )
-        .await;
-        insert_transaction(&conn, 1, 40_000.0, "completed", &utc_at_local_noon(today)).await;
-
-        let stats = weekly_stats(&conn).await.expect("weekly stats");
-        assert_eq!(stats.total_transactions, 2);
-        assert_eq!(stats.total_revenue, 100_000.0);
-
-        let chart = daily_revenue(&conn, Some(7)).await.expect("chart");
-        assert_eq!(chart.len(), 7);
-        let chart_revenue: f64 = chart.iter().map(|d| d.revenue).sum();
-        let chart_transactions: i64 = chart.iter().map(|d| d.transactions).sum();
-        assert_eq!(chart_revenue, stats.total_revenue);
-        assert_eq!(chart_transactions, stats.total_transactions);
     }
 }

@@ -84,10 +84,3 @@ pub struct ShortcutProduct {
     pub is_pinned: bool,
     pub select_count: i64,
 }
-
-/// A product template file destined for the user's Desktop.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SaveTemplateFileInput {
-    pub content: String,
-    pub filename: String,
-}

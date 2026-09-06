@@ -9,7 +9,7 @@ use sea_orm::{
 
 use crate::domain::products::{
     BulkImportResult, BulkProductInput, CreateProductInput, PaginatedProducts, ProductSearchParams,
-    SaveTemplateFileInput, ShortcutProduct, UpdateProductInput,
+    ShortcutProduct, UpdateProductInput,
 };
 use crate::domain::Actor;
 use crate::entity::{product_shortcuts, products};
@@ -694,13 +694,8 @@ pub async fn bulk_create(
 /// Filename offered for the import template download.
 pub const IMPORT_TEMPLATE_FILENAME: &str = "template-import-produk.csv";
 
-/// The import template, generated server-side.
-///
-/// The Tauri path has the webview build this CSV and post it back to
-/// [`save_template_file`], which means the column contract — the thing
-/// [`bulk_create`] parses — is defined in the frontend and merely written by the
-/// backend. Over HTTP the template is a download, so the columns are declared
-/// here next to the importer that has to understand them.
+/// The import template, generated server-side, next to the importer
+/// ([`bulk_create`]) that has to understand its columns.
 pub fn import_template_csv() -> String {
     const HEADERS: [&str; 7] = [
         "Nama Produk",
@@ -745,33 +740,6 @@ pub fn import_template_csv() -> String {
         .chain(SAMPLE_ROWS.iter().map(|row| row.join(",")))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Write an import template onto the user's Desktop.
-pub fn save_template_file(input: SaveTemplateFileInput) -> Result<(), AppError> {
-    let SaveTemplateFileInput { content, filename } = input;
-
-    // Reject anything that could escape the Desktop directory: path separators,
-    // parent-dir components, or absolute paths.
-    let invalid = filename.is_empty()
-        || filename.contains('/')
-        || filename.contains('\\')
-        || filename.contains("..")
-        || std::path::Path::new(&filename).is_absolute();
-    let has_known_ext = {
-        let lower = filename.to_lowercase();
-        lower.ends_with(".csv") || lower.ends_with(".xlsx") || lower.ends_with(".xls")
-    };
-    if invalid || !has_known_ext {
-        return Err(AppError::Validation("Nama file tidak valid".into()));
-    }
-
-    let desktop = dirs::desktop_dir()
-        .ok_or_else(|| AppError::Internal("Tidak dapat menemukan folder Desktop".into()))?;
-    let path = desktop.join(&filename);
-    std::fs::write(&path, content)
-        .map_err(|e| AppError::Internal(format!("Gagal menyimpan file: {}", e)))?;
-    Ok(())
 }
 
 #[cfg(test)]

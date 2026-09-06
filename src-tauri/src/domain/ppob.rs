@@ -312,21 +312,3 @@ pub struct NotificationListResult {
     pub current_page: i64,
     pub total_pages: i64,
 }
-
-// --- Receipt types ---
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PpobReceiptData {
-    pub service_type: String,
-    pub service_label: String,
-    pub customer_id: String,
-    pub customer_name: Option<String>,
-    pub product_name: Option<String>,
-    pub amount: f64,
-    pub admin_fee: f64,
-    pub total: f64,
-    pub serial_number: Option<String>,
-    pub date_time: String,
-    pub receipt_number: String,
-}

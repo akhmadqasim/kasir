@@ -166,37 +166,12 @@ pub fn stage_restore_bytes(db_path: &Path, data: &[u8]) -> Result<(), AppError> 
     publish_staged_restore(db_path, &staging)
 }
 
-/// Stage an on-disk database file to replace `db_path` at the next launch.
-///
-/// Used by `import_database`, which used to `fs::copy` straight over the live
-/// `kasir.db`: that raced the open sea-orm pool and left the old `-wal` next to
-/// the new database, so the previous WAL was replayed over the import on the
-/// next start. Going through the staging path fixes both, and rejects a file
-/// that is not a SQLite database before anything is replaced.
-pub fn stage_restore_from_file(db_path: &Path, source: &Path) -> Result<(), AppError> {
-    let mut header = [0u8; 16];
-    let readable = fs::File::open(source)
-        .and_then(|mut f| f.read_exact(&mut header))
-        .is_ok();
-
-    if !readable || !is_sqlite_database(&header) {
-        return Err(AppError::Validation(
-            "File bukan database SQLite yang valid".to_string(),
-        ));
-    }
-
-    let staging = staging_restore_path(db_path);
-    fs::copy(source, &staging)
-        .map_err(|e| AppError::Internal(format!("Gagal menyalin file import: {}", e)))?;
-    publish_staged_restore(db_path, &staging)
-}
-
 /// Flush committed WAL pages into the main `.db` file.
 ///
-/// Exposed for `settings::export_database`, which used to `fs::copy` the file
-/// with WAL on and therefore silently dropped every transaction committed since
-/// the last checkpoint — the day's sales, in an export the UI banner tells
-/// admins to use when moving versions.
+/// Exposed for `settings::prepare_export`: sending `kasir.db` with WAL on and
+/// no checkpoint would silently drop every transaction committed since the
+/// last one — the day's sales, in an export the UI banner tells admins to use
+/// when moving versions.
 pub fn checkpoint_database_wal(db_path: &Path) {
     checkpoint_wal(db_path);
 }

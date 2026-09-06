@@ -47,14 +47,15 @@ mod tests {
         }
     }
 
-    /// An actor with no role — what the Tauri layer's unverified constructor
-    /// produces for a caller id it did not check — passes nothing.
+    /// An actor with no role passes nothing.
     ///
-    /// Written as `Actor::new(id, "")` rather than through that constructor on
-    /// purpose. Grepping the tree for that constructor's name and finding it
-    /// only under `commands/` is the standing check that no other layer has
-    /// started inventing identities, and a test calling it would be the
-    /// exception that makes the grep useless.
+    /// There used to be an `Actor::unverified` constructor that produced
+    /// exactly this, for a caller id the Tauri command layer did not check.
+    /// It is gone along with that layer: `Actor` now only comes from
+    /// [`crate::http::session`] (a real session) or, in tests, from
+    /// `Actor::new`. This case is still worth guarding — a role check must
+    /// fail closed on an actor that somehow ended up roleless, not just on
+    /// the roles it recognises.
     #[test]
     fn an_actor_with_no_role_fails_closed() {
         let roleless = Actor::new(1, "");

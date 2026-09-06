@@ -6,10 +6,10 @@ use crate::entity::users;
 ///
 /// Services never read an identity out of a request body — they take an `Actor`
 /// as an explicit first-class parameter. Producing one is the transport layer's
-/// job: today the Tauri command layer resolves the client-supplied caller id
-/// through [`crate::utils::require_role`], and once server-side sessions land it
-/// comes from the session instead. Because no service accepts a bare id, there
-/// is no path left that can be pointed at a client-controlled identity.
+/// job, and the only transport left is HTTP: [`crate::http::session`] resolves
+/// the session cookie into a user and builds the `Actor` from that. Because no
+/// service accepts a bare id, there is no path left that can be pointed at a
+/// client-controlled identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Actor {
     pub user_id: i64,
@@ -17,22 +17,16 @@ pub struct Actor {
 }
 
 impl Actor {
+    /// Build an actor directly from a role, without going through
+    /// [`From<&users::Model>`]. Every non-test caller gets an `Actor` from a
+    /// session instead, so this is a test-only convenience for exercising a
+    /// service with a role that has no user row to back it.
+    #[cfg(test)]
     pub fn new(user_id: i64, role: impl Into<String>) -> Self {
         Self {
             user_id,
             role: role.into(),
         }
-    }
-
-    /// An identity supplied by the client that the caller deliberately did not
-    /// verify.
-    ///
-    /// It exists only so extracting the services preserves the behaviour of the
-    /// handlers that never validated their `userId` argument. The role is left
-    /// empty, so every role check on such an actor fails closed. Only the Tauri
-    /// command layer may build one, and it disappears together with it.
-    pub fn unverified(user_id: i64) -> Self {
-        Self::new(user_id, "")
     }
 
     pub fn is_admin(&self) -> bool {
@@ -45,15 +39,6 @@ impl From<&users::Model> for Actor {
         Self {
             user_id: user.id,
             role: user.role.clone(),
-        }
-    }
-}
-
-impl From<users::Model> for Actor {
-    fn from(user: users::Model) -> Self {
-        Self {
-            user_id: user.id,
-            role: user.role,
         }
     }
 }

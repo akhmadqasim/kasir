@@ -6,11 +6,12 @@
 //! delegates: no SQL, no money arithmetic, no role rules beyond "this route
 //! needs an admin" live here.
 //!
-//! Its counterpart, [`crate::commands`], is still wired up and still serves the
-//! Tauri webview. The two share every service beneath them, so neither can drift
-//! from the other in behaviour; what they do not share is identity, and that is
-//! the whole difference. A command believes the id in the payload. A route does
-//! not, because there is no id in the payload to believe.
+//! It used to have a counterpart, the Tauri command layer, wired up alongside
+//! it and serving the same webview. That layer trusted a caller id it read out
+//! of the request payload; this one never has, because identity comes from the
+//! session cookie instead. Once the frontend moved entirely to `fetch`, the
+//! command layer had nothing left calling it and was deleted — every route
+//! here is now the only way in.
 //!
 //! ```text
 //! request ──► body limit ──► compression ──► CSRF (Origin/Referer)

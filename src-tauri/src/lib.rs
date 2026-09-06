@@ -1,4 +1,3 @@
-mod commands;
 mod db;
 mod domain;
 pub mod entity;
@@ -97,9 +96,7 @@ pub fn run() {
 
     let backup_scheduler_clone = backup_scheduler.clone();
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init());
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
     #[cfg(debug_assertions)]
     {
@@ -109,128 +106,13 @@ pub fn run() {
     builder
         .setup(move |app| {
             // Start backup scheduler inside setup where tokio runtime is available
-            commands::backup::start_backup_scheduler(backup_scheduler_clone);
+            tauri::async_runtime::spawn(services::backup::run_scheduler(backup_scheduler_clone));
             build_main_window(app, http_port)?;
             Ok(())
         })
         .manage(database)
         .manage(mitra_client)
         .manage(backup_scheduler)
-        .invoke_handler(tauri::generate_handler![
-            commands::auth::login,
-            commands::auth::get_current_user,
-            commands::auth::list_users,
-            commands::auth::create_user,
-            commands::auth::update_user,
-            commands::auth::toggle_user_active,
-            commands::settings::get_store_info,
-            commands::settings::update_store_info,
-            commands::settings::get_app_settings,
-            commands::settings::update_app_settings,
-            commands::settings::change_user_pin,
-            commands::settings::export_database,
-            commands::settings::import_database,
-            commands::settings::get_database_info,
-            commands::onboarding::check_onboarding_status,
-            commands::onboarding::complete_onboarding,
-            commands::products::search_products,
-            commands::products::get_product_by_barcode,
-            commands::products::create_product,
-            commands::products::update_product,
-            commands::products::delete_product,
-            commands::products::get_popular_products,
-            commands::products::track_product_selection,
-            commands::products::toggle_product_pin,
-            commands::products::bulk_create_products,
-            commands::products::save_template_file,
-            commands::categories::list_categories,
-            commands::categories::create_category,
-            commands::categories::update_category,
-            commands::categories::delete_category,
-            commands::transactions::checkout_transaction,
-            commands::transactions::retry_ppob_fulfillment,
-            commands::transactions::get_next_receipt_number,
-            commands::transactions::list_transactions,
-            commands::transactions::get_transaction_detail,
-            commands::transactions::delete_transaction,
-            commands::transactions::update_payment_method,
-            commands::receipt::list_printers,
-            commands::receipt::print_receipt,
-            commands::receipt::test_print,
-            commands::receipt::update_printer_settings,
-            commands::receipt::get_printer_settings_cmd,
-            commands::receipt::get_receipt_data,
-            commands::refunds::create_refund,
-            commands::refunds::get_refund_detail,
-            commands::refunds::list_refunds,
-            commands::dashboard::get_dashboard_summary,
-            commands::dashboard::get_daily_revenue,
-            commands::dashboard::get_payment_method_stats,
-            commands::dashboard::get_top_products,
-            commands::dashboard::get_low_stock_products,
-            commands::dashboard::get_recent_transactions,
-            commands::dashboard::get_weekly_stats,
-            commands::ppob::menu::ppob_login,
-            commands::ppob::menu::ppob_get_saldo,
-            commands::ppob::menu::ppob_get_menu,
-            commands::ppob::menu::ppob_get_providers,
-            commands::ppob::menu::ppob_get_pulsa_details,
-            commands::ppob::menu::ppob_get_pulsa_price_list,
-            commands::ppob::menu::ppob_get_data_price_list,
-            commands::ppob::menu::ppob_get_pln_denom,
-            commands::ppob::menu::ppob_get_pdam_products,
-            commands::ppob::menu::ppob_get_emoney_denom,
-            commands::ppob::menu::ppob_get_pp_sub_menu,
-            commands::ppob::menu::ppob_get_transfer_channels,
-            commands::ppob::menu::ppob_get_voucher_groups,
-            commands::ppob::inquiry::ppob_pln_inquiry,
-            commands::ppob::inquiry::ppob_pdam_inquiry,
-            commands::ppob::inquiry::ppob_bpjs_inquiry,
-            commands::ppob::inquiry::ppob_pp_inquiry,
-            commands::ppob::inquiry::ppob_transfer_inquiry,
-            commands::ppob::inquiry::ppob_emoney_inquiry,
-            commands::ppob::inquiry::ppob_pulsa_purchase,
-            commands::ppob::payment::ppob_confirm_payment,
-            commands::ppob::payment::ppob_get_receipt_data,
-            commands::ppob::history::ppob_get_history,
-            commands::ppob::history::ppob_get_history_detail,
-            commands::ppob::history::ppob_get_mutasi,
-            commands::ppob::notifications::ppob_get_notifications,
-            commands::ppob::notifications::ppob_mark_all_read,
-            commands::ppob::notifications::ppob_mark_notification_read,
-            commands::backup::create_backup,
-            commands::backup::get_backup_status,
-            commands::backup::list_backups,
-            commands::backup::restore_backup,
-            commands::backup::delete_backup,
-            commands::reports::report_sales_daily,
-            commands::reports::report_sales_monthly,
-            commands::reports::report_sales_period,
-            commands::reports::report_sales_receipt,
-            commands::reports::report_payment_methods,
-            commands::reports::report_product_sales,
-            commands::reports::report_popular_products,
-            commands::reports::report_returns,
-            commands::reports::report_current_stock,
-            commands::reports::report_losses,
-            commands::reports::report_cash_flows,
-            commands::shifts::open_shift,
-            commands::shifts::get_active_shift,
-            commands::shifts::close_shift,
-            commands::shifts::get_shift_summary,
-            commands::shifts::create_cash_flow,
-            commands::shifts::list_cash_flows,
-            commands::shifts::delete_cash_flow,
-            commands::stock::list_stock_writeoffs,
-            commands::stock::create_stock_writeoff,
-            commands::stock::approve_stock_writeoff,
-            commands::stock::reject_stock_writeoff,
-            commands::stock::delete_stock_writeoff,
-            commands::stock::get_stock_writeoff_detail,
-            commands::logging::write_log_entry,
-            commands::logging::get_log_dir,
-            commands::logging::get_data_dir,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 

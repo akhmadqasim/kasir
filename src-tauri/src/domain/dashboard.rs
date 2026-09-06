@@ -18,16 +18,6 @@ pub struct DashboardSummary {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WeeklyStats {
-    pub total_revenue: f64,
-    pub gross_profit: f64,
-    pub total_transactions: i64,
-    pub avg_items_per_transaction: f64,
-    pub avg_value_per_transaction: f64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DailyRevenue {
     pub date: String,
     pub revenue: f64,
