@@ -68,7 +68,10 @@ export function useLogin() {
       // sharing a till is the normal case here, so dropping it is not a
       // precaution — it is the difference between the second one seeing their
       // own shift and seeing the first one's.
-      queryClient.clear()
+      //
+      // `removeQueries` rather than `clear`: the latter also empties the
+      // mutation cache, and this code is running inside a mutation.
+      queryClient.removeQueries()
       queryClient.setQueryData(queryKeys.auth.me, user)
       setUser(user)
       // `POST /api/logs` needs a session, so anything logged during boot has
@@ -96,7 +99,7 @@ export function useLogout() {
   return useApiMutation<void, void>(() => authApi.logout(), {
     onSettled: () => {
       clearUser()
-      queryClient.clear()
+      queryClient.removeQueries()
       queryClient.setQueryData(queryKeys.auth.me, null)
     },
   })
