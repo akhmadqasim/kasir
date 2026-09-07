@@ -44,7 +44,7 @@ const SERVICE_MAP: Record<string, ServiceInfo> = {
 const FALLBACK_SERVICE: ServiceInfo = {
   icon: Package,
   bg: "bg-default",
-  text: "text-muted-foreground",
+  text: "text-muted",
   label: "LAINNYA",
 }
 

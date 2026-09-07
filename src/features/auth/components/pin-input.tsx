@@ -1,3 +1,4 @@
+import type { Ref } from "react"
 import { Description, FieldError, Input, Label, TextField } from "@heroui/react"
 
 interface PinInputProps {
@@ -17,6 +18,13 @@ interface PinInputProps {
   errorMessage?: string
   isDisabled?: boolean
   autoFocus?: boolean
+  /** Untuk memindahkan fokus ke kolom ini dari kolom sebelumnya. */
+  inputRef?: Ref<HTMLInputElement>
+  /**
+   * Dipanggil saat Enter ditekan di kolom ini. Layar login memakainya untuk
+   * masuk tanpa memindahkan tangan ke mouse; lihat komentar di `login-page`.
+   */
+  onEnter?: () => void
 }
 
 /** Kolom PIN kasir: hanya menerima angka, 4-6 digit, disembunyikan seperti password. */
@@ -29,6 +37,8 @@ export function PinInput({
   errorMessage,
   isDisabled,
   autoFocus,
+  inputRef,
+  onEnter,
 }: PinInputProps) {
   return (
     <TextField
@@ -43,7 +53,17 @@ export function PinInput({
       onChange={(next) => onChange(next.replace(/\D/g, ""))}
     >
       {label && <Label>{label}</Label>}
-      <Input aria-label={label ? undefined : "PIN"} inputMode="numeric" placeholder={placeholder} />
+      <Input
+        ref={inputRef}
+        aria-label={label ? undefined : "PIN"}
+        inputMode="numeric"
+        placeholder={placeholder}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || !onEnter) return
+          event.preventDefault()
+          onEnter()
+        }}
+      />
       {description && <Description>{description}</Description>}
       {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </TextField>

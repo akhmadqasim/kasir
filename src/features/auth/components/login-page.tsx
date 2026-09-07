@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Store } from "lucide-react"
 import { Button, Card, Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
@@ -8,15 +8,20 @@ import { PinInput } from "@/features/auth/components/pin-input"
 export function LoginPage() {
   const [username, setUsername] = useState("")
   const [pin, setPin] = useState("")
+  const pinRef = useRef<HTMLInputElement>(null)
   const loginMutation = useLogin()
 
   const t = id.auth
   const canSubmit = Boolean(username.trim()) && Boolean(pin.trim())
 
+  const submit = () => {
+    if (!canSubmit || loginMutation.isPending) return
+    loginMutation.mutate({ username: username.trim(), pin })
+  }
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!canSubmit) return
-    loginMutation.mutate({ username: username.trim(), pin })
+    submit()
   }
 
   return (
@@ -43,14 +48,36 @@ export function LoginPage() {
               onChange={setUsername}
             >
               <Label>{t.username}</Label>
-              <Input placeholder={t.username} />
+              {/*
+                Enter di sini turun ke PIN, tidak mengirim formulir. Kasir masuk
+                dengan dua tangan di papan ketik dan tidak pernah menekan Tab;
+                tanpa ini Enter tidak melakukan apa-apa, karena tombol kirim
+                masih nonaktif selama PIN kosong dan browser menolak
+                mengirimkan formulir lewat tombol yang nonaktif.
+              */}
+              <Input
+                placeholder={t.username}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return
+                  event.preventDefault()
+                  pinRef.current?.focus()
+                }}
+              />
             </TextField>
+            {/*
+              Enter di PIN memanggil `submit` langsung, tidak menumpang pengiriman
+              implisit milik browser. Perilaku implisit itu punya syarat yang
+              mudah luput — harus ada tombol submit yang tidak nonaktif — dan
+              menekan Enter adalah cara utama kasir masuk, bukan jalan pintas.
+            */}
             <PinInput
+              inputRef={pinRef}
               isDisabled={loginMutation.isPending}
               label={t.pin}
               placeholder={t.pin}
               value={pin}
               onChange={setPin}
+              onEnter={submit}
             />
             <Button fullWidth isDisabled={loginMutation.isPending || !canSubmit} type="submit">
               {loginMutation.isPending ? id.common.loading : t.loginButton}

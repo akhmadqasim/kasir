@@ -173,7 +173,7 @@ export function SidebarProvider({ children, className, style }: SidebarProviderP
     <SidebarContext.Provider value={value}>
       <div
         data-slot="sidebar-wrapper"
-        className={cn("flex w-full overflow-hidden bg-sidebar", className)}
+        className={cn("flex w-full overflow-hidden bg-background", className)}
         style={style}
       >
         {children}
@@ -214,7 +214,7 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
     return (
       <Drawer.Backdrop isOpen={openMobile} onOpenChange={setOpenMobile}>
         <Drawer.Content placement="left">
-          <Drawer.Dialog aria-label={label} className="bg-sidebar p-2">
+          <Drawer.Dialog aria-label={label} className="bg-background p-2">
             <nav
               aria-label={label}
               data-slot="sidebar"
@@ -352,7 +352,7 @@ export function SidebarGroupLabel({
     <div
       data-slot="sidebar-group-label"
       className={cn(
-        "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70",
+        "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-muted",
         "transition-opacity duration-200 ease-linear group-data-[state=collapsed]/sidebar:opacity-0",
         className,
       )}
@@ -534,7 +534,7 @@ export function SidebarSubMenu({
     <ul
       data-slot="sidebar-sub-menu"
       className={cn(
-        "mx-3.5 flex min-w-0 flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5",
+        "mx-3.5 flex min-w-0 flex-col gap-1 border-l border-border px-2.5 py-0.5",
         "group-data-[state=collapsed]/sidebar:hidden",
         className,
       )}

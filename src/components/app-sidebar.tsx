@@ -125,7 +125,7 @@ export function AppSidebar({ style }: { style?: CSSProperties }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuLink to="/dashboard" size="lg" tooltip={id.app.name}>
-              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                 <StoreIcon className="size-4" />
               </div>
               <SidebarLabel className="grid leading-tight">
@@ -139,7 +139,7 @@ export function AppSidebar({ style }: { style?: CSSProperties }) {
           <button
             type="button"
             onClick={handleToggleClick}
-            className="absolute top-3 right-2 flex size-7 items-center justify-center rounded-md text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="absolute top-3 right-2 flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-default hover:text-foreground"
             title={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
           >
             {hoverExpanded ? (

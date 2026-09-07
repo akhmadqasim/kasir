@@ -56,24 +56,38 @@ export function useSidebar(): SidebarContextValue {
 /**
  * Shared look of every clickable row in the sidebar.
  *
+ * Meniru baris HeroUI yang sesungguhnya — `.list-box-item` dan `.menu-item`:
+ * `rounded-2xl`, `gap-3`, hover `bg-default`, fokus `status-focused`, dan
+ * mengecil sedikit saat ditekan. Sebelumnya baris ini memakai bahasa shadcn
+ * (`rounded-md`, `gap-2`, `ring-sidebar-ring`), dan itulah yang membuat menu
+ * aktif terlihat berasal dari sistem lain daripada isi halamannya.
+ *
+ * Aktif memakai `bg-surface`, bukan warna hover yang dipermanenkan. Sidebar
+ * duduk di atas `--background`; baris yang sedang dibuka naik ke `--surface`,
+ * hubungan yang sama persis dengan kartu terhadap kanvasnya. Nilainya berbeda
+ * dari `--default` di terang maupun gelap, jadi aktif dan hover tidak pernah
+ * tertukar tanpa perlu garis atau bayangan tambahan.
+ *
  * The collapsed rail is driven by `data-state` on the sidebar root (group
  * `sidebar`) instead of a prop, so a row does not need to re-render to shrink.
  */
 const MENU_BUTTON_BASE = [
-  "group/menu-button relative flex w-full items-center gap-2 overflow-hidden rounded-md p-2",
-  "text-left text-sidebar-foreground transition-colors outline-hidden",
-  "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-  "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-  "data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground",
-  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
+  "group/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-2xl px-2 py-1.5",
+  "text-left text-foreground outline-none no-highlight",
+  "transition-[background-color,box-shadow] duration-150 motion-reduce:transition-none",
+  "hover:bg-default",
+  "focus-visible:status-focused",
+  "active:scale-[0.98]",
+  "data-[active=true]:bg-surface data-[active=true]:font-medium",
+  "disabled:status-disabled aria-disabled:status-disabled",
   "[&_svg]:size-4 [&_svg]:shrink-0",
-  "group-data-[state=collapsed]/sidebar:w-8 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:p-0",
+  "group-data-[state=collapsed]/sidebar:w-9 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0",
 ].join(" ")
 
 const MENU_BUTTON_SIZE: Record<SidebarMenuSize, string> = {
-  sm: "h-7 text-xs",
-  default: "h-8 text-sm",
-  lg: "h-12 text-sm",
+  sm: "min-h-8 text-xs",
+  default: "min-h-9 text-sm",
+  lg: "min-h-12 text-sm",
 }
 
 export function sidebarMenuButtonClass(
@@ -86,11 +100,12 @@ export function sidebarMenuButtonClass(
 /** Rows of a nested menu: indented, and gone entirely once the rail collapses. */
 export function sidebarSubMenuButtonClass(className?: string): string {
   return cn(
-    "flex h-7 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-xs",
-    "text-sidebar-foreground transition-colors outline-hidden",
-    "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-    "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-    "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
+    "flex min-h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl px-2 text-xs",
+    "text-muted outline-none no-highlight",
+    "transition-[background-color,color] duration-150 motion-reduce:transition-none",
+    "hover:bg-default hover:text-foreground",
+    "focus-visible:status-focused",
+    "data-[active=true]:bg-surface data-[active=true]:font-medium data-[active=true]:text-foreground",
     className,
   )
 }

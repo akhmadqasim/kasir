@@ -68,13 +68,18 @@ dipanggil lewat nama tokennya.
 Seluruh netralnya bertint hue `253.83`, hue yang sama dengan aksennya. Itu yang membuat
 permukaannya terasa sewarna dengan tombol birunya alih-alih abu-abu mati.
 
-Nama shadcn yang masih hidup (`--card`, `--primary`, `--sidebar-*`, `--chart-1..5`)
-seluruhnya **turunan** dari token di atas, ditulis di blok `:root` kedua. Arah ini penting:
-warna baru cukup ditambahkan sekali di palet HeroUI. Jangan pernah menulis nilai warna
-langsung ke nama shadcn.
+**Tidak ada lagi nama shadcn.** `--card`, `--popover`, `--primary`, `--secondary`,
+`--muted-foreground`, `--destructive`, `--input`, `--ring`, dan seluruh `--sidebar-*` sudah
+dihapus bersama paket `shadcn` itu sendiri. Satu-satunya token di luar palet HeroUI yang
+tersisa adalah `--chart-1..5`, dan itu hanya dibaca recharts sebagai `var()`.
 
-Mode gelap adalah kelas `dark` atau `data-theme="dark"` di `<html>`. Karena blok turunan
-memakai `var()`, ia tidak perlu diduplikasi untuk mode gelap.
+Nilai yang ditulis di `index.css` hanya yang memang dipilih berbeda dari bawaan HeroUI:
+hue netralnya dan `--radius`. Selebihnya — skala radius, `--spacing`, seluruh warna
+`*-hover` dan `*-soft`, bayangan, lebar cincin fokus — dihitung HeroUI sendiri dari
+nilai-nilai itu. Jangan menuliskannya ulang; menyalin satu nilai turunan ke `index.css`
+memutus hubungannya dengan induknya tanpa ada yang menyadari.
+
+Mode gelap adalah kelas `dark` atau `data-theme="dark"` di `<html>`.
 
 ### 3.2 Warna grafik
 
@@ -340,8 +345,21 @@ untuk tautan yang seluruhnya sudah ada di sidebar.
 **Geist dipertahankan meski contoh HeroUI memakai Inter.** Aplikasi ini harus bisa jalan
 tanpa internet.
 
-**`shadcn` tetap jadi dependency (di `devDependencies`).** Bukan CLI murni — `index.css`
-mengimpor `shadcn/tailwind.css`, dan mencabutnya mematikan build CSS.
+**`shadcn` dicabut sepenuhnya — catatan sebelumnya di sini salah.** Dokumen ini pernah
+menyatakan paket itu wajib tinggal karena `index.css` mengimpor `shadcn/tailwind.css` dan
+mencabutnya mematikan build CSS. Yang benar: berkas itu hanya berisi keyframes accordion,
+custom variant `data-open` / `data-closed` / `data-selected`, dan utilitas `no-scrollbar` —
+nol pemakaian di seluruh `src/`. Yang sungguh-sungguh mematikan build hanyalah satu baris
+`outline-ring/50` di `@layer base`, konvensi shadcn yang menunjuk `--ring`; aturan itu
+dilepas karena setiap komponen HeroUI menggambar cincin fokusnya sendiri lewat
+`status-focused`.
+
+**Sidebar dibangun tangan, dan memang harus.** HeroUI v3 tidak punya komponen navigasi —
+71 komponen, tidak satu pun sidebar, navbar, atau menu navigasi. Yang dipakai adalah
+primitifnya: `Disclosure` untuk grup yang melipat, `Drawer` untuk mode ponsel, `Tooltip`
+untuk label saat rail menyempit, `Dropdown` + `Avatar` untuk menu pengguna. Baris menunya
+mengikuti bentuk `.list-box-item` HeroUI (`rounded-2xl`, `gap-3`, hover `bg-default`),
+bukan bentuk shadcn yang dipakai sebelumnya.
 
 **Persentase porsi dihitung terhadap jumlah nilai mutlak.** Nilai bersih bisa negatif
 ketika retur melampaui penjualan; memakai jumlah bertanda akan membuat porsinya melebihi

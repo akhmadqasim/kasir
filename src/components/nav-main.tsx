@@ -88,7 +88,7 @@ function NavGroupItem({
             {items.map((subItem, index) => (
               <React.Fragment key={subItem.url}>
                 {subItem.group && (index === 0 || subItem.group !== items[index - 1].group) && (
-                  <li className="px-2 pt-2 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  <li className="px-2 pt-2 pb-1 text-[10px] font-semibold tracking-wider text-muted uppercase">
                     {subItem.group}
                   </li>
                 )}

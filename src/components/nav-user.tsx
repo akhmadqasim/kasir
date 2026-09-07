@@ -63,7 +63,7 @@ export function NavUser() {
               aria-label={id.profile.title}
               className={sidebarMenuButtonClass(
                 "lg",
-                "aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground",
+                "aria-expanded:bg-default aria-expanded:text-default-foreground",
               )}
             >
               <Avatar size="sm" className="rounded-lg">

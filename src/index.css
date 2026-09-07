@@ -1,23 +1,27 @@
 /* Tailwind first, then HeroUI — this order is required by @heroui/styles.
  *
- * `@heroui/styles` already pulls in `tw-animate-css`, so this file no longer
- * imports it separately. `shadcn/tailwind.css` stays for two leftovers, and only
- * those two: the `--sidebar-*` utilities the app shell still uses, and the
- * `--card` / `--background` / `--muted-foreground` utilities inside
- * `components/ui/chart.tsx` — the one shadcn component kept on purpose, because
- * HeroUI has no chart and recharts needs a wrapper.
- * The `dark` custom variant comes from HeroUI now — its definition matches
- * both `.dark` and `[data-theme="dark"]`, on the element itself and on
- * descendants, which is what the theme switch on <html> needs.
+ * `@heroui/styles` already pulls in `tw-animate-css`, so this file does not
+ * import it separately. `shadcn/tailwind.css` is gone: everything it shipped
+ * (accordion keyframes, `data-open` / `data-closed` / `data-selected` custom
+ * variants, `no-scrollbar`) turned out to have zero uses in `src/`, so the
+ * import was carrying a dependency for nothing.
+ *
+ * The `dark` custom variant comes from HeroUI — its definition matches both
+ * `.dark` and `[data-theme="dark"]`, on the element itself and on descendants,
+ * which is what the theme switch on <html> needs.
  */
 @import "tailwindcss";
 @import "@heroui/styles";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
 @layer base {
+  /* Tailwind v4 mewarnai border dengan `currentColor`; ini mengembalikannya ke
+     warna tepi tema, seperti yang diharapkan komponen HeroUI. Aturan
+     `outline-ring/50` yang dulu menemani baris ini sudah dilepas: itu konvensi
+     shadcn, dan setiap komponen HeroUI menggambar cincin fokusnya sendiri
+     lewat `status-focused`. */
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   html,
   body,
@@ -75,15 +79,12 @@
  * Blok ini sengaja tidak dibungkus `@layer` supaya menang atas deklarasi
  * `@layer base` bawaan `@heroui/styles`.
  *
- * ARAHNYA SEKARANG TERBALIK. Dulu nilai shadcn yang ditulis lebih dulu dan nama
- * HeroUI menunjuk ke sana. Setelah seluruh layar pindah, yang tersisa dari
- * shadcn hanya `components/ui/chart.tsx` (recharts butuh pembungkus) dan
- * utilitas `--sidebar-*` milik shell aplikasi — jadi palet HeroUI yang menjadi
- * sumber kebenaran dan nama shadcn yang menumpang di bawahnya. Warna baru cukup
- * ditambahkan di blok atas; blok turunan ikut dengan sendirinya.
- *
- * Hue 253.83 dipakai juga oleh seluruh netralnya, bukan abu-abu murni. Itu yang
- * membuat permukaannya terasa sewarna dengan aksen birunya, bukan abu-abu mati.
+ * Yang ditulis di sini hanya nilai yang memang kami pilih berbeda dari bawaan
+ * HeroUI: hue netralnya (253.83, sehingga permukaannya sewarna dengan aksen
+ * birunya alih-alih abu-abu keunguan bawaan) dan `--radius` 0.75rem. Sisanya —
+ * `--radius-*`, `--spacing`, seluruh warna `*-hover` dan `*-soft`, bayangan,
+ * lebar cincin fokus — dihitung sendiri oleh HeroUI dari nilai-nilai ini dan
+ * tidak perlu diulang.
  */
 :root,
 .light,
@@ -95,7 +96,6 @@
   --border: oklch(90% 0.0015 253.83);
   --separator: oklch(92% 0.0015 253.83);
   --scrollbar: oklch(87.1% 0.0015 253.83);
-  --focus: oklch(62.04% 0.195 253.83);
 
   /* Permukaan bertingkat */
   --surface: oklch(100% 0.0008 253.83);
@@ -122,17 +122,15 @@
   --warning-foreground: oklch(21.03% 0.0059 72.33);
   --danger: oklch(65.32% 0.2335 25.74);
   --danger-foreground: oklch(99.11% 0 0);
+  --focus: var(--accent);
 
-  /* Kolom isian. Bordernya transparan, bukan tidak ada: lebarnya tetap 1px
-     supaya kotaknya tidak berubah ukuran ketika fokus memberinya warna. */
+  /* Kolom isian */
   --field-background: oklch(100% 0.0008 253.83);
   --field-foreground: oklch(21.03% 0.0015 253.83);
   --field-placeholder: oklch(55.17% 0.003 253.83);
   --field-border: transparent;
-  --field-border-width: 1px;
 
   --radius: 0.75rem;
-  --field-radius: 0.75rem;
 }
 
 .dark,
@@ -145,7 +143,6 @@
   --border: oklch(28% 0.0015 253.83);
   --separator: oklch(25% 0.0015 253.83);
   --scrollbar: oklch(70.5% 0.0015 253.83);
-  --focus: oklch(62.04% 0.195 253.83);
 
   --surface: oklch(21.03% 0.003 253.83);
   --surface-foreground: oklch(99.11% 0.0015 253.83);
@@ -169,57 +166,28 @@
   --warning-foreground: oklch(21.03% 0.0059 76.34);
   --danger: oklch(59.4% 0.1973 24.63);
   --danger-foreground: oklch(99.11% 0 0);
+  --focus: var(--accent);
 
   --field-background: oklch(21.03% 0.003 253.83);
   --field-foreground: oklch(99.11% 0.0015 253.83);
   --field-placeholder: oklch(70.5% 0.003 253.83);
   --field-border: transparent;
-  --field-border-width: 1px;
 }
 
-/* Nama shadcn yang masih terpakai, seluruhnya turunan dari palet di atas.
+/* Warna grafik, satu-satunya token di luar palet HeroUI yang masih dibutuhkan.
  *
- * Hanya dua tempat yang benar-benar membacanya: `components/ui/chart.tsx`
- * (`--card`, `--background`, `--muted-foreground`, `--chart-1..5`) dan utilitas
- * `--sidebar-*` dari `shadcn/tailwind.css` yang dipakai shell aplikasi. Sisanya
- * ikut didefinisikan karena `@theme inline` di bawah menjembatani semuanya
- * menjadi utilitas Tailwind, dan nama yang menganga menghasilkan warna kosong.
+ * Dibaca langsung oleh recharts lewat `components/ui/chart.tsx`, selalu sebagai
+ * `var(--chart-N)` dan tidak pernah sebagai kelas Tailwind — itu sebabnya tidak
+ * ada jembatan `@theme` untuknya.
  *
- * Semua nilainya `var()`, jadi blok ini tidak perlu diulang untuk mode gelap.
+ * Bukan gradasi satu warna: grafik metode pembayaran menggambar sampai lima
+ * garis sekaligus, dan lima tingkat biru yang berdekatan tidak terbedakan
+ * begitu garisnya bersinggungan. Seri pertama memakai aksen dan sisanya
+ * memutari roda warna pada lightness yang setara, supaya tidak ada satu garis
+ * pun yang tampak lebih penting dari yang lain. Dua terakhir dipinjam dari
+ * `--warning` dan `--success` agar paletnya tetap satu bahasa.
  */
 :root {
-  --card: var(--surface);
-  --card-foreground: var(--surface-foreground);
-  --popover: var(--overlay);
-  --popover-foreground: var(--overlay-foreground);
-  --primary: var(--accent);
-  --primary-foreground: var(--accent-foreground);
-  --secondary: var(--surface-secondary);
-  --secondary-foreground: var(--surface-secondary-foreground);
-  --muted-foreground: var(--muted);
-  --destructive: var(--danger);
-  --input: var(--border);
-  --ring: var(--focus);
-
-  /* Sidebar menyatu dengan kanvas; kartu di sebelahnyalah yang lebih terang. */
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--accent);
-  --sidebar-primary-foreground: var(--accent-foreground);
-  --sidebar-accent: var(--default);
-  --sidebar-accent-foreground: var(--default-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--focus);
-
-  /* Warna grafik, dibaca langsung recharts lewat `components/ui/chart.tsx`.
-   *
-   * Bukan gradasi satu warna: grafik metode pembayaran menggambar sampai lima
-   * garis sekaligus, dan lima tingkat biru yang berdekatan tidak terbedakan
-   * begitu garisnya bersinggungan. Jadi seri pertama memakai aksen dan sisanya
-   * memutari roda warna pada lightness yang setara, supaya tidak ada satu garis
-   * pun yang tampak lebih penting dari yang lain. Dua terakhir sengaja dipinjam
-   * dari `--warning` dan `--success` agar paletnya tetap satu bahasa.
-   */
   --chart-1: var(--accent);
   --chart-2: oklch(70% 0.14 195);
   --chart-3: oklch(62% 0.19 295);
@@ -227,42 +195,9 @@
   --chart-5: oklch(73.29% 0.1941 150.81);
 }
 
-/* Jembatan token untuk nama-nama shadcn di atas. Jembatan milik HeroUI ada di
- * `@heroui/styles` dan digabung dengan yang ini; hanya nama di bawah yang
- * didefinisikan ulang di sini.
+/* Satu-satunya nama yang masih perlu dijembatani ke utilitas Tailwind. Skala
+ * radius, warna, dan spasi seluruhnya datang dari `@heroui/styles`.
  */
 @theme inline {
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: "Geist Variable", sans-serif;
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-destructive: var(--destructive);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
 }
