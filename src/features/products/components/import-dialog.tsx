@@ -382,7 +382,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 <Button
                   className="h-auto self-start p-0 text-xs"
                   size="sm"
-                  variant="ghost"
+                  variant="tertiary"
                   onPress={downloadSampleTemplate}
                 >
                   <Download className="mr-1 h-3 w-3" />
@@ -535,7 +535,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
           {step === "mapping" && (
             <Modal.Footer className="justify-between">
-              <Button variant="outline" onPress={resetState}>
+              <Button variant="tertiary" onPress={resetState}>
                 {id.common.back}
               </Button>
               <div className="flex items-center gap-3">
@@ -554,7 +554,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
           {step === "result" && result && (
             <Modal.Footer>
-              <Button variant="outline" onPress={resetState}>
+              <Button variant="secondary" onPress={resetState}>
                 Import Lagi
               </Button>
               <Button onPress={() => handleOpenChange(false)}>Selesai</Button>

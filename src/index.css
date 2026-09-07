@@ -195,6 +195,32 @@
   --chart-5: oklch(73.29% 0.1941 150.81);
 }
 
+/* Warna pengenal layanan PPOB.
+ *
+ * Sembilan layanan tampil berdampingan dalam satu kisi, dan kasir mengenalinya
+ * dari warna sebelum sempat membaca labelnya — jadi warnanya memang informasi,
+ * bukan hiasan, dan tidak bisa diseragamkan jadi satu aksen.
+ *
+ * Sebelumnya ini palet Tailwind mentah (`bg-blue-500`, `bg-blue-100
+ * dark:bg-blue-950`) dengan varian gelap ditulis tangan satu per satu. Di sini
+ * lightness-nya dipilih pada pita yang sama, 60-75%, sehingga satu nilai
+ * terbaca di atas `--background` terang maupun gelap dan tidak ada lagi
+ * `dark:` yang bisa lupa diperbarui. Latar redupnya cukup ditulis
+ * `bg-[var(--service-pulsa)]/15` di komponen, mengikuti cara HeroUI membuat
+ * varian `-soft`-nya sendiri.
+ */
+:root {
+  --service-pulsa: oklch(62% 0.19 254);
+  --service-data: oklch(62% 0.19 300);
+  --service-pln: oklch(75% 0.16 85);
+  --service-pdam: oklch(70% 0.13 210);
+  --service-bpjs: oklch(62% 0.21 25);
+  --service-pp: oklch(68% 0.17 150);
+  --service-transfer: oklch(70% 0.16 55);
+  --service-emoney: oklch(66% 0.2 350);
+  --service-voucher: oklch(60% 0.19 275);
+}
+
 /* Satu-satunya nama yang masih perlu dijembatani ke utilitas Tailwind. Skala
  * radius, warna, dan spasi seluruhnya datang dari `@heroui/styles`.
  */

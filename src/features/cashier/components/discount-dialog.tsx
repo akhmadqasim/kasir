@@ -159,7 +159,7 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
 
       <Modal.Footer>
         {transactionDiscount && (
-          <Button variant="outline" onPress={handleReset}>
+          <Button variant="tertiary" onPress={handleReset}>
             Reset
           </Button>
         )}

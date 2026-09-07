@@ -226,7 +226,7 @@ export function PpobQuickAccess({
             aria-label="Kembali"
             className="h-8 w-8"
             isIconOnly
-            variant="ghost"
+            variant="tertiary"
             onPress={() => {
               if (initialService || onBack) {
                 onBack?.()
@@ -306,7 +306,7 @@ export function PpobQuickAccess({
           <Button
             key={key}
             className="h-auto flex-col gap-1.5 py-3"
-            variant="outline"
+            variant="secondary"
             onPress={() => setSelectedService(key)}
           >
             <Icon className={`h-5 w-5 ${PPOB_SERVICE_COLORS[key].text}`} />
@@ -341,7 +341,7 @@ function SaldoBar() {
           aria-label="Muat ulang saldo"
           className="h-7 w-7"
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => refetch()}
         >
           <RefreshCw className="h-3.5 w-3.5" />
@@ -350,7 +350,7 @@ function SaldoBar() {
           aria-label="Riwayat transaksi"
           className="h-7 w-7"
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => navigate("/ppob/history")}
         >
           <History className="h-3.5 w-3.5" />

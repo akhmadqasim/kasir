@@ -103,7 +103,7 @@ export function RefundsPage() {
         </Select>
 
         {hasFilters && (
-          <Button size="sm" variant="ghost" onPress={resetFilters}>
+          <Button size="sm" variant="tertiary" onPress={resetFilters}>
             <X className="mr-1 h-4 w-4" />
             {id.transactions.resetFilter}
           </Button>
@@ -190,7 +190,7 @@ export function RefundsPage() {
                             aria-label={id.refund.detail}
                             isIconOnly
                             size="sm"
-                            variant="ghost"
+                            variant="secondary"
                             onPress={() => setDetailRefundId(item.id)}
                           >
                             <Eye className="h-4 w-4" />

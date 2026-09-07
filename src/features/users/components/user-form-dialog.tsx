@@ -201,7 +201,7 @@ function UserFormBody({
         <Button
           isDisabled={isPending}
           type="button"
-          variant="outline"
+          variant="tertiary"
           onPress={() => onOpenChange(false)}
         >
           {id.users.cancel}

@@ -45,7 +45,7 @@ export function PpobHistory() {
         <Button
           aria-label={i18n.common.back}
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => navigate("/ppob")}
         >
           <ArrowLeft className="h-5 w-5" />

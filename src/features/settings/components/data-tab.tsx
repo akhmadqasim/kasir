@@ -300,7 +300,7 @@ export function DataTab() {
                 {createBackupMutation.isPending ? "Membuat backup..." : "Backup Sekarang"}
               </Button>
               <Button
-                variant="outline"
+                variant="secondary"
                 onPress={() =>
                   exportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
                 }
@@ -390,7 +390,7 @@ export function DataTab() {
 
           <Button
             isDisabled={createBackupMutation.isPending}
-            variant="outline"
+            variant="secondary"
             onPress={() => createBackupMutation.mutate(undefined)}
           >
             <RefreshCw
@@ -442,7 +442,7 @@ export function DataTab() {
                               aria-label={`Pulihkan backup ${backup.filename}`}
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="secondary"
                               onPress={() =>
                                 setPendingBackup({ action: "restore", filename: backup.filename })
                               }
@@ -451,10 +451,9 @@ export function DataTab() {
                             </Button>
                             <Button
                               aria-label={`Hapus backup ${backup.filename}`}
-                              className="text-danger"
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="danger"
                               onPress={() =>
                                 setPendingBackup({ action: "delete", filename: backup.filename })
                               }
@@ -512,9 +511,14 @@ export function DataTab() {
             onChange={handleImportFileChosen}
             type="file"
           />
+          {/* `secondary`, bukan `danger`: tombol ini hanya membuka pemilih berkas.
+              Yang menimpa database adalah "Ya, Import" di AlertDialog bawah, dan
+              itu memang `danger`. Mewarnai keduanya merah membuat langkah yang
+              betul-betul merusak tidak lagi menonjol dari langkah menelusuri
+              berkas. */}
           <Button
             isDisabled={isImporting}
-            variant="danger"
+            variant="secondary"
             onPress={() => importInputRef.current?.click()}
           >
             <Upload className="mr-2 h-4 w-4" />
@@ -555,7 +559,7 @@ export function DataTab() {
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setPendingBackup(null)}>
+              <Button variant="tertiary" onPress={() => setPendingBackup(null)}>
                 Batal
               </Button>
               <Button
@@ -591,7 +595,7 @@ export function DataTab() {
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setPendingImportFile(null)}>
+              <Button variant="tertiary" onPress={() => setPendingImportFile(null)}>
                 Batal
               </Button>
               <Button variant="danger" onPress={() => void handleImportConfirmed()}>

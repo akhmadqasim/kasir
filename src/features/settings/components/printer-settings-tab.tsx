@@ -135,7 +135,7 @@ export function PrinterSettingsTab() {
               aria-label="Muat ulang daftar printer"
               isDisabled={printersQuery.isFetching}
               isIconOnly
-              variant="outline"
+              variant="tertiary"
               onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
             >
               <RefreshCw className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`} />
@@ -204,7 +204,7 @@ export function PrinterSettingsTab() {
           </Button>
           <Button
             isDisabled={testPrintMutation.isPending || !selectedPrinter}
-            variant="outline"
+            variant="secondary"
             onPress={() => testPrintMutation.mutate(undefined)}
           >
             <TestTube className="mr-2 h-4 w-4" />

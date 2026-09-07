@@ -135,7 +135,6 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                             isDisabled={!editName.trim() || updateCategory.isPending}
                             isIconOnly
                             size="sm"
-                            variant="ghost"
                             onPress={handleSaveEdit}
                           >
                             <Check className="h-4 w-4" />
@@ -145,7 +144,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                             className="h-8 w-8"
                             isIconOnly
                             size="sm"
-                            variant="ghost"
+                            variant="tertiary"
                             onPress={() => setEditingCategory(null)}
                           >
                             <X className="h-4 w-4" />
@@ -160,7 +159,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                               className="h-7 w-7"
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="secondary"
                               onPress={() => handleStartEdit(category)}
                             >
                               <Pencil className="h-3.5 w-3.5" />
@@ -170,10 +169,10 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                               className="h-7 w-7"
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="danger"
                               onPress={() => setDeleteTarget(category)}
                             >
-                              <Trash2 className="h-3.5 w-3.5 text-danger" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </>
@@ -209,7 +208,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
               <p className="text-sm text-muted">{id.products.deleteCategoryConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setDeleteTarget(null)}>
+              <Button variant="tertiary" onPress={() => setDeleteTarget(null)}>
                 {id.common.cancel}
               </Button>
               <Button variant="danger" onPress={handleDelete}>

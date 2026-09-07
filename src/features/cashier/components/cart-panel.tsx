@@ -238,7 +238,7 @@ export function CartPanel({
           <Button
             isDisabled={heldCarts.length === 0}
             size="sm"
-            variant="outline"
+            variant="secondary"
             onPress={() => {
               setSelectedIdx(0)
               setRecallDialogOpen(true)
@@ -325,7 +325,7 @@ export function CartPanel({
             <Button
               className="h-9 px-2 text-xs"
               isDisabled={items.length === 0}
-              variant="outline"
+              variant="secondary"
               onPress={() => setDiscountDialogOpen(true)}
             >
               <Percent className="mr-1 h-3.5 w-3.5 shrink-0" />
@@ -339,7 +339,7 @@ export function CartPanel({
             <Button
               className="h-9 px-2 text-xs"
               isDisabled={items.length === 0}
-              variant="outline"
+              variant="secondary"
               onPress={handleHold}
             >
               <PauseCircle className="mr-1 h-3.5 w-3.5 shrink-0" />
@@ -349,15 +349,15 @@ export function CartPanel({
               <>
                 <Button
                   className="h-9 px-2 text-xs"
-                  variant="outline"
+                  variant="secondary"
                   onPress={() => setCashFlowOpen(true)}
                 >
                   <ArrowDownUp className="mr-1 h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">Uang</span>
                 </Button>
                 <Button
-                  className="h-9 px-2 text-xs text-danger"
-                  variant="outline"
+                  className="h-9 px-2 text-xs"
+                  variant="danger"
                   onPress={() => navigate("/close-shift")}
                 >
                   <DoorClosed className="mr-1 h-3.5 w-3.5 shrink-0" />

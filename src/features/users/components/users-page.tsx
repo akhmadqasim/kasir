@@ -151,7 +151,7 @@ export function UsersPage() {
                             aria-label={`${id.users.edit} ${user.username}`}
                             isIconOnly
                             size="sm"
-                            variant="ghost"
+                            variant="secondary"
                             onPress={() => handleEdit(user)}
                           >
                             <PencilIcon className="h-4 w-4" />
@@ -161,13 +161,13 @@ export function UsersPage() {
                               aria-label={`${user.is_active ? id.users.deactivate : id.users.activate} ${user.username}`}
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant={user.is_active ? "danger" : "secondary"}
                               onPress={() => handleToggleActive(user)}
                             >
                               {user.is_active ? (
-                                <UserXIcon className="h-4 w-4 text-danger" />
+                                <UserXIcon className="h-4 w-4" />
                               ) : (
-                                <UserCheckIcon className="h-4 w-4 text-success" />
+                                <UserCheckIcon className="h-4 w-4" />
                               )}
                             </Button>
                           )}
@@ -197,7 +197,7 @@ export function UsersPage() {
               <p className="text-sm text-muted">{id.users.deactivateConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setDeactivateUser(null)}>
+              <Button variant="tertiary" onPress={() => setDeactivateUser(null)}>
                 {id.users.cancel}
               </Button>
               <Button variant="danger" onPress={confirmDeactivate}>

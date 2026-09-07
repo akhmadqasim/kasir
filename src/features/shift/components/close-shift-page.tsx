@@ -137,7 +137,7 @@ export function CloseShiftPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-muted">Gagal memuat ringkasan shift.</p>
-        <Button variant="outline" onPress={() => navigate(-1)}>
+        <Button variant="tertiary" onPress={() => navigate(-1)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Kembali
         </Button>
@@ -167,7 +167,7 @@ export function CloseShiftPage() {
       {/* Page header */}
       <div className="flex items-center justify-between px-4 lg:px-6">
         <div className="flex items-center gap-3">
-          <Button aria-label="Kembali" isIconOnly variant="ghost" onPress={() => navigate(-1)}>
+          <Button aria-label="Kembali" isIconOnly variant="tertiary" onPress={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-2xl font-bold">Tutup Kasir</h1>
@@ -280,10 +280,10 @@ export function CloseShiftPage() {
                     {canDeleteCashFlow(cf) && (
                       <Button
                         aria-label={`Hapus arus kas ${cf.description}`}
-                        className="shrink-0 text-muted hover:text-danger"
+                        className="shrink-0"
                         isIconOnly
                         size="sm"
-                        variant="ghost"
+                        variant="danger"
                         onPress={() => setCashFlowToDelete(cf)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -404,7 +404,7 @@ export function CloseShiftPage() {
             <AlertDialog.Footer>
               <Button
                 isDisabled={isSubmitting}
-                variant="outline"
+                variant="tertiary"
                 onPress={() => setCloseStep("idle")}
               >
                 Batal
@@ -446,7 +446,7 @@ export function CloseShiftPage() {
             <AlertDialog.Footer>
               <Button
                 isDisabled={isSubmitting}
-                variant="outline"
+                variant="tertiary"
                 onPress={() => setCloseStep("idle")}
               >
                 Kembali
@@ -493,7 +493,7 @@ export function CloseShiftPage() {
             <AlertDialog.Footer>
               <Button
                 isDisabled={isDeletingCashFlow}
-                variant="outline"
+                variant="tertiary"
                 onPress={() => setCashFlowToDelete(null)}
               >
                 Batal

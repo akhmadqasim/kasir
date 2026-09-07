@@ -75,10 +75,10 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
             ditekan, jadi tidak ada lagi `stopPropagation` yang perlu ditulis. */}
         <Button
           aria-label={`Hapus ${item.product_name}`}
-          className="h-7 w-7 text-muted hover:text-danger"
+          className="h-7 w-7"
           isIconOnly
           size="sm"
-          variant="ghost"
+          variant="danger"
           onPress={() => onRemove(item.cart_id)}
         >
           <Trash2 className="h-3.5 w-3.5" />

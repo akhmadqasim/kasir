@@ -258,11 +258,11 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
 
         {/* Action Buttons */}
         <div className="flex gap-3 print:hidden">
-          <Button className="h-12 flex-1" variant="outline" onPress={onBack}>
+          <Button className="h-12 flex-1" variant="tertiary" onPress={onBack}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Kembali
           </Button>
-          <Button className="h-12 flex-1" variant="outline" onPress={handlePrint}>
+          <Button className="h-12 flex-1" onPress={handlePrint}>
             <Printer className="mr-2 h-4 w-4" />
             Cetak Laporan
           </Button>

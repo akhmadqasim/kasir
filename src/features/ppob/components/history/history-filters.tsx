@@ -79,7 +79,7 @@ export function HistoryFilters({
       </Select>
 
       {hasFilters && (
-        <Button size="sm" variant="ghost" onPress={resetFilters}>
+        <Button size="sm" variant="tertiary" onPress={resetFilters}>
           <X className="mr-1 h-4 w-4" />
           Reset Filter
         </Button>

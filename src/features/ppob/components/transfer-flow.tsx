@@ -51,7 +51,7 @@ export function TransferFlow() {
         <Button
           aria-label={id.common.back}
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => navigate("/ppob")}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -92,7 +92,7 @@ export function TransferFlow() {
                     <Button
                       key={ch.channel}
                       className="h-auto w-full flex-col items-start gap-0.5 px-4 py-4 text-left"
-                      variant="outline"
+                      variant="secondary"
                       onPress={() => {
                         setSelectedChannel(ch)
                         if (ch.details.length === 1) {
@@ -120,7 +120,7 @@ export function TransferFlow() {
                   <Button
                     key={detail.channelId}
                     className="h-auto w-full justify-between px-4 py-3"
-                    variant="outline"
+                    variant="secondary"
                     onPress={() => setSelectedDetail(detail)}
                   >
                     <span className="font-medium">{detail.transferType}</span>
@@ -129,7 +129,7 @@ export function TransferFlow() {
                     </span>
                   </Button>
                 ))}
-                <Button className="mt-2" size="sm" variant="outline" onPress={resetChannel}>
+                <Button className="mt-2" size="sm" variant="tertiary" onPress={resetChannel}>
                   Ganti Bank
                 </Button>
               </Card.Content>
@@ -150,7 +150,7 @@ export function TransferFlow() {
                   </div>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="tertiary"
                     onPress={() => {
                       resetChannel()
                       setAccountNumber("")

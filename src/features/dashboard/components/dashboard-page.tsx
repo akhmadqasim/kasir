@@ -67,7 +67,7 @@ export function DashboardPage() {
             <Button
               isIconOnly
               aria-label="Muat ulang data"
-              variant="outline"
+              variant="tertiary"
               onPress={() => {
                 void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
               }}

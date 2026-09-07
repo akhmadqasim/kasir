@@ -105,11 +105,11 @@ export function ProductsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{id.products.title}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onPress={() => setImportOpen(true)}>
+          <Button variant="secondary" onPress={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-          <Button variant="outline" onPress={() => setCategoryManagerOpen(true)}>
+          <Button variant="secondary" onPress={() => setCategoryManagerOpen(true)}>
             <Tags className="mr-2 h-4 w-4" />
             {id.products.manageCategories}
           </Button>

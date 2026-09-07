@@ -51,7 +51,12 @@ function SaldoCard() {
             </>
           )}
         </div>
-        <Button aria-label="Muat ulang saldo" isIconOnly variant="ghost" onPress={() => refetch()}>
+        <Button
+          aria-label="Muat ulang saldo"
+          isIconOnly
+          variant="tertiary"
+          onPress={() => refetch()}
+        >
           <RefreshCw className="h-4 w-4" />
         </Button>
       </Card.Content>
@@ -68,7 +73,7 @@ function ServiceGrid() {
         <Button
           key={svc.key}
           className="h-auto flex-col gap-2 p-4"
-          variant="outline"
+          variant="secondary"
           onPress={() => navigate(svc.path)}
         >
           <svc.icon className={`h-7 w-7 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
@@ -87,15 +92,15 @@ function PpobHome() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{id.ppob.title}</h1>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onPress={() => navigate("notifications")}>
+          <Button size="sm" variant="secondary" onPress={() => navigate("notifications")}>
             <Bell className="mr-2 h-4 w-4" />
             {id.ppob.notifications}
           </Button>
-          <Button size="sm" variant="outline" onPress={() => navigate("mutasi")}>
+          <Button size="sm" variant="secondary" onPress={() => navigate("mutasi")}>
             <ArrowUpDown className="mr-2 h-4 w-4" />
             {id.ppob.mutasi}
           </Button>
-          <Button size="sm" variant="outline" onPress={() => navigate("history")}>
+          <Button size="sm" variant="secondary" onPress={() => navigate("history")}>
             <History className="mr-2 h-4 w-4" />
             {id.ppob.history}
           </Button>

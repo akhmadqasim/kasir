@@ -70,7 +70,7 @@ export function PaymentMethodsPage() {
                       yang diam-diam dibuang browser. Dijepit supaya bilahnya
                       selalu punya lebar yang masuk akal. */}
                   <div
-                    className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-[var(--muted-foreground)]"}`}
+                    className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-muted"}`}
                     style={{ width: `${clampPercentage(row.percentage)}%` }}
                   />
                 </div>

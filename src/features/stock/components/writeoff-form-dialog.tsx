@@ -215,7 +215,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
       </Modal.Body>
 
       <Modal.Footer>
-        <Button type="button" variant="outline" onPress={() => onOpenChange(false)}>
+        <Button type="button" variant="tertiary" onPress={() => onOpenChange(false)}>
           {id.common.cancel}
         </Button>
         <Button isDisabled={createWriteoff.isPending} type="submit">

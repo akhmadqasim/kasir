@@ -112,7 +112,7 @@ export function CreateRefundPage() {
             className="shrink-0"
             isIconOnly
             size="sm"
-            variant="ghost"
+            variant="tertiary"
             onPress={() => navigate(-1)}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -281,7 +281,7 @@ export function CreateRefundPage() {
                                     isDisabled={item.quantity <= 1}
                                     isIconOnly
                                     size="sm"
-                                    variant="outline"
+                                    variant="secondary"
                                     onPress={() =>
                                       updateExchangeQty(item.product_id, item.quantity - 1)
                                     }
@@ -295,7 +295,7 @@ export function CreateRefundPage() {
                                     aria-label="Tambah jumlah"
                                     isIconOnly
                                     size="sm"
-                                    variant="outline"
+                                    variant="secondary"
                                     onPress={() =>
                                       updateExchangeQty(item.product_id, item.quantity + 1)
                                     }
@@ -310,10 +310,9 @@ export function CreateRefundPage() {
                               <Table.Cell>
                                 <Button
                                   aria-label={`Hapus ${item.product_name}`}
-                                  className="text-muted hover:text-danger"
                                   isIconOnly
                                   size="sm"
-                                  variant="ghost"
+                                  variant="danger"
                                   onPress={() => removeExchangeItem(item.product_id)}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -404,7 +403,7 @@ export function CreateRefundPage() {
             <Button
               className="flex-1"
               isDisabled={isSubmitting}
-              variant="outline"
+              variant="tertiary"
               onPress={() => navigate(-1)}
             >
               {id.refund.cancel}

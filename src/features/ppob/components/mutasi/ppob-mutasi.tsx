@@ -287,7 +287,7 @@ function MutasiRow({ item, onPress }: { item: MutasiItem; onPress: () => void })
   return (
     <Button
       className="h-auto w-full justify-start gap-3 p-3 text-left"
-      variant="outline"
+      variant="secondary"
       onPress={onPress}
     >
       <span
@@ -409,14 +409,14 @@ export function PpobMutasi() {
         <Button
           aria-label={i18n.common.back}
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => navigate("/ppob")}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.mutasiTitle}</h1>
         <div className="ml-auto">
-          <Button isDisabled={isFetching} size="sm" variant="outline" onPress={() => refetch()}>
+          <Button isDisabled={isFetching} size="sm" variant="tertiary" onPress={() => refetch()}>
             {isFetching ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (

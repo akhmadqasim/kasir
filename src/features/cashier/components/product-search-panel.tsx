@@ -479,7 +479,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                                 }
                               : undefined
                           }
-                          variant="outline"
+                          variant="secondary"
                           onPress={() => !isHolding && handleShortcutSelect(product)}
                         >
                           <span className="w-full truncate text-sm font-medium">

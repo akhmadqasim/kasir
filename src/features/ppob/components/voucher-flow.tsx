@@ -16,7 +16,7 @@ export function VoucherFlow() {
         <Button
           aria-label={id.common.back}
           isIconOnly
-          variant="ghost"
+          variant="tertiary"
           onPress={() => navigate("/ppob")}
         >
           <ArrowLeft className="h-4 w-4" />

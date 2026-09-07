@@ -31,35 +31,67 @@ export interface PpobServiceDef {
   path: string
 }
 
-/** Presentational color classes keyed by service — only import in UI components */
+/**
+ * Kelas warna per layanan — hanya boleh diimpor komponen UI.
+ *
+ * Setiap layanan menunjuk satu token `--service-*` di `index.css`, bukan warna
+ * Tailwind mentah. Konsekuensinya tidak ada lagi `dark:` di sini: tokennya
+ * sudah dipilih pada pita lightness yang terbaca di kedua mode, dan latar
+ * redupnya diturunkan dengan penanda opasitas Tailwind alih-alih warna kedua
+ * yang harus dijaga tetap seiring.
+ *
+ * Kelasnya sengaja ditulis lengkap sebagai literal, bukan disusun dari
+ * `key`-nya, karena Tailwind memindai berkas sumber apa adanya dan kelas yang
+ * dirakit saat runtime tidak akan pernah ikut ter-generate.
+ */
 export const PPOB_SERVICE_COLORS: Record<
   PpobServiceKey,
   { text: string; bg: string; bgMuted: string }
 > = {
-  pulsa: { text: "text-blue-600", bg: "bg-blue-500", bgMuted: "bg-blue-100 dark:bg-blue-950" },
+  pulsa: {
+    text: "text-[var(--service-pulsa)]",
+    bg: "bg-[var(--service-pulsa)]",
+    bgMuted: "bg-[var(--service-pulsa)]/15",
+  },
   data: {
-    text: "text-purple-600",
-    bg: "bg-purple-500",
-    bgMuted: "bg-purple-100 dark:bg-purple-950",
+    text: "text-[var(--service-data)]",
+    bg: "bg-[var(--service-data)]",
+    bgMuted: "bg-[var(--service-data)]/15",
   },
   pln: {
-    text: "text-yellow-600",
-    bg: "bg-yellow-500",
-    bgMuted: "bg-yellow-100 dark:bg-yellow-950",
+    text: "text-[var(--service-pln)]",
+    bg: "bg-[var(--service-pln)]",
+    bgMuted: "bg-[var(--service-pln)]/15",
   },
-  pdam: { text: "text-cyan-600", bg: "bg-cyan-500", bgMuted: "bg-cyan-100 dark:bg-cyan-950" },
-  bpjs: { text: "text-red-600", bg: "bg-red-500", bgMuted: "bg-red-100 dark:bg-red-950" },
-  pp: { text: "text-green-600", bg: "bg-green-500", bgMuted: "bg-green-100 dark:bg-green-950" },
+  pdam: {
+    text: "text-[var(--service-pdam)]",
+    bg: "bg-[var(--service-pdam)]",
+    bgMuted: "bg-[var(--service-pdam)]/15",
+  },
+  bpjs: {
+    text: "text-[var(--service-bpjs)]",
+    bg: "bg-[var(--service-bpjs)]",
+    bgMuted: "bg-[var(--service-bpjs)]/15",
+  },
+  pp: {
+    text: "text-[var(--service-pp)]",
+    bg: "bg-[var(--service-pp)]",
+    bgMuted: "bg-[var(--service-pp)]/15",
+  },
   transfer: {
-    text: "text-orange-600",
-    bg: "bg-orange-500",
-    bgMuted: "bg-orange-100 dark:bg-orange-950",
+    text: "text-[var(--service-transfer)]",
+    bg: "bg-[var(--service-transfer)]",
+    bgMuted: "bg-[var(--service-transfer)]/15",
   },
-  emoney: { text: "text-pink-600", bg: "bg-pink-500", bgMuted: "bg-pink-100 dark:bg-pink-950" },
+  emoney: {
+    text: "text-[var(--service-emoney)]",
+    bg: "bg-[var(--service-emoney)]",
+    bgMuted: "bg-[var(--service-emoney)]/15",
+  },
   voucher: {
-    text: "text-indigo-600",
-    bg: "bg-indigo-500",
-    bgMuted: "bg-indigo-100 dark:bg-indigo-950",
+    text: "text-[var(--service-voucher)]",
+    bg: "bg-[var(--service-voucher)]",
+    bgMuted: "bg-[var(--service-voucher)]/15",
   },
 }
 

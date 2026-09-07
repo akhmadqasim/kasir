@@ -79,7 +79,7 @@ function RefundActionButton({
       isDisabled={blockedReason !== null}
       isIconOnly
       size="sm"
-      variant="ghost"
+      variant="secondary"
       onPress={onPress}
     >
       <RotateCcw className="h-4 w-4" />
@@ -252,7 +252,7 @@ export function TransactionsPage() {
         </Select>
 
         {hasFilters && (
-          <Button size="sm" variant="ghost" onPress={resetFilters}>
+          <Button size="sm" variant="tertiary" onPress={resetFilters}>
             <X className="mr-1 h-4 w-4" />
             {id.transactions.resetFilter}
           </Button>
@@ -344,7 +344,7 @@ export function TransactionsPage() {
                               aria-label={id.transactions.detail}
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="secondary"
                               onPress={() => setDetailTxn(txn)}
                             >
                               <Eye className="h-4 w-4" />
@@ -366,7 +366,7 @@ export function TransactionsPage() {
                               }
                               isIconOnly
                               size="sm"
-                              variant="ghost"
+                              variant="secondary"
                               onPress={() => handlePrint(txn.id)}
                             >
                               <Printer className="h-4 w-4" />

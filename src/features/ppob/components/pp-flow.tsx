@@ -48,7 +48,7 @@ export function PpFlow() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Button aria-label={id.common.back} isIconOnly variant="ghost" onPress={handleBack}>
+        <Button aria-label={id.common.back} isIconOnly variant="tertiary" onPress={handleBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -74,7 +74,7 @@ export function PpFlow() {
                     <Button
                       key={group.id}
                       className="h-auto flex-col gap-2 py-6"
-                      variant="outline"
+                      variant="secondary"
                       onPress={() => setSelectedGroup(group)}
                     >
                       {group.pathIcon && (
@@ -117,7 +117,7 @@ export function PpFlow() {
                       key={item.id}
                       className="h-auto w-full justify-start gap-3 px-4 py-4 text-left"
                       isDisabled={Boolean(item.isTrouble)}
-                      variant="outline"
+                      variant="secondary"
                       onPress={() => setSelectedMerchant(item)}
                     >
                       {item.pathIcon && (

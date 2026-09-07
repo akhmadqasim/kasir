@@ -196,7 +196,7 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
           )}
 
           <Modal.Footer>
-            <Button variant="outline" onPress={onClose}>
+            <Button variant="tertiary" onPress={onClose}>
               {id.refund.cancel}
             </Button>
           </Modal.Footer>

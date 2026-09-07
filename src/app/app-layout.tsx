@@ -115,7 +115,7 @@ function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps)
           aria-label="Buka menu"
           className="shadow-sm backdrop-blur md:hidden"
           size="sm"
-          variant="outline"
+          variant="tertiary"
           onPress={toggleSidebar}
         >
           <Menu />
@@ -129,7 +129,7 @@ function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps)
           aria-label="Perkecil tampilan"
           isDisabled={zoom <= ZOOM_MIN}
           size="sm"
-          variant="ghost"
+          variant="tertiary"
           onPress={zoomOut}
         >
           <Minus />
@@ -137,7 +137,7 @@ function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps)
         <Button
           className="min-w-12 text-xs font-medium tabular-nums"
           size="sm"
-          variant="ghost"
+          variant="tertiary"
           onPress={zoomReset}
         >
           {Math.round(zoom * 100)}%
@@ -147,7 +147,7 @@ function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps)
           aria-label="Perbesar tampilan"
           isDisabled={zoom >= ZOOM_MAX}
           size="sm"
-          variant="ghost"
+          variant="tertiary"
           onPress={zoomIn}
         >
           <Plus />

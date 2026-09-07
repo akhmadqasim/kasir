@@ -216,7 +216,7 @@ export function TransactionSuccessDialog({
             <Button
               className="w-full"
               isDisabled={isPrinting}
-              variant="outline"
+              variant="secondary"
               onPress={handlePrint}
             >
               <Printer className="mr-2 h-4 w-4" />

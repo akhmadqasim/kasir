@@ -223,7 +223,7 @@ export function PpobSettingsTab() {
                   isDisabled={!enabled}
                   isIconOnly
                   type="button"
-                  variant="outline"
+                  variant="tertiary"
                   onPress={() => setDeviceId(crypto.randomUUID())}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -271,7 +271,7 @@ export function PpobSettingsTab() {
             <Button
               isDisabled={testMutation.isPending || !enabled || !phoneNumber}
               isPending={testMutation.isPending}
-              variant="outline"
+              variant="secondary"
               onPress={() => testMutation.mutate(undefined)}
             >
               {({ isPending }) => (

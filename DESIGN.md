@@ -70,8 +70,8 @@ permukaannya terasa sewarna dengan tombol birunya alih-alih abu-abu mati.
 
 **Tidak ada lagi nama shadcn.** `--card`, `--popover`, `--primary`, `--secondary`,
 `--muted-foreground`, `--destructive`, `--input`, `--ring`, dan seluruh `--sidebar-*` sudah
-dihapus bersama paket `shadcn` itu sendiri. Satu-satunya token di luar palet HeroUI yang
-tersisa adalah `--chart-1..5`, dan itu hanya dibaca recharts sebagai `var()`.
+dihapus bersama paket `shadcn` itu sendiri. Yang tersisa di luar palet HeroUI hanya token
+kategori — `--chart-1..5` dan `--service-*` — dan keduanya dijelaskan di 3.2.
 
 Nilai yang ditulis di `index.css` hanya yang memang dipilih berbeda dari bawaan HeroUI:
 hue netralnya dan `--radius`. Selebihnya — skala radius, `--spacing`, seluruh warna
@@ -81,7 +81,24 @@ memutus hubungannya dengan induknya tanpa ada yang menyadari.
 
 Mode gelap adalah kelas `dark` atau `data-theme="dark"` di `<html>`.
 
-### 3.2 Warna grafik
+### 3.2 Warna kategori
+
+Dua kelompok warna berdiri di luar palet makna, dan keduanya ada karena warnanya benar-benar
+membawa informasi: `--chart-1..5` untuk seri grafik, dan `--service-*` untuk sembilan
+layanan PPOB. Kasir mengenali "Listrik" dari warnanya sebelum sempat membaca labelnya.
+
+Keduanya ditulis pada pita lightness yang sama, 60–75%, sehingga satu nilai terbaca di atas
+`--background` terang maupun gelap. **Tidak ada `dark:` di komponen mana pun untuk warna
+kategori** — varian gelap yang ditulis tangan per warna adalah persis yang baru saja
+dibuang, dan pasangan seperti `bg-blue-100 dark:bg-blue-950` selalu berakhir dengan satu
+sisi yang lupa diperbarui.
+
+Latar redupnya diturunkan dengan penanda opasitas Tailwind, bukan warna kedua:
+`bg-[var(--service-pulsa)]/15`. Itu cara HeroUI membuat varian `-soft`-nya sendiri.
+
+Warna Tailwind mentah (`bg-blue-500`, `text-gray-400`) tidak boleh muncul di `src/`.
+
+### 3.3 Warna grafik
 
 `--chart-1..5` **bukan gradasi satu warna.** Grafik metode pembayaran menggambar sampai
 lima garis sekaligus dan lima tingkat biru yang berdekatan tidak terbedakan begitu
@@ -93,7 +110,7 @@ Pemetaan warna ke metode pembayaran **dipatok**, bukan dibagi menurut urutan kem
 tanpa QRIS akan menggeser seluruh warna dan kasir yang hafal "garis biru itu tunai"
 membaca grafik yang salah.
 
-### 3.3 Tipografi
+### 3.4 Tipografi
 
 Satu keluarga huruf: **Geist Variable**, dimuat lokal lewat `@fontsource-variable/geist`.
 Bukan Inter seperti contoh di dokumentasi HeroUI — aplikasi ini harus jalan tanpa internet,
@@ -115,7 +132,7 @@ dari angkanya yang besar, bukan dari judul kartunya yang dibesar-besarkan.
 **Setiap angka memakai `tabular-nums`.** Tanpa itu digit berbeda lebar, dan kolom nominal
 yang rata kanan bergoyang saat datanya berubah.
 
-### 3.4 Jarak dan sudut
+### 3.5 Jarak dan sudut
 
 Kelipatan 4 px milik Tailwind. Yang dipakai berulang: `gap-2` di dalam satu baris kontrol,
 `gap-4` antar kartu, `gap-6` antar bagian besar halaman.
@@ -125,13 +142,15 @@ Kelipatan 4 px milik Tailwind. Yang dipakai berulang: `gap-2` di dalam satu bari
 lewat `p-5` dan rentetan `mt-*` di dalam satu `div` — itu melawan komponennya, dan
 jaraknya berhenti konsisten begitu ada satu kartu yang lupa disamakan.
 
-`--radius` bernilai `0.75rem`; skala `--radius-sm..4xl` di `@theme inline` diturunkan
-darinya, jadi mengubah satu angka itu mengubah kelengkungan seluruh aplikasi.
+`--radius` bernilai `0.75rem` — satu-satunya angka bentuk yang kita tetapkan. Skala
+`--radius-sm..4xl` **tidak** ditulis ulang: dulu ada override di `@theme inline` yang
+mempertahankan rasio shadcn, dan itu sudah dilepas. Sekarang kelengkungan seluruh aplikasi
+berubah dengan mengubah satu angka ini.
 
 Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` sudah memberi `p-4`;
 halaman hanya mengatur `gap` antar bagian.
 
-### 3.5 Ikon
+### 3.6 Ikon
 
 `lucide-react` saja. Ukurannya diwarisi dari komponen HeroUI; hanya beri `className="size-*"`
 kalau ikonnya berdiri di luar tombol atau chip.
@@ -161,7 +180,21 @@ tombolnya bergaris atau terisi".
 | `danger` / `danger-soft` | aksi merusak | saat perlu |
 
 `outline` dan `ghost` masih ada di pustakanya, tapi keduanya nama rupa dan bukan nama
-peran — jangan dipakai di kode baru. Layar yang masih memakainya adalah sisa migrasi.
+peran. **Jangan dipakai, di mana pun.** Keduanya sempat terpakai 112 kali di seluruh
+aplikasi — bukan sebagai pilihan, melainkan sebagai kebiasaan yang terbawa dari shadcn —
+dan sudah disapu habis.
+
+Dua aturan turunan yang paling sering dilanggar:
+
+**Satu `primary` per layar.** Kalau dua tombol sama-sama terasa pantas jadi primary, salah
+satunya bukan. Tanyakan mana yang benar-benar memajukan pekerjaan; sisanya `secondary`.
+Karena `primary` adalah nilai bawaan `Button`, tombol itu ditulis tanpa prop varian sama
+sekali — `<Button>Simpan</Button>`.
+
+**Tombol merusak memakai `variant="danger"`, bukan `text-danger`.** Mewarnai teksnya merah
+sendiri adalah cara lama menirukan varian yang sudah ada. Hasilnya bukan cuma beda tipis:
+`danger` mengatur latar, teks, hover, dan cincin fokus sekaligus, sedangkan tambalan
+manual hanya mewarnai satu di antaranya dan menyisakan tiga sisanya netral.
 
 - `Chip` — warna `default` (bawaan), `accent`, `success`, `warning`, `danger`; varian
   `primary`, `secondary` (bawaan), `tertiary`, `soft`. Kombinasi `soft` + warna semantik

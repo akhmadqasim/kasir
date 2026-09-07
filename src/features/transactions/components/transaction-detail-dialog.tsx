@@ -92,7 +92,7 @@ function RefundAction({
   onRefund: () => void
 }) {
   const button = (
-    <Button isDisabled={blockedReason !== null} size="sm" variant="outline" onPress={onRefund}>
+    <Button isDisabled={blockedReason !== null} size="sm" variant="secondary" onPress={onRefund}>
       <RotateCcw className="mr-2 h-4 w-4" />
       {id.refund.title}
     </Button>
@@ -455,7 +455,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     {isAdmin && !isDeleted && (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
                         onPress={() => {
                           // `mixed` is not one of the options and the backend rejects
                           // it, so leave the select empty and make the admin pick a
@@ -478,7 +478,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       <Button
                         isDisabled={isRetrying}
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
                         onPress={handleRetryPpob}
                       >
                         {isRetrying ? (
@@ -541,7 +541,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             <AlertDialog.Footer>
               <Button
                 isDisabled={isDeleting}
-                variant="outline"
+                variant="tertiary"
                 onPress={() => {
                   setDeleteReason("")
                   setShowDeleteConfirm(false)
@@ -616,7 +616,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             </Modal.Body>
             <Modal.Footer>
               <Button
-                variant="outline"
+                variant="tertiary"
                 onPress={() => {
                   setEditPaymentReason("")
                   setShowEditPayment(false)

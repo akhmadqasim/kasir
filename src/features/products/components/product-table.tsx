@@ -208,7 +208,7 @@ export function ProductTable({
                         aria-label={`${id.common.edit} ${product.name}`}
                         isIconOnly
                         size="sm"
-                        variant="ghost"
+                        variant="secondary"
                         onPress={() => onEdit(product)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -217,10 +217,10 @@ export function ProductTable({
                         aria-label={`${id.common.delete} ${product.name}`}
                         isIconOnly
                         size="sm"
-                        variant="ghost"
+                        variant="danger"
                         onPress={() => setDeleteTarget(product)}
                       >
-                        <Trash2 className="h-4 w-4 text-danger" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </Table.Cell>
@@ -248,7 +248,7 @@ export function ProductTable({
               <p className="text-sm text-muted">{id.products.deleteConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="outline" onPress={() => setDeleteTarget(null)}>
+              <Button variant="tertiary" onPress={() => setDeleteTarget(null)}>
                 {id.common.cancel}
               </Button>
               <Button variant="danger" onPress={handleDelete}>
@@ -275,7 +275,7 @@ function PinActionButton({ isPinned, onPress }: { isPinned: boolean; onPress: ()
 
   return (
     <Tooltip>
-      <Button aria-label={label} isIconOnly size="sm" variant="ghost" onPress={onPress}>
+      <Button aria-label={label} isIconOnly size="sm" variant="secondary" onPress={onPress}>
         <Pin className={cn("h-4 w-4", isPinned ? "fill-current text-accent" : "text-muted")} />
       </Button>
       <Tooltip.Content>{label}</Tooltip.Content>

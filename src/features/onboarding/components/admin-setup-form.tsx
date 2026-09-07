@@ -118,7 +118,7 @@ export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: Adm
           <p className="text-sm text-muted">{t.pinHint}</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Button type="button" variant="outline" onPress={() => onBack(currentData)}>
+          <Button type="button" variant="tertiary" onPress={() => onBack(currentData)}>
             {t.back}
           </Button>
           <Button isDisabled={isLoading} type="submit">

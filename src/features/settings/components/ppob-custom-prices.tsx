@@ -129,11 +129,11 @@ export function PpobCustomPrices({
               {hasPrice || isCustomNominal ? (
                 <Button
                   aria-label={`Hapus harga nominal ${formatRupiah(nominal)}`}
-                  className="h-7 w-7 text-muted hover:text-danger"
+                  className="h-7 w-7"
                   isDisabled={disabled}
                   isIconOnly
                   size="sm"
-                  variant="ghost"
+                  variant="danger"
                   onPress={() => handleRemoveCustom(nominal)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -164,7 +164,7 @@ export function PpobCustomPrices({
           className="h-8"
           isDisabled={disabled || !newNominal}
           size="sm"
-          variant="outline"
+          variant="secondary"
           onPress={handleAddNominal}
         >
           <Plus className="mr-1 h-3.5 w-3.5" />

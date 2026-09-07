@@ -103,7 +103,7 @@ export function CashierPage() {
             <Alert.Title className="text-sm">
               Shift belum dibuka — buka shift untuk mulai transaksi
             </Alert.Title>
-            <Button size="sm" variant="outline" onPress={() => setShiftDialogDismissed(false)}>
+            <Button size="sm" onPress={() => setShiftDialogDismissed(false)}>
               <DoorOpen className="mr-1 h-4 w-4" />
               Buka Kasir
             </Button>

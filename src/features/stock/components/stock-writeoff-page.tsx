@@ -334,7 +334,7 @@ export function StockWriteoffPage() {
             <AlertDialog.Footer>
               <Button
                 isDisabled={isPending}
-                variant="outline"
+                variant="tertiary"
                 onPress={() => setConfirmAction(null)}
               >
                 {id.common.cancel}
@@ -371,19 +371,18 @@ function WriteoffActions({
             aria-label="Setujui"
             isIconOnly
             size="sm"
-            variant="ghost"
             onPress={() => onAction({ type: "approve", writeoff })}
           >
-            <Check className="h-4 w-4 text-success" />
+            <Check className="h-4 w-4" />
           </Button>
           <Button
             aria-label="Tolak"
             isIconOnly
             size="sm"
-            variant="ghost"
+            variant="danger"
             onPress={() => onAction({ type: "reject", writeoff })}
           >
-            <X className="h-4 w-4 text-danger" />
+            <X className="h-4 w-4" />
           </Button>
         </>
       )}
@@ -392,10 +391,10 @@ function WriteoffActions({
           aria-label="Hapus"
           isIconOnly
           size="sm"
-          variant="ghost"
+          variant="danger"
           onPress={() => onAction({ type: "delete", writeoff })}
         >
-          <Trash2 className="h-4 w-4 text-danger" />
+          <Trash2 className="h-4 w-4" />
         </Button>
       )}
     </div>

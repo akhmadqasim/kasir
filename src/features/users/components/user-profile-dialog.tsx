@@ -125,7 +125,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
               <Button
                 isDisabled={changePin.isPending}
                 type="button"
-                variant="outline"
+                variant="tertiary"
                 onPress={() => handleOpenChange(false)}
               >
                 {id.users.cancel}

@@ -690,7 +690,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                     {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "000"].map((key) => (
                       <Button
                         key={key}
-                        variant="outline"
+                        variant="secondary"
                         className="h-9 text-base font-medium tabular-nums sm:h-9.5 sm:text-[1rem]"
                         onPress={() => handleKeypadInput(key)}
                       >
@@ -700,7 +700,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                   <div className="grid grid-rows-2 gap-2">
                     <Button
-                      variant="outline"
+                      variant="tertiary"
                       className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                       onPress={handleKeypadDelete}
                     >
@@ -708,7 +708,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       Delete
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="tertiary"
                       className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                       onPress={handleKeypadClear}
                     >
@@ -722,7 +722,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   {quickAmounts.map((amount) => (
                     <Button
                       key={amount}
-                      variant="outline"
+                      variant="secondary"
                       className="h-8 text-xs font-medium tabular-nums sm:h-8.5 sm:text-xs"
                       onPress={() => handleSetExactAmount(amount)}
                     >
@@ -732,7 +732,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 </div>
 
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   className="h-9 w-full text-base font-semibold sm:h-9.5 sm:text-lg"
                   onPress={handleSetRemainingAmount}
                 >

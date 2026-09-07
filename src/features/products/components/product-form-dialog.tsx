@@ -382,7 +382,7 @@ function ProductFormBody({
       </Modal.Body>
 
       <Modal.Footer>
-        <Button type="button" variant="outline" onPress={() => onOpenChange(false)}>
+        <Button type="button" variant="tertiary" onPress={() => onOpenChange(false)}>
           {id.common.cancel}
         </Button>
         <Button isDisabled={isPending} type="submit">

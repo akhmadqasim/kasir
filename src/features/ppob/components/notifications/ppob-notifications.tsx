@@ -138,7 +138,7 @@ export function PpobNotifications() {
           <Button
             aria-label={i18n.common.back}
             isIconOnly
-            variant="ghost"
+            variant="tertiary"
             onPress={() => navigate("/ppob")}
           >
             <ArrowLeft className="h-5 w-5" />
@@ -155,7 +155,7 @@ export function PpobNotifications() {
             <Button
               isDisabled={markAllRead.isPending}
               size="sm"
-              variant="outline"
+              variant="secondary"
               onPress={handleMarkAllRead}
             >
               {markAllRead.isPending ? (
@@ -170,7 +170,7 @@ export function PpobNotifications() {
             aria-label="Muat ulang dari Mitra"
             isDisabled={isRefetching}
             isIconOnly
-            variant="outline"
+            variant="tertiary"
             onPress={() => {
               // The first press switches to the forced key, which fetches on its
               // own; later presses are plain refetches of that same forced key.
@@ -217,7 +217,7 @@ export function PpobNotifications() {
                   className={`h-auto w-full flex-col items-start gap-1 p-3 text-left ${
                     isUnread ? "" : "bg-default/20"
                   }`}
-                  variant="outline"
+                  variant="secondary"
                   onPress={() => handleItemPress(item)}
                 >
                   <span className="flex items-center gap-2">

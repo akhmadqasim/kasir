@@ -167,7 +167,7 @@ function CartItemEditBody({
                 className="h-9 w-9"
                 isDisabled={qty <= 1}
                 isIconOnly
-                variant="outline"
+                variant="secondary"
                 onPress={() => handleQtyChange(qty - 1)}
               >
                 <Minus className="h-4 w-4" />
@@ -188,7 +188,7 @@ function CartItemEditBody({
                 className="h-9 w-9"
                 isDisabled={qty >= MAX_CART_QUANTITY}
                 isIconOnly
-                variant="outline"
+                variant="secondary"
                 onPress={() => handleQtyChange(qty + 1)}
               >
                 <Plus className="h-4 w-4" />
@@ -273,7 +273,7 @@ function CartItemEditBody({
 
       <Modal.Footer>
         {discAmount > 0 && (
-          <Button variant="outline" onPress={handleReset}>
+          <Button variant="tertiary" onPress={handleReset}>
             Reset Diskon
           </Button>
         )}
