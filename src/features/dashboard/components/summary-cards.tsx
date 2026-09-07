@@ -9,9 +9,9 @@ import { StatCard } from "./stat-card"
  * Empat angka hari ini, dibaca sekali lihat.
  *
  * Hanya penjualan yang punya pembanding — backend mengirim `yesterdayRevenue`,
- * dan tidak ada padanannya untuk laba, jumlah transaksi, maupun rata-rata. Tiga
- * kartu sisanya karena itu tampil tanpa lencana perubahan; laba memakai lencana
- * netral berisi marginnya, yang memang rasio dan bukan tren.
+ * dan tidak ada padanannya untuk laba, jumlah transaksi, maupun rata-rata. Dua
+ * kartu terakhir karena itu tampil tanpa lencana sama sekali; laba memakai
+ * lencana netral berisi marginnya, yang memang rasio dan bukan tren.
  */
 export function SummaryCards() {
   const { data: summary } = useDashboardSummary()
@@ -36,23 +36,19 @@ export function SummaryCards() {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
         delta={revenueChange}
-        hint={revenueChange === null ? "Belum ada angka kemarin" : t.dashboard.vsYesterday}
         label={t.dashboard.todayRevenue}
         value={formatRupiah(summary?.todayRevenue ?? 0)}
       />
       <StatCard
-        hint="Penjualan dikurangi harga modal"
         label={t.dashboard.grossProfit}
         note={marginPct === null ? undefined : `${marginPct.toFixed(1)}%`}
         value={formatRupiah(summary?.todayGrossProfit ?? 0)}
       />
       <StatCard
-        hint={t.dashboard.completedTransactions}
         label={t.dashboard.todayTransactions}
         value={formatNumber(summary?.todayTransactions ?? 0)}
       />
       <StatCard
-        hint={t.dashboard.perTransaction}
         label={t.dashboard.avgPerTransaction}
         value={formatRupiah(summary?.todayAvgPerTransaction ?? 0)}
       />

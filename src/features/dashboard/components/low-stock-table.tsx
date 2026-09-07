@@ -10,7 +10,7 @@ export function LowStockTable() {
   const rows = lowStock ?? []
 
   return (
-    <SectionCard count={rows.length} title={t.dashboard.lowStock}>
+    <SectionCard title={t.dashboard.lowStock}>
       <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content aria-label={t.dashboard.lowStock}>

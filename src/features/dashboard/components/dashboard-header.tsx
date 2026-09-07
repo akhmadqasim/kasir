@@ -20,13 +20,12 @@ function greeting(hour: number): string {
 }
 
 /**
- * Baris paling atas dashboard: siapa yang sedang login, keadaan lacinya, dan
- * jalan pintas ke pekerjaan yang benar-benar sering dilakukan.
+ * Baris paling atas dashboard: siapa yang login, keadaan lacinya, dan jalan
+ * pintas ke pekerjaan yang benar-benar sering dilakukan.
  *
- * Ini menggantikan kartu "Aksi Cepat" yang dulu memakan satu baris penuh untuk
- * empat tombol besar. Tombolnya sama, tapi tiga di antaranya cukup sebagai ikon
- * karena tujuannya juga ada di sidebar; yang benar-benar butuh ditekan setiap
- * pagi hanya satu, dan itu yang tetap berupa tombol utama bertulisan.
+ * Satu tombol `primary` di seluruh halaman, sesuai aturan HeroUI bahwa varian
+ * itu menandai satu aksi utama per konteks. Sisanya `tertiary`: tujuannya sudah
+ * ada di sidebar, jadi di sini cukup jadi jalan pintas yang tidak menarik mata.
  */
 export function DashboardHeader() {
   const navigate = useNavigate()
@@ -44,25 +43,21 @@ export function DashboardHeader() {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-3">
         <h1 className="truncate text-2xl font-semibold tracking-tight">
           {greeting(new Date().getHours())}
           {user ? `, ${user.full_name}` : ""}
         </h1>
-        <div className="mt-1 flex items-center gap-2 text-sm text-muted">
-          <span className="capitalize">{user?.role ?? "—"}</span>
-          <span aria-hidden="true">·</span>
-          <Chip color={activeShift ? "success" : "default"} size="sm" variant="soft">
-            <Chip.Label>{activeShift ? "Shift terbuka" : "Shift belum dibuka"}</Chip.Label>
-          </Chip>
-        </div>
+        <Chip color={activeShift ? "success" : "default"} size="sm">
+          {activeShift ? "Shift terbuka" : "Shift belum dibuka"}
+        </Chip>
       </div>
 
       <div className="flex items-center gap-2">
         <Button
           isIconOnly
           aria-label="Riwayat Transaksi"
-          variant="outline"
+          variant="tertiary"
           onPress={() => navigate("/transactions")}
         >
           <HistoryIcon />
@@ -71,7 +66,7 @@ export function DashboardHeader() {
           <Button
             isIconOnly
             aria-label="Kelola Produk"
-            variant="outline"
+            variant="tertiary"
             onPress={() => navigate("/products")}
           >
             <PackageIcon />
@@ -81,14 +76,14 @@ export function DashboardHeader() {
           <Button
             isIconOnly
             aria-label="Backup Sekarang"
-            isDisabled={createBackup.isPending}
-            variant="outline"
+            isPending={createBackup.isPending}
+            variant="tertiary"
             onPress={() => createBackup.mutate(undefined)}
           >
             <DatabaseBackupIcon />
           </Button>
         ) : null}
-        <Button variant="primary" onPress={() => navigate("/cashier")}>
+        <Button onPress={() => navigate("/cashier")}>
           <ShoppingCartIcon />
           Mulai Penjualan
         </Button>

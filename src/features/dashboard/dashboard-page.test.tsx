@@ -166,8 +166,8 @@ describe("halaman dashboard", () => {
     renderPage()
 
     await screen.findByText(rupiah(150_000))
+    // Tidak adanya lencana sudah cukup mengatakan tidak ada yang dibandingkan.
     expect(screen.queryByText(/^[+-]\d/)).not.toBeInTheDocument()
-    expect(screen.getByText("Belum ada angka kemarin")).toBeInTheDocument()
   })
 
   it("mengirim rentang hari yang sama ke kedua grafik saat periode diganti", async () => {

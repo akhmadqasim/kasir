@@ -30,11 +30,7 @@ export function PaymentBreakdownTable() {
   }, [stats])
 
   return (
-    <SectionCard
-      count={rows.length}
-      description={t.dashboard.todayBreakdown}
-      title={t.dashboard.paymentMethods}
-    >
+    <SectionCard title={t.dashboard.paymentMethods}>
       <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content aria-label={t.dashboard.paymentMethods}>

@@ -94,14 +94,18 @@ Satu keluarga huruf: **Geist Variable**, dimuat lokal lewat `@fontsource-variabl
 Bukan Inter seperti contoh di dokumentasi HeroUI — aplikasi ini harus jalan tanpa internet,
 jadi huruf yang diambil dari CDN tidak boleh dipakai.
 
+Hanya tiga peran yang boleh menimpa ukuran huruf bawaan komponen. Sisanya memakai apa yang
+sudah diberikan HeroUI.
+
 | Peran | Kelas |
 | --- | --- |
 | Judul halaman | `text-2xl font-semibold tracking-tight` |
 | Angka KPI | `text-3xl font-semibold tracking-tight tabular-nums` |
 | Angka sekunder di kepala grafik | `text-xl font-semibold tracking-tight tabular-nums` |
-| Judul kartu | `text-base` pada `Card.Title` |
-| Isi | bawaan |
-| Label, satuan, keterangan | `text-xs text-muted` atau `text-sm text-muted` |
+
+`Card.Title` (`text-sm font-medium`) dan `Card.Description` (`text-sm text-muted`) dipakai
+apa adanya — jangan diberi `text-base` atau `font-semibold`. Hierarki halaman ini datang
+dari angkanya yang besar, bukan dari judul kartunya yang dibesar-besarkan.
 
 **Setiap angka memakai `tabular-nums`.** Tanpa itu digit berbeda lebar, dan kolom nominal
 yang rata kanan bergoyang saat datanya berubah.
@@ -111,9 +115,13 @@ yang rata kanan bergoyang saat datanya berubah.
 Kelipatan 4 px milik Tailwind. Yang dipakai berulang: `gap-2` di dalam satu baris kontrol,
 `gap-4` antar kartu, `gap-6` antar bagian besar halaman.
 
-Padding kartu adalah `p-5`. `--radius` bernilai `0.75rem`; skala `--radius-sm..4xl` di
-`@theme inline` diturunkan darinya, jadi mengubah satu angka itu mengubah kelengkungan
-seluruh aplikasi.
+**Jangan atur padding kartu.** `Card` HeroUI sudah `p-4` dengan `gap-3` antar
+`Card.Header` / `Card.Content` / `Card.Footer`. Susun isinya lewat ketiga bagian itu, bukan
+lewat `p-5` dan rentetan `mt-*` di dalam satu `div` — itu melawan komponennya, dan
+jaraknya berhenti konsisten begitu ada satu kartu yang lupa disamakan.
+
+`--radius` bernilai `0.75rem`; skala `--radius-sm..4xl` di `@theme inline` diturunkan
+darinya, jadi mengubah satu angka itu mengubah kelengkungan seluruh aplikasi.
 
 Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` sudah memberi `p-4`;
 halaman hanya mengatur `gap` antar bagian.
@@ -134,19 +142,30 @@ Jangan tulis ulang komponen yang sudah ada. Sebelum membuat yang baru, periksa d
 komponen HeroUI — kalau MCP server-nya aktif (`.mcp.json`), `list_components` dan
 `get_component_docs` menjawab lebih cepat daripada menebak.
 
-### 4.1 Varian yang berlaku
+### 4.1 Varian mengikuti makna, bukan rupa
 
-Diambil dari `@heroui/styles` versi terpasang, bukan dari ingatan:
+Ini prinsip nomor satu HeroUI v3: nama varian menyatakan **peran** sebuah aksi, bukan
+gambarannya. Pilih varian dari pertanyaan "seberapa penting aksi ini", bukan "saya ingin
+tombolnya bergaris atau terisi".
 
-- `Button` — `primary` (bawaan), `secondary`, `tertiary`, `outline`, `ghost`, `danger`,
-  `danger-soft`. Satu tombol `primary` per layar; sisanya `outline` atau `ghost`.
+| `Button` | Untuk | Banyaknya |
+| --- | --- | --- |
+| `primary` (bawaan) | aksi utama yang memajukan pekerjaan | **satu per konteks** |
+| `secondary` | aksi alternatif | boleh beberapa |
+| `tertiary` | aksi ringan atau membatalkan | secukupnya |
+| `danger` / `danger-soft` | aksi merusak | saat perlu |
+
+`outline` dan `ghost` masih ada di pustakanya, tapi keduanya nama rupa dan bukan nama
+peran — jangan dipakai di kode baru. Layar yang masih memakainya adalah sisa migrasi.
+
 - `Chip` — warna `default` (bawaan), `accent`, `success`, `warning`, `danger`; varian
-  `primary`, `secondary` (bawaan), `tertiary`, `soft`. Di dashboard dipakai `soft`.
+  `primary`, `secondary` (bawaan), `tertiary`, `soft`. Kombinasi `soft` + warna semantik
+  punya gaya bawaan; `soft` + `default` tidak, jadi lencana netral memakai varian bawaan.
 - `Tabs` — `primary` (bawaan) atau `secondary`. Wadahnya sudah `bg-default` dan membulat,
-  jadi bentuk segmented seperti di contoh HeroUI didapat tanpa kelas tambahan.
+  jadi bentuk segmented seperti di contoh HeroUI didapat tanpa satu kelas tambahan pun.
 
-`Chip` selalu membungkus teksnya dalam `Chip.Label`; ikon diletakkan sebagai saudara
-`Chip.Label`, bukan di dalamnya.
+Teks polos di dalam `Chip` **otomatis** dibungkus `Chip.Label` — tulis `<Chip>Tunai</Chip>`.
+`Chip.Label` hanya perlu ditulis sendiri kalau ada ikon di sebelahnya.
 
 ### 4.2 Komponen bersama milik dashboard
 
@@ -154,12 +173,8 @@ Diambil dari `@heroui/styles` versi terpasang, bukan dari ingatan:
 | --- | --- |
 | `stat-card.tsx` | satu kartu KPI; `delta` untuk tren, `note` untuk lencana netral |
 | `inline-stat.tsx` | angka sekunder di kepala kartu grafik |
-| `section-card.tsx` | pembungkus daftar: judul, jumlah baris, keterangan; plus `NoData` |
+| `section-card.tsx` | pembungkus daftar: judul lalu isi; plus `NoData` |
 | `time-range.ts` / `time-range-select.tsx` | pilihan rentang waktu, dipakai bersama |
-
-Jumlah baris di sebelah judul `SectionCard` bukan hiasan: semua tabel di dashboard
-dipotong, dan tanpa angka itu pembaca tidak bisa membedakan "hanya segini yang ada" dari
-"sisanya dipotong".
 
 ## 5. Pola
 
@@ -186,9 +201,14 @@ isinya baru ada setelah tabnya diklik.
 
 ### 5.3 Kartu KPI
 
-Label kecil di kiri atas, lencana di kanan atas, angka besar, keterangan satu baris.
+Tiga hal saja: label, lencana bila ada yang dibandingkan, angka. **Tidak ada baris
+keempat.** Keterangan seperti "transaksi selesai" di bawah kartu berjudul "Transaksi Hari
+Ini" hanya mengulang labelnya dengan kata lain, dan empat kartu berdampingan yang
+masing-masing punya empat baris membuat baris teratas dashboard terasa penuh sebelum
+satu angka pun terbaca.
+
 Empat kartu per baris di layar lebar, dua di tablet, satu di ponsel. Tanpa gradasi, tanpa
-bayangan tebal, tanpa paragraf di kaki kartu.
+bayangan tambahan, tanpa paragraf di kaki kartu.
 
 ### 5.4 Tabel
 
@@ -198,6 +218,11 @@ diubah tanpa alasan. Kolom nominal rata kanan dan `tabular-nums`; kolom teks bol
 `truncate` dengan `max-w-*`.
 
 Keadaan kosong lewat `renderEmptyState={() => <NoData />}`, bukan satu baris ber-`colSpan`.
+
+**Sel berisi teks tetap teks.** Metode pembayaran di tabel transaksi pernah dibungkus
+`Chip`; sepuluh baris berarti sepuluh lencana, dan lencana berhenti berarti apa-apa ketika
+setiap baris punya satu. Lencana disimpan untuk yang benar-benar status — `StatusBadge`
+pada transaksi yang belum tuntas dan pada stok yang habis.
 
 ### 5.5 Grafik
 
@@ -278,7 +303,31 @@ Aturannya:
 6. Panggilan API tinggal di `src/lib/api/<resource>.ts`, kunci cache di
    `src/lib/api/query-keys.ts`. Tidak ada `fetch` langsung di dalam komponen.
 
-## 9. Catatan keputusan
+## 9. Kanso: apa yang dibuang, dan kenapa
+
+`簡素` — kesederhanaan yang didapat dengan membuang, bukan dengan menambah yang polos.
+Aturan kerjanya: **kalau elemennya bisa hilang tanpa ada informasi yang ikut hilang, ia
+memang harus hilang.** Sebelum menambahkan sesuatu ke layar, tanyakan informasi apa yang
+ia bawa yang belum dibawa tetangganya.
+
+Yang dibuang pada penyisiran terakhir, semuanya improvisasi yang tidak diminta brief-nya:
+
+| Dibuang | Alasan |
+| --- | --- |
+| Baris keterangan di tiap kartu KPI | mengulang label kartunya |
+| Lencana jumlah baris di tiap judul tabel | angkanya sudah kelihatan dari isi tabelnya |
+| `Chip` metode pembayaran di tiap baris tabel | sepuluh lencana per layar, nol informasi |
+| `p-5` dan rentetan `mt-*` di dalam kartu | melawan `Card` yang sudah mengatur jarak |
+| `text-base` pada `Card.Title` | membesarkan judul yang bukan hierarki utama |
+| Garis putus-putus pada grid grafik | dua pola garis untuk satu garis bantu |
+| Peran pengguna dan pemisah `·` di kepala | identitas sudah ada di sidebar |
+| `variant="outline"` pada tombol ikon | nama rupa; `tertiary` menyatakan perannya |
+
+Yang **tidak** dibuang meski menggoda: sumbu-Y pada kedua grafik (tanpanya besaran
+batangnya tidak terbaca), legenda bertulisan pada grafik metode (warna saja bukan pembeda
+yang boleh berdiri sendiri), dan `StatusBadge` (statusnya memang informasi baru).
+
+## 10. Catatan keputusan
 
 **Radar chart dibuang.** Ia memberi satu bentuk untuk satu hari dan tidak bisa menjawab
 pertanyaan yang sebenarnya ditanyakan pemilik toko — apakah QRIS naik terhadap tunai —

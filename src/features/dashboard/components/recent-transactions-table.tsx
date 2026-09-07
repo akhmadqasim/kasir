@@ -1,4 +1,4 @@
-import { Chip, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
 import { StatusBadge } from "@/components/status-badge"
 import { id as t } from "@/i18n/id"
@@ -12,7 +12,7 @@ export function RecentTransactionsTable() {
   const rows = recentTx ?? []
 
   return (
-    <SectionCard count={rows.length} title={t.dashboard.recentTransactions}>
+    <SectionCard title={t.dashboard.recentTransactions}>
       <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content aria-label={t.dashboard.recentTransactions} className="min-w-[720px]">
@@ -44,11 +44,7 @@ export function RecentTransactionsTable() {
                     </div>
                   </Table.Cell>
                   <Table.Cell>{tx.cashierName}</Table.Cell>
-                  <Table.Cell>
-                    <Chip size="sm" variant="soft">
-                      <Chip.Label>{paymentMethodLabel(tx.paymentMethod)}</Chip.Label>
-                    </Chip>
-                  </Table.Cell>
+                  <Table.Cell>{paymentMethodLabel(tx.paymentMethod)}</Table.Cell>
                   <Table.Cell className="text-muted">{formatDateTime(tx.createdAt)}</Table.Cell>
                   <Table.Cell className="text-center tabular-nums">
                     {formatNumber(tx.totalItems)}

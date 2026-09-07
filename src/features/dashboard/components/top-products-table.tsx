@@ -10,7 +10,7 @@ export function TopProductsTable({ limit = 10 }: { limit?: number }) {
   const rows = topProducts ?? []
 
   return (
-    <SectionCard count={rows.length} title={t.dashboard.topProducts}>
+    <SectionCard title={t.dashboard.topProducts}>
       <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content aria-label={t.dashboard.topProducts}>

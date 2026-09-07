@@ -11,16 +11,17 @@ import {
 import { id as t } from "@/i18n/id"
 import { formatCompactRupiah, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
+import type { PaymentMethodDaily } from "../types"
 import { usePaymentMethodDaily } from "../hooks/use-dashboard"
+import { InlineStat } from "./inline-stat"
 
 /**
  * Warna per metode, dipatok bukan dibagikan menurut urutan kemunculan.
  *
- * Kalau warnanya diambil berurutan dari data, hari pertama toko tidak menerima
- * QRIS akan menggeser seluruh warna satu langkah, dan kasir yang sudah hafal
- * "garis biru itu tunai" membaca grafik yang salah. `mixed` sengaja abu-abu:
- * ia bukan metode yang bisa dipilih, melainkan penanda transaksi yang dibayar
- * dengan beberapa metode sekaligus.
+ * Kalau warnanya diambil berurutan dari data, satu hari tanpa QRIS akan
+ * menggeser seluruh warna dan kasir yang hafal "garis biru itu tunai" membaca
+ * grafik yang salah. `mixed` sengaja abu-abu: ia bukan metode yang bisa
+ * dipilih, melainkan penanda transaksi yang dibayar dengan beberapa metode.
  */
 const METHOD_COLORS: Record<string, string> = {
   cash: "var(--chart-1)",
@@ -37,7 +38,7 @@ function colorFor(method: string): string {
 }
 
 /** Baris panjang dari API menjadi satu baris per tanggal, satu kolom per metode. */
-function pivot(rows: { date: string; method: string; total: number }[]) {
+function pivot(rows: PaymentMethodDaily[]) {
   const byDate = new Map<string, Record<string, string | number>>()
   for (const row of rows) {
     const existing = byDate.get(row.date) ?? { date: row.date }
@@ -45,6 +46,21 @@ function pivot(rows: { date: string; method: string; total: number }[]) {
     byDate.set(row.date, existing)
   }
   return [...byDate.values()]
+}
+
+function shortDate(value: string): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
+    month: "short",
+    day: "numeric",
+  })
+}
+
+function longDate(value: string): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })
 }
 
 /**
@@ -82,9 +98,9 @@ export function PaymentTrendChart({ days }: { days: number }) {
   const hasData = data.length > 0 && methods.length > 0
 
   return (
-    <Card className="gap-0 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <Card.Title className="text-base">{t.dashboard.paymentMethods}</Card.Title>
+    <Card>
+      <Card.Header className="flex-row flex-wrap items-center justify-between gap-3">
+        <Card.Title>{t.dashboard.paymentMethods}</Card.Title>
         {hasData ? (
           <ul
             aria-label="Legenda metode pembayaran"
@@ -102,68 +118,55 @@ export function PaymentTrendChart({ days }: { days: number }) {
             ))}
           </ul>
         ) : null}
-      </div>
+      </Card.Header>
+      <Card.Content className="gap-4">
+        <InlineStat label={t.dashboard.totalRevenue} value={formatRupiah(total)} />
 
-      <p className="mt-4 text-xl font-semibold tracking-tight tabular-nums">
-        {formatRupiah(total)}
-      </p>
-      <p className="text-xs text-muted">{t.dashboard.totalRevenue}</p>
-
-      {hasData ? (
-        <ChartContainer config={chartConfig} className="mt-6 aspect-auto h-[260px] w-full">
-          <LineChart accessibilityLayer data={data} margin={{ left: 4, right: 4 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis
-              axisLine={false}
-              dataKey="date"
-              minTickGap={24}
-              tickFormatter={(value: string) =>
-                new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-                  month: "short",
-                  day: "numeric",
-                })
-              }
-              tickLine={false}
-              tickMargin={10}
-            />
-            <YAxis
-              axisLine={false}
-              tickFormatter={formatCompactRupiah}
-              tickLine={false}
-              tickMargin={8}
-              width={56}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => formatRupiah(Number(value))}
-                  labelFormatter={(value) =>
-                    new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })
-                  }
-                />
-              }
-            />
-            {methods.map((method) => (
-              <Line
-                key={method}
-                dataKey={method}
-                dot={false}
-                stroke={`var(--color-${method})`}
-                strokeWidth={2}
-                type="monotone"
+        {hasData ? (
+          <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
+            <LineChart accessibilityLayer data={data} margin={{ left: 4, right: 4 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                axisLine={false}
+                dataKey="date"
+                minTickGap={24}
+                tickFormatter={shortDate}
+                tickLine={false}
+                tickMargin={10}
               />
-            ))}
-          </LineChart>
-        </ChartContainer>
-      ) : (
-        <div className="mt-6 flex h-[260px] items-center justify-center text-muted">
-          {t.dashboard.noData}
-        </div>
-      )}
+              <YAxis
+                axisLine={false}
+                tickFormatter={formatCompactRupiah}
+                tickLine={false}
+                tickMargin={8}
+                width={52}
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    formatter={(value) => formatRupiah(Number(value))}
+                    labelFormatter={(value) => longDate(String(value))}
+                  />
+                }
+              />
+              {methods.map((method) => (
+                <Line
+                  key={method}
+                  dataKey={method}
+                  dot={false}
+                  stroke={`var(--color-${method})`}
+                  strokeWidth={2}
+                  type="monotone"
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        ) : (
+          <div className="flex h-[240px] items-center justify-center text-sm text-muted">
+            {t.dashboard.noData}
+          </div>
+        )}
+      </Card.Content>
     </Card>
   )
 }
