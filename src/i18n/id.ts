@@ -20,7 +20,6 @@ export const id = {
     pin: "PIN",
     loginButton: "Masuk",
     loginTitle: "Masuk ke POS",
-    loginSubtitle: "Masukkan username dan PIN Anda",
     sessionExpired: "Sesi berakhir, silakan login kembali",
   },
   cashier: {

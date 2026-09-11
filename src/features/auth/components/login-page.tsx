@@ -34,7 +34,7 @@ export function LoginPage() {
 
   return (
     <AuthScreen>
-      <AuthCard description={t.loginSubtitle} title={t.loginTitle}>
+      <AuthCard title={t.loginTitle}>
         <Form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <TextField
             autoFocus
