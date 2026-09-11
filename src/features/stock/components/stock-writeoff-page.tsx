@@ -1,6 +1,15 @@
 import { useState, useCallback } from "react"
 import { Plus, Check, X, Trash2 } from "lucide-react"
-import { AlertDialog, Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
+import {
+  AlertDialog,
+  Button,
+  Label,
+  ListBox,
+  Select,
+  Skeleton,
+  Surface,
+  Table,
+} from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
@@ -313,7 +322,7 @@ export function StockWriteoffPage() {
                 {confirmAction ? confirmMessages[confirmAction.type].description : ""}
               </p>
               {confirmAction && (
-                <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
+                <Surface className="rounded-2xl px-3 py-2 text-sm" variant="secondary">
                   <div>
                     <span className="text-muted">No. WO:</span>{" "}
                     {confirmAction.writeoff.writeoffNumber}
@@ -328,7 +337,7 @@ export function StockWriteoffPage() {
                     <span className="text-muted">Kerugian:</span>{" "}
                     {formatRupiah(confirmAction.writeoff.lossValue)}
                   </div>
-                </div>
+                </Surface>
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>

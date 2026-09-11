@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Search, RefreshCw, Loader2 } from "lucide-react"
-import { Button, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
+import { Button, Card, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
 import { StatusBadge } from "@/components/status-badge"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { selectedText } from "@/components/selected-text"
@@ -429,23 +429,41 @@ export function PpobMutasi() {
 
       {/* Saldo + Summary Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted">{i18n.ppob.saldo}</p>
-          <p className="text-xl font-bold">{saldoData ? formatRupiah(saldoData.saldo) : "-"}</p>
-        </div>
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted">Total Masuk ({summary.countIn} trx)</p>
-          <p className="text-xl font-bold text-success">+{formatRupiah(summary.totalIn)}</p>
-          {undatedIn > 0 && (
-            <p className="mt-1 text-[11px] text-muted">
-              Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
+        <Card>
+          <Card.Header>
+            <Card.Description>{i18n.ppob.saldo}</Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <p className="text-xl font-semibold tracking-tight tabular-nums">
+              {saldoData ? formatRupiah(saldoData.saldo) : "-"}
             </p>
-          )}
-        </div>
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted">Total Keluar ({summary.countOut} trx)</p>
-          <p className="text-xl font-bold text-danger">-{formatRupiah(summary.totalOut)}</p>
-        </div>
+          </Card.Content>
+        </Card>
+        <Card>
+          <Card.Header>
+            <Card.Description>Total Masuk ({summary.countIn} trx)</Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <p className="text-xl font-semibold tracking-tight text-success tabular-nums">
+              +{formatRupiah(summary.totalIn)}
+            </p>
+            {undatedIn > 0 && (
+              <p className="text-xs text-muted">
+                Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
+              </p>
+            )}
+          </Card.Content>
+        </Card>
+        <Card>
+          <Card.Header>
+            <Card.Description>Total Keluar ({summary.countOut} trx)</Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <p className="text-xl font-semibold tracking-tight text-danger tabular-nums">
+              -{formatRupiah(summary.totalOut)}
+            </p>
+          </Card.Content>
+        </Card>
       </div>
 
       {/* Filters */}

@@ -1,7 +1,6 @@
-import { Button, Table } from "@heroui/react"
+import { Button, Chip, Table } from "@heroui/react"
 import { Smartphone, Zap, Droplet, ShieldCheck, Wallet, Wifi, Trash2 } from "lucide-react"
 
-import { cn } from "@/lib/utils"
 import type { CartItem } from "../types"
 import { formatRupiah } from "../utils"
 
@@ -38,17 +37,17 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
     <Table.Row id={item.cart_id} textValue={item.product_name} onAction={() => onEdit(item)}>
       <Table.Cell className="whitespace-normal">
         <div className="flex min-w-0 items-start gap-2">
-          {/* Qty badge */}
-          <span
-            className={cn(
-              "mt-0.5 inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-bold tabular-nums transition-colors",
-              item.is_ppob
-                ? "border border-border bg-default text-muted"
-                : "bg-accent text-accent-foreground shadow-sm",
-            )}
+          {/* Qty. PPOB selalu satu baris per tagihan, jadi lencananya netral
+              dan tidak menonjol; barang fisik memakai aksen supaya jumlah yang
+              bukan 1 langsung tertangkap mata saat kasir memindai keranjang. */}
+          <Chip
+            className="mt-0.5 shrink-0 tabular-nums"
+            color={item.is_ppob ? "default" : "accent"}
+            size="lg"
+            variant={item.is_ppob ? "secondary" : "primary"}
           >
             {qty}
-          </span>
+          </Chip>
           <div className="min-w-0">
             <p className="font-medium leading-snug">
               {item.is_ppob ? truncatePpobName(item.product_name) : item.product_name}

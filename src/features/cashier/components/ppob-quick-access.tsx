@@ -22,6 +22,7 @@ import {
   Select,
   Separator,
   Skeleton,
+  Surface,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -323,40 +324,43 @@ function SaldoBar() {
   const { data, isLoading, error, refetch } = usePpobSaldo()
 
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-default/30 px-3 py-2">
+    <Surface
+      className="flex items-center justify-between rounded-2xl px-3 py-2"
+      variant="secondary"
+    >
       <div className="flex items-center gap-2">
-        <Wallet className="h-4 w-4 text-muted" />
+        <Wallet className="size-4 text-muted" />
         {isLoading ? (
           <Skeleton className="h-5 w-28" />
         ) : error ? (
           <span className="text-xs text-muted">Saldo tidak tersedia</span>
         ) : (
           <span className="text-sm font-semibold tabular-nums">
-            Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}
+            {formatRupiah(data?.saldo ?? 0)}
           </span>
         )}
       </div>
       <div className="flex items-center gap-1">
         <Button
           aria-label="Muat ulang saldo"
-          className="h-7 w-7"
           isIconOnly
+          size="sm"
           variant="tertiary"
           onPress={() => refetch()}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw />
         </Button>
         <Button
           aria-label="Riwayat transaksi"
-          className="h-7 w-7"
           isIconOnly
+          size="sm"
           variant="tertiary"
           onPress={() => navigate("/ppob/history")}
         >
-          <History className="h-3.5 w-3.5" />
+          <History />
         </Button>
       </div>
-    </div>
+    </Surface>
   )
 }
 

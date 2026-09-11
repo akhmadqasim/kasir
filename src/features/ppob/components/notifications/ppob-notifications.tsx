@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Button, Modal, Pagination, Separator, Skeleton } from "@heroui/react"
+import { Badge, Button, Modal, Pagination, Separator, Skeleton } from "@heroui/react"
 import { ArrowLeft, RefreshCw, Loader2, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
 import { StatusBadge } from "@/components/status-badge"
@@ -220,10 +220,16 @@ export function PpobNotifications() {
                   variant="secondary"
                   onPress={() => handleItemPress(item)}
                 >
-                  <span className="flex items-center gap-2">
+                  {/* Titik belum-dibaca ditempel ke label kategorinya, bukan
+                      digambar sebagai span terpisah di sebelahnya. */}
+                  {isUnread ? (
+                    <Badge.Anchor>
+                      <CategoryBadge category={item.category} />
+                      <Badge aria-label="Belum dibaca" color="danger" size="sm" />
+                    </Badge.Anchor>
+                  ) : (
                     <CategoryBadge category={item.category} />
-                    {isUnread && <span className="h-2 w-2 rounded-full bg-danger" />}
-                  </span>
+                  )}
                   <span
                     className={`line-clamp-2 text-sm ${isUnread ? "font-medium" : "text-muted"}`}
                   >
