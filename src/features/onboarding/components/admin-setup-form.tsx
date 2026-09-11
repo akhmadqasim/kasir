@@ -1,7 +1,8 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Button, Card, FieldError, Form, Input, Label, TextField } from "@heroui/react"
+import { Button, FieldError, Form, Input, Label, Spinner, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
+import { AuthCard } from "@/components/auth-card"
 import { PinInput } from "@/features/auth/components/pin-input"
 import type { SetupAdminInput } from "../types"
 
@@ -59,80 +60,77 @@ export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: Adm
   }
 
   return (
-    <Card className="grid gap-0 overflow-hidden p-0 md:grid-cols-2">
+    <AuthCard
+      description={
+        <>
+          Buat akun administrator pertama untuk mengelola toko.
+          <br />
+          {t.step2of2}
+        </>
+      }
+      title={t.adminSetup}
+    >
       {/* validationBehavior="aria" keeps validation in this component. With
           React Aria's default ("native") an `isInvalid` field calls
           setCustomValidity, and the browser then blocks every later submit —
           including the one that would clear the error. */}
-      <Form
-        className="flex flex-col gap-5 p-6 md:p-8"
-        validationBehavior="aria"
-        onSubmit={handleSubmit}
-      >
-        <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-2xl font-bold">{t.adminSetup}</h1>
-          <p className="text-sm text-balance text-muted">
-            Buat akun administrator pertama untuk mengelola toko
-          </p>
-          <p className="text-xs text-muted">{t.step2of2}</p>
-        </div>
+      <Form className="flex flex-col gap-4" validationBehavior="aria" onSubmit={handleSubmit}>
         <TextField
           autoFocus
           fullWidth
           isInvalid={Boolean(errors.fullName)}
+          isRequired
           value={fullName}
+          variant="secondary"
           onChange={setFullName}
         >
-          <Label>{t.fullName} *</Label>
+          <Label>{t.fullName}</Label>
           <Input />
           <FieldError>{errors.fullName}</FieldError>
         </TextField>
         <TextField
           fullWidth
           isInvalid={Boolean(errors.username)}
+          isRequired
           value={username}
+          variant="secondary"
           onChange={setUsername}
         >
-          <Label>{t.username} *</Label>
+          <Label>{t.username}</Label>
           <Input />
           <FieldError>{errors.username}</FieldError>
         </TextField>
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-2 gap-4">
-            <PinInput
-              errorMessage={errors.pin}
-              label={`${t.pin} *`}
-              placeholder={t.pinHint}
-              value={pin}
-              onChange={setPin}
-            />
-            <PinInput
-              errorMessage={errors.confirmPin}
-              label={`${t.confirmPin} *`}
-              value={confirmPin}
-              onChange={setConfirmPin}
-            />
-          </div>
-          {/* HeroUI's Description only renders inside a field context, so this
-              hint that spans both PIN columns is a plain paragraph. */}
-          <p className="text-sm text-muted">{t.pinHint}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <PinInput
+            description={t.pinHint}
+            errorMessage={errors.pin}
+            label={t.pin}
+            value={pin}
+            variant="secondary"
+            onChange={setPin}
+          />
+          <PinInput
+            errorMessage={errors.confirmPin}
+            label={t.confirmPin}
+            value={confirmPin}
+            variant="secondary"
+            onChange={setConfirmPin}
+          />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <Button type="button" variant="tertiary" onPress={() => onBack(currentData)}>
             {t.back}
           </Button>
-          <Button isDisabled={isLoading} type="submit">
-            {isLoading ? id.common.loading : t.submit}
+          <Button isPending={isLoading} type="submit">
+            {({ isPending }) => (
+              <>
+                {isPending ? <Spinner color="current" size="sm" /> : null}
+                {t.submit}
+              </>
+            )}
           </Button>
         </div>
       </Form>
-      <div className="relative hidden bg-default md:block">
-        <img
-          src="/onboarding-bg.jpg"
-          alt="Toko Sembako"
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-        />
-      </div>
-    </Card>
+    </AuthCard>
   )
 }
