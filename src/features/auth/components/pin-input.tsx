@@ -1,7 +1,16 @@
 import type { Ref } from "react"
-import { Description, FieldError, Input, Label, TextField } from "@heroui/react"
+import {
+  Description,
+  FieldError,
+  Input,
+  Label,
+  TextField,
+  type TextFieldProps,
+} from "@heroui/react"
 
 interface PinInputProps {
+  /** `secondary` bila kolomnya berdiri di atas `Card`/`Surface`, seperti di halaman login. */
+  variant?: TextFieldProps["variant"]
   /**
    * Label kolom. React Aria menghubungkan label ke input lewat context, jadi
    * layar cukup mengisi prop ini; tidak ada lagi `htmlFor` dari luar sejak dialog
@@ -29,6 +38,7 @@ interface PinInputProps {
 
 /** Kolom PIN kasir: hanya menerima angka, 4-6 digit, disembunyikan seperti password. */
 export function PinInput({
+  variant,
   label,
   value,
   onChange,
@@ -50,6 +60,7 @@ export function PinInput({
       minLength={4}
       type="password"
       value={value}
+      variant={variant}
       onChange={(next) => onChange(next.replace(/\D/g, ""))}
     >
       {label && <Label>{label}</Label>}
