@@ -3,21 +3,25 @@ import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { Button, ListGroup, Spinner, Typography } from "heroui-native";
 import type { JSX } from "react";
-import { Alert as NativeAlert } from "react-native";
+import { Alert as NativeAlert, View } from "react-native";
 
+import { NativeSettingsList } from "@/components/native-list";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
-import { ScrollScreen } from "@/components/screen";
+import { Screen, ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { useCurrentUser, useLogout } from "@/hooks/use-session";
+import { hasSwiftUI } from "@/lib/native-modules";
 import { useSessionStore } from "@/stores/session-store";
 
 /**
  * Which server, who is logged in, and the way out.
  *
- * Logging out is destructive enough to confirm, and `Alert.alert` is already the
- * right control on both platforms — an action sheet on iOS, a Material dialog on
- * Android — so there is nothing to write ourselves.
+ * On iOS this is a SwiftUI `List` — the same grouped form every Settings screen
+ * on the phone uses, down to the red destructive row. Android gets the Material 3
+ * equivalent. Confirming the logout is `Alert.alert` either way: already an
+ * action sheet on iOS and a Material dialog on Android, so there is nothing to
+ * write ourselves.
  */
 export default function SettingsTab(): JSX.Element {
   const router = useRouter();
@@ -26,12 +30,40 @@ export default function SettingsTab(): JSX.Element {
   const setChangingServer = useSessionStore((state) => state.setChangingServer);
   const logout = useLogout();
 
+  const serverAuthority = serverOrigin ? originAuthority(serverOrigin) : "—";
+  const appVersion = Constants.expoConfig?.version ?? "—";
+
+  const changeServer = () => {
+    setChangingServer(true);
+    router.push("/server-setup");
+  };
+
   const confirmLogout = () => {
     NativeAlert.alert(id.auth.logout, id.settings.logoutConfirm, [
       { text: id.common.cancel, style: "cancel" },
       { text: id.auth.logout, style: "destructive", onPress: () => logout.mutate() },
     ]);
   };
+
+  if (hasSwiftUI) {
+    return (
+      <Screen>
+        {/* No Android inset to add here: `hasSwiftUI` is iOS-only, and the
+            SwiftUI `List` below applies the safe area itself. */}
+        <View className="px-4 pb-2">
+          <PageHeader title={id.settings.title} />
+        </View>
+        <NativeSettingsList
+          user={user}
+          serverAuthority={serverAuthority}
+          appVersion={appVersion}
+          onChangeServer={changeServer}
+          onLogout={confirmLogout}
+          isLoggingOut={logout.isPending}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <ScrollScreen headerless>
@@ -41,18 +73,13 @@ export default function SettingsTab(): JSX.Element {
         <ListGroup.Item
           accessibilityRole="button"
           accessibilityLabel={id.server.change}
-          onPress={() => {
-            setChangingServer(true);
-            router.push("/server-setup");
-          }}
+          onPress={changeServer}
         >
           <ListGroup.ItemPrefix>
             <PlatformIcon sf="desktopcomputer" md="desktop-tower-monitor" size={20} />
           </ListGroup.ItemPrefix>
           <ListGroup.ItemContent>
-            <ListGroup.ItemTitle>
-              {serverOrigin ? originAuthority(serverOrigin) : "—"}
-            </ListGroup.ItemTitle>
+            <ListGroup.ItemTitle>{serverAuthority}</ListGroup.ItemTitle>
             <ListGroup.ItemDescription>{id.server.change}</ListGroup.ItemDescription>
           </ListGroup.ItemContent>
           <ListGroup.ItemSuffix />
@@ -85,7 +112,7 @@ export default function SettingsTab(): JSX.Element {
             <ListGroup.ItemTitle>{id.settings.version}</ListGroup.ItemTitle>
           </ListGroup.ItemContent>
           <ListGroup.ItemSuffix>
-            <Typography color="muted">{Constants.expoConfig?.version ?? "—"}</Typography>
+            <Typography color="muted">{appVersion}</Typography>
           </ListGroup.ItemSuffix>
         </ListGroup.Item>
       </Section>

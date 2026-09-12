@@ -1,11 +1,9 @@
-import { formatNumber, formatRupiah, id, isLowStock, type Product } from "@kasir/shared";
-import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { formatNumber, isLowStock, productRowSubtitle, type Product } from "@kasir/shared";
 import { ListGroup, Typography } from "heroui-native";
 import type { JSX } from "react";
 import { View } from "react-native";
 
-import { primeProduct } from "@/hooks/use-products";
+import { useOpenProduct } from "@/hooks/use-open-product";
 
 interface ProductRowProps {
   product: Product;
@@ -19,23 +17,19 @@ interface ProductRowProps {
  * "how far under" rather than "how much".
  */
 export function ProductRow({ product, emphasizeStock = false }: ProductRowProps): JSX.Element {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const open = useOpenProduct();
   const low = isLowStock(product);
 
-  const open = () => {
-    primeProduct(queryClient, product);
-    router.push({ pathname: "/products/[id]", params: { id: String(product.id) } });
-  };
-
   return (
-    <ListGroup.Item onPress={open} accessibilityRole="button" accessibilityLabel={product.name}>
+    <ListGroup.Item
+      onPress={() => open(product)}
+      accessibilityRole="button"
+      accessibilityLabel={product.name}
+    >
       <ListGroup.ItemContent>
         <ListGroup.ItemTitle numberOfLines={2}>{product.name}</ListGroup.ItemTitle>
         <ListGroup.ItemDescription>
-          {emphasizeStock
-            ? `${id.lowStock.count}: ${formatNumber(product.stock)} / ${formatNumber(product.min_stock)} ${product.unit}`
-            : formatRupiah(product.sell_price)}
+          {productRowSubtitle(product, emphasizeStock)}
         </ListGroup.ItemDescription>
       </ListGroup.ItemContent>
       <ListGroup.ItemSuffix>
