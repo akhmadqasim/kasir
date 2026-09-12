@@ -78,6 +78,7 @@ Prefix `/api`. Role `session` berarti perlu login; `admin` berarti perlu role ad
 | **printing** | `/printers`, `/printers/settings` | GET | session |
 | | `/printers/settings` | PUT | admin |
 | | `/printers/test`, `/transactions/:id/print` | POST | session |
+| | `/transaction-items/:id/ppob/print` | POST | session, cetak ulang struk PPOB satu baris |
 | **ppob** | `/ppob/session` | POST | admin |
 | | `/ppob/balance`, `/ppob/menu` | GET | session |
 | | `/ppob/catalog/*` | GET | session |

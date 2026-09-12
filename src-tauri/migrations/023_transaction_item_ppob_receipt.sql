@@ -1,0 +1,15 @@
+-- Migration 023: keep the provider's payment response so a PPOB struk can be
+-- reprinted later.
+--
+-- Fulfilment used to throw the response away the moment it had pulled the
+-- status, the message and the serial number out of it. Everything a Mitra
+-- Indogrosir struk shows beyond those three -- the preformatted `receipt_text`
+-- block, the token, the meter/IDPEL pair, the tariff, the KWH figure -- only
+-- ever existed in that response, so a struk could be printed once, from memory,
+-- and never again.
+--
+-- Stored as the raw JSON text of the response, not as columns: the field names
+-- differ per service (PLN, PDAM, BPJS, pulsa) and the provider adds new ones
+-- without warning. The formatter reads it defensively and tolerates anything
+-- missing.
+ALTER TABLE transaction_items ADD COLUMN ppob_receipt_data TEXT;

@@ -325,3 +325,31 @@ Riwayat top-up saldo.
 - Harga bisa berupa number atau string (e.g., `"5283.00"` atau `50600`)
 - `is_trouble` > 0 berarti produk sedang gangguan
 - `promo_id` != null berarti ada diskon (`nominal_cut_price` = potongan, `last_price` = harga final)
+
+---
+
+## Receipt / struk
+
+Respons pembayaran yang sukses membawa bahan struk, dan namanya berbeda-beda per
+layanan. Yang dipakai `printing/ppob_receipt.rs` (lewat `services/receipt.rs`,
+dari kolom `transaction_items.ppob_receipt_data` — JSON respons mentah, disimpan
+migrasi 023):
+
+| Field | Isi |
+|---|---|
+| `receipt_text` / `invoice_string` | Blok key/value yang **sudah diformat provider** (`NO METER`, `IDPEL`, `TARIF/DAYA`, `JML KWH`, …). Kalau ada, dicetak apa adanya; baris yang lebih panjang dari lebar kertas dibungkus di kolom nilai. |
+| `token_number` | Token PLN prabayar, 20 digit. Dicetak double width+height, dikelompokkan per 4 digit. |
+| `serial_number` / `sn` / `token` | Nomor seri layanan non-PLN. Dicetak tebal, ukuran normal. |
+| `no_ref` / `ref` / `reference` / `trx_id` | Nomor referensi transaksi. |
+| `customer_name` / `nama_pelanggan` | Nama pelanggan. |
+| `amount`, `admin_fee`, `total` | Nominal, admin bank, dan total yang ditagih provider. |
+| `footer` / `footer_text` | Baris penutup provider (call center, dsb). |
+
+Letaknya juga berbeda: `pulsa/v2/topup` membalas `{ "history_payment": { ... } }`,
+`confirm-payment` membalas `{ "receipt_data": { ... } }`, endpoint `*/payment`
+membalas rata di root. Pembacanya mencoba root dan setiap wrapper yang dikenal,
+bukan mencabang per service type.
+
+**Cek terhadap Mitra app 8.25.8:** permukaan API untuk endpoint yang kita pakai
+tidak berubah. Yang berubah di luar pemakaian kita: Pelni pindah ke `v2/pelni/*`
+dan `pln/advice` dihapus — keduanya tidak dipakai aplikasi ini.

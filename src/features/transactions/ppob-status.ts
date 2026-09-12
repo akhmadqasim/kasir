@@ -56,6 +56,14 @@ export function isPpobRetryable(status: string | null | undefined): boolean {
   return status === "failed"
 }
 
+/**
+ * Only a fulfilled line has a struk. Before that there is no token, no serial
+ * number and nothing from the provider to print, and the backend says so.
+ */
+export function isPpobPrintable(status: string | null | undefined): boolean {
+  return status === "success"
+}
+
 /** Whether to show the spinner: a provider call has not reported back yet. */
 export function isPpobInFlight(status: string | null | undefined): boolean {
   return ppobStatusConfig(status)?.inFlight ?? false

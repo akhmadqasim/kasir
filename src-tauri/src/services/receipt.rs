@@ -7,9 +7,12 @@ use crate::domain::receipt::{
     ReceiptItemResponse, ReceiptPaymentSplitResponse, UpdatePrinterSettingsInput,
 };
 use crate::entity::{store_info, transaction_items, transaction_payments, transactions, users};
+use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
 use crate::printing::receipt::{
     format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
 };
+use crate::services::ppob::parsers::{get_num_field, get_str_field};
+use crate::services::transactions::PPOB_STATUS_SUCCESS;
 use crate::utils::AppError;
 
 fn effective_receipt_total(transaction: &transactions::Model) -> f64 {
@@ -76,6 +79,52 @@ fn send_to_printer(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<(), St
     }
 }
 
+/// Where a print job goes and how the paper is set up. Every print path needs
+/// the same four things and all of them come from the single `store_info` row,
+/// so they are fetched once, here.
+struct PrintTarget {
+    store: store_info::Model,
+    printer_id: String,
+    paper_width: u8,
+    footer_text: Option<String>,
+}
+
+async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> {
+    let store = store_info::Entity::find_by_id(1_i64)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+
+    let settings = get_printer_settings(&store.additional_info);
+    let printer_id = settings
+        .printer_id
+        .ok_or_else(|| AppError::Validation("Printer belum dikonfigurasi".into()))?;
+
+    Ok(PrintTarget {
+        store,
+        printer_id,
+        paper_width: settings.paper_width.unwrap_or(58),
+        footer_text: settings.footer_text,
+    })
+}
+
+/// Send already-formatted jobs to the printer, in order, off the async runtime.
+///
+/// One job per piece of paper. A PPOB struk is cut away from the sale receipt
+/// it belongs to precisely so the customer can take it to PLN without carrying
+/// the shop's own receipt with it.
+async fn send_jobs(printer_id: String, jobs: Vec<Vec<ReceiptTextLine>>) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        for job in &jobs {
+            send_to_printer(&printer_id, job)?;
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
+    .map_err(AppError::Internal)
+}
+
 pub async fn list_printers() -> Result<Vec<PrinterInfoItem>, AppError> {
     tokio::task::spawn_blocking(|| {
         let mut all_printers = Vec::new();
@@ -105,18 +154,12 @@ pub async fn list_printers() -> Result<Vec<PrinterInfoItem>, AppError> {
 }
 
 pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), AppError> {
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
-
-    let settings = get_printer_settings(&store.additional_info);
-
-    let printer_id = settings
-        .printer_id
-        .ok_or_else(|| AppError::Validation("Printer belum dikonfigurasi".into()))?;
-
-    let paper_width = settings.paper_width.unwrap_or(58);
+    let PrintTarget {
+        store,
+        printer_id,
+        paper_width,
+        footer_text,
+    } = print_target(db).await?;
 
     let transaction = transactions::Entity::find_by_id(transaction_id)
         .one(db)
@@ -183,16 +226,16 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     }
 
     let receipt_data = ReceiptData {
-        store_name: store.name,
-        store_address: store.address,
-        store_phone: store.phone,
-        receipt_number: transaction.receipt_number,
-        date_time,
-        cashier_name,
+        store_name: store.name.clone(),
+        store_address: store.address.clone(),
+        store_phone: store.phone.clone(),
+        receipt_number: transaction.receipt_number.clone(),
+        date_time: date_time.clone(),
+        cashier_name: cashier_name.clone(),
         items: receipt_items,
         subtotal_amount: transaction.subtotal_amount,
         discount_amount: transaction.discount_amount,
-        payment_method: transaction.payment_method,
+        payment_method: transaction.payment_method.clone(),
         payment_amount: transaction.payment_amount,
         change_amount: transaction.change_amount.unwrap_or(0.0),
         payment_breakdown: payment_breakdown
@@ -203,7 +246,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
                 amount: split.amount,
             })
             .collect(),
-        footer_text: settings.footer_text,
+        footer_text,
         is_deleted,
         deleted_reason,
         deleted_by_name,
@@ -218,36 +261,188 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         printer_id
     );
 
-    tokio::task::spawn_blocking(move || send_to_printer(&printer_id, &text_lines))
-        .await
-        .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-        .map_err(AppError::Internal)?;
+    // The sale first, then one struk per fulfilled PPOB line. The customer
+    // leaves with the token in their hand whether the cashier pressed print or
+    // the auto-print setting did it for them.
+    let mut jobs = vec![text_lines];
+    jobs.extend(
+        items
+            .iter()
+            .filter(|item| item.ppob_status.as_deref() == Some(PPOB_STATUS_SUCCESS))
+            .map(|item| {
+                let data =
+                    build_ppob_receipt_data(&store, &transaction, &cashier_name, &date_time, item);
+                format_ppob_receipt(&data, paper_width)
+            }),
+    );
 
-    Ok(())
+    send_jobs(printer_id, jobs).await
+}
+
+/// Print the struk for one fulfilled PPOB line, on its own.
+///
+/// Separate from the sale's receipt because it is reprinted on its own: the
+/// customer loses the slip with the token on it, or the thermal paper fades,
+/// and neither is a reason to reprint the groceries.
+pub async fn print_ppob_item(
+    db: &DatabaseConnection,
+    transaction_item_id: i64,
+) -> Result<(), AppError> {
+    let item = transaction_items::Entity::find_by_id(transaction_item_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Item transaksi tidak ditemukan".into()))?;
+
+    if item.service_type.is_none() {
+        return Err(AppError::Validation("Item ini bukan transaksi PPOB".into()));
+    }
+    if item.ppob_status.as_deref() != Some(PPOB_STATUS_SUCCESS) {
+        return Err(AppError::Validation(
+            "Struk PPOB hanya bisa dicetak setelah fulfillment berhasil".into(),
+        ));
+    }
+
+    let PrintTarget {
+        store,
+        printer_id,
+        paper_width,
+        ..
+    } = print_target(db).await?;
+
+    let transaction = transactions::Entity::find_by_id(item.transaction_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    let cashier_name = users::Entity::find_by_id(transaction.user_id)
+        .one(db)
+        .await?
+        .map(|user| user.full_name)
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let date_time = transaction
+        .created_at
+        .as_deref()
+        .map(utc_to_local_formatted)
+        .unwrap_or_else(|| "N/A".to_string());
+
+    let data = build_ppob_receipt_data(&store, &transaction, &cashier_name, &date_time, &item);
+    let lines = format_ppob_receipt(&data, paper_width);
+
+    send_jobs(printer_id, vec![lines]).await
+}
+
+/// Places the provider hides the interesting fields, in the order we look.
+///
+/// Mitra wraps its answer differently per endpoint — `pulsa/v2/topup` replies
+/// `{"history_payment": {...}}`, `confirm-payment` replies
+/// `{"receipt_data": {...}}`, the `*/payment` endpoints answer flat — so every
+/// lookup tries the root and each known wrapper. Searching all of them beats a
+/// match on service type that would quietly print a blank struk the day they
+/// add another one.
+const PROVIDER_WRAPPERS: &[&str] = &["history_payment", "receipt_data", "data", "detail"];
+
+fn provider_objects(
+    raw: &serde_json::Value,
+) -> impl Iterator<Item = &serde_json::Map<String, serde_json::Value>> {
+    std::iter::once(raw)
+        .chain(PROVIDER_WRAPPERS.iter().filter_map(|key| raw.get(*key)))
+        .filter_map(|value| value.as_object())
+}
+
+/// First non-empty string the provider offers under any of `keys`.
+fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    provider_objects(raw)
+        .find_map(|object| get_str_field(object, keys))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn provider_number(raw: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+    provider_objects(raw).find_map(|object| get_num_field(object, keys))
+}
+
+/// Assemble a PPOB struk from the sold line and the provider blob stored with
+/// it. Tolerant throughout: an item saved before migration 023, or one whose
+/// provider answered with fields we have never seen, still yields a struk built
+/// from the columns we control.
+fn build_ppob_receipt_data(
+    store: &store_info::Model,
+    transaction: &transactions::Model,
+    cashier_name: &str,
+    date_time: &str,
+    item: &transaction_items::Model,
+) -> PpobReceiptData {
+    let raw: serde_json::Value = item
+        .ppob_receipt_data
+        .as_deref()
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or(serde_json::Value::Null);
+
+    let admin_fee =
+        provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]).unwrap_or(0.0);
+    let amount = provider_number(&raw, &["amount", "nominal", "denom"]).unwrap_or(0.0);
+    // What the provider charged us: their own total if they sent one, its two
+    // parts added up otherwise, and failing both the rupiah the customer paid —
+    // which at worst shows a service fee of zero rather than a wrong figure.
+    let provider_total = provider_number(&raw, &["total", "total_amount", "total_payment"])
+        .filter(|total| *total > 0.0)
+        .or_else(|| (amount > 0.0).then_some(amount + admin_fee))
+        .unwrap_or(item.net_subtotal);
+
+    PpobReceiptData {
+        store_name: store.name.clone(),
+        store_address: store.address.clone(),
+        store_phone: store.phone.clone(),
+        receipt_number: transaction.receipt_number.clone(),
+        date_time: date_time.to_string(),
+        cashier_name: cashier_name.to_string(),
+        service_type: item.service_type.clone().unwrap_or_default(),
+        flag_id: item.ppob_flag_id.clone(),
+        product_name: Some(item.product_name.clone()),
+        // Our own columns first: they are what the cashier typed and what the
+        // fulfilment actually used, whatever the provider echoed back.
+        customer_id: item.service_ref.clone().or_else(|| {
+            provider_field(
+                &raw,
+                &["customer_no", "customer_id", "idpel", "no_meter", "target"],
+            )
+        }),
+        customer_name: provider_field(
+            &raw,
+            &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
+        ),
+        serial_number: item
+            .ppob_serial_number
+            .clone()
+            .or_else(|| provider_field(&raw, &["token_number", "serial_number", "token", "sn"])),
+        reference_number: provider_field(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
+        provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
+        amount: if amount > 0.0 {
+            amount
+        } else {
+            (provider_total - admin_fee).max(0.0)
+        },
+        admin_fee,
+        total: provider_total,
+        // Our margin on the line: what the customer handed over minus what the
+        // provider charged. Zero on a line sold at cost.
+        service_fee: item.net_subtotal - provider_total,
+        footer_text: provider_field(&raw, &["footer", "footer_text"]),
+    }
 }
 
 pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
-
-    let settings = get_printer_settings(&store.additional_info);
-
-    let printer_id = settings
-        .printer_id
-        .ok_or_else(|| AppError::Validation("Printer belum dikonfigurasi".into()))?;
-
-    let paper_width = settings.paper_width.unwrap_or(58);
+    let PrintTarget {
+        store,
+        printer_id,
+        paper_width,
+        ..
+    } = print_target(db).await?;
 
     let text_lines = format_test_page_text(&store.name, paper_width);
 
-    tokio::task::spawn_blocking(move || send_to_printer(&printer_id, &text_lines))
-        .await
-        .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
-        .map_err(AppError::Internal)?;
-
-    Ok(())
+    send_jobs(printer_id, vec![text_lines]).await
 }
 
 pub async fn update_printer_settings(
@@ -426,4 +621,52 @@ pub async fn printer_settings(
         auto_print: settings.auto_print,
         footer_text: settings.footer_text,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// `pulsa/v2/topup` answers with everything one level down, under
+    /// `history_payment`; the `*/payment` endpoints answer flat. Both have to
+    /// work without the caller knowing which service it is looking at.
+    #[test]
+    fn provider_fields_are_found_in_the_root_and_in_every_known_wrapper() {
+        let flat = json!({ "serial_number": "SN-1", "total": 54500 });
+        assert_eq!(
+            provider_field(&flat, &["token_number", "serial_number"]),
+            Some("SN-1".to_string())
+        );
+        assert_eq!(provider_number(&flat, &["total"]), Some(54500.0));
+
+        let nested = json!({ "message": "OK", "history_payment": { "no_ref": "REF-9" } });
+        assert_eq!(
+            provider_field(&nested, &["no_ref"]),
+            Some("REF-9".to_string())
+        );
+    }
+
+    /// Mitra sends money as a number on one service and a quoted string on the
+    /// next, and pads strings it did not fill in.
+    #[test]
+    fn provider_values_survive_the_providers_own_inconsistency() {
+        let raw = json!({ "amount": "5283.00", "customer_name": "  EDA RUSDIANI  ", "note": "" });
+        assert_eq!(provider_number(&raw, &["amount"]), Some(5283.0));
+        assert_eq!(
+            provider_field(&raw, &["customer_name"]),
+            Some("EDA RUSDIANI".to_string())
+        );
+        // An empty string is not an answer; the struk leaves the line out.
+        assert_eq!(provider_field(&raw, &["note"]), None);
+        assert_eq!(provider_field(&raw, &["nothing_like_this"]), None);
+    }
+
+    /// An item stored before migration 023 has no blob at all.
+    #[test]
+    fn a_missing_provider_blob_yields_nothing_rather_than_panicking() {
+        let raw = serde_json::Value::Null;
+        assert_eq!(provider_field(&raw, &["receipt_text"]), None);
+        assert_eq!(provider_number(&raw, &["total"]), None);
+    }
 }

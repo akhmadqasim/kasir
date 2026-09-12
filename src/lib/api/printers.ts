@@ -33,3 +33,15 @@ export function testPrint(): Promise<void> {
 export function printReceipt(transactionId: number): Promise<void> {
   return apiPost<void>(`/transactions/${transactionId}/print`)
 }
+
+/**
+ * Reprint the PPOB struk for one fulfilled line — the slip with the PLN token
+ * or the serial number on it, which the customer keeps as proof.
+ *
+ * The id is a transaction *item* id: one cart can hold two PPOB purchases and
+ * only one of them is usually the one that got lost. `printReceipt` already
+ * prints these alongside the sale, so this is the reprint.
+ */
+export function printPpobReceipt(transactionItemId: number): Promise<void> {
+  return apiPost<void>(`/transaction-items/${transactionItemId}/ppob/print`)
+}

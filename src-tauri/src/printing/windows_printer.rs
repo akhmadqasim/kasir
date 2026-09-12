@@ -249,6 +249,7 @@ unsafe fn pwstr_to_string(ptr: PWSTR) -> String {
 mod tests {
     use super::*;
     use crate::printing::escpos::encode_lines;
+    use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
     use crate::printing::receipt::format_test_page_text;
 
     #[test]
@@ -272,6 +273,55 @@ mod tests {
     fn sends_a_test_page_to_the_pos58_queue() {
         let bytes = encode_lines(&format_test_page_text("Toko Test", 58));
         send_raw_data("POS58 Printer", &bytes).expect("test page should reach the printer");
+    }
+
+    /// Physical smoke test for the PPOB struk: the PLN prepaid sample from the
+    /// Mitra app, through `format_ppob_receipt` → `encode_lines` → the spooler.
+    /// This is the one that proves the double-size token block actually renders
+    /// on paper — no unit test can see that. Same deal as above: hardware only.
+    #[test]
+    #[ignore = "needs a physical POS58 printer attached"]
+    fn sends_a_pln_prepaid_struk_to_the_pos58_queue() {
+        let data = PpobReceiptData {
+            store_name: "Toko Test".to_string(),
+            store_address: Some("Jl. Raya No. 1".to_string()),
+            store_phone: Some("08123456789".to_string()),
+            receipt_number: "TRX-20260912-0007".to_string(),
+            date_time: "12/09/2026 14:30".to_string(),
+            cashier_name: "Ahmad".to_string(),
+            service_type: "pln".to_string(),
+            flag_id: Some("0".to_string()),
+            product_name: Some("Token PLN 50.000".to_string()),
+            customer_id: Some("231001678084".to_string()),
+            customer_name: Some("EDA RUSDIANI".to_string()),
+            serial_number: Some("69915243803067642910".to_string()),
+            reference_number: Some("22002500CLH2H88B69".to_string()),
+            provider_receipt_text: Some(
+                "NO METER         : 45094614059\n\
+                 IDPEL            : 231001678084\n\
+                 NAMA             : EDA RUSDIANI\n\
+                 TARIF/DAYA       : R1M/900VA\n\
+                 RP BAYAR         : Rp 54.500,00\n\
+                 METERAI          : Rp 0,00\n\
+                 PPN              : Rp 0,00\n\
+                 PBJT-TL          : Rp 4.546,00\n\
+                 ANGSURAN         : Rp 0,00\n\
+                 RP STROOM/TOKEN  : Rp 45.454,00\n\
+                 JML KWH          : 33,7\n\
+                 ADMIN BANK       : Rp 4.500"
+                    .to_string(),
+            ),
+            amount: 50000.0,
+            admin_fee: 4500.0,
+            total: 54500.0,
+            service_fee: 0.0,
+            footer_text: Some(
+                "Informasi Hubungi Call Center 123\nAtau hubungi PLN Terdekat".to_string(),
+            ),
+        };
+
+        let bytes = encode_lines(&format_ppob_receipt(&data, 58));
+        send_raw_data("POS58 Printer", &bytes).expect("PPOB struk should reach the printer");
     }
 
     /// A queue that does not exist must surface an error, so a successful
