@@ -4,6 +4,7 @@ import { Button, Description, FieldError, Form, Input, Label, TextField } from "
 import { id } from "@/i18n/id"
 import { AuthCard } from "@/components/auth-card"
 import type { SetupStoreInput } from "../types"
+import { OnboardingSteps } from "./onboarding-steps"
 
 interface StoreInfoFormProps {
   onNext: (data: SetupStoreInput) => void
@@ -37,16 +38,8 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
   }
 
   return (
-    <AuthCard
-      description={
-        <>
-          Lengkapi data toko Anda untuk memulai.
-          <br />
-          {t.step1of2}
-        </>
-      }
-      title={t.storeInfo}
-    >
+    <AuthCard title={t.storeInfo} size="md">
+      <OnboardingSteps current="store" />
       {/* validationBehavior="aria" keeps validation in this component. With
           React Aria's default ("native") an `isInvalid` field calls
           setCustomValidity, and the browser then blocks every later submit —
@@ -68,16 +61,20 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
         <TextField fullWidth value={address} variant="secondary" onChange={setAddress}>
           <Label>{t.address}</Label>
           <Input />
-          <Description>Akan ditampilkan di struk</Description>
+          <Description>{t.addressHint}</Description>
         </TextField>
-        <TextField fullWidth type="tel" value={phone} variant="secondary" onChange={setPhone}>
-          <Label>{t.phone}</Label>
-          <Input />
-        </TextField>
-        <TextField fullWidth type="email" value={email} variant="secondary" onChange={setEmail}>
-          <Label>{t.email}</Label>
-          <Input />
-        </TextField>
+        {/* Telepon dan email berdampingan: keduanya pendek, dan barisnya
+            menghemat satu tinggi kolom di jendela 1000×500. */}
+        <div className="grid grid-cols-2 gap-3">
+          <TextField fullWidth type="tel" value={phone} variant="secondary" onChange={setPhone}>
+            <Label>{t.phone}</Label>
+            <Input />
+          </TextField>
+          <TextField fullWidth type="email" value={email} variant="secondary" onChange={setEmail}>
+            <Label>{t.email}</Label>
+            <Input />
+          </TextField>
+        </div>
         <Button fullWidth type="submit">
           {t.next}
         </Button>
