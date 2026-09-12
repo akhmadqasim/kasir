@@ -5,7 +5,10 @@
   "main": "expo-router/entry",
   "expo": {
     "install": {
-      "exclude": ["react", "react-dom"]
+      "exclude": [
+        "react",
+        "react-dom"
+      ]
     }
   },
   "scripts": {

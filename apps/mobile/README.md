@@ -75,15 +75,15 @@ with `code: "csrf"`.
 
 ## Screens and roles
 
-| Tab / screen              | Kasir                                        | Admin                                            |
-| ------------------------- | -------------------------------------------- | ------------------------------------------------ |
-| Scan                      | camera + manual barcode/SKU → detail         | same, plus "Tambah produk" on an unknown barcode |
-| Produk                    | search (300 ms debounce, 50/page) → detail   | same                                             |
-| Stok Menipis              | `quick_filter=low_stock` → detail            | same                                             |
-| Detail produk             | no buying price; Hitung Stok, Write-off      | + buying price, Ubah harga & minimal stok        |
-| Hitung Stok (opname)      | shortfall → write-off `damaged`/`expired`; surplus blocked | count becomes stock; shortfall with a reason → write-off |
-| Write-off                 | `damaged`, `expired`                         | + `lost`, `other`                                |
-| Pengaturan                | server, account, Keluar                      | same                                             |
+| Tab / screen         | Kasir                                                      | Admin                                                    |
+| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------- |
+| Scan                 | camera + manual barcode/SKU → detail                       | same, plus "Tambah produk" on an unknown barcode         |
+| Produk               | search (300 ms debounce, 50/page) → detail                 | same                                                     |
+| Stok Menipis         | `quick_filter=low_stock` → detail                          | same                                                     |
+| Detail produk        | no buying price; Hitung Stok, Write-off                    | + buying price, Ubah harga & minimal stok                |
+| Hitung Stok (opname) | shortfall → write-off `damaged`/`expired`; surplus blocked | count becomes stock; shortfall with a reason → write-off |
+| Write-off            | `damaged`, `expired`                                       | + `lost`, `other`                                        |
+| Pengaturan           | server, account, Keluar                                    | same                                                     |
 
 Role gating in the UI is a courtesy so no button leads to a refusal. **The
 server is the authority**: it reads the role from the session cookie and
