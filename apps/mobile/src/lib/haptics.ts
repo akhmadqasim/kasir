@@ -48,9 +48,3 @@ export function hapticWarning(): void {
 export function hapticError(): void {
   fire(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error));
 }
-
-/** A toggle flipped — the camera going on or off. iOS only; Android buzzes enough already. */
-export function hapticSelection(): void {
-  if (!isIOS) return;
-  fire(Haptics.selectionAsync());
-}
