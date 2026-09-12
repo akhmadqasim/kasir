@@ -1,16 +1,17 @@
 import { id } from "@kasir/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { HeroUINativeProvider, Spinner } from "heroui-native";
-import type { JSX } from "react";
-import { View } from "react-native";
+import { HeroUINativeProvider, Spinner, useThemeColor } from "heroui-native";
+import { useMemo, type JSX, type ReactNode } from "react";
+import { useColorScheme, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import "../global.css";
 
 import { useResolveSessionUser } from "@/hooks/use-session";
 import { queryClient } from "@/lib/query-client";
+import { isIOS } from "@/lib/platform";
 import { useSessionStore } from "@/stores/session-store";
 
 /**
@@ -46,7 +47,15 @@ function RootNavigator(): JSX.Element {
   const loggedIn = hasServer && user !== null;
 
   return (
-    <Stack screenOptions={{ headerBackButtonDisplayMode: "minimal" }}>
+    <Stack
+      screenOptions={{
+        headerBackButtonDisplayMode: "minimal",
+        headerTransparent: false,
+        // iOS collapses a large title into the bar as the page scrolls; Android's
+        // top app bar has no such state and a "large" header there is just tall.
+        headerLargeTitle: false,
+      }}
+    >
       <Stack.Protected guard={!hasServer || changingServer}>
         <Stack.Screen name="server-setup" options={{ title: id.server.title }} />
       </Stack.Protected>
@@ -57,7 +66,10 @@ function RootNavigator(): JSX.Element {
 
       <Stack.Protected guard={loggedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="products/[id]/index" options={{ title: id.products.detail }} />
+        <Stack.Screen
+          name="products/[id]/index"
+          options={{ title: id.products.detail, headerLargeTitle: isIOS }}
+        />
         <Stack.Screen name="products/[id]/edit" options={{ title: id.products.editPrice }} />
         <Stack.Screen name="products/[id]/count" options={{ title: id.stock.count }} />
         <Stack.Screen name="products/[id]/writeoff" options={{ title: id.stock.writeoffTitle }} />
@@ -67,14 +79,52 @@ function RootNavigator(): JSX.Element {
   );
 }
 
+/**
+ * React Navigation paints the gap between screens with its own theme, not with
+ * Tailwind. Left at its default that gap is white, which on iOS 26 shows up as a
+ * flash behind the Liquid Glass tab bar in dark mode — the exact symptom the
+ * native-tabs docs describe. Feeding it the HeroUI `background` token makes the
+ * two agree.
+ */
+function NavigationTheme({ children }: { children: ReactNode }): JSX.Element {
+  const scheme = useColorScheme();
+  const [background, surface, foreground, accent, border] = useThemeColor([
+    "background",
+    "surface",
+    "foreground",
+    "accent",
+    "border",
+  ]);
+  // A fresh object here would reconcile the whole navigator on every render of
+  // this provider, which sits above the entire app.
+  const theme = useMemo(() => {
+    const base = scheme === "dark" ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        background,
+        card: surface,
+        text: foreground,
+        primary: accent,
+        border,
+      },
+    };
+  }, [scheme, background, surface, foreground, accent, border]);
+
+  return <ThemeProvider value={theme}>{children}</ThemeProvider>;
+}
+
 export default function RootLayout(): JSX.Element {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
-        <QueryClientProvider client={queryClient}>
-          <RootNavigator />
-          <StatusBar style="auto" />
-        </QueryClientProvider>
+        <NavigationTheme>
+          <QueryClientProvider client={queryClient}>
+            <RootNavigator />
+            <StatusBar style="auto" />
+          </QueryClientProvider>
+        </NavigationTheme>
       </HeroUINativeProvider>
     </GestureHandlerRootView>
   );
