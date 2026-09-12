@@ -1,12 +1,13 @@
 import { useState } from "react"
-import { Card, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useLosses } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Laporan Kerugian"
 const COLUMN_COUNT = 9
@@ -48,7 +49,6 @@ export function LossesPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -57,10 +57,10 @@ export function LossesPage() {
     >
       {data && (
         <>
-          <div className="grid grid-cols-3 gap-4">
-            <ReportStatCard label="Total Write-off" value={data.totalWriteoffs} />
-            <ReportStatCard label="Total Qty" value={data.totalQuantity} />
-            <ReportStatCard
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard label="Total Write-off" value={formatNumber(data.totalWriteoffs)} />
+            <StatCard label="Total Qty" value={formatNumber(data.totalQuantity)} />
+            <StatCard
               label="Total Kerugian"
               tone="danger"
               value={formatRupiah(data.totalLossValue)}
@@ -68,21 +68,17 @@ export function LossesPage() {
           </div>
 
           {data.byReason.length > 0 && (
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {data.byReason.map((r) => (
-                /* Bukan `ReportStatCard`: labelnya sebuah badge beralasan dan angkanya
-                   berdampingan dengan jumlah kejadian, bukan label teks polos. */
-                <Card key={r.reason}>
-                  <Card.Content className="pt-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <StatusBadge status={REASON_VARIANTS[r.reason] ?? "neutral"}>
-                        {REASON_LABELS[r.reason] ?? r.reason}
-                      </StatusBadge>
-                      <span className="text-sm text-muted">{r.count}x</span>
-                    </div>
-                    <p className="text-lg font-bold text-danger">{formatRupiah(r.totalValue)}</p>
-                  </Card.Content>
-                </Card>
+                /* Alasan jadi label kartu, jumlah kejadian jadi lencana netral (`note`).
+                   Warna alasan tetap ada di kolom tabel di bawahnya. */
+                <StatCard
+                  key={r.reason}
+                  label={REASON_LABELS[r.reason] ?? r.reason}
+                  note={`${formatNumber(r.count)}x`}
+                  tone="danger"
+                  value={formatRupiah(r.totalValue)}
+                />
               ))}
             </div>
           )}

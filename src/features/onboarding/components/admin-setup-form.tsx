@@ -1,8 +1,9 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Button, FieldError, Form, Input, Label, Spinner, TextField } from "@heroui/react"
+import { Button, FieldError, Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
 import { AuthCard } from "@/components/auth-card"
+import { PendingButton } from "@/components/pending-button"
 import { PinInput } from "@/features/auth/components/pin-input"
 import type { SetupAdminInput } from "../types"
 
@@ -121,14 +122,9 @@ export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: Adm
           <Button type="button" variant="tertiary" onPress={() => onBack(currentData)}>
             {t.back}
           </Button>
-          <Button isPending={isLoading} type="submit">
-            {({ isPending }) => (
-              <>
-                {isPending ? <Spinner color="current" size="sm" /> : null}
-                {t.submit}
-              </>
-            )}
-          </Button>
+          <PendingButton isPending={isLoading} type="submit">
+            {t.submit}
+          </PendingButton>
         </div>
       </Form>
     </AuthCard>

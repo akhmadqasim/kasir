@@ -2,10 +2,11 @@ import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useSalesPeriod } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Penjualan per Periode"
 const COLUMN_COUNT = 5
@@ -20,7 +21,6 @@ export function SalesPeriodPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -28,19 +28,12 @@ export function SalesPeriodPage() {
       }
     >
       {data && (
-        <div className="grid grid-cols-5 gap-4">
-          <ReportStatCard label="Total Transaksi" value={data.totalTransactions} />
-          <ReportStatCard label="Total Pendapatan" value={formatRupiah(data.totalRevenue)} />
-          <ReportStatCard label="Total Modal" value={formatRupiah(data.totalCost)} />
-          <ReportStatCard
-            label="Laba Kotor"
-            tone="success"
-            value={formatRupiah(data.grossProfit)}
-          />
-          <ReportStatCard
-            label="Rata-rata / Transaksi"
-            value={formatRupiah(data.avgPerTransaction)}
-          />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard label="Total Transaksi" value={formatNumber(data.totalTransactions)} />
+          <StatCard label="Total Pendapatan" value={formatRupiah(data.totalRevenue)} />
+          <StatCard label="Total Modal" value={formatRupiah(data.totalCost)} />
+          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(data.grossProfit)} />
+          <StatCard label="Rata-rata / Transaksi" value={formatRupiah(data.avgPerTransaction)} />
         </div>
       )}
 

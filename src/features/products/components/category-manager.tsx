@@ -11,6 +11,7 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { NoData } from "@/components/no-data"
 import { id } from "@/i18n/id"
 import {
   useCategories,
@@ -97,7 +98,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                     isIconOnly
                     onPress={handleCreate}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus />
                   </Button>
                 </div>
               </TextField>
@@ -122,7 +123,6 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                           >
                             <Input
                               autoFocus
-                              className="h-8"
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") handleSaveEdit()
                                 if (e.key === "Escape") setEditingCategory(null)
@@ -131,23 +131,21 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                           </TextField>
                           <Button
                             aria-label={id.common.save}
-                            className="h-8 w-8"
                             isDisabled={!editName.trim() || updateCategory.isPending}
                             isIconOnly
                             size="sm"
                             onPress={handleSaveEdit}
                           >
-                            <Check className="h-4 w-4" />
+                            <Check />
                           </Button>
                           <Button
                             aria-label={id.common.cancel}
-                            className="h-8 w-8"
                             isIconOnly
                             size="sm"
                             variant="tertiary"
                             onPress={() => setEditingCategory(null)}
                           >
-                            <X className="h-4 w-4" />
+                            <X />
                           </Button>
                         </>
                       ) : (
@@ -156,23 +154,21 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                           <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                             <Button
                               aria-label={`${id.common.edit} ${category.name}`}
-                              className="h-7 w-7"
                               isIconOnly
                               size="sm"
                               variant="secondary"
                               onPress={() => handleStartEdit(category)}
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Pencil />
                             </Button>
                             <Button
                               aria-label={`${id.common.delete} ${category.name}`}
-                              className="h-7 w-7"
                               isIconOnly
                               size="sm"
                               variant="danger"
                               onPress={() => setDeleteTarget(category)}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 />
                             </Button>
                           </div>
                         </>
@@ -180,7 +176,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                     </div>
                   ))}
                   {(!categories || categories.length === 0) && (
-                    <p className="py-8 text-center text-sm text-muted">Belum ada kategori</p>
+                    <NoData title="Belum ada kategori" />
                   )}
                 </div>
               </ScrollShadow>
@@ -205,10 +201,10 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
               <AlertDialog.Heading>{id.common.confirm}</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
-              <p className="text-sm text-muted">{id.products.deleteCategoryConfirm}</p>
+              <p>{id.products.deleteCategoryConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="tertiary" onPress={() => setDeleteTarget(null)}>
+              <Button slot="close" variant="tertiary">
                 {id.common.cancel}
               </Button>
               <Button variant="danger" onPress={handleDelete}>

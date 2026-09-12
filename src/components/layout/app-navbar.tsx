@@ -70,11 +70,23 @@ export function AppNavbar({ children }: { children: ReactNode }) {
   )
 }
 
-/** Judul halaman yang menggantikan judul bawaan rute. */
-export function NavbarTitle({ children }: { children: ReactNode }) {
+/**
+ * Judul halaman yang menggantikan judul bawaan rute.
+ *
+ * `leading` digambar di kiri judul, di luar `<h1>` — tempat tombol kembali
+ * sub-halaman. Tombol di dalam heading merusak semantiknya; di sebelahnya, ia
+ * duduk persis di posisi tombol lipat sidebar, jadi mata sudah tahu tempatnya.
+ */
+export function NavbarTitle({ children, leading }: { children: ReactNode; leading?: ReactNode }) {
   const { titleSlot } = useNavbarSlots()
   if (!titleSlot) return null
-  return createPortal(<h1 className={TITLE_CLASS}>{children}</h1>, titleSlot)
+  return createPortal(
+    <>
+      {leading}
+      <h1 className={TITLE_CLASS}>{children}</h1>
+    </>,
+    titleSlot,
+  )
 }
 
 /** Aksi halaman di ujung kanan navbar. */

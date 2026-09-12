@@ -8,7 +8,7 @@ import { sidebarMenuButtonClass, useSidebar } from "@/components/layout/sidebar-
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useLogout } from "@/features/auth/hooks/use-auth"
-import { useCartStore } from "@/features/cashier/hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { UserProfileDialog } from "@/features/users/components/user-profile-dialog"
 

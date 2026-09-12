@@ -1,8 +1,12 @@
 import { useMemo, useState, useCallback } from "react"
 import { Plus, Tags, Upload } from "lucide-react"
-import { Button, Card } from "@heroui/react"
+import { Button } from "@heroui/react"
 
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { NoData } from "@/components/no-data"
+import { StatCard } from "@/components/stat-card"
 import { id } from "@/i18n/id"
+import { formatNumber } from "@/lib/format"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import { ProductSearch } from "./product-search"
@@ -101,24 +105,22 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.products.title}</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onPress={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import
-          </Button>
-          <Button variant="secondary" onPress={() => setCategoryManagerOpen(true)}>
-            <Tags className="mr-2 h-4 w-4" />
-            {id.products.manageCategories}
-          </Button>
-          <Button onPress={() => setFormOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {id.products.add}
-          </Button>
-        </div>
-      </div>
+    // DESIGN.md §5.1: judul dari navbar, aksi lewat `NavbarActions`, satu `primary`.
+    <div className="flex flex-col gap-6">
+      <NavbarActions>
+        <Button size="sm" variant="tertiary" onPress={() => setImportOpen(true)}>
+          <Upload />
+          Import
+        </Button>
+        <Button size="sm" variant="tertiary" onPress={() => setCategoryManagerOpen(true)}>
+          <Tags />
+          {id.products.manageCategories}
+        </Button>
+        <Button size="sm" onPress={() => setFormOpen(true)}>
+          <Plus />
+          {id.products.add}
+        </Button>
+      </NavbarActions>
 
       <ProductSearch
         onSearchChange={handleSearchChange}
@@ -127,31 +129,23 @@ export function ProductsPage() {
         onQuickFilterChange={handleQuickFilterChange}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <Card.Content className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.lowStock}</div>
-            <p className="text-sm text-muted">Stok rendah pada hasil saat ini</p>
-          </Card.Content>
-        </Card>
-        <Card>
-          <Card.Content className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.negativeStock}</div>
-            <p className="text-sm text-muted">Stok minus pada hasil saat ini</p>
-          </Card.Content>
-        </Card>
-        <Card>
-          <Card.Content className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.noBarcode}</div>
-            <p className="text-sm text-muted">Tanpa barcode pada hasil saat ini</p>
-          </Card.Content>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Stok rendah pada hasil saat ini"
+          value={formatNumber(reviewSummary.lowStock)}
+        />
+        <StatCard
+          label="Stok minus pada hasil saat ini"
+          value={formatNumber(reviewSummary.negativeStock)}
+        />
+        <StatCard
+          label="Tanpa barcode pada hasil saat ini"
+          value={formatNumber(reviewSummary.noBarcode)}
+        />
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted">{id.common.loading}</p>
-        </div>
+        <NoData title={id.common.loading} />
       ) : (
         <ProductTable
           products={products}

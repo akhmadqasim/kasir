@@ -58,21 +58,21 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
 
   return (
     <ScrollShadow className="h-full print:h-auto print:overflow-visible print:[-webkit-mask-image:none] print:[mask-image:none]">
-      <div className="mx-auto max-w-2xl space-y-6 py-6 print:max-w-none print:py-2">
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 py-6 print:max-w-none print:py-2">
         {/* Report Header */}
         <div className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft print:hidden">
-            <Store className="h-6 w-6 text-accent-soft-foreground" />
+          <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-accent-soft print:hidden">
+            <Store className="size-6 text-accent-soft-foreground" />
           </div>
-          <h1 className="text-2xl font-bold">Laporan Tutup Kasir</h1>
+          <h1 className="text-xl font-semibold">Laporan Tutup Kasir</h1>
           {storeName && <p className="mt-1 text-muted">{storeName}</p>}
         </div>
 
         {/* Shift Info */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <User className="h-4 w-4" />
+            <Card.Title className="flex items-center gap-2">
+              <User className="size-4" />
               Ringkasan
             </Card.Title>
           </Card.Header>
@@ -101,8 +101,8 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Sales Summary */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <ShoppingBag className="h-4 w-4" />
+            <Card.Title className="flex items-center gap-2">
+              <ShoppingBag className="size-4" />
               Penjualan
             </Card.Title>
           </Card.Header>
@@ -117,7 +117,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                 <span className="font-medium tabular-nums">{formatRupiah(totalSales)}</span>
               </div>
               <Separator />
-              <div className="flex justify-between text-base font-semibold">
+              <div className="flex justify-between font-semibold">
                 <span>TOTAL</span>
                 <span className="tabular-nums">{formatRupiah(totalSales)}</span>
               </div>
@@ -128,8 +128,8 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Payment Breakdown */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <CreditCard className="h-4 w-4" />
+            <Card.Title className="flex items-center gap-2">
+              <CreditCard className="size-4" />
               Jenis Pembayaran
             </Card.Title>
           </Card.Header>
@@ -156,8 +156,8 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {cashFlows.length > 0 && (
           <Card>
             <Card.Header>
-              <Card.Title className="flex items-center gap-2 text-base">
-                <Banknote className="h-4 w-4" />
+              <Card.Title className="flex items-center gap-2">
+                <Banknote className="size-4" />
                 Uang Masuk / Keluar
               </Card.Title>
             </Card.Header>
@@ -166,9 +166,9 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                 {cashFlows.map((cf) => (
                   <div key={cf.id} className="flex items-center gap-2">
                     {cf.flowType === "in" ? (
-                      <ArrowDownCircle className="h-4 w-4 shrink-0 text-success" />
+                      <ArrowDownCircle className="size-4 shrink-0 text-success" />
                     ) : (
-                      <ArrowUpCircle className="h-4 w-4 shrink-0 text-danger" />
+                      <ArrowUpCircle className="size-4 shrink-0 text-danger" />
                     )}
                     <span className="min-w-0 truncate text-muted">{cf.description}</span>
                     <span
@@ -194,10 +194,10 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         )}
 
         {/* Cash Reconciliation */}
-        <Card className="border border-accent/20">
+        <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <Wallet className="h-4 w-4" />
+            <Card.Title className="flex items-center gap-2">
+              <Wallet className="size-4" />
               Setoran Uang Tunai
             </Card.Title>
           </Card.Header>
@@ -239,16 +239,18 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                 </>
               )}
             </div>
-            {!hasClosingCash && (
-              <p className="mt-2 text-xs text-muted">* Saldo aktual tidak diisi saat tutup kasir</p>
-            )}
           </Card.Content>
+          {!hasClosingCash && (
+            <Card.Footer>
+              <p className="text-xs text-muted">* Saldo aktual tidak diisi saat tutup kasir</p>
+            </Card.Footer>
+          )}
         </Card>
 
         {shift.notes && (
           <Card>
             <Card.Header>
-              <Card.Title className="text-base">Catatan</Card.Title>
+              <Card.Title>Catatan</Card.Title>
             </Card.Header>
             <Card.Content>
               <p className="text-sm text-muted">{shift.notes}</p>
@@ -257,17 +259,17 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         )}
 
         {/* Action Buttons */}
-        <div className="flex gap-3 print:hidden">
-          <Button className="h-12 flex-1" variant="tertiary" onPress={onBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
+        <div className="flex gap-2 print:hidden">
+          <Button className="flex-1" size="lg" variant="tertiary" onPress={onBack}>
+            <ArrowLeft />
             Kembali
           </Button>
-          <Button className="h-12 flex-1" onPress={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" />
+          <Button className="flex-1" size="lg" onPress={handlePrint}>
+            <Printer />
             Cetak Laporan
           </Button>
-          <Button className="h-12 flex-1" variant="danger" onPress={onLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
+          <Button className="flex-1" size="lg" variant="danger" onPress={onLogout}>
+            <LogOut />
             Keluar
           </Button>
         </div>

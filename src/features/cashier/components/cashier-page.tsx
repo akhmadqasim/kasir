@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
-import { Alert, Button } from "@heroui/react"
+import { Button, Surface } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
-import { useCartStore } from "../hooks/use-cart-store"
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { useCartStore } from "@/stores/cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { CartPanel } from "./cart-panel"
@@ -93,39 +94,34 @@ export function CashierPage() {
 
   return (
     <>
-      {/* Banner when no shift */}
+      {/* DESIGN.md §5.7 */}
       {needsShift && (
-        <Alert className="mb-4" status="warning">
-          <Alert.Indicator>
-            <DoorOpen className="h-5 w-5" />
-          </Alert.Indicator>
-          <Alert.Content className="flex items-center justify-between gap-4">
-            <Alert.Title className="text-sm">
-              Shift belum dibuka — buka shift untuk mulai transaksi
-            </Alert.Title>
-            <Button size="sm" onPress={() => setShiftDialogDismissed(false)}>
-              <DoorOpen className="mr-1 h-4 w-4" />
-              Buka Kasir
-            </Button>
-          </Alert.Content>
-        </Alert>
+        <NavbarActions>
+          <Button size="sm" onPress={() => setShiftDialogDismissed(false)}>
+            <DoorOpen />
+            Buka Kasir
+          </Button>
+        </NavbarActions>
       )}
 
+      {/* Dua panel `Surface` di atas kanvas, bukan `div` yang diberi `bg-surface`
+          sendiri: kolom isian di dalamnya lalu memakai `variant="secondary"`,
+          seperti contoh "In Surface" HeroUI. */}
       <div className="flex h-full flex-col gap-4 lg:grid lg:grid-cols-10">
         {/* Cart (top when stacked, left when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-surface lg:col-span-4 lg:flex-none">
+        <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden border lg:col-span-4 lg:flex-none">
           <CartPanel
             onPay={openPayment}
             disabled={needsShift}
             shortcutsDisabled={pageDialogOpen}
             onRequestProductSearchFocus={requestProductSearchFocus}
           />
-        </div>
+        </Surface>
 
         {/* Product Search (bottom when stacked, right when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-surface lg:col-span-6 lg:flex-none">
+        <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden border lg:col-span-6 lg:flex-none">
           <ProductSearchPanel focusKey={productSearchFocusKey} />
-        </div>
+        </Surface>
       </div>
 
       <PaymentDialog

@@ -1,25 +1,31 @@
-import { Loader2, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
+import { MoreHorizontal, Pencil, Printer, RefreshCcw, RotateCcw, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Alert,
   AlertDialog,
   Button,
+  Dropdown,
   Label,
   ListBox,
   Modal,
   Select,
   Separator,
   Skeleton,
+  Spinner,
+  Surface,
   TextArea,
   TextField,
   Tooltip,
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { InfoPanel } from "@/components/info-panel"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useApiQuery } from "@/hooks/use-api"
 import {
   getTransactionDetail,
@@ -52,31 +58,6 @@ interface TransactionDetailDialogProps {
   onClose: () => void
 }
 
-function SummaryRow({
-  label,
-  value,
-  mono = false,
-  rowClassName,
-  valueClassName,
-}: {
-  label: string
-  value: ReactNode
-  mono?: boolean
-  rowClassName?: string
-  valueClassName?: string
-}) {
-  return (
-    <div
-      className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm", rowClassName)}
-    >
-      <span className="text-muted">{label}</span>
-      <span className={cn("min-w-0 text-right font-medium", mono && "font-mono", valueClassName)}>
-        {value}
-      </span>
-    </div>
-  )
-}
-
 /**
  * Refund entry point. Past the seven-day window the backend rejects the refund
  * outright, so the button is disabled here with the reason attached — a disabled
@@ -93,7 +74,7 @@ function RefundAction({
 }) {
   const button = (
     <Button isDisabled={blockedReason !== null} size="sm" variant="secondary" onPress={onRefund}>
-      <RotateCcw className="mr-2 h-4 w-4" />
+      <RotateCcw />
       {id.refund.title}
     </Button>
   )
@@ -138,6 +119,53 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const originalTotalAmount = detail
     ? Math.max(detail.transaction.subtotal_amount - detail.transaction.discount_amount, 0)
     : 0
+
+  // Dua daftar karena rincian split, kalau ada, duduk di antara metode dan jumlah bayar.
+  const paymentItems: SummaryItem[] = detail
+    ? [
+        ...(detail.transaction.discount_amount > 0
+          ? [
+              { label: "Subtotal", value: formatRupiah(detail.transaction.subtotal_amount) },
+              {
+                label: "Diskon",
+                value: `-${formatRupiah(detail.transaction.discount_amount)}`,
+                tone: "danger" as const,
+              },
+            ]
+          : []),
+        {
+          label: id.transactions.totalAmount,
+          value: formatRupiah(detail.transaction.total_amount),
+          tone: "strong",
+        },
+        ...(isDeleted
+          ? [{ label: "Total sebelum hapus", value: formatRupiah(originalTotalAmount) }]
+          : []),
+        {
+          label: id.transactions.paymentMethod,
+          value: paymentSplitLabel(
+            detail.transaction.payment_method,
+            detail.payment_breakdown[0]?.bank_name,
+          ),
+        },
+      ]
+    : []
+  const settlementItems: SummaryItem[] = detail
+    ? [
+        {
+          label: id.transactions.paymentAmount,
+          value: formatRupiah(detail.transaction.payment_amount),
+        },
+        ...((detail.transaction.change_amount ?? 0) > 0
+          ? [
+              {
+                label: id.transactions.changeAmount,
+                value: formatRupiah(detail.transaction.change_amount ?? 0),
+              },
+            ]
+          : []),
+      ]
+    : []
 
   const handlePrint = async () => {
     if (!transaction) return
@@ -222,187 +250,131 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   return (
     <>
       <Modal.Backdrop isOpen={!!transaction} onOpenChange={(open) => !open && onClose()}>
-        <Modal.Container scroll="inside" size="md">
+        <Modal.Container scroll="inside" size="lg">
           <Modal.Dialog aria-label={id.transactions.detail}>
-            <Modal.Header className="border-b">
+            <Modal.CloseTrigger />
+            <Modal.Header>
               <Modal.Heading>{id.transactions.detail}</Modal.Heading>
-              <Modal.CloseTrigger />
             </Modal.Header>
 
             {isLoading || !detail ? (
-              <Modal.Body className="space-y-3">
+              <Modal.Body>
                 <Skeleton className="h-5 w-full" />
                 <Skeleton className="h-5 w-3/4" />
                 <Skeleton className="h-5 w-1/2" />
               </Modal.Body>
             ) : (
               <>
-                <Modal.Body className="space-y-4">
+                <Modal.Body>
                   <section className="space-y-2.5">
-                    <h3 className="text-sm font-semibold">Ringkasan Transaksi</h3>
-                    <div className="space-y-1.5">
-                      <SummaryRow
-                        label={id.transactions.receiptNumber}
-                        value={detail.transaction.receipt_number}
-                        mono
-                      />
-                      <SummaryRow
-                        label={id.transactions.date}
-                        value={formatDateTime(detail.transaction.created_at)}
-                      />
-                      <SummaryRow label={id.transactions.cashier} value={detail.cashier_name} />
-                      <SummaryRow
-                        label={id.transactions.status}
-                        value={
-                          <StatusBadge status={transactionStatusVariant(detail.transaction.status)}>
-                            {transactionStatusLabel(detail.transaction.status)}
-                          </StatusBadge>
-                        }
-                        rowClassName="items-center"
-                      />
+                    {/* Status adalah lencana sungguhan (DESIGN.md §5.4), jadi ia duduk di
+                        kepala bagian, bukan dipaksa jadi teks di dalam `SummaryList`. */}
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold">Ringkasan Transaksi</h3>
+                      <StatusBadge status={transactionStatusVariant(detail.transaction.status)}>
+                        {transactionStatusLabel(detail.transaction.status)}
+                      </StatusBadge>
                     </div>
+                    <SummaryList
+                      items={[
+                        {
+                          label: id.transactions.receiptNumber,
+                          value: detail.transaction.receipt_number,
+                          tone: "mono",
+                        },
+                        {
+                          label: id.transactions.date,
+                          value: formatDateTime(detail.transaction.created_at),
+                        },
+                        { label: id.transactions.cashier, value: detail.cashier_name },
+                      ]}
+                    />
                   </section>
 
                   <Separator />
 
                   <section className="space-y-2.5">
-                    <h3 className="text-sm font-semibold">{id.transactions.itemList}</h3>
-                    <div className="rounded-lg border">
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b bg-default/30 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted">
+                    <h3 className="font-semibold">{id.transactions.itemList}</h3>
+                    {/* Bukan `InfoPanel`: barisnya punya padding sendiri supaya garis
+                        `divide-y` menyentuh tepi permukaan. */}
+                    <Surface className="divide-y" variant="secondary">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2 text-xs text-muted">
                         <span>Item</span>
                         <span className="text-right">Subtotal</span>
                       </div>
-                      <div className="divide-y">
-                        {detail.items.map((item) => {
-                          const ppobStatus = ppobStatusConfig(item.ppob_status)
-                          return (
-                            <div
-                              key={item.id}
-                              className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5 text-sm"
-                            >
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-medium break-words">
-                                    {item.product_name}
-                                  </span>
-                                  <span className="text-muted">× {item.quantity}</span>
-                                  {ppobStatus && (
-                                    <StatusBadge size="sm" status={ppobStatus.variant}>
-                                      {isPpobInFlight(item.ppob_status) && (
-                                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                      )}
-                                      {ppobStatus.label}
-                                    </StatusBadge>
-                                  )}
-                                </div>
-                                {isDiscountedLine(item) && (
-                                  <p className="text-xs text-danger">
-                                    Diskon: -{formatRupiah(lineDiscountAmount(item))}
-                                  </p>
+                      {detail.items.map((item) => {
+                        const ppobStatus = ppobStatusConfig(item.ppob_status)
+                        return (
+                          <div
+                            key={item.id}
+                            className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium break-words">{item.product_name}</span>
+                                <span className="text-muted">× {item.quantity}</span>
+                                {ppobStatus && (
+                                  <StatusBadge size="sm" status={ppobStatus.variant}>
+                                    {isPpobInFlight(item.ppob_status) && (
+                                      <Spinner className="size-3" color="current" size="sm" />
+                                    )}
+                                    {ppobStatus.label}
+                                  </StatusBadge>
                                 )}
                               </div>
-                              <div className="text-right tabular-nums">
-                                {isDiscountedLine(item) && (
-                                  <div className="text-xs text-muted line-through">
-                                    {formatRupiah(item.subtotal)}
-                                  </div>
-                                )}
-                                <div className="font-medium">
-                                  {formatRupiah(netLineAmount(item))}
-                                </div>
-                              </div>
+                              {isDiscountedLine(item) && (
+                                <p className="text-xs text-danger">
+                                  Diskon: -{formatRupiah(lineDiscountAmount(item))}
+                                </p>
+                              )}
                             </div>
-                          )
-                        })}
-                      </div>
-                    </div>
+                            <div className="text-right tabular-nums">
+                              {isDiscountedLine(item) && (
+                                <div className="text-xs text-muted line-through">
+                                  {formatRupiah(item.subtotal)}
+                                </div>
+                              )}
+                              <div className="font-medium">{formatRupiah(netLineAmount(item))}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </Surface>
                   </section>
 
                   <Separator />
 
                   <section className="space-y-2.5">
-                    <h3 className="text-sm font-semibold">Ringkasan Pembayaran</h3>
-                    <div className="rounded-lg border bg-default/20 p-4">
-                      <div className="space-y-1.5">
-                        {detail.transaction.discount_amount > 0 && (
-                          <>
-                            <SummaryRow
-                              label="Subtotal"
-                              value={formatRupiah(detail.transaction.subtotal_amount)}
-                              valueClassName="tabular-nums"
-                            />
-                            <SummaryRow
-                              label="Diskon"
-                              value={`-${formatRupiah(detail.transaction.discount_amount)}`}
-                              valueClassName="tabular-nums text-danger"
-                            />
-                          </>
-                        )}
-                        <SummaryRow
-                          label={id.transactions.totalAmount}
-                          value={formatRupiah(detail.transaction.total_amount)}
-                          valueClassName="tabular-nums text-base font-semibold text-foreground"
-                        />
-                        {isDeleted && (
-                          <SummaryRow
-                            label="Total sebelum hapus"
-                            value={formatRupiah(originalTotalAmount)}
-                            valueClassName="tabular-nums"
+                    <h3 className="font-semibold">Ringkasan Pembayaran</h3>
+                    <InfoPanel className="flex flex-col gap-2">
+                      <SummaryList items={paymentItems} />
+                      {detail.payment_breakdown.length > 1 && (
+                        /* Bersarang di dalam kotak `secondary`, jadi memakai `default`
+                           supaya rinciannya masih terlihat sebagai kotak tersendiri. */
+                        <Surface className="px-3 py-2" variant="default">
+                          <SummaryList
+                            items={detail.payment_breakdown.map((split) => ({
+                              label: paymentSplitLabel(split.payment_method, split.bank_name),
+                              value: formatRupiah(split.amount),
+                            }))}
                           />
-                        )}
-                        <SummaryRow
-                          label={id.transactions.paymentMethod}
-                          value={paymentSplitLabel(
-                            detail.transaction.payment_method,
-                            detail.payment_breakdown[0]?.bank_name,
-                          )}
-                          valueClassName="text-foreground"
-                        />
-                        {detail.payment_breakdown.length > 1 && (
-                          <div className="rounded-md border bg-background px-3 py-2">
-                            <div className="space-y-1.5">
-                              {detail.payment_breakdown.map((split) => (
-                                <SummaryRow
-                                  key={`${split.payment_method}-${split.bank_name ?? "default"}`}
-                                  label={paymentSplitLabel(split.payment_method, split.bank_name)}
-                                  value={formatRupiah(split.amount)}
-                                  valueClassName="tabular-nums"
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <SummaryRow
-                          label={id.transactions.paymentAmount}
-                          value={formatRupiah(detail.transaction.payment_amount)}
-                          valueClassName="tabular-nums"
-                        />
-                        {(detail.transaction.change_amount ?? 0) > 0 && (
-                          <SummaryRow
-                            label={id.transactions.changeAmount}
-                            value={formatRupiah(detail.transaction.change_amount ?? 0)}
-                            valueClassName="tabular-nums"
-                          />
-                        )}
-                      </div>
-                    </div>
+                        </Surface>
+                      )}
+                      <SummaryList items={settlementItems} />
+                    </InfoPanel>
                   </section>
 
                   {(detail.transaction.notes || detail.transaction.deleted_reason || ppobItem) && (
                     <>
                       <Separator />
                       <section className="space-y-2.5">
-                        <h3 className="text-sm font-semibold">Info Tambahan</h3>
+                        <h3 className="font-semibold">Info Tambahan</h3>
                         <div className="space-y-2.5">
                           {detail.transaction.notes && (
-                            <div className="rounded-lg border p-4">
-                              <p className="text-xs font-medium uppercase tracking-wide text-muted">
-                                {id.transactions.notes}
-                              </p>
-                              <p className="mt-2 text-sm leading-relaxed">
-                                {detail.transaction.notes}
-                              </p>
-                            </div>
+                            <InfoPanel className="flex flex-col gap-2">
+                              <p className="text-xs text-muted">{id.transactions.notes}</p>
+                              <p className="leading-relaxed">{detail.transaction.notes}</p>
+                            </InfoPanel>
                           )}
                           {detail.transaction.deleted_reason && (
                             <Alert status="danger">
@@ -416,27 +388,23 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                             </Alert>
                           )}
                           {ppobItem && (
-                            <div className="rounded-lg border p-4">
-                              <p className="text-xs font-medium uppercase tracking-wide text-muted">
-                                Status PPOB
-                              </p>
+                            <InfoPanel className="flex flex-col gap-2">
+                              <p className="text-xs text-muted">Status PPOB</p>
                               {ppobItem.ppob_message && (
-                                <p className="mt-2 text-sm leading-relaxed">
-                                  {ppobItem.ppob_message}
-                                </p>
+                                <p className="leading-relaxed">{ppobItem.ppob_message}</p>
                               )}
                               {ppobItem.ppob_serial_number && (
-                                <p className="mt-2 font-mono text-xs text-muted">
+                                <p className="font-mono text-xs text-muted">
                                   SN: {ppobItem.ppob_serial_number}
                                 </p>
                               )}
                               {isPpobInFlight(ppobItem.ppob_status) && (
-                                <p className="mt-2 text-xs text-muted">
+                                <p className="text-xs text-muted">
                                   Masih diproses ke penyedia. Tunggu hasilnya — retry baru bisa
                                   dilakukan kalau statusnya gagal.
                                 </p>
                               )}
-                            </div>
+                            </InfoPanel>
                           )}
                         </div>
                       </section>
@@ -444,50 +412,59 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   )}
                 </Modal.Body>
 
-                <Modal.Footer className="flex-col items-stretch gap-3 border-t bg-default/30 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="flex flex-wrap gap-2">
-                    {isAdmin && !isDeleted && (
-                      <Button size="sm" variant="danger" onPress={() => setShowDeleteConfirm(true)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {id.common.delete}
+                {/* Admin corrections (void, change payment method) are rare and one of
+                    them is destructive, so they live in a menu on the left, apart from
+                    the everyday actions on the right — hence `justify-between`. */}
+                <Modal.Footer className={cn(isAdmin && !isDeleted && "justify-between")}>
+                  {isAdmin && !isDeleted && (
+                    <Dropdown>
+                      <Button aria-label="Aksi lainnya" isIconOnly size="sm" variant="tertiary">
+                        <MoreHorizontal />
                       </Button>
-                    )}
-                    {isAdmin && !isDeleted && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onPress={() => {
-                          // `mixed` is not one of the options and the backend rejects
-                          // it, so leave the select empty and make the admin pick a
-                          // real method instead of pre-filling an invalid one.
-                          setNewPaymentMethod(
-                            isSelectablePaymentMethod(detail.transaction.payment_method)
-                              ? detail.transaction.payment_method
-                              : "",
-                          )
-                          setShowEditPayment(true)
-                        }}
-                      >
-                        <Pencil className="mr-2 h-4 w-4" />
-                        {id.transactions.editPaymentMethod}
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 xl:justify-end">
+                      <Dropdown.Popover>
+                        <Dropdown.Menu
+                          onAction={(key) => {
+                            if (key === "edit-payment") {
+                              // `mixed` is not one of the options and the backend rejects
+                              // it, so leave the select empty and make the admin pick a
+                              // real method instead of pre-filling an invalid one.
+                              setNewPaymentMethod(
+                                isSelectablePaymentMethod(detail.transaction.payment_method)
+                                  ? detail.transaction.payment_method
+                                  : "",
+                              )
+                              setShowEditPayment(true)
+                            } else if (key === "delete") {
+                              setShowDeleteConfirm(true)
+                            }
+                          }}
+                        >
+                          <Dropdown.Item
+                            id="edit-payment"
+                            textValue={id.transactions.editPaymentMethod}
+                          >
+                            <Pencil className="size-4 shrink-0 text-muted" />
+                            <Label>{id.transactions.editPaymentMethod}</Label>
+                          </Dropdown.Item>
+                          <Dropdown.Item id="delete" textValue={id.common.delete} variant="danger">
+                            <Trash2 className="size-4 shrink-0 text-danger" />
+                            <Label>{id.common.delete}</Label>
+                          </Dropdown.Item>
+                        </Dropdown.Menu>
+                      </Dropdown.Popover>
+                    </Dropdown>
+                  )}
+                  <div className="flex items-center gap-2">
                     {ppobCanRetry && (
-                      <Button
-                        isDisabled={isRetrying}
+                      <PendingButton
+                        isPending={isRetrying}
                         size="sm"
                         variant="secondary"
                         onPress={handleRetryPpob}
                       >
-                        {isRetrying ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCcw className="mr-2 h-4 w-4" />
-                        )}
+                        <RefreshCcw />
                         Retry PPOB
-                      </Button>
+                      </PendingButton>
                     )}
                     {hasRefundAction && (
                       <RefundAction
@@ -499,7 +476,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       />
                     )}
                     <Button size="sm" onPress={handlePrint}>
-                      <Printer className="mr-2 h-4 w-4" />
+                      <Printer />
                       {id.transactions.printReceipt}
                     </Button>
                   </div>
@@ -527,36 +504,31 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>{id.transactions.deleteTransaction}</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">{id.transactions.deleteConfirm}</p>
+            <AlertDialog.Body>
+              <p>{id.transactions.deleteConfirm}</p>
               <TextField
                 aria-label={id.transactions.deleteReason}
                 fullWidth
                 value={deleteReason}
+                variant="secondary"
                 onChange={setDeleteReason}
               >
                 <TextArea placeholder={id.transactions.deleteReasonPlaceholder} rows={3} />
               </TextField>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button
-                isDisabled={isDeleting}
-                variant="tertiary"
-                onPress={() => {
-                  setDeleteReason("")
-                  setShowDeleteConfirm(false)
-                }}
-              >
+              {/* Closing through the backdrop's `onOpenChange` already clears the reason. */}
+              <Button isDisabled={isDeleting} slot="close" variant="tertiary">
                 {id.common.cancel}
               </Button>
-              <Button
-                isDisabled={isDeleting || !deleteReason.trim()}
+              <PendingButton
+                isDisabled={!deleteReason.trim()}
+                isPending={isDeleting}
                 variant="danger"
                 onPress={handleDelete}
               >
-                {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {id.common.delete}
-              </Button>
+              </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>
@@ -566,11 +538,11 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
       <Modal.Backdrop isOpen={showEditPayment} onOpenChange={setShowEditPayment}>
         <Modal.Container size="sm">
           <Modal.Dialog aria-label={id.transactions.editPaymentMethod}>
+            <Modal.CloseTrigger />
             <Modal.Header>
               <Modal.Heading>{id.transactions.editPaymentMethod}</Modal.Heading>
-              <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="space-y-4">
+            <Modal.Body>
               {isSplitPayment && (
                 <Alert status="warning">
                   <Alert.Indicator />
@@ -588,6 +560,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 fullWidth
                 placeholder="Pilih metode pembayaran"
                 value={newPaymentMethod || null}
+                variant="secondary"
                 onChange={(value) => setNewPaymentMethod(value === null ? "" : String(value))}
               >
                 <Select.Trigger>
@@ -609,6 +582,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 aria-label={id.transactions.editPaymentReason}
                 fullWidth
                 value={editPaymentReason}
+                variant="secondary"
                 onChange={setEditPaymentReason}
               >
                 <TextArea placeholder={id.transactions.editPaymentReasonPlaceholder} rows={3} />
@@ -624,17 +598,15 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
               >
                 {id.common.cancel}
               </Button>
-              <Button
+              <PendingButton
                 isDisabled={
-                  isUpdatingPayment ||
-                  !editPaymentReason.trim() ||
-                  !isSelectablePaymentMethod(newPaymentMethod)
+                  !editPaymentReason.trim() || !isSelectablePaymentMethod(newPaymentMethod)
                 }
+                isPending={isUpdatingPayment}
                 onPress={handleUpdatePaymentMethod}
               >
-                {isUpdatingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {id.common.save}
-              </Button>
+              </PendingButton>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

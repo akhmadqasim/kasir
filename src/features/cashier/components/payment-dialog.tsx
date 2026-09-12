@@ -13,11 +13,14 @@ import {
   TextField,
   ToggleButton,
 } from "@heroui/react"
+import { InfoPanel } from "@/components/info-panel"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
-import { useCartStore } from "../hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { useCheckoutTransaction } from "../hooks/use-cashier"
 import { cn } from "@/lib/utils"
 import {
@@ -499,37 +502,36 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
-      <Modal.Container className="max-h-[min(92svh,720px)] sm:max-w-[min(82vw,52rem)]" size="lg">
-        <Modal.Dialog aria-label="Pembayaran">
+      <Modal.Container size="lg">
+        {/* Dua panel berdampingan (nominal + catatan di kiri, keypad + metode di
+            kanan) butuh ~52rem; skala `size` berhenti di `lg` (32rem), jadi lebarnya
+            diberi lewat className Dialog seperti pola dokumentasi (`sm:max-w-…`).
+            Tingginya sudah dibatasi `scroll="inside"` bawaan Container. */}
+        <Modal.Dialog aria-label="Pembayaran" className="sm:max-w-[52rem]">
+          <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading className="text-lg font-semibold">Pembayaran</Modal.Heading>
-            <Modal.CloseTrigger />
+            <Modal.Heading>Pembayaran</Modal.Heading>
           </Modal.Header>
-          <Modal.Body className="p-0">
-            <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
-              <div className="min-h-0 overflow-y-auto border-b p-3.5 sm:p-4 md:border-b-0 md:border-r">
-                <div className="rounded-xl border bg-default/40 p-3.5 sm:p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
-                        Total Transaksi
-                      </p>
-                      {totalDiscount > 0 && (
-                        <p className="mt-3 text-sm text-muted">
-                          Diskon: {formatRupiah(totalDiscount)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[2.6rem] font-semibold tracking-tight tabular-nums sm:text-[2.9rem]">
-                        {formatRupiah(total)}
-                      </p>
-                      {subtotal !== total && (
-                        <p className="mt-2 text-sm text-muted">Subtotal {formatRupiah(subtotal)}</p>
-                      )}
-                    </div>
+          <Modal.Body>
+            <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
+              <div className="min-h-0 overflow-y-auto">
+                <InfoPanel className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-muted">Total Transaksi</p>
+                    {totalDiscount > 0 && (
+                      <p className="text-muted">Diskon: {formatRupiah(totalDiscount)}</p>
+                    )}
                   </div>
-                </div>
+                  <div className="text-right">
+                    {/* Peran "Total keranjang" — DESIGN.md §3.4 */}
+                    <p className="text-3xl font-semibold tracking-tight tabular-nums text-foreground">
+                      {formatRupiah(total)}
+                    </p>
+                    {subtotal !== total && (
+                      <p className="text-muted">Subtotal {formatRupiah(subtotal)}</p>
+                    )}
+                  </div>
+                </InfoPanel>
 
                 <div className="mt-3.5 space-y-2.5">
                   {selectedPaymentSplits.length > 0 ? (
@@ -548,9 +550,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                               "border-accent ring-2 ring-accent/20",
                           )}
                         >
-                          <div className="text-sm font-medium uppercase tracking-[0.14em] text-muted">
-                            {label}
-                          </div>
+                          <div className="text-xs text-muted">{label}</div>
                           {/* `Input` telanjang, bukan `TextField`: penjaga scan membaca
                           `event.timeStamp` dari event perubahan dan Enter, dan
                           `TextField` hanya meneruskan nilainya. */}
@@ -560,7 +560,9 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             id={amountInputId}
                             type="text"
                             inputMode="numeric"
-                            className="h-11 border-0 bg-transparent pr-0 text-right text-2xl font-semibold tabular-nums shadow-none sm:h-12 sm:text-[2rem] md:text-[2rem]"
+                            fullWidth
+                            variant="secondary"
+                            className="text-right tabular-nums"
                             placeholder="0"
                             value={formatAmountDisplay(split.amount)}
                             onClick={() => {
@@ -576,6 +578,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             <div className="col-span-2 sm:col-start-2 sm:col-span-1">
                               <Select
                                 fullWidth
+                                variant="secondary"
                                 placeholder="Pilih bank"
                                 value={split.bank_name || null}
                                 onChange={(value) =>
@@ -590,10 +593,8 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                                   }
                                 }}
                               >
-                                <Label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-muted">
-                                  Bank
-                                </Label>
-                                <Select.Trigger className="h-10 w-full">
+                                <Label>Bank</Label>
+                                <Select.Trigger>
                                   <Select.Value>{selectedText}</Select.Value>
                                   <Select.Indicator />
                                 </Select.Trigger>
@@ -614,22 +615,14 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       )
                     })
                   ) : (
-                    <div className="rounded-xl border border-dashed p-6 text-sm text-muted">
-                      Pilih metode pembayaran di panel kanan untuk mulai mengisi nominal.
-                    </div>
+                    <NoData title="Pilih metode pembayaran di panel kanan untuk mulai mengisi nominal." />
                   )}
                 </div>
 
                 <div className="mt-3.5 space-y-2.5">
-                  <TextField fullWidth value={notes} onChange={setNotes}>
-                    <Label className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
-                      Catatan
-                    </Label>
-                    <TextArea
-                      className="resize-none"
-                      placeholder="Tambahkan catatan untuk transaksi ini..."
-                      rows={2}
-                    />
+                  <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
+                    <Label>Catatan</Label>
+                    <TextArea placeholder="Tambahkan catatan untuk transaksi ini..." rows={2} />
                   </TextField>
                   {isSingleCashSelection && primaryPaymentAmount > 0 && (
                     <div className="flex items-center gap-2 text-sm">
@@ -684,7 +677,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-col gap-2 border-t p-3 sm:gap-2.5 sm:p-3.5 md:border-t-0">
+              <div className="flex min-h-0 flex-col gap-2 sm:gap-2.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_84px] gap-2 sm:grid-cols-[minmax(0,1fr)_96px]">
                   <div className="grid grid-cols-3 gap-2">
                     {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "000"].map((key) => (
@@ -704,7 +697,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                       onPress={handleKeypadDelete}
                     >
-                      <Delete className="mr-2 h-5 w-5" />
+                      <Delete />
                       Delete
                     </Button>
                     <Button
@@ -712,7 +705,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
                       onPress={handleKeypadClear}
                     >
-                      <RotateCcw className="mr-2 h-5 w-5" />
+                      <RotateCcw />
                       Clear
                     </Button>
                   </div>
@@ -732,17 +725,16 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 </div>
 
                 <Button
+                  fullWidth
                   variant="secondary"
-                  className="h-9 w-full text-base font-semibold sm:h-9.5 sm:text-lg"
+                  className="h-9 text-base font-semibold sm:h-9.5 sm:text-lg"
                   onPress={handleSetRemainingAmount}
                 >
                   Uang Pas
                 </Button>
 
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
-                    Metode Pembayaran
-                  </p>
+                  <p className="mb-3 text-xs text-muted">Metode Pembayaran</p>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {PAYMENT_METHODS.map((method) => {
                       const split = paymentSplits.find(
@@ -787,13 +779,16 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                 </div>
 
-                <Button
-                  className="sticky bottom-0 h-10 w-full shrink-0 text-base font-semibold sm:h-10.5 sm:text-lg"
+                <PendingButton
+                  className="sticky bottom-0 shrink-0"
+                  fullWidth
                   isDisabled={!canConfirm}
+                  isPending={checkoutTransaction.isPending}
+                  size="lg"
                   onPress={handleConfirm}
                 >
-                  {checkoutTransaction.isPending ? "Memproses..." : "Bayar"}
-                </Button>
+                  Bayar
+                </PendingButton>
               </div>
             </div>
           </Modal.Body>

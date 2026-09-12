@@ -30,7 +30,6 @@ export function PopularProductsPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <>
           <Select
@@ -79,7 +78,7 @@ export function PopularProductsPage() {
           <Table.Row key={row.productId} id={row.productId} textValue={row.productName}>
             <Table.Cell>
               {/* Medali hanya hiasan peringkat; nomornya tetap dibacakan pembaca layar. */}
-              <span className="font-bold">
+              <span className="font-medium">
                 {row.rank <= 3 ? (
                   <>
                     <span aria-hidden="true">{rankEmoji[row.rank - 1]}</span>
@@ -92,7 +91,7 @@ export function PopularProductsPage() {
             </Table.Cell>
             <Table.Cell className="font-medium">{row.productName}</Table.Cell>
             <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
-            <Table.Cell className="text-right font-bold">{row.qtySold}</Table.Cell>
+            <Table.Cell className="text-right font-medium">{row.qtySold}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
           </Table.Row>
         ))}

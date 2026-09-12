@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Save, Info } from "lucide-react"
-import { Button, Card, Input, Label, TextField } from "@heroui/react"
+import { Card, Input, Label, TextField } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import { getStoreInfo, updateStoreInfo } from "@/lib/api/settings"
@@ -63,47 +64,73 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
       <Card.Header>
         <Card.Title>{id.settings.tabStore}</Card.Title>
         {!isAdmin && (
-          <Card.Description>
-            <span className="flex items-center gap-1.5 text-warning">
-              <Info className="h-4 w-4" />
-              {id.settings.storeInfoReadOnly}
-            </span>
+          <Card.Description className="flex items-center gap-1.5 text-warning">
+            <Info aria-hidden="true" className="size-4" />
+            {id.settings.storeInfoReadOnly}
           </Card.Description>
         )}
       </Card.Header>
-      <Card.Content className="space-y-4">
+      <Card.Content className="gap-4">
         {/* `isRequired` replaces the old `required` attribute: HeroUI's Label draws the
             asterisk itself, so the marker no longer has to be typed into the string. */}
-        <TextField fullWidth isDisabled={!isAdmin} isRequired value={name} onChange={setName}>
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          isRequired
+          value={name}
+          variant="secondary"
+          onChange={setName}
+        >
           <Label>{id.settings.storeName}</Label>
           <Input />
         </TextField>
 
-        <TextField fullWidth isDisabled={!isAdmin} value={address} onChange={setAddress}>
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          value={address}
+          variant="secondary"
+          onChange={setAddress}
+        >
           <Label>{id.settings.storeAddress}</Label>
           <Input />
         </TextField>
 
-        <TextField fullWidth isDisabled={!isAdmin} value={phone} onChange={setPhone}>
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          value={phone}
+          variant="secondary"
+          onChange={setPhone}
+        >
           <Label>{id.settings.storePhone}</Label>
           <Input />
         </TextField>
 
-        <TextField fullWidth isDisabled={!isAdmin} type="email" value={email} onChange={setEmail}>
+        <TextField
+          fullWidth
+          isDisabled={!isAdmin}
+          type="email"
+          value={email}
+          variant="secondary"
+          onChange={setEmail}
+        >
           <Label>{id.settings.storeEmail}</Label>
           <Input />
         </TextField>
-
-        {isAdmin && (
-          <Button
-            isDisabled={saveMutation.isPending || !isReady || !name.trim()}
+      </Card.Content>
+      {isAdmin && (
+        <Card.Footer>
+          <PendingButton
+            isDisabled={!isReady || !name.trim()}
+            isPending={saveMutation.isPending}
             onPress={() => saveMutation.mutate(undefined)}
           >
-            <Save className="mr-2 h-4 w-4" />
-            {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-          </Button>
-        )}
-      </Card.Content>
+            <Save />
+            Simpan
+          </PendingButton>
+        </Card.Footer>
+      )}
     </Card>
   )
 }

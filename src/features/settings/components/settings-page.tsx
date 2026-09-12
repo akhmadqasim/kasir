@@ -28,7 +28,7 @@ export function SettingsPage() {
     {
       key: "store",
       label: id.settings.tabStore,
-      icon: <Store className="mr-2 h-4 w-4" />,
+      icon: <Store aria-hidden="true" className="size-4" />,
       panel: <StoreInfoTab isAdmin={isAdmin} />,
     },
     ...(isAdmin
@@ -36,7 +36,7 @@ export function SettingsPage() {
           {
             key: "sales",
             label: id.settings.tabSales,
-            icon: <ShoppingCart className="mr-2 h-4 w-4" />,
+            icon: <ShoppingCart aria-hidden="true" className="size-4" />,
             panel: <SalesSettingsTab />,
           },
         ]
@@ -44,7 +44,7 @@ export function SettingsPage() {
     {
       key: "printer",
       label: id.settings.tabPrinter,
-      icon: <Printer className="mr-2 h-4 w-4" />,
+      icon: <Printer aria-hidden="true" className="size-4" />,
       panel: <PrinterSettingsTab />,
     },
     ...(isAdmin
@@ -52,40 +52,39 @@ export function SettingsPage() {
           {
             key: "data",
             label: id.settings.tabData,
-            icon: <Database className="mr-2 h-4 w-4" />,
+            icon: <Database aria-hidden="true" className="size-4" />,
             panel: <DataTab />,
           },
           {
             key: "ppob",
             label: id.settings.tabPpob,
-            icon: <Zap className="mr-2 h-4 w-4" />,
+            icon: <Zap aria-hidden="true" className="size-4" />,
             panel: <PpobSettingsTab />,
           },
         ]
       : []),
   ]
 
+  // Judul "Pengaturan" sudah digambar navbar dari daftar navigasi; halaman ini
+  // langsung mulai dari baris kendalinya, dan padding luarnya milik `AppLayout`.
   return (
-    <div className="max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-bold">{id.settings.title}</h1>
-      <Tabs defaultSelectedKey="store">
-        <Tabs.ListContainer>
-          <Tabs.List aria-label={id.settings.title}>
-            {tabs.map((tab) => (
-              <Tabs.Tab key={tab.key} id={tab.key}>
-                {tab.icon}
-                {tab.label}
-                <Tabs.Indicator />
-              </Tabs.Tab>
-            ))}
-          </Tabs.List>
-        </Tabs.ListContainer>
-        {tabs.map((tab) => (
-          <Tabs.Panel key={tab.key} className="pt-4" id={tab.key}>
-            {tab.panel}
-          </Tabs.Panel>
-        ))}
-      </Tabs>
-    </div>
+    <Tabs className="max-w-3xl" defaultSelectedKey="store">
+      <Tabs.ListContainer>
+        <Tabs.List aria-label={id.settings.title}>
+          {tabs.map((tab) => (
+            <Tabs.Tab key={tab.key} className="gap-2" id={tab.key}>
+              {tab.icon}
+              {tab.label}
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs.ListContainer>
+      {tabs.map((tab) => (
+        <Tabs.Panel key={tab.key} className="pt-4" id={tab.key}>
+          {tab.panel}
+        </Tabs.Panel>
+      ))}
+    </Tabs>
   )
 }

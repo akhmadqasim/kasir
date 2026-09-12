@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { createIdempotencyKey } from "@/lib/api/client"
-import type { CartItem } from "../types"
+import type { CartItem } from "@/features/cashier/types"
 
 /** Guards against a barcode landing in a quantity field */
 export const MAX_CART_QUANTITY = 9999

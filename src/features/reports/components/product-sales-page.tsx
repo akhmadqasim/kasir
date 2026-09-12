@@ -32,7 +32,6 @@ export function ProductSalesPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <>
           <SearchField

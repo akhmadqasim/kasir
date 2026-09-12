@@ -114,10 +114,7 @@ interface ZoomToolbarProps {
 function ZoomToolbar({ zoom, zoomIn, zoomOut, zoomReset }: ZoomToolbarProps) {
   return (
     <div className="fixed right-4 bottom-4 z-50 lg:hidden">
-      <Surface
-        className="flex items-center gap-0.5 rounded-2xl p-1 shadow-surface"
-        variant="default"
-      >
+      <Surface className="flex items-center gap-0.5 p-1 shadow-surface" variant="default">
         <Button
           isIconOnly
           aria-label="Perkecil tampilan"

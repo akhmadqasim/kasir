@@ -1,8 +1,10 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Button, Form, Input, Label, Modal, TextField, ToggleButton } from "@heroui/react"
+import { Form, Input, Label, Modal, TextField, ToggleButton } from "@heroui/react"
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 
+import { PendingButton } from "@/components/pending-button"
+import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { createCashFlow } from "@/lib/api/shifts"
@@ -63,41 +65,39 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   return (
     // validationBehavior="aria" — see the note in `open-shift-dialog.tsx`.
     <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.CloseTrigger />
       <Modal.Header>
         <Modal.Heading>Uang Masuk / Keluar</Modal.Heading>
-        <Modal.CloseTrigger />
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
-        <p className="text-sm text-muted">Catat arus kas masuk atau keluar</p>
-
-        <div>
-          <Label className="mb-2 block">Jenis</Label>
+      <Modal.Body>
+        <div className="flex flex-col gap-2">
+          <Label>Jenis</Label>
           {/* `ToggleButton` rather than two plain buttons: the choice is a state,
               and `aria-pressed` is the only way a screen reader can tell which of
               the two is active. Each stays its own tab stop, as before. */}
           <div className="grid w-full grid-cols-2 gap-2">
             <ToggleButton
-              className="w-full gap-1.5 data-[selected=true]:bg-success-soft data-[selected=true]:text-success-soft-foreground"
+              className="w-full data-[selected=true]:bg-success-soft data-[selected=true]:text-success-soft-foreground"
               isDisabled={isSubmitting}
               isSelected={flowType === "in"}
               onChange={() => setFlowType("in")}
             >
-              <ArrowDownCircle className="h-4 w-4 text-success" />
+              <ArrowDownCircle className="text-success" />
               Uang Masuk
             </ToggleButton>
             <ToggleButton
-              className="w-full gap-1.5 data-[selected=true]:bg-danger-soft data-[selected=true]:text-danger-soft-foreground"
+              className="w-full data-[selected=true]:bg-danger-soft data-[selected=true]:text-danger-soft-foreground"
               isDisabled={isSubmitting}
               isSelected={flowType === "out"}
               onChange={() => setFlowType("out")}
             >
-              <ArrowUpCircle className="h-4 w-4 text-danger" />
+              <ArrowUpCircle className="text-danger" />
               Uang Keluar
             </ToggleButton>
           </div>
           {flowType === "" ? (
-            <p className="mt-2 text-xs text-muted">Pilih jenis arus kas terlebih dahulu.</p>
+            <p className="text-xs text-muted">Pilih jenis arus kas terlebih dahulu.</p>
           ) : null}
         </div>
 
@@ -106,20 +106,18 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
           fullWidth
           isDisabled={isSubmitting}
           value={groupDigits(amount)}
+          variant="secondary"
           onChange={(value) => setAmount(toDigits(value))}
         >
           <Label>Nominal</Label>
-          <Input
-            className="h-12 text-right text-lg font-bold tabular-nums"
-            inputMode="numeric"
-            placeholder="0"
-          />
+          <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
         </TextField>
 
         <TextField
           fullWidth
           isDisabled={isSubmitting}
           value={description}
+          variant="secondary"
           onChange={setDescription}
         >
           <Label>Keterangan</Label>
@@ -128,9 +126,9 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
       </Modal.Body>
 
       <Modal.Footer>
-        <Button className="h-12 w-full text-lg font-semibold" isDisabled={!canSubmit} type="submit">
-          {isSubmitting ? "Menyimpan..." : "Simpan"}
-        </Button>
+        <PendingButton fullWidth isDisabled={!canSubmit} isPending={isSubmitting} type="submit">
+          {id.common.save}
+        </PendingButton>
       </Modal.Footer>
     </Form>
   )

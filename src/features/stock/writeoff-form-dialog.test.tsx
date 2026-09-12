@@ -98,7 +98,7 @@ describe("formulir write-off", () => {
     await pickProduct()
 
     expect(productTrigger()).toHaveAccessibleName(/Telur Ayam 1kg/)
-    expect(screen.getByText(/Stok: 12 pcs/)).toBeInTheDocument()
+    expect(screen.getByText("12 pcs")).toBeInTheDocument()
   })
 
   it("menghitung estimasi kerugian dari harga modal", async () => {
@@ -161,6 +161,6 @@ describe("formulir write-off", () => {
     fireEvent.click(screen.getByLabelText("Clear selection"))
 
     expect(productTrigger()).toHaveAccessibleName(/Pilih produk/)
-    expect(screen.queryByText(/Stok: 12 pcs/)).not.toBeInTheDocument()
+    expect(screen.queryByText("12 pcs")).not.toBeInTheDocument()
   })
 })

@@ -1,9 +1,9 @@
 import { useMemo } from "react"
 
+import { StatCard } from "@/components/stat-card"
 import { id as t } from "@/i18n/id"
 import { formatNumber, formatRupiah } from "@/lib/format"
 import { useDashboardSummary } from "../hooks/use-dashboard"
-import { StatCard } from "./stat-card"
 
 /**
  * Empat angka hari ini, dibaca sekali lihat.

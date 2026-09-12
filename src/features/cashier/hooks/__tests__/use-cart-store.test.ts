@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { MAX_CART_QUANTITY, migrateCartState, useCartStore, type HeldCart } from "../use-cart-store"
+import {
+  MAX_CART_QUANTITY,
+  migrateCartState,
+  useCartStore,
+  type HeldCart,
+} from "@/stores/cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

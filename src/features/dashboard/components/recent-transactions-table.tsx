@@ -5,7 +5,8 @@ import { id as t } from "@/i18n/id"
 import { formatDateTime, formatNumber, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { useRecentTransactions } from "../hooks/use-dashboard"
-import { NoData, SectionCard } from "./section-card"
+import { NoData } from "@/components/no-data"
+import { SectionCard } from "./section-card"
 
 export function RecentTransactionsTable() {
   const { data: recentTx } = useRecentTransactions()

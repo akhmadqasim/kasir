@@ -1,22 +1,25 @@
 import { Button, Modal, Separator, Skeleton, Table } from "@heroui/react"
 
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useApiQuery } from "@/hooks/use-api"
 import { getRefundDetail } from "@/lib/api/refunds"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
-import {
-  differenceToneClass,
-  refundConditionBadge,
-  refundTypeLabel,
-  refundTypeVariant,
-} from "../labels"
+import { refundConditionBadge, refundTypeLabel } from "../labels"
 import type { RefundDetailResult } from "../types"
 
 interface RefundDetailDialogProps {
   refundId: number | null
   onClose: () => void
+}
+
+/** Selisih tukar barang: positif toko mengembalikan uang, negatif pelanggan menambah bayar. */
+function differenceTone(amount: number): SummaryItem["tone"] {
+  if (amount > 0) return "success"
+  if (amount < 0) return "danger"
+  return "default"
 }
 
 export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProps) {
@@ -28,63 +31,66 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
 
   const isExchange = detail?.refund.refund_type === "exchange"
 
+  const headerItems: SummaryItem[] = detail
+    ? [
+        { label: id.refund.refundNumber, value: detail.refund.refund_number, tone: "mono" },
+        { label: id.refund.type, value: refundTypeLabel(detail.refund.refund_type) },
+        { label: id.refund.transactionReceipt, value: detail.transaction_receipt, tone: "mono" },
+        { label: id.refund.cashier, value: detail.cashier_name },
+        { label: id.transactions.date, value: formatDateTime(detail.refund.created_at) },
+        ...(detail.refund.reason ? [{ label: id.refund.reason, value: detail.refund.reason }] : []),
+      ]
+    : []
+
+  const summaryItems: SummaryItem[] = detail
+    ? [
+        {
+          label: id.refund.totalRefund,
+          value: formatRupiah(detail.refund.total_refund_amount),
+          tone: "strong",
+        },
+        ...(isExchange
+          ? [
+              {
+                label: id.refund.totalExchange,
+                value: formatRupiah(detail.refund.total_exchange_amount ?? 0),
+              },
+              {
+                label: id.refund.difference,
+                value: formatRupiah(detail.refund.difference_amount ?? 0),
+                tone: differenceTone(detail.refund.difference_amount ?? 0),
+              },
+            ]
+          : []),
+      ]
+    : []
+
   return (
     <Modal.Backdrop isOpen={!!refundId} onOpenChange={(open) => !open && onClose()}>
       <Modal.Container scroll="inside" size="lg">
         <Modal.Dialog aria-label={id.refund.detail}>
+          <Modal.CloseTrigger />
           <Modal.Header>
             <Modal.Heading>{id.refund.detail}</Modal.Heading>
-            <Modal.CloseTrigger />
           </Modal.Header>
 
           {isLoading || !detail ? (
-            <Modal.Body className="space-y-3">
+            <Modal.Body>
               <Skeleton className="h-5 w-full" />
               <Skeleton className="h-5 w-3/4" />
               <Skeleton className="h-5 w-1/2" />
             </Modal.Body>
           ) : (
-            <Modal.Body className="space-y-4">
-              {/* Header info */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-muted">{id.refund.refundNumber}</p>
-                  <p className="font-mono font-medium">{detail.refund.refund_number}</p>
-                </div>
-                <div>
-                  <p className="text-muted">{id.refund.type}</p>
-                  <StatusBadge status={refundTypeVariant(detail.refund.refund_type)}>
-                    {refundTypeLabel(detail.refund.refund_type)}
-                  </StatusBadge>
-                </div>
-                <div>
-                  <p className="text-muted">{id.refund.transactionReceipt}</p>
-                  <p className="font-mono">{detail.transaction_receipt}</p>
-                </div>
-                <div>
-                  <p className="text-muted">{id.refund.cashier}</p>
-                  <p>{detail.cashier_name}</p>
-                </div>
-                <div>
-                  <p className="text-muted">{id.transactions.date}</p>
-                  <p>{formatDateTime(detail.refund.created_at)}</p>
-                </div>
-                {detail.refund.reason && (
-                  <div>
-                    <p className="text-muted">{id.refund.reason}</p>
-                    <p>{detail.refund.reason}</p>
-                  </div>
-                )}
-              </div>
+            <Modal.Body>
+              <SummaryList items={headerItems} layout="grid" />
 
               <Separator />
 
-              {/* Returned items */}
               <div>
-                <h4 className="mb-2 text-sm font-medium">{id.refund.returnedItems}</h4>
+                <h4 className="mb-2 font-medium">{id.refund.returnedItems}</h4>
                 <Table variant="secondary">
                   <Table.ScrollContainer>
-                    <Table.Content aria-label={id.refund.returnedItems}>
+                    <Table.Content aria-label={id.refund.returnedItems} className="tabular-nums">
                       <Table.Header>
                         <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
                         <Table.Column className="text-center">Qty</Table.Column>
@@ -97,14 +103,12 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                           const condition = refundConditionBadge(item.condition)
                           return (
                             <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
-                              <Table.Cell className="text-sm">{item.product_name}</Table.Cell>
-                              <Table.Cell className="text-center tabular-nums">
-                                {item.quantity}
-                              </Table.Cell>
-                              <Table.Cell className="text-right tabular-nums">
+                              <Table.Cell>{item.product_name}</Table.Cell>
+                              <Table.Cell className="text-center">{item.quantity}</Table.Cell>
+                              <Table.Cell className="text-right">
                                 {formatRupiah(item.product_price)}
                               </Table.Cell>
-                              <Table.Cell className="text-right tabular-nums">
+                              <Table.Cell className="text-right">
                                 {formatRupiah(item.subtotal)}
                               </Table.Cell>
                               <Table.Cell>
@@ -125,15 +129,17 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                 </Table>
               </div>
 
-              {/* Exchange items (only for exchange type) */}
               {isExchange && detail.exchange_items.length > 0 && (
                 <>
                   <Separator />
                   <div>
-                    <h4 className="mb-2 text-sm font-medium">{id.refund.replacementItems}</h4>
+                    <h4 className="mb-2 font-medium">{id.refund.replacementItems}</h4>
                     <Table variant="secondary">
                       <Table.ScrollContainer>
-                        <Table.Content aria-label={id.refund.replacementItems}>
+                        <Table.Content
+                          aria-label={id.refund.replacementItems}
+                          className="tabular-nums"
+                        >
                           <Table.Header>
                             <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
                             <Table.Column className="text-center">Qty</Table.Column>
@@ -143,14 +149,12 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
                           <Table.Body>
                             {detail.exchange_items.map((item) => (
                               <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
-                                <Table.Cell className="text-sm">{item.product_name}</Table.Cell>
-                                <Table.Cell className="text-center tabular-nums">
-                                  {item.quantity}
-                                </Table.Cell>
-                                <Table.Cell className="text-right tabular-nums">
+                                <Table.Cell>{item.product_name}</Table.Cell>
+                                <Table.Cell className="text-center">{item.quantity}</Table.Cell>
+                                <Table.Cell className="text-right">
                                   {formatRupiah(item.product_price)}
                                 </Table.Cell>
-                                <Table.Cell className="text-right tabular-nums">
+                                <Table.Cell className="text-right">
                                   {formatRupiah(item.subtotal)}
                                 </Table.Cell>
                               </Table.Row>
@@ -165,38 +169,12 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
 
               <Separator />
 
-              {/* Summary */}
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between font-semibold">
-                  <span>{id.refund.totalRefund}</span>
-                  <span className="tabular-nums">
-                    {formatRupiah(detail.refund.total_refund_amount)}
-                  </span>
-                </div>
-                {isExchange && (
-                  <>
-                    <div className="flex justify-between text-muted">
-                      <span>{id.refund.totalExchange}</span>
-                      <span className="tabular-nums">
-                        {formatRupiah(detail.refund.total_exchange_amount ?? 0)}
-                      </span>
-                    </div>
-                    <div
-                      className={`flex justify-between font-semibold ${differenceToneClass(detail.refund.difference_amount ?? 0)}`}
-                    >
-                      <span>{id.refund.difference}</span>
-                      <span className="tabular-nums">
-                        {formatRupiah(detail.refund.difference_amount ?? 0)}
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
+              <SummaryList items={summaryItems} />
             </Modal.Body>
           )}
 
           <Modal.Footer>
-            <Button variant="tertiary" onPress={onClose}>
+            <Button slot="close" variant="tertiary">
               {id.refund.cancel}
             </Button>
           </Modal.Footer>

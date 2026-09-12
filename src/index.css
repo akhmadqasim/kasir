@@ -245,4 +245,29 @@
   .card {
     border-radius: var(--radius-2xl);
   }
+
+  /* Surface: bawaan `.surface` HeroUI hanya memberi latar dan warna teks, tanpa
+     sudut sama sekali, jadi setiap pemakainya terpaksa menulis radiusnya
+     sendiri. Dari 22 pemakaian, 15 menulis `rounded-2xl` dan 6 menulis
+     `rounded-xl` — bukan karena sengaja berbeda, melainkan karena ditulis
+     agent yang berbeda. Sudutnya disamakan dengan `.card` di sini supaya panel
+     sekunder di dalam kartu sebangun dengan kartu yang memuatnya. */
+  .surface {
+    border-radius: var(--radius-2xl);
+  }
+
+  /* Body dialog: isinya hampir selalu lebih dari satu anak (kalimat penjelas
+     lalu kolom isian, atau beberapa kolom isian), dan tiap dialog menulis
+     jaraknya sendiri — 13 memakai `flex flex-col gap-4`, 2 `gap-3`, 3
+     `space-y-*`. Bawaan `.modal__body` dan `.alert-dialog__body` tidak
+     menetapkan `display`, jadi menjadikannya kolom flex tidak bentrok dengan
+     `min-h-0 flex-1` (sifat sebagai anak flex) maupun `overflow-y-auto` pada
+     `--scroll-inside`. Body yang isinya satu anak tidak terpengaruh: `gap`
+     baru bekerja di antara dua anak. */
+  .modal__body,
+  .alert-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 4);
+  }
 }

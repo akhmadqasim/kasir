@@ -1,18 +1,14 @@
 import { useState, useCallback } from "react"
 import { Plus, Check, X, Trash2 } from "lucide-react"
-import {
-  AlertDialog,
-  Button,
-  Label,
-  ListBox,
-  Select,
-  Skeleton,
-  Surface,
-  Table,
-} from "@heroui/react"
+import { AlertDialog, Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { TablePagination } from "@/components/table-pagination"
 import { id } from "@/i18n/id"
 import { formatDateTime, formatRupiah } from "@/lib/format"
@@ -175,18 +171,16 @@ export function StockWriteoffPage() {
     approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.nav.stock}</h1>
-        <Button onPress={() => setFormOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
+    <div className="flex h-full flex-col gap-6">
+      <NavbarActions>
+        <Button size="sm" onPress={() => setFormOpen(true)}>
+          <Plus />
           Buat Write-off
         </Button>
-      </div>
+      </NavbarActions>
 
       {/* Filter Bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <Select
           aria-label="Filter status"
           className="w-44"
@@ -248,11 +242,7 @@ export function StockWriteoffPage() {
                 <Table.Column>Tanggal</Table.Column>
                 <Table.Column className="text-right">Aksi</Table.Column>
               </Table.Header>
-              <Table.Body
-                renderEmptyState={() => (
-                  <p className="py-10 text-center text-muted">Tidak ada data write-off</p>
-                )}
-              >
+              <Table.Body renderEmptyState={() => <NoData title="Tidak ada data write-off" />}>
                 {isLoading
                   ? Array.from({ length: 5 }).map((_, rowIndex) => (
                       <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
@@ -268,11 +258,11 @@ export function StockWriteoffPage() {
                         <Table.Cell className="font-mono text-sm">{wo.writeoffNumber}</Table.Cell>
                         <Table.Cell className="font-medium">{wo.productName}</Table.Cell>
                         <Table.Cell className="text-muted">{wo.cashierName}</Table.Cell>
-                        <Table.Cell className="text-right">{wo.quantity}</Table.Cell>
+                        <Table.Cell className="text-right tabular-nums">{wo.quantity}</Table.Cell>
                         <Table.Cell>
                           <ReasonBadge reason={wo.reason} />
                         </Table.Cell>
-                        <Table.Cell className="text-right font-medium text-danger">
+                        <Table.Cell className="text-right font-medium tabular-nums text-danger">
                           {formatRupiah(wo.lossValue)}
                         </Table.Cell>
                         <Table.Cell>
@@ -317,40 +307,43 @@ export function StockWriteoffPage() {
                 {confirmAction ? confirmMessages[confirmAction.type].title : ""}
               </AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                {confirmAction ? confirmMessages[confirmAction.type].description : ""}
-              </p>
+            <AlertDialog.Body>
+              <p>{confirmAction ? confirmMessages[confirmAction.type].description : ""}</p>
               {confirmAction && (
-                <Surface className="rounded-2xl px-3 py-2 text-sm" variant="secondary">
-                  <div>
-                    <span className="text-muted">No. WO:</span>{" "}
-                    {confirmAction.writeoff.writeoffNumber}
-                  </div>
-                  <div>
-                    <span className="text-muted">Produk:</span> {confirmAction.writeoff.productName}
-                  </div>
-                  <div>
-                    <span className="text-muted">Qty:</span> {confirmAction.writeoff.quantity}
-                  </div>
-                  <div>
-                    <span className="text-muted">Kerugian:</span>{" "}
-                    {formatRupiah(confirmAction.writeoff.lossValue)}
-                  </div>
-                </Surface>
+                <InfoPanel>
+                  <SummaryList
+                    layout="grid"
+                    items={[
+                      {
+                        label: "No. WO",
+                        value: confirmAction.writeoff.writeoffNumber,
+                        tone: "mono",
+                      },
+                      { label: "Produk", value: confirmAction.writeoff.productName },
+                      { label: "Qty", value: String(confirmAction.writeoff.quantity) },
+                      {
+                        label: "Kerugian",
+                        value: formatRupiah(confirmAction.writeoff.lossValue),
+                        tone: "danger",
+                      },
+                    ]}
+                  />
+                </InfoPanel>
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button
-                isDisabled={isPending}
-                variant="tertiary"
-                onPress={() => setConfirmAction(null)}
-              >
+              <Button isDisabled={isPending} slot="close" variant="tertiary">
                 {id.common.cancel}
               </Button>
-              <Button isDisabled={isPending} onPress={handleConfirm}>
-                {isPending ? id.common.loading : id.common.confirm}
-              </Button>
+              {/* Setujui memajukan pekerjaan (primary); tolak dan hapus membuang
+                  data, jadi mengikuti warna ikon di atasnya. */}
+              <PendingButton
+                isPending={isPending}
+                variant={confirmAction?.type === "approve" ? "primary" : "danger"}
+                onPress={handleConfirm}
+              >
+                {id.common.confirm}
+              </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>
@@ -382,7 +375,7 @@ function WriteoffActions({
             size="sm"
             onPress={() => onAction({ type: "approve", writeoff })}
           >
-            <Check className="h-4 w-4" />
+            <Check />
           </Button>
           <Button
             aria-label="Tolak"
@@ -391,7 +384,7 @@ function WriteoffActions({
             variant="danger"
             onPress={() => onAction({ type: "reject", writeoff })}
           >
-            <X className="h-4 w-4" />
+            <X />
           </Button>
         </>
       )}
@@ -403,7 +396,7 @@ function WriteoffActions({
           variant="danger"
           onPress={() => onAction({ type: "delete", writeoff })}
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 />
         </Button>
       )}
     </div>

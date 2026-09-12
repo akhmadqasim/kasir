@@ -3,7 +3,8 @@ import { Table } from "@heroui/react"
 import { StatusBadge } from "@/components/status-badge"
 import { id as t } from "@/i18n/id"
 import { useLowStockProducts } from "../hooks/use-dashboard"
-import { NoData, SectionCard } from "./section-card"
+import { NoData } from "@/components/no-data"
+import { SectionCard } from "./section-card"
 
 export function LowStockTable() {
   const { data: lowStock } = useLowStockProducts()

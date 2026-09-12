@@ -1,8 +1,11 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Badge, Button, Modal, Pagination, Separator, Skeleton } from "@heroui/react"
-import { ArrowLeft, RefreshCw, Loader2, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
+import { Badge, Button, Modal, Pagination, Skeleton, Spinner } from "@heroui/react"
+import { RefreshCw, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { id as i18n } from "@/i18n/id"
 import { usePpobNotifications, usePpobMarkAllRead, usePpobMarkNotificationRead } from "../../hooks"
@@ -10,11 +13,12 @@ import type { NotificationItem } from "../../types"
 
 const ITEMS_PER_PAGE = 20
 
+/** Only drawn inside `Modal.Icon`, whose 40px circle expects a 20px glyph. */
 function CategoryIcon({ category }: { category: string }) {
   return category.toUpperCase() === "TRANSAKSI" ? (
-    <CreditCard className="h-4 w-4 text-accent" />
+    <CreditCard className="size-5 text-accent" />
   ) : (
-    <Info className="h-4 w-4 text-warning" />
+    <Info className="size-5 text-warning" />
   )
 }
 
@@ -73,24 +77,26 @@ function NotificationDetailDialog({
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label={item.category}>
+          <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading className="flex items-center gap-2">
+            <Modal.Icon className="bg-default text-foreground">
               <CategoryIcon category={item.category} />
-              {item.category}
-            </Modal.Heading>
-            <Modal.CloseTrigger />
+            </Modal.Icon>
+            <Modal.Heading>{item.category}</Modal.Heading>
           </Modal.Header>
 
-          <Modal.Body className="space-y-3">
-            <p className="text-xs text-muted">{formatDate(item.createdAt)}</p>
-
-            <Separator />
-
+          <Modal.Body>
+            <p>{formatDate(item.createdAt)}</p>
             {item.title && item.title !== item.category && (
-              <p className="text-sm font-semibold">{item.title}</p>
+              <p className="font-semibold">{item.title}</p>
             )}
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{item.message}</p>
+            <p className="whitespace-pre-wrap">{item.message}</p>
           </Modal.Body>
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              Tutup
+            </Button>
+          </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
@@ -131,97 +137,82 @@ export function PpobNotifications() {
   }
 
   return (
-    <div className="space-y-5 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            aria-label={i18n.common.back}
-            isIconOnly
-            variant="tertiary"
-            onPress={() => navigate("/ppob")}
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.notifications}</h1>
-          {unreadCount > 0 && (
-            <StatusBadge size="sm" status="error">
-              {unreadCount}
-            </StatusBadge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {unreadCount > 0 && (
+    <div className="flex flex-col gap-6">
+      <SubpageHeader
+        actions={
+          <>
+            {unreadCount > 0 && (
+              <StatusBadge size="sm" status="error">
+                {unreadCount}
+              </StatusBadge>
+            )}
+            {unreadCount > 0 && (
+              <PendingButton
+                isPending={markAllRead.isPending}
+                size="sm"
+                variant="secondary"
+                onPress={handleMarkAllRead}
+              >
+                <CheckCheck />
+                {i18n.ppob.markAllRead}
+              </PendingButton>
+            )}
             <Button
-              isDisabled={markAllRead.isPending}
+              aria-label="Muat ulang dari Mitra"
+              isIconOnly
+              isPending={isRefetching}
               size="sm"
-              variant="secondary"
-              onPress={handleMarkAllRead}
+              variant="tertiary"
+              onPress={() => {
+                // The first press switches to the forced key, which fetches on its
+                // own; later presses are plain refetches of that same forced key.
+                if (forceRefresh) {
+                  refetch()
+                } else {
+                  setForceRefresh(true)
+                }
+              }}
             >
-              {markAllRead.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCheck className="mr-2 h-4 w-4" />
-              )}
-              {i18n.ppob.markAllRead}
-            </Button>
-          )}
-          <Button
-            aria-label="Muat ulang dari Mitra"
-            isDisabled={isRefetching}
-            isIconOnly
-            variant="tertiary"
-            onPress={() => {
-              // The first press switches to the forced key, which fetches on its
-              // own; later presses are plain refetches of that same forced key.
-              if (forceRefresh) {
-                refetch()
-              } else {
-                setForceRefresh(true)
+              {({ isPending }) =>
+                isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />
               }
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
+            </Button>
+          </>
+        }
+        title={i18n.ppob.notifications}
+        onBack={() => navigate("/ppob")}
+      />
 
-      {/* Content */}
       {isLoading ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
+            <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="mb-3 h-10 w-10 text-muted" />
-          <p className="mb-1 font-medium text-danger">Gagal memuat pemberitahuan</p>
-          <p className="text-sm text-muted">Silakan coba lagi nanti</p>
-        </div>
+        <NoData icon={<Bell />} title="Gagal memuat pemberitahuan" tone="danger">
+          Silakan coba lagi nanti
+        </NoData>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Bell className="mb-3 h-10 w-10 text-muted" />
-          <p className="mb-1 font-medium">{i18n.ppob.noNotifications}</p>
-          <p className="text-sm text-muted">Belum ada pemberitahuan saat ini</p>
-        </div>
+        <NoData icon={<Bell />} title={i18n.ppob.noNotifications}>
+          Belum ada pemberitahuan saat ini
+        </NoData>
       ) : (
         <>
-          {/* Notification List */}
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {items.map((item, idx) => {
               const isUnread = item.status === "unread"
               return (
                 <Button
                   key={item.inboxId || idx}
-                  className={`h-auto w-full flex-col items-start gap-1 p-3 text-left ${
+                  fullWidth
+                  className={`h-auto flex-col items-start gap-1 p-3 text-left ${
                     isUnread ? "" : "bg-default/20"
                   }`}
                   variant="secondary"
                   onPress={() => handleItemPress(item)}
                 >
-                  {/* Titik belum-dibaca ditempel ke label kategorinya, bukan
-                      digambar sebagai span terpisah di sebelahnya. */}
+                  {/* Titik belum-dibaca ditempel ke label kategorinya. */}
                   {isUnread ? (
                     <Badge.Anchor>
                       <CategoryBadge category={item.category} />

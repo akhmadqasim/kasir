@@ -51,19 +51,19 @@ Sumber kebenarannya `src/index.css`, memakai **palet resmi HeroUI v3**. Tidak ad
 Tailwind mentah (`bg-blue-500`, `text-gray-400`) di mana pun dalam `src/`. Semua warna
 dipanggil lewat nama tokennya.
 
-| Token | Dipakai untuk |
-| --- | --- |
-| `--background` | kanvas halaman dan sidebar |
-| `--surface` | kartu dan panel di atas kanvas |
-| `--surface-secondary`, `--surface-tertiary` | permukaan bertingkat di dalam kartu |
-| `--overlay` | dialog, popover, menu |
-| `--foreground` | teks utama |
-| `--muted` | teks sekunder, label, satuan |
-| `--default` | latar netral: hover, chip diam, wadah tab |
-| `--accent` | warna merek; aksi utama, garis grafik pertama, tab terpilih |
-| `--success` / `--warning` / `--danger` | naik / perlu perhatian / turun & rusak |
-| `--border`, `--separator` | garis tepi dan garis pemisah |
-| `--field-*` | latar, teks, placeholder, dan tepi kolom isian |
+| Token                                       | Dipakai untuk                                               |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| `--background`                              | kanvas halaman dan sidebar                                  |
+| `--surface`                                 | kartu dan panel di atas kanvas                              |
+| `--surface-secondary`, `--surface-tertiary` | permukaan bertingkat di dalam kartu                         |
+| `--overlay`                                 | dialog, popover, menu                                       |
+| `--foreground`                              | teks utama                                                  |
+| `--muted`                                   | teks sekunder, label, satuan                                |
+| `--default`                                 | latar netral: hover, chip diam, wadah tab                   |
+| `--accent`                                  | warna merek; aksi utama, garis grafik pertama, tab terpilih |
+| `--success` / `--warning` / `--danger`      | naik / perlu perhatian / turun & rusak                      |
+| `--border`, `--separator`                   | garis tepi dan garis pemisah                                |
+| `--field-*`                                 | latar, teks, placeholder, dan tepi kolom isian              |
 
 Seluruh netralnya bertint hue `253.83`, hue yang sama dengan aksennya. Itu yang membuat
 permukaannya terasa sewarna dengan tombol birunya alih-alih abu-abu mati.
@@ -116,16 +116,22 @@ Satu keluarga huruf: **Geist Variable**, dimuat lokal lewat `@fontsource-variabl
 Bukan Inter seperti contoh di dokumentasi HeroUI — aplikasi ini harus jalan tanpa internet,
 jadi huruf yang diambil dari CDN tidak boleh dipakai.
 
-Hanya tiga peran yang boleh menimpa ukuran huruf bawaan komponen. Sisanya memakai apa yang
+Hanya empat peran yang boleh menimpa ukuran huruf bawaan komponen. Sisanya memakai apa yang
 sudah diberikan HeroUI.
 
-Angkanya dibaca dari computed style template dashboard HeroUI Pro, bukan dipilih.
+Angkanya dibaca dari computed style template dashboard HeroUI Pro, bukan dipilih — kecuali
+baris terakhir, yang tidak punya padanan di template dan alasannya ditulis di bawah.
 
-| Peran | Kelas |
-| --- | --- |
-| Judul halaman (di navbar) | `text-xl font-semibold` |
-| Angka KPI | `text-2xl font-semibold tracking-tight tabular-nums` |
-| Angka sekunder di kepala grafik | `text-xl font-semibold tracking-tight tabular-nums` |
+| Peran                           | Kelas                                                |
+| ------------------------------- | ---------------------------------------------------- |
+| Judul halaman (di navbar)       | `text-xl font-semibold`                              |
+| Angka KPI                       | `text-2xl font-semibold tracking-tight tabular-nums` |
+| Angka sekunder di kepala grafik | `text-xl font-semibold tracking-tight tabular-nums`  |
+| Total keranjang (kasir)         | `text-3xl font-semibold tracking-tight tabular-nums` |
+
+Total keranjang satu tingkat di atas angka KPI karena dibaca dari jarak — kasir berdiri,
+pelanggan di seberang meja — dan satu ukuran tanpa breakpoint: angka yang mengecil di layar
+sempit adalah angka yang salah dibaca.
 
 `Card.Title` (`text-sm font-medium`) dan `Card.Description` (`text-sm text-muted`) dipakai
 apa adanya — jangan diberi `text-base` atau `font-semibold`. Hierarki halaman ini datang
@@ -152,6 +158,13 @@ itulah yang membuat tampilannya terasa asing meski paletnya sama. Kartu lalu dit
 ke `--radius-2xl` (16px) lewat `@layer components { .card }`, karena template melakukan
 itu pada setiap kartunya.
 
+**Sudut `Surface` juga `--radius-2xl`, dari aturan global yang sama** (`.surface` di
+`index.css`). Bawaan HeroUI tidak memberi `Surface` sudut sama sekali, dan 22 pemakaiannya
+sempat menulis radiusnya sendiri — 15 `rounded-2xl`, 6 `rounded-xl` — bukan karena sengaja
+berbeda, melainkan karena ditulis orang yang berbeda. Jangan tulis `rounded-*` pada
+`Surface` maupun `Card`; kalau satu tempat memang harus berbeda, tulis kelasnya dengan
+komentar yang menyebut alasannya.
+
 Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` memberi `px-6` supaya
 tepi isi sejajar dengan tepi judul di navbar; halaman hanya mengatur `gap` antar bagian.
 Isi dashboard dipusatkan `max-w-7xl`; layar kasir penuh, karena keranjang dan katalog
@@ -173,18 +186,25 @@ Jangan tulis ulang komponen yang sudah ada. Sebelum membuat yang baru, periksa d
 komponen HeroUI — kalau MCP server-nya aktif (`.mcp.json`), `list_components` dan
 `get_component_docs` menjawab lebih cepat daripada menebak.
 
+**Kolom isian di atas permukaan memakai `variant="secondary"`.** `TextField`, `Select`,
+`ComboBox`, `NumberField`, dan `PinInput` yang berdiri di dalam `Card`, `Surface`, atau
+`Modal` — yang latarnya sudah `bg-surface` — memakai varian itu supaya kolomnya tidak
+menyatu dengan latar induknya; itu contoh "In Surface" di dokumentasi TextField. Kolom yang
+langsung di atas kanvas halaman (bar pencarian, filter) memakai varian bawaan. Aturan ini
+berlaku sekali di sini; jangan tulis ulang alasannya sebagai komentar di tiap berkas.
+
 ### 4.1 Varian mengikuti makna, bukan rupa
 
 Ini prinsip nomor satu HeroUI v3: nama varian menyatakan **peran** sebuah aksi, bukan
 gambarannya. Pilih varian dari pertanyaan "seberapa penting aksi ini", bukan "saya ingin
 tombolnya bergaris atau terisi".
 
-| `Button` | Untuk | Banyaknya |
-| --- | --- | --- |
-| `primary` (bawaan) | aksi utama yang memajukan pekerjaan | **satu per konteks** |
-| `secondary` | aksi alternatif | boleh beberapa |
-| `tertiary` | aksi ringan atau membatalkan | secukupnya |
-| `danger` / `danger-soft` | aksi merusak | saat perlu |
+| `Button`                 | Untuk                               | Banyaknya            |
+| ------------------------ | ----------------------------------- | -------------------- |
+| `primary` (bawaan)       | aksi utama yang memajukan pekerjaan | **satu per konteks** |
+| `secondary`              | aksi alternatif                     | boleh beberapa       |
+| `tertiary`               | aksi ringan atau membatalkan        | secukupnya           |
+| `danger` / `danger-soft` | aksi merusak                        | saat perlu           |
 
 `outline` dan `ghost` masih ada di pustakanya, tapi keduanya nama rupa dan bukan nama
 peran. **Jangan dipakai, di mana pun.** Keduanya sempat terpakai 112 kali di seluruh
@@ -212,14 +232,32 @@ manual hanya mewarnai satu di antaranya dan menyisakan tiga sisanya netral.
 Teks polos di dalam `Chip` **otomatis** dibungkus `Chip.Label` — tulis `<Chip>Tunai</Chip>`.
 `Chip.Label` hanya perlu ditulis sendiri kalau ada ikon di sebelahnya.
 
-### 4.2 Komponen bersama milik dashboard
+### 4.2 Komponen bersama
 
-| Berkas | Tugas |
-| --- | --- |
-| `stat-card.tsx` | satu kartu KPI; `delta` untuk tren, `note` untuk lencana netral |
-| `inline-stat.tsx` | angka sekunder di kepala kartu grafik |
-| `section-card.tsx` | pembungkus daftar: judul lalu isi; plus `NoData` |
-| `time-range.ts` / `time-range-menu.tsx` | pilihan rentang waktu, dipakai bersama |
+Pola yang muncul di lebih dari satu fitur ditulis sekali di `src/components/`. Sebelum
+menulis kartu angka, baris label–nilai, keadaan kosong, tombol yang menunggu, kotak info,
+atau kepala sub-halaman, pakai yang di bawah ini — masing-masing pernah punya 3–6
+implementasi karena migrasi HeroUI dikerjakan per fitur.
+
+| Berkas di `src/components/`                              | Tugas                                                                                                                                                                                             |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stat-card.tsx` — `StatCard`                             | satu kartu KPI; `delta` untuk tren, `note` lencana netral, `tone` warna angka (`success`/`danger`), `action` kontrol di kanan kepala, `children` baris di bawah angka, `footer` isi `Card.Footer` |
+| `summary-list.tsx` — `SummaryList`, `SummaryItem`        | baris label–nilai semantik `<dl>`; `tone` per baris (`mono`/`strong`/`success`/`danger`), `layout` `row` (nilai rata kanan) atau `grid` (kolom label 120px)                                       |
+| `no-data.tsx` — `NoData`                                 | keadaan kosong dan gagal; tanpa `icon`/`children` ia satu `<p>` muted rata tengah, `tone="danger"` untuk pesan gagal                                                                              |
+| `pending-button.tsx` — `PendingButton`                   | `Button` HeroUI plus `isPending`; spinner di kiri label, label tidak berubah                                                                                                                      |
+| `info-panel.tsx` — `InfoPanel`                           | kotak info di dialog: `Surface variant="secondary"`, `p-3 text-sm`, sudut dari aturan global                                                                                                      |
+| `status-badge.tsx` — `StatusBadge`                       | lencana status semantik (`success`/`error`/`warning`/`info`/`neutral`) di atas `Chip`; satu-satunya tempat makna status dipetakan ke warna                                                        |
+| `table-pagination.tsx` — `TablePagination`               | baris halaman di bawah tabel, `Pagination` HeroUI ukuran `sm` rata kanan                                                                                                                          |
+| `date-range-picker.tsx` — `DateRangePicker`              | pemilih rentang tanggal laporan dan riwayat, dua bulan berdampingan                                                                                                                               |
+| `product-autocomplete.tsx` — `ProductAutocomplete`       | pencarian produk di dialog (refund, tukar, write-off): `Autocomplete` dengan `SearchField` di popover                                                                                             |
+| `auth-card.tsx` — `AuthCard`, `AuthScreen`               | kartu dan kanvas layar login/onboarding, mengikuti `login-demo` HeroUI                                                                                                                            |
+| `layout/app-navbar.tsx` — `NavbarTitle`, `NavbarActions` | portal judul dan aksi halaman ke slot navbar milik `AppLayout`                                                                                                                                    |
+| `layout/subpage-header.tsx` — `SubpageHeader`            | judul + tombol kembali (+ aksi) sub-halaman, semuanya di navbar                                                                                                                                   |
+
+Yang masih tinggal di `features/dashboard/components/` karena memang hanya dashboard yang
+memakainya: `inline-stat.tsx` (angka sekunder di kepala kartu grafik), `section-card.tsx`
+(pembungkus daftar: judul lalu isi — keadaan kosongnya `NoData` dari `src/components/`,
+bukan miliknya sendiri), `time-range.ts` / `time-range-menu.tsx` (pilihan rentang waktu).
 
 ## 5. Pola
 
@@ -245,6 +283,13 @@ pagi hanya satu, dan itu yang tetap berupa tombol bertulisan.
 
 Tombol lipat sidebar duduk di navbar, bukan di kepala sidebar: kontrol yang mengubah tata
 letak halaman tinggal di halaman, dan di ponsel tombol yang sama membuka drawer.
+
+**Sub-halaman memakai `SubpageHeader`** (`src/components/layout/subpage-header.tsx`):
+judul dan tombol kembali `sm tertiary` keduanya di navbar, aksinya lewat prop `actions`.
+Riwayat PPOB, mutasi, notifikasi, buat refund, dan tutup kasir pernah menulis "tombol
+kembali + judul" dengan tiga cara berbeda; sekarang satu. **Tidak ada `<h1>` di badan
+halaman** selain pada dokumen cetak — judul halaman sudah ada di navbar, dan `<h1>` kedua
+membuat pembaca layar mengumumkan judul yang sama dua kali.
 
 ### 5.2 Tab
 
@@ -291,9 +336,84 @@ melompat saat data datang.
 
 ### 5.6 Keadaan memuat, kosong, dan gagal
 
-Kosong: kalimat pendek dari `t.dashboard.noData`, rata tengah. Gagal: pesan dari
-`ApiError`, jangan pernah menampilkan pesan mentah dari `Database`/`Internal` — keduanya
-sudah diredaksi di sisi server dan yang asli hanya masuk log.
+Kosong: `NoData` (`src/components/no-data.tsx`) — tanpa prop ia kalimat pendek dari
+`t.dashboard.noData`, rata tengah; beri `icon` dan `title` untuk kolom ringkasan yang
+belum terisi. Gagal: `NoData tone="danger"` dengan pesan dari `ApiError`, jangan pernah
+menampilkan pesan mentah dari `Database`/`Internal` — keduanya sudah diredaksi di sisi
+server dan yang asli hanya masuk log.
+
+Memuat di dalam tombol: `PendingButton` (`src/components/pending-button.tsx`) dengan
+`isPending` dari mutasinya. Spinner muncul di kiri label, labelnya tetap. **Tidak ada
+`Loader2 animate-spin`** — itu ikon shadcn yang menirukan `Spinner` HeroUI — dan **tidak
+ada label yang berganti jadi "Menyimpan..."/"Memproses..."**: lebar tombol berubah saat
+ditekan dan barisan tombol di footer ikut bergeser, sementara `isPending` React Aria sudah
+memberi tahu pembaca layar bahwa tombolnya sibuk.
+
+### 5.7 Dialog
+
+Acuannya contoh **Default** di dokumentasi Modal HeroUI, tidak lebih:
+
+```
+Modal.CloseTrigger
+Modal.Header
+  Modal.Icon  (bg-default text-foreground, ikon size-5)   — opsional
+  Modal.Heading                                           — bawaan text-base font-medium
+Modal.Body                                                — bawaan text-sm text-muted
+  satu kalimat, bila memang perlu
+  kolom isian (TextField variant="secondary")
+Modal.Footer
+  Button tertiary slot="close"  +  Button (primary)       — atau satu tombol fullWidth
+```
+
+Aturannya:
+
+**Satu keterangan per dialog.** Kalimat penjelas ada di Body sebagai `<p>` polos —
+bukan `<p className="text-sm leading-5 text-muted">` di Header, karena Body bawaannya
+sudah `text-sm text-muted` dan menulis ulang ketiganya di Header hanya menyalin gaya yang
+sudah ada ke tempat yang salah. Kalau kalimat itu sudah ada, kolom isiannya tidak perlu
+`Description` lagi — "Buka Kasir" pernah mengatakan hal yang sama empat kali: ikon,
+subjudul, label, dan keterangan kolom.
+
+**Jarak antar isi Body datang dari aturan global.** `.modal__body` dan
+`.alert-dialog__body` sudah `flex flex-col gap-4` lewat `@layer components` di
+`index.css`; jangan tulis `flex flex-col gap-*` atau `space-y-*` pada `Modal.Body` lagi.
+Tiga belas dialog pernah menulis `gap-4`, dua `gap-3`, tiga `space-y-*` — untuk jarak
+yang seharusnya sama.
+
+**Kotak info di dialog = `InfoPanel`** (`src/components/info-panel.tsx`): ringkasan
+barang yang akan diubah, saldo yang akan dipakai. `Surface variant="secondary"` dengan
+`p-3 text-sm`, sudut dari aturan global. Bukan `Alert` — itu untuk pesan berstatus.
+
+**`border-dashed` tidak dipakai**, kecuali pada drop-zone berkas sungguhan
+(`import-dialog`). Garis putus-putus menyiratkan area yang bisa dijatuhi sesuatu; pada
+kotak ringkasan atau keadaan kosong ia menjanjikan interaksi yang tidak ada.
+
+**Tidak ada garis.** `border-b` di Header dan `border-t` di Footer adalah pemisah shadcn;
+HeroUI memisahkan bagian dengan ruang (`.modal__header + .modal__body { mt-2 }`,
+`+ .modal__footer { mt-5 }`), dan itu sudah otomatis.
+
+**Lebar lewat `Modal.Container size`**, bukan `sm:max-w-*` di Dialog. `scroll="inside"`
+(bawaan) sudah membatasi tinggi dan menggulung Body. Lebar khusus di luar skala boleh
+ditulis di `Modal.Dialog className` dengan komentar, karena dokumentasinya sendiri
+melakukan itu.
+
+**Ikon bertumpuk di atas judul** lewat `Modal.Icon`, bukan disisipkan ke `Modal.Heading`
+dengan `flex items-center gap-2`. Latar `bg-default text-foreground` untuk ikon netral,
+`bg-*-soft text-*-soft-foreground` bila ikonnya menyatakan status.
+
+**Kolom isian di dalam dialog memakai `variant="secondary"`** (aturan umum §4) dan tidak menimpa tinggi,
+ukuran huruf, atau bobot bawaan (`h-12`, `text-lg`, `font-bold`, label uppercase). Yang
+tersisa hanya perataan angka: `text-right tabular-nums`.
+
+**Konfirmasi yang merusak memakai `AlertDialog`** dengan `AlertDialog.Icon status=…`,
+tanpa CloseTrigger — keputusannya harus eksplisit.
+
+**Tombol yang hanya menutup memakai `slot="close"`.** Tombol yang juga mereset state di
+luar dialog tetap `onPress`; jangan pindahkan reset itu ke `onOpenChange` diam-diam.
+
+**Jangan memaksa lewat banner.** Kalau sebuah dialog sudah terbuka otomatis untuk sebuah
+keadaan (shift belum dibuka), jangan tambahkan `Alert` di halaman yang mengatakan hal yang
+sama. Jalan masuk kembali ke dialog itu adalah satu tombol di navbar.
 
 ## 6. Bahasa dan format
 
@@ -322,7 +442,7 @@ jadi semantik yang benar adalah syarat agar alatnya bekerja.
 - ESC menutup setiap overlay. HeroUI mematikannya secara bawaan di sebagian overlay;
   kalau itu terjadi, hidupkan kembali.
 - Jangan pernah memakai warna sebagai satu-satunya pembeda. Stok habis memakai warna
-  *dan* angkanya; garis grafik memakai warna *dan* legenda bertulisan.
+  _dan_ angkanya; garis grafik memakai warna _dan_ legenda bertulisan.
 
 ## 8. Struktur berkas
 
@@ -353,6 +473,20 @@ Aturannya:
    (bukan default) kecuali untuk halaman.
 4. **Impor lintas fitur hanya lewat `index.ts`.** Menjangkau ke dalam
    `features/x/components/...` dari fitur lain berarti batasnya salah tempat.
+   Siklus `features/cashier` ↔ `features/ppob` yang pernah ada sudah dilunasi:
+   `useCartStore` tinggal di `src/stores/cart-store.ts` (state yang dipakai dua fitur
+   bukan milik salah satunya), dan `PpobQuickAccess` pulang ke
+   `features/ppob/components/quick-access/` lalu diekspor lewat `features/ppob/index.ts`.
+   Berkas jembatan di `features/cashier/` sudah dihapus.
+
+   Satu pengecualian yang disengaja: **`app/router.tsx` boleh `lazy()`-import modul
+   halaman langsung** (`features/ppob/components/ppob-page`), bukan barrel-nya. Barrel
+   sebuah fitur juga mengekspor komponen yang dimuat _eager_ oleh fitur lain
+   (`PpobQuickAccess` oleh kasir); kalau router memuat halaman lewat barrel yang sama,
+   seluruh pohon fitur ikut masuk chunk pemanggilnya dan batas `lazy()` jadi percuma.
+   Karena itu barrel hanya berisi yang memang dimaksudkan untuk dipakai fitur lain —
+   halaman tidak.
+
 5. **Yang dipakai lebih dari satu fitur** naik ke `src/components/` (komponen) atau
    `src/lib/` (fungsi murni). `formatNumber` pindah ke `src/lib/format.ts` justru karena
    dashboard bukan satu-satunya yang butuh.
@@ -368,16 +502,16 @@ ia bawa yang belum dibawa tetangganya.
 
 Yang dibuang pada penyisiran terakhir, semuanya improvisasi yang tidak diminta brief-nya:
 
-| Dibuang | Alasan |
-| --- | --- |
-| Baris keterangan di tiap kartu KPI | mengulang label kartunya |
-| Lencana jumlah baris di tiap judul tabel | angkanya sudah kelihatan dari isi tabelnya |
-| `Chip` metode pembayaran di tiap baris tabel | sepuluh lencana per layar, nol informasi |
-| `p-5` dan rentetan `mt-*` di dalam kartu | melawan `Card` yang sudah mengatur jarak |
-| `text-base` pada `Card.Title` | membesarkan judul yang bukan hierarki utama |
-| Garis putus-putus pada grid grafik | dua pola garis untuk satu garis bantu |
-| Peran pengguna dan pemisah `·` di kepala | identitas sudah ada di sidebar |
-| `variant="outline"` pada tombol ikon | nama rupa; `tertiary` menyatakan perannya |
+| Dibuang                                      | Alasan                                      |
+| -------------------------------------------- | ------------------------------------------- |
+| Baris keterangan di tiap kartu KPI           | mengulang label kartunya                    |
+| Lencana jumlah baris di tiap judul tabel     | angkanya sudah kelihatan dari isi tabelnya  |
+| `Chip` metode pembayaran di tiap baris tabel | sepuluh lencana per layar, nol informasi    |
+| `p-5` dan rentetan `mt-*` di dalam kartu     | melawan `Card` yang sudah mengatur jarak    |
+| `text-base` pada `Card.Title`                | membesarkan judul yang bukan hierarki utama |
+| Garis putus-putus pada grid grafik           | dua pola garis untuk satu garis bantu       |
+| Peran pengguna dan pemisah `·` di kepala     | identitas sudah ada di sidebar              |
+| `variant="outline"` pada tombol ikon         | nama rupa; `tertiary` menyatakan perannya   |
 
 Yang **tidak** dibuang meski menggoda: sumbu-Y pada kedua grafik (tanpanya besaran
 batangnya tidak terbaca), legenda bertulisan pada grafik metode (warna saja bukan pembeda

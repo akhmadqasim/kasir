@@ -2,7 +2,8 @@ import { useState } from "react"
 import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
-import { useCartStore } from "../hooks/use-cart-store"
+import { SummaryList } from "@/components/summary-list"
+import { useCartStore } from "@/stores/cart-store"
 import { formatRupiah } from "../utils"
 
 const DISCOUNT_TYPES = [
@@ -80,19 +81,19 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
 
   return (
     <>
+      <Modal.CloseTrigger />
       <Modal.Header>
         <Modal.Heading>Diskon Total Transaksi</Modal.Heading>
-        <Modal.CloseTrigger />
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
+      <Modal.Body>
         {/* Transaction-level discount */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">Diskon</p>
           <div className="flex items-center gap-2">
             <Select
               aria-label="Jenis diskon"
-              className="w-[130px]"
+              variant="secondary"
               value={txnDiscType}
               onChange={(value) => handleToggleType(value as "fixed" | "percentage")}
             >
@@ -115,11 +116,12 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
               aria-label="Nilai diskon"
               autoFocus
               className="flex-1"
+              variant="secondary"
               value={formatTxnDisplay(txnRaw)}
               onChange={handleTxnChange}
             >
               <Input
-                className="h-9 text-right tabular-nums"
+                className="text-right tabular-nums"
                 inputMode="numeric"
                 placeholder={txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
                 onKeyDown={(e) => {
@@ -133,28 +135,24 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
         <Separator />
 
         {/* Summary */}
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted">Subtotal</span>
-            <span className="tabular-nums">{formatRupiah(subtotal)}</span>
-          </div>
-          {itemDiscountsTotal > 0 && (
-            <div className="flex justify-between text-muted">
-              <span>Diskon Per Item</span>
-              <span className="tabular-nums">-{formatRupiah(itemDiscountsTotal)}</span>
-            </div>
-          )}
-          {totalDiscount > 0 && (
-            <div className="flex justify-between text-danger">
-              <span>Total Diskon</span>
-              <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold">
-            <span>Total Akhir</span>
-            <span className="tabular-nums">{formatRupiah(finalTotal)}</span>
-          </div>
-        </div>
+        <SummaryList
+          items={[
+            { label: "Subtotal", value: formatRupiah(subtotal) },
+            ...(itemDiscountsTotal > 0
+              ? [{ label: "Diskon Per Item", value: `-${formatRupiah(itemDiscountsTotal)}` }]
+              : []),
+            ...(totalDiscount > 0
+              ? [
+                  {
+                    label: "Total Diskon",
+                    value: `-${formatRupiah(totalDiscount)}`,
+                    tone: "danger" as const,
+                  },
+                ]
+              : []),
+            { label: "Total Akhir", value: formatRupiah(finalTotal), tone: "strong" },
+          ]}
+        />
       </Modal.Body>
 
       <Modal.Footer>
@@ -163,7 +161,7 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
             Reset
           </Button>
         )}
-        <Button onPress={() => onOpenChange(false)}>Selesai</Button>
+        <Button slot="close">Selesai</Button>
       </Modal.Footer>
     </>
   )

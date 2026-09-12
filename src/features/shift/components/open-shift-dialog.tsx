@@ -1,8 +1,9 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Button, Description, Form, Input, Label, Modal, TextField } from "@heroui/react"
-import { DoorOpen } from "lucide-react"
+import { Form, Input, Label, Modal, TextField } from "@heroui/react"
+import { Banknote } from "lucide-react"
 
+import { PendingButton } from "@/components/pending-button"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -63,45 +64,38 @@ function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void
     // validationBehavior="aria" keeps validation out of the browser. With React
     // Aria's default ("native") an invalid field calls setCustomValidity, and the
     // browser then blocks every later submit.
+    // Bentuknya persis contoh "Default" di dokumentasi Modal HeroUI — ikon,
+    // judul, satu kalimat, tombol penuh — ditambah satu kolom isian. Kalimatnya
+    // ada di Body (yang bawaannya sudah `text-sm text-muted`), bukan di
+    // Description kolom, supaya tidak ada dua keterangan untuk satu field.
     <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.CloseTrigger />
       <Modal.Header>
-        <Modal.Heading className="flex items-center gap-2">
-          <DoorOpen className="h-5 w-5" />
-          Buka Kasir
-        </Modal.Heading>
-        <Modal.CloseTrigger />
+        <Modal.Icon className="bg-default text-foreground">
+          <Banknote className="size-5" />
+        </Modal.Icon>
+        <Modal.Heading>Buka Kasir</Modal.Heading>
       </Modal.Header>
 
-      <Modal.Body className="space-y-3">
-        <p className="text-sm text-muted">
-          Masukkan jumlah uang awal di laci kasir (opsional), lalu klik Mulai Shift.
-        </p>
-
+      <Modal.Body>
+        <p>Uang tunai di laci saat mulai. Boleh kosong.</p>
         <TextField
           autoFocus
           fullWidth
           isDisabled={isSubmitting}
           value={groupDigits(openingCash)}
+          variant="secondary"
           onChange={(value) => setOpeningCash(toDigits(value))}
         >
-          <Label>Modal Awal (Opsional)</Label>
-          <Input
-            className="h-12 text-right text-lg font-bold tabular-nums"
-            inputMode="numeric"
-            placeholder="0"
-          />
-          <Description>Jumlah uang tunai di laci sebelum mulai berjualan</Description>
+          <Label>Modal awal</Label>
+          <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
         </TextField>
       </Modal.Body>
 
       <Modal.Footer>
-        <Button
-          className="h-12 w-full text-lg font-semibold"
-          isDisabled={isSubmitting}
-          type="submit"
-        >
-          {isSubmitting ? "Membuka..." : "Mulai Shift"}
-        </Button>
+        <PendingButton fullWidth isPending={isSubmitting} type="submit">
+          Mulai Shift
+        </PendingButton>
       </Modal.Footer>
     </Form>
   )

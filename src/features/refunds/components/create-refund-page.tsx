@@ -1,10 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Trash2, Plus, Minus } from "lucide-react"
+import { Trash2, Plus, Minus } from "lucide-react"
 import {
   Alert,
   Button,
   Checkbox,
-  Chip,
   Label,
   ListBox,
   NumberField,
@@ -12,15 +11,21 @@ import {
   Select,
   Separator,
   Skeleton,
+  Surface,
   Table,
   TextArea,
   TextField,
 } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
 import { ProductAutocomplete } from "@/components/product-autocomplete"
 import { selectedText } from "@/components/selected-text"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
+import { paymentMethodLabel } from "@/lib/labels"
 import { id } from "@/i18n/id"
 import {
   isDiscountedLine,
@@ -48,6 +53,9 @@ const ACTION_OPTIONS = [
   { key: "refund", label: id.refund.actionRefund },
   { key: "exchange", label: id.refund.actionExchange },
 ] as const
+
+/** Kelas kedua panel halaman: permukaan bertepi yang mengisi tinggi layar. */
+const PANEL_CLASS = "flex flex-col overflow-hidden border"
 
 export function CreateRefundPage() {
   const { transactionId } = useParams<{ transactionId: string }>()
@@ -83,73 +91,58 @@ export function CreateRefundPage() {
     onSuccess: () => navigate(-1),
   })
 
+  // Rute `/refund/:id` tidak ada di menu, jadi judulnya dipasang sendiri — DESIGN.md §5.1.
+  const navbar = <SubpageHeader title={id.refund.title} onBack={() => navigate(-1)} />
+
   if (isLoading || !detail) {
     return (
       <div className="grid h-full grid-cols-10 gap-4">
-        <div className="col-span-4 flex flex-col gap-4 overflow-hidden rounded-xl border bg-surface p-4">
-          <Skeleton className="h-8 w-48" />
+        {navbar}
+        <Surface className={`${PANEL_CLASS} col-span-4 gap-4 p-4`}>
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
-        </div>
-        <div className="col-span-6 flex flex-col gap-4 overflow-hidden rounded-xl border bg-surface p-4">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-10 w-full" />
+        </Surface>
+        <Surface className={`${PANEL_CLASS} col-span-6 gap-4 p-4`}>
+          <Skeleton className="h-10 w-56" />
           <Skeleton className="h-48 w-full" />
-        </div>
+        </Surface>
       </div>
     )
   }
 
   return (
     <div className="grid h-full grid-cols-10 gap-4">
-      {/* Left column: Transaction info + return items */}
-      <div className="col-span-4 flex flex-col overflow-hidden rounded-xl border bg-surface">
-        {/* Header */}
-        <div className="flex items-center gap-3 border-b px-4 py-3">
-          <Button
-            aria-label={id.common.back}
-            className="shrink-0"
-            isIconOnly
-            size="sm"
-            variant="tertiary"
-            onPress={() => navigate(-1)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-lg font-semibold">{id.refund.title}</h1>
-        </div>
+      {navbar}
 
-        {/* Transaction info */}
-        <div className="border-b px-4 py-3">
-          <div className="space-y-1 rounded-lg border bg-default/50 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{detail.transaction.receipt_number}</span>
-              <Chip size="sm">{detail.transaction.payment_method.toUpperCase()}</Chip>
+      {/* Kolom kiri: info transaksi + barang yang diretur */}
+      <Surface className={`${PANEL_CLASS} col-span-4`}>
+        <div className="flex flex-col gap-3 p-4">
+          <InfoPanel className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{detail.transaction.receipt_number}</span>
+              <span className="text-muted">
+                {paymentMethodLabel(detail.transaction.payment_method)}
+              </span>
             </div>
             <p className="text-xs text-muted">{formatDateTime(detail.transaction.created_at)}</p>
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between">
               <span className="text-xs text-muted">Total</span>
-              <span className="text-sm font-semibold tabular-nums">
+              <span className="font-medium tabular-nums">
                 {formatRupiah(detail.transaction.total_amount)}
               </span>
             </div>
-          </div>
-        </div>
+          </InfoPanel>
 
-        {/* Return items list */}
-        {blockedReason && (
-          <div className="px-4 pt-3">
+          {blockedReason && (
             <Alert status="danger">
               <Alert.Indicator />
               <Alert.Content>
                 <Alert.Description>{blockedReason}</Alert.Description>
               </Alert.Content>
             </Alert>
-          </div>
-        )}
-        {hasEarlierRefund && (
-          <div className="px-4 pt-3">
+          )}
+          {hasEarlierRefund && (
             <Alert status="warning">
               <Alert.Indicator />
               <Alert.Content>
@@ -160,17 +153,16 @@ export function CreateRefundPage() {
                 </Alert.Description>
               </Alert.Content>
             </Alert>
-          </div>
-        )}
-        <div className="px-4 pt-3 pb-1">
-          <p className="text-sm font-medium">{id.refund.refundItems}</p>
+          )}
         </div>
+
+        <Separator />
+
+        <p className="px-4 pt-3 text-sm font-medium">{id.refund.refundItems}</p>
         <ScrollShadow className="min-h-0 flex-1 px-4 pb-4">
-          <div className="space-y-3 pt-2">
+          <div className="flex flex-col gap-3 pt-2">
             {refundableItems.length === 0 && (
-              <p className="rounded-lg border border-dashed p-4 text-sm text-muted">
-                Tidak ada barang fisik yang bisa diretur pada transaksi ini.
-              </p>
+              <NoData title="Tidak ada barang fisik yang bisa diretur pada transaksi ini." />
             )}
             {refundableItems.map((item) => (
               <RefundItemCard
@@ -181,29 +173,30 @@ export function CreateRefundPage() {
               />
             ))}
             {nonRefundableItems.length > 0 && (
-              <div className="rounded-lg border border-dashed p-3">
+              <Surface className="flex flex-col gap-1 border p-3" variant="transparent">
                 <p className="text-xs font-medium text-muted">Tidak bisa diretur (layanan PPOB)</p>
-                <ul className="mt-1.5 space-y-0.5">
+                <ul className="flex flex-col gap-0.5">
                   {nonRefundableItems.map((item) => (
                     <li key={item.id} className="text-xs text-muted">
                       {item.product_name} × {item.quantity}
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Surface>
             )}
           </div>
         </ScrollShadow>
-      </div>
+      </Surface>
 
-      {/* Right column: Action type + exchange + summary */}
-      <div className="col-span-6 flex flex-col overflow-hidden rounded-xl border bg-surface">
+      {/* Kolom kanan: tipe aksi + barang pengganti + ringkasan */}
+      <Surface className={`${PANEL_CLASS} col-span-6`}>
         <ScrollShadow className="min-h-0 flex-1">
-          <div className="space-y-6 p-4">
-            {/* Action type selector */}
+          <div className="flex flex-col gap-6 p-4">
+            {/* Pemilih tipe aksi */}
             <Select
               className="max-w-56"
               value={actionType}
+              variant="secondary"
               onChange={(value) => setActionType(value === "exchange" ? "exchange" : "refund")}
             >
               <Label>{id.refund.actionType}</Label>
@@ -223,13 +216,13 @@ export function CreateRefundPage() {
               </Select.Popover>
             </Select>
 
-            {/* Exchange section */}
+            {/* Bagian tukar barang */}
             {actionType === "exchange" && (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-4">
                 <Separator />
 
-                {/* Product search — the picked product goes straight into the table
-                    below, so the field always reports an empty selection. */}
+                {/* Pencarian produk — produk terpilih langsung masuk tabel di bawah,
+                    jadi kolomnya selalu melaporkan pilihan kosong. */}
                 <ProductAutocomplete
                   label={id.refund.exchangeItems}
                   placeholder={id.refund.addExchangeItem}
@@ -244,18 +237,18 @@ export function CreateRefundPage() {
                   }
                 />
 
-                {/* Exchange items table */}
+                {/* Tabel barang pengganti */}
                 {exchangeItems.length > 0 && (
                   <Table variant="secondary">
                     <Table.ScrollContainer>
-                      <Table.Content aria-label={id.refund.exchangeItems}>
+                      <Table.Content aria-label={id.refund.exchangeItems} className="tabular-nums">
                         <Table.Header>
                           <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
-                          <Table.Column className="w-[140px] text-center">Qty</Table.Column>
-                          <Table.Column className="w-[110px] text-right">
+                          <Table.Column className="w-36 text-center">Qty</Table.Column>
+                          <Table.Column className="w-28 text-right">
                             {id.refund.subtotal}
                           </Table.Column>
-                          <Table.Column className="w-[56px]">
+                          <Table.Column className="w-14">
                             <span className="sr-only">Aksi</span>
                           </Table.Column>
                         </Table.Header>
@@ -281,30 +274,30 @@ export function CreateRefundPage() {
                                     isDisabled={item.quantity <= 1}
                                     isIconOnly
                                     size="sm"
-                                    variant="secondary"
+                                    variant="tertiary"
                                     onPress={() =>
                                       updateExchangeQty(item.product_id, item.quantity - 1)
                                     }
                                   >
-                                    <Minus className="h-3 w-3" />
+                                    <Minus />
                                   </Button>
-                                  <span className="w-8 text-center font-medium tabular-nums">
+                                  <span className="w-8 text-center font-medium">
                                     {item.quantity}
                                   </span>
                                   <Button
                                     aria-label="Tambah jumlah"
                                     isIconOnly
                                     size="sm"
-                                    variant="secondary"
+                                    variant="tertiary"
                                     onPress={() =>
                                       updateExchangeQty(item.product_id, item.quantity + 1)
                                     }
                                   >
-                                    <Plus className="h-3 w-3" />
+                                    <Plus />
                                   </Button>
                                 </div>
                               </Table.Cell>
-                              <Table.Cell className="text-right font-semibold tabular-nums">
+                              <Table.Cell className="text-right font-medium">
                                 {formatRupiah(item.sell_price * item.quantity)}
                               </Table.Cell>
                               <Table.Cell>
@@ -315,7 +308,7 @@ export function CreateRefundPage() {
                                   variant="danger"
                                   onPress={() => removeExchangeItem(item.product_id)}
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 />
                                 </Button>
                               </Table.Cell>
                             </Table.Row>
@@ -328,45 +321,44 @@ export function CreateRefundPage() {
               </div>
             )}
 
-            {/* Reason */}
-            <div className="space-y-4">
+            {/* Alasan */}
+            <div className="flex flex-col gap-4">
               <Separator />
-              <TextField fullWidth value={reason} onChange={setReason}>
+              <TextField fullWidth value={reason} variant="secondary" onChange={setReason}>
                 <Label>{id.refund.reason}</Label>
                 <TextArea placeholder={id.refund.reasonPlaceholder} rows={3} />
               </TextField>
             </div>
 
-            {/* Info notes */}
-            <div className="space-y-1">
-              <p className="text-xs text-muted">• {id.refund.stockRestoredNote}</p>
-              <p className="text-xs text-muted">• {id.refund.stockWriteoffNote}</p>
-            </div>
+            {/* Catatan */}
+            <ul className="flex list-disc flex-col gap-1 ps-4 text-xs text-muted">
+              <li>{id.refund.stockRestoredNote}</li>
+              <li>{id.refund.stockWriteoffNote}</li>
+            </ul>
           </div>
         </ScrollShadow>
 
-        {/* Summary + action (pinned to bottom) */}
-        <div className="mt-auto space-y-4 border-t p-4">
-          <div className="space-y-2 rounded-lg border bg-default/50 p-4">
+        {/* Ringkasan + aksi, ditambatkan di bawah */}
+        <Separator />
+        <div className="flex flex-col gap-4 p-4">
+          <InfoPanel className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted">{id.refund.totalRefund}</span>
-              <span className="text-sm font-medium tabular-nums">{formatRupiah(totalRefund)}</span>
+              <span className="text-muted">{id.refund.totalRefund}</span>
+              <span className="font-medium tabular-nums">{formatRupiah(totalRefund)}</span>
             </div>
 
             {actionType === "exchange" && (
               <>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted">{id.refund.totalExchange}</span>
-                  <span className="text-sm font-medium tabular-nums">
-                    {formatRupiah(totalExchange)}
-                  </span>
+                  <span className="text-muted">{id.refund.totalExchange}</span>
+                  <span className="font-medium tabular-nums">{formatRupiah(totalExchange)}</span>
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{id.refund.difference}</span>
+                  <span className="font-medium">{id.refund.difference}</span>
                   <div className="text-right">
                     <span
-                      className={`text-xl font-bold tabular-nums ${differenceToneClass(difference)}`}
+                      className={`text-xl font-semibold tracking-tight tabular-nums ${differenceToneClass(difference)}`}
                     >
                       {formatRupiah(Math.abs(difference))}
                     </span>
@@ -381,12 +373,15 @@ export function CreateRefundPage() {
             )}
 
             {actionType === "refund" && totalRefund > 0 && (
-              <div className="flex items-center justify-between border-t pt-1">
-                <span className="text-sm font-medium">{id.refund.totalRefund}</span>
-                <span className="text-xl font-bold tabular-nums text-success">
-                  {formatRupiah(totalRefund)}
-                </span>
-              </div>
+              <>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{id.refund.totalRefund}</span>
+                  <span className="text-xl font-semibold tracking-tight tabular-nums text-success">
+                    {formatRupiah(totalRefund)}
+                  </span>
+                </div>
+              </>
             )}
 
             {selectedItems.length > 0 && (
@@ -397,9 +392,9 @@ export function CreateRefundPage() {
                   `, ${exchangeItems.length} item pengganti`}
               </p>
             )}
-          </div>
+          </InfoPanel>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button
               className="flex-1"
               isDisabled={isSubmitting}
@@ -408,25 +403,21 @@ export function CreateRefundPage() {
             >
               {id.refund.cancel}
             </Button>
-            <Button
+            <PendingButton
               className="flex-1"
               isDisabled={
-                isSubmitting ||
                 blockedReason !== null ||
                 selectedItems.length === 0 ||
                 (actionType === "exchange" && exchangeItems.length === 0)
               }
+              isPending={isSubmitting}
               onPress={handleSubmit}
             >
-              {isSubmitting
-                ? "Memproses..."
-                : actionType === "exchange"
-                  ? id.refund.confirmExchange
-                  : id.refund.confirmRefund}
-            </Button>
+              {actionType === "exchange" ? id.refund.confirmExchange : id.refund.confirmRefund}
+            </PendingButton>
           </div>
         </div>
-      </div>
+      </Surface>
     </div>
   )
 }
@@ -445,13 +436,13 @@ function RefundItemCard({
   const isFullyRefunded = state.maxQty <= 0
 
   return (
-    // Baris yang dicentang ditandai garis tepi warna merek dan permukaan netral.
-    // `bg-default` dipakai, bukan tint dari `--accent`: nama itu berarti dua hal
-    // berbeda di shadcn dan HeroUI, jadi seluruh aplikasi menghindarinya.
-    <div
-      className={`rounded-lg border p-4 transition-colors ${
-        state.checked ? "border-accent bg-default" : ""
+    // Baris yang dicentang ditandai garis tepi warna merek dan permukaan bertingkat
+    // (`secondary`); yang belum dicentang transparan di atas panelnya.
+    <Surface
+      className={`border p-4 transition-colors ${
+        state.checked ? "border-accent" : ""
       } ${isFullyRefunded ? "opacity-60" : ""}`}
+      variant={state.checked ? "secondary" : "transparent"}
     >
       <Checkbox
         isDisabled={isFullyRefunded}
@@ -479,7 +470,7 @@ function RefundItemCard({
             )}
           </div>
           {state.checked && (
-            <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
+            <span className="text-sm font-medium tabular-nums whitespace-nowrap">
               {formatRupiah(netAmountForQuantity(item, state.quantity))}
             </span>
           )}
@@ -488,22 +479,25 @@ function RefundItemCard({
 
       {state.checked && (
         <div className="mt-3 flex flex-wrap items-end gap-4 pl-9">
+          {/* Field di dalam Surface memakai `variant="secondary"`; label dan
+              input dibiarkan bawaan HeroUI. */}
           <NumberField
             className="w-32"
             maxValue={state.maxQty}
             minValue={1}
             value={state.quantity}
+            variant="secondary"
             onChange={(quantity) => {
               if (quantity === undefined || Number.isNaN(quantity)) return
               onUpdate({ quantity })
             }}
           >
-            <Label className="text-xs text-muted">
+            <Label>
               {id.refund.refundQty} (maks. {state.maxQty})
             </Label>
             <NumberField.Group>
               <NumberField.DecrementButton />
-              <NumberField.Input className="text-center" />
+              <NumberField.Input className="text-center tabular-nums" />
               <NumberField.IncrementButton />
             </NumberField.Group>
           </NumberField>
@@ -511,9 +505,10 @@ function RefundItemCard({
           <Select
             className="w-36"
             value={state.condition}
+            variant="secondary"
             onChange={(value) => onUpdate({ condition: value as Condition })}
           >
-            <Label className="text-xs text-muted">{id.refund.condition}</Label>
+            <Label>{id.refund.condition}</Label>
             <Select.Trigger>
               <Select.Value>{selectedText}</Select.Value>
               <Select.Indicator />
@@ -531,6 +526,6 @@ function RefundItemCard({
           </Select>
         </div>
       )}
-    </div>
+    </Surface>
   )
 }

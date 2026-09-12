@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import type { User } from "@/features/auth/types"
 import type { Shift, ShiftSummary } from "./types"
 
@@ -80,7 +81,9 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/close-shift"]}>
-        <CloseShiftPage />
+        <TestNavbar>
+          <CloseShiftPage />
+        </TestNavbar>
       </MemoryRouter>
     </QueryClientProvider>,
   )

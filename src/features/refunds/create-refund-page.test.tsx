@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import type { TransactionDetail, TransactionItem } from "@/features/transactions/types"
 
@@ -96,9 +97,12 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/refund/7"]}>
-        <Routes>
-          <Route path="/refund/:transactionId" element={<CreateRefundPage />} />
-        </Routes>
+        {/* Halaman memasang judul dan tombol kembali lewat portal ke navbar. */}
+        <TestNavbar>
+          <Routes>
+            <Route path="/refund/:transactionId" element={<CreateRefundPage />} />
+          </Routes>
+        </TestNavbar>
       </MemoryRouter>
     </QueryClientProvider>,
   )

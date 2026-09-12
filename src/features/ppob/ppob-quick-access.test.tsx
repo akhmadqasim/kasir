@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
-import { useCartStore } from "./hooks/use-cart-store"
-import { PpobQuickAccess } from "./components/ppob-quick-access"
+import { useCartStore } from "@/stores/cart-store"
+import { PpobQuickAccess } from "./components/quick-access/ppob-quick-access"
 
 const PLN_DENOMS = [
   { id: 1, denom: "20000" },

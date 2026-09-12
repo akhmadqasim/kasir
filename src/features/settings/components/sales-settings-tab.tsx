@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import { Button, Card, Description, Label, ListBox, Select, Separator, Switch } from "@heroui/react"
+import { Card, Description, Label, ListBox, Select, Separator, Switch } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
@@ -70,18 +71,18 @@ export function SalesSettingsTab() {
       <Card.Header>
         <Card.Title>{id.settings.tabSales}</Card.Title>
       </Card.Header>
-      <Card.Content className="space-y-6">
+      <Card.Content className="gap-6">
         {/* The label now sits inside the Switch, so clicking the text toggles it and
             the description is wired up through aria-describedby — neither held with
             the old free-standing Label. */}
         <Switch className="w-full" isSelected={allowNegativeStock} onChange={setAllowNegativeStock}>
           <Switch.Content className="w-full justify-between">
-            <span className="text-sm font-medium">{id.settings.allowNegativeStock}</span>
+            {id.settings.allowNegativeStock}
             <Switch.Control>
               <Switch.Thumb />
             </Switch.Control>
           </Switch.Content>
-          <Description className="text-xs">{id.settings.allowNegativeStockDesc}</Description>
+          <Description>{id.settings.allowNegativeStockDesc}</Description>
         </Switch>
 
         <Separator />
@@ -89,6 +90,7 @@ export function SalesSettingsTab() {
         <Select
           fullWidth
           value={defaultPaymentMethod || null}
+          variant="secondary"
           onChange={(value) => setDefaultPaymentMethod(value === null ? "" : String(value))}
         >
           <Label>{id.settings.defaultPaymentMethod}</Label>
@@ -107,17 +109,17 @@ export function SalesSettingsTab() {
             </ListBox>
           </Select.Popover>
         </Select>
-
-        <Separator />
-
-        <Button
-          isDisabled={saveMutation.isPending || !isReady}
+      </Card.Content>
+      <Card.Footer>
+        <PendingButton
+          isDisabled={!isReady}
+          isPending={saveMutation.isPending}
           onPress={() => saveMutation.mutate(undefined)}
         >
-          <Save className="mr-2 h-4 w-4" />
-          {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-        </Button>
-      </Card.Content>
+          <Save />
+          Simpan
+        </PendingButton>
+      </Card.Footer>
     </Card>
   )
 }

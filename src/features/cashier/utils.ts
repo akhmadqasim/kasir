@@ -1,4 +1,4 @@
-import { MAX_CART_QUANTITY } from "./hooks/use-cart-store"
+import { MAX_CART_QUANTITY } from "@/stores/cart-store"
 import type { CartItem } from "./types"
 
 export { formatRupiah } from "@/lib/format"

@@ -5,18 +5,19 @@ import {
   Button,
   Card,
   Description,
+  Fieldset,
   Input,
   Label,
   ListBox,
   NumberField,
   Select,
   Separator,
-  Spinner,
   Switch,
   TextField,
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
@@ -156,7 +157,7 @@ export function PpobSettingsTab() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Card 1: Koneksi */}
       <Card>
         <Card.Header>
@@ -165,25 +166,26 @@ export function PpobSettingsTab() {
             Konfigurasi koneksi ke Mitra Indogrosir untuk layanan PPOB
           </Card.Description>
         </Card.Header>
-        <Card.Content className="space-y-6">
+        <Card.Content className="gap-6">
           <Switch className="w-full" isSelected={enabled} onChange={setEnabled}>
             <Switch.Content className="w-full justify-between">
-              <span className="text-sm font-medium">{id.ppob.enabled}</span>
+              {id.ppob.enabled}
               <Switch.Control>
                 <Switch.Thumb />
               </Switch.Control>
             </Switch.Content>
-            <Description className="text-xs">{id.ppob.enabledDesc}</Description>
+            <Description>{id.ppob.enabledDesc}</Description>
           </Switch>
 
           <Separator />
 
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             <TextField
               fullWidth
               isDisabled={!enabled}
               type="tel"
               value={phoneNumber}
+              variant="secondary"
               onChange={setPhoneNumber}
             >
               <Label>{id.ppob.mitraPhone}</Label>
@@ -195,6 +197,7 @@ export function PpobSettingsTab() {
               isDisabled={!enabled}
               type="password"
               value={password}
+              variant="secondary"
               onChange={setPassword}
             >
               <Label>{id.ppob.mitraPassword}</Label>
@@ -207,16 +210,17 @@ export function PpobSettingsTab() {
               />
             </TextField>
 
-            <div className="space-y-2">
+            <div className="flex flex-col gap-1">
               <div className="flex items-end gap-2">
                 <TextField
                   className="flex-1"
                   isDisabled={!enabled}
                   value={deviceId}
+                  variant="secondary"
                   onChange={setDeviceId}
                 >
                   <Label>{id.ppob.mitraDeviceId}</Label>
-                  <Input className="font-mono" placeholder={id.ppob.mitraDeviceIdPlaceholder} />
+                  <Input placeholder={id.ppob.mitraDeviceIdPlaceholder} />
                 </TextField>
                 <Button
                   aria-label="Generate Device ID"
@@ -226,12 +230,12 @@ export function PpobSettingsTab() {
                   variant="tertiary"
                   onPress={() => setDeviceId(crypto.randomUUID())}
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw />
                 </Button>
               </div>
-              <p className="text-xs text-muted">
+              <Description>
                 Masukkan device ID dari HP atau klik tombol generate untuk membuat ID baru
-              </p>
+              </Description>
             </div>
 
             <TextField
@@ -239,6 +243,7 @@ export function PpobSettingsTab() {
               isDisabled={!enabled}
               type="password"
               value={pin}
+              variant="secondary"
               onChange={setPin}
             >
               <Label>{id.ppob.mitraPin}</Label>
@@ -251,38 +256,33 @@ export function PpobSettingsTab() {
               />
             </TextField>
 
-            <p className="text-xs text-muted">
+            <p className="text-sm text-muted">
               {hasStoredCredentials
                 ? "Password dan PIN sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan keduanya untuk mempertahankannya, atau isi keduanya sekaligus untuk mengganti."
                 : "Password dan PIN belum tersimpan. Isi keduanya untuk mengaktifkan layanan PPOB."}
             </p>
           </div>
-
-          <div className="flex gap-2">
-            <Button
-              isDisabled={saveMutation.isPending || !isReady}
-              onPress={() => saveMutation.mutate(undefined)}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {saveMutation.isPending ? "Menyimpan..." : id.common.save}
-            </Button>
-            {/* HeroUI's `isPending` only exposes the flag — the spinner is ours to
-                render — but it is what puts the button in the aria "busy" state. */}
-            <Button
-              isDisabled={testMutation.isPending || !enabled || !phoneNumber}
-              isPending={testMutation.isPending}
-              variant="secondary"
-              onPress={() => testMutation.mutate(undefined)}
-            >
-              {({ isPending }) => (
-                <>
-                  {isPending ? <Spinner className="mr-2" color="current" size="sm" /> : null}
-                  {id.ppob.testConnection}
-                </>
-              )}
-            </Button>
-          </div>
         </Card.Content>
+        {/* Dua tombol Simpan (di sini dan di kartu Markup) memanggil mutasi yang
+            sama; test menghitung keduanya. Menyatukannya adalah keputusan pemilik. */}
+        <Card.Footer className="gap-2">
+          <PendingButton
+            isDisabled={!isReady}
+            isPending={saveMutation.isPending}
+            onPress={() => saveMutation.mutate(undefined)}
+          >
+            <Save />
+            {id.common.save}
+          </PendingButton>
+          <PendingButton
+            isDisabled={!enabled || !phoneNumber}
+            isPending={testMutation.isPending}
+            variant="secondary"
+            onPress={() => testMutation.mutate(undefined)}
+          >
+            {id.ppob.testConnection}
+          </PendingButton>
+        </Card.Footer>
       </Card>
 
       {/* Card 2: Markup & Harga Jual */}
@@ -293,24 +293,24 @@ export function PpobSettingsTab() {
             Atur margin keuntungan untuk setiap jenis layanan PPOB
           </Card.Description>
         </Card.Header>
-        <Card.Content className="space-y-6">
-          <div className="space-y-4">
-            <div className="space-y-0.5">
-              <p className="text-base font-medium">Markup per Layanan</p>
-              <p className="text-xs text-muted">Harga jual = harga modal + markup</p>
-            </div>
-
-            <div className="grid gap-3">
+        <Card.Content className="gap-6">
+          {/* Dua kelompok isian dalam satu kartu: `Fieldset` memberi legenda dan
+              keterangannya bentuk yang sama tanpa judul kartu kedua. */}
+          <Fieldset>
+            <Fieldset.Legend>Markup per Layanan</Fieldset.Legend>
+            <Description>Harga jual = harga modal + markup</Description>
+            <Fieldset.Group>
               {MARKUP_SERVICES.map(({ key, label }) => {
                 const config = markup[key]
                 return (
-                  <div key={key} className="flex items-center gap-3">
+                  <div key={key} className="flex items-center gap-2">
                     <span className="w-20 text-sm font-medium">{label}</span>
                     <Select
                       aria-label={`Tipe markup ${label}`}
                       className="w-32"
                       isDisabled={!enabled}
                       value={config.type}
+                      variant="secondary"
                       onChange={(value) => {
                         if (value === null) return
                         const type = value === "percentage" ? "percentage" : "fixed"
@@ -342,6 +342,7 @@ export function PpobSettingsTab() {
                       isDisabled={!enabled}
                       minValue={0}
                       value={config.value > 0 ? config.value : Number.NaN}
+                      variant="secondary"
                       onChange={(value) => {
                         const next = value === undefined || Number.isNaN(value) ? 0 : value
                         setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], value: next } }))
@@ -349,19 +350,19 @@ export function PpobSettingsTab() {
                     >
                       <NumberField.Group>
                         <NumberField.Input
-                          className="tabular-nums"
+                          className="text-right tabular-nums"
                           placeholder={config.type === "fixed" ? "cth: 2000" : "cth: 5"}
                         />
                       </NumberField.Group>
                     </NumberField>
-                    <span className="text-xs text-muted">
+                    <span className="text-sm text-muted">
                       {config.type === "fixed" ? "Rp" : "%"}
                     </span>
                   </div>
                 )
               })}
-            </div>
-          </div>
+            </Fieldset.Group>
+          </Fieldset>
 
           <Separator />
 
@@ -372,15 +373,17 @@ export function PpobSettingsTab() {
             }
             disabled={!enabled}
           />
-
-          <Button
-            isDisabled={saveMutation.isPending || !isReady}
+        </Card.Content>
+        <Card.Footer>
+          <PendingButton
+            isDisabled={!isReady}
+            isPending={saveMutation.isPending}
             onPress={() => saveMutation.mutate(undefined)}
           >
-            <Save className="mr-2 h-4 w-4" />
-            {saveMutation.isPending ? "Menyimpan..." : id.common.save}
-          </Button>
-        </Card.Content>
+            <Save />
+            {id.common.save}
+          </PendingButton>
+        </Card.Footer>
       </Card>
     </div>
   )

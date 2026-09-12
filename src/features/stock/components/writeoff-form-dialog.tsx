@@ -1,5 +1,6 @@
 import { useState } from "react"
 import {
+  Alert,
   Button,
   FieldError,
   Form,
@@ -12,8 +13,11 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { PendingButton } from "@/components/pending-button"
 import { ProductAutocomplete } from "@/components/product-autocomplete"
 import { selectedText } from "@/components/selected-text"
+import { SummaryList } from "@/components/summary-list"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -104,17 +108,14 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
     // the browser then blocks every later submit — including the one that would
     // clear the error.
     <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.CloseTrigger />
       <Modal.Header>
         <Modal.Heading>Buat Write-off Baru</Modal.Heading>
-        <Modal.CloseTrigger />
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
-        <p className="text-sm text-muted">
-          Catat barang yang rusak, kadaluarsa, atau hilang dari stok.
-        </p>
-
-        <div className="space-y-2">
+      <Modal.Body>
+        <p>Catat barang yang rusak, kadaluarsa, atau hilang dari stok.</p>
+        <div className="flex flex-col gap-2">
           <ProductAutocomplete
             label="Produk *"
             placeholder="Pilih produk"
@@ -131,13 +132,16 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             }
           />
           {selectedProduct && (
-            <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
-              <span className="font-medium">{selectedProduct.name}</span>
-              <span className="ml-2 text-muted">
-                · Stok: {selectedProduct.stock} {selectedProduct.unit}· Modal:{" "}
-                {formatRupiah(selectedProduct.buy_price)}
-              </span>
-            </div>
+            <InfoPanel>
+              <SummaryList
+                layout="grid"
+                items={[
+                  { label: "Produk", value: selectedProduct.name },
+                  { label: "Stok", value: `${selectedProduct.stock} ${selectedProduct.unit}` },
+                  { label: "Modal", value: formatRupiah(selectedProduct.buy_price) },
+                ]}
+              />
+            </InfoPanel>
           )}
         </div>
 
@@ -147,6 +151,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             isInvalid={Boolean(errors.quantity)}
             maxValue={selectedProduct?.stock}
             minValue={1}
+            variant="secondary"
             value={quantity ?? Number.NaN}
             onChange={(value) => {
               setQuantity(value === undefined || Number.isNaN(value) ? null : value)
@@ -167,6 +172,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             isInvalid={Boolean(errors.reason)}
             placeholder="Pilih alasan"
             value={reason || null}
+            variant="secondary"
             onChange={(value) => {
               setReason(value === null ? "" : String(value))
               clearError("reason")
@@ -191,36 +197,33 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
           </Select>
         </div>
 
-        <TextField fullWidth value={notes} onChange={setNotes}>
+        <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
           <Label>Catatan</Label>
           <TextArea placeholder="Catatan tambahan (opsional)..." rows={2} />
         </TextField>
 
         {lossValue > 0 && (
-          <div className="rounded-lg border border-danger/20 bg-danger-soft p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-danger-soft-foreground">
-                Estimasi Kerugian
-              </span>
-              <span className="text-lg font-bold text-danger-soft-foreground">
-                {formatRupiah(lossValue)}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-muted">
-              {formatRupiah(selectedProduct?.buy_price ?? 0)} × {quantity ?? 0}{" "}
-              {selectedProduct?.unit}
-            </p>
-          </div>
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>Estimasi Kerugian</Alert.Title>
+              <Alert.Description>
+                <span className="font-medium">{formatRupiah(lossValue)}</span> ·{" "}
+                {formatRupiah(selectedProduct?.buy_price ?? 0)} × {quantity ?? 0}{" "}
+                {selectedProduct?.unit}
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
       </Modal.Body>
 
       <Modal.Footer>
-        <Button type="button" variant="tertiary" onPress={() => onOpenChange(false)}>
+        <Button slot="close" variant="tertiary">
           {id.common.cancel}
         </Button>
-        <Button isDisabled={createWriteoff.isPending} type="submit">
-          {createWriteoff.isPending ? id.common.loading : "Buat Write-off"}
-        </Button>
+        <PendingButton isPending={createWriteoff.isPending} type="submit">
+          Buat Write-off
+        </PendingButton>
       </Modal.Footer>
     </Form>
   )

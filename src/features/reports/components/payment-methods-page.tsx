@@ -1,9 +1,10 @@
 import { useState } from "react"
-import { Card, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
 import { usePaymentMethods } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
@@ -38,7 +39,6 @@ export function PaymentMethodsPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -46,36 +46,33 @@ export function PaymentMethodsPage() {
       }
     >
       {rows.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {rows.map((row) => (
-            /* Bukan `ReportStatCard`: kartu ini membawa jumlah transaksi dan bilah
-               persentase di bawah angkanya. Bilahnya murni hiasan — persentasenya
-               sudah tertulis sebagai teks tepat di atasnya. */
-            <Card key={row.paymentMethod}>
-              <Card.Header className="pb-2">
-                <Card.Description className="text-sm font-medium text-muted">
-                  {paymentMethodLabel(row.paymentMethod)}
-                </Card.Description>
-              </Card.Header>
-              <Card.Content>
-                <p className="text-2xl font-bold">{formatRupiah(row.totalAmount)}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-sm text-muted">{row.transactionCount} transaksi</span>
-                  <span className="text-sm font-medium">({row.percentage.toFixed(1)}%)</span>
-                </div>
-                <div className="mt-2 h-2 w-full rounded-full bg-default">
-                  {/* Angka laporan sekarang bersih dari retur, jadi sebuah metode
-                      yang periode itu hanya kena retur muncul dengan nominal
-                      negatif — dan `width: -12%` adalah deklarasi CSS tidak sah
-                      yang diam-diam dibuang browser. Dijepit supaya bilahnya
-                      selalu punya lebar yang masuk akal. */}
+            /* Bilah persentase murni hiasan — persentasenya sudah tertulis
+               sebagai teks tepat di atasnya — jadi ia duduk di `footer`. */
+            <StatCard
+              key={row.paymentMethod}
+              label={paymentMethodLabel(row.paymentMethod)}
+              value={formatRupiah(row.totalAmount)}
+              footer={
+                <div aria-hidden="true" className="h-2 w-full rounded-full bg-default">
+                  {/* Angka laporan bersih dari retur, jadi sebuah metode yang
+                      periode itu hanya kena retur muncul dengan nominal negatif —
+                      dan `width: -12%` adalah deklarasi CSS tidak sah yang
+                      diam-diam dibuang browser. Dijepit supaya bilahnya selalu
+                      punya lebar yang masuk akal. */}
                   <div
                     className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-muted"}`}
                     style={{ width: `${clampPercentage(row.percentage)}%` }}
                   />
                 </div>
-              </Card.Content>
-            </Card>
+              }
+            >
+              <p className="text-sm text-muted tabular-nums">
+                {formatNumber(row.transactionCount)} transaksi <span aria-hidden="true">·</span>{" "}
+                {row.percentage.toFixed(1)}%
+              </p>
+            </StatCard>
           ))}
         </div>
       )}
@@ -111,7 +108,7 @@ export function PaymentMethodsPage() {
             hanya muncul kalau ada datanya, supaya tabel kosong tetap jatuh ke
             `renderEmptyState`. */}
         {rows.length > 0 && (
-          <Table.Row id="total" className="font-bold" textValue="Total">
+          <Table.Row id="total" className="font-semibold" textValue="Total">
             <Table.Cell>Total</Table.Cell>
             <Table.Cell className="text-right">{totalTransactions}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(total)}</Table.Cell>

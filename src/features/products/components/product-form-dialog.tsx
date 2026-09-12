@@ -12,6 +12,8 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
@@ -46,6 +48,7 @@ export function ProductFormDialog({
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container scroll="inside" size="lg">
         <Modal.Dialog aria-label={product ? id.common.edit : id.products.add}>
+          <Modal.CloseTrigger />
           {/* React Aria melepas dialognya saat ditutup, bukan menahannya sampai
               animasi keluar selesai, jadi state di bawah selalu lahir kosong.
               Membuka ulang untuk produk lain tidak lagi bisa menampilkan nilai
@@ -205,17 +208,21 @@ function ProductFormBody({
     // React Aria ("native") kolom yang `isInvalid` memanggil setCustomValidity,
     // dan browser lalu memblokir tiap submit berikutnya — termasuk submit yang
     // justru akan membersihkan errornya.
-    <Form validationBehavior="aria" onSubmit={handleSubmit}>
+    <Form
+      className="flex min-h-0 flex-1 flex-col"
+      validationBehavior="aria"
+      onSubmit={handleSubmit}
+    >
       <Modal.Header>
         <Modal.Heading>{isEditing ? id.common.edit : id.products.add}</Modal.Heading>
-        <Modal.CloseTrigger />
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
+      <Modal.Body>
         <TextField
           fullWidth
           isInvalid={Boolean(errors.name)}
           value={form.name}
+          variant="secondary"
           onChange={(value) =>
             setForm((prev) => ({
               ...prev,
@@ -233,6 +240,7 @@ function ProductFormBody({
           <TextField
             fullWidth
             value={form.barcode}
+            variant="secondary"
             onChange={(value) => updateField("barcode", value)}
           >
             <Label>{id.products.barcode}</Label>
@@ -242,13 +250,14 @@ function ProductFormBody({
           <TextField
             fullWidth
             value={form.sku}
+            variant="secondary"
             onChange={(value) => setForm((prev) => ({ ...prev, sku: value, skuManual: true }))}
           >
             <Label>
               {id.products.sku}
               {!form.skuManual && <span className="ml-1.5 text-xs text-muted">(otomatis)</span>}
             </Label>
-            <Input className={form.skuManual ? undefined : "text-muted"} placeholder="AUTO" />
+            <Input placeholder="AUTO" />
           </TextField>
         </div>
 
@@ -264,6 +273,7 @@ function ProductFormBody({
             isInvalid={Boolean(errors.stock)}
             type="number"
             value={form.stock}
+            variant="secondary"
             onChange={(value) => updateField("stock", value)}
           >
             <Label>{id.products.stock} *</Label>
@@ -274,6 +284,7 @@ function ProductFormBody({
           <Select
             fullWidth
             value={form.unit}
+            variant="secondary"
             onChange={(value) => updateField("unit", value === null ? "" : String(value))}
           >
             <Label>{id.products.unit} *</Label>
@@ -297,6 +308,7 @@ function ProductFormBody({
             fullWidth
             type="number"
             value={form.minStock}
+            variant="secondary"
             onChange={(value) => updateField("minStock", value)}
           >
             <Label>{id.products.minStock}</Label>
@@ -309,21 +321,20 @@ function ProductFormBody({
             ketukan, dan `NumberField` memformat isinya menurut locale — angka
             yang baru setengah diketik akan dirapikan di tengah pengetikan. */}
         <div className="space-y-2">
-          <p className="text-xs font-medium tracking-wide text-muted uppercase">
-            Perhitungan Harga
-          </p>
-          <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted">Perhitungan Harga</p>
+          <InfoPanel>
             <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2">
               <TextField
                 fullWidth
                 type="number"
                 value={form.buyPrice}
+                variant="secondary"
                 onChange={(value) => {
                   updateField("buyPrice", value)
                   recalcSellPrice(Number(value), Number(form.margin))
                 }}
               >
-                <Label className="text-xs">{id.products.buyPrice} *</Label>
+                <Label>{id.products.buyPrice} *</Label>
                 <Input min="0" placeholder="0" />
               </TextField>
 
@@ -333,12 +344,13 @@ function ProductFormBody({
                 className="w-20"
                 type="number"
                 value={form.margin}
+                variant="secondary"
                 onChange={(value) => {
                   updateField("margin", value)
                   recalcSellPrice(Number(form.buyPrice), Number(value))
                 }}
               >
-                <Label className="text-xs">Markup (%)</Label>
+                <Label>Markup (%)</Label>
                 <Input min="0" placeholder="0" step="any" />
               </TextField>
 
@@ -348,12 +360,13 @@ function ProductFormBody({
                 fullWidth
                 type="number"
                 value={form.sellPrice}
+                variant="secondary"
                 onChange={(value) => {
                   updateField("sellPrice", value)
                   recalcMargin(Number(form.buyPrice), Number(value))
                 }}
               >
-                <Label className="text-xs">{id.products.sellPrice} *</Label>
+                <Label>{id.products.sellPrice} *</Label>
                 <Input min="0" placeholder="0" />
               </TextField>
             </div>
@@ -377,17 +390,17 @@ function ProductFormBody({
                 </span>
               </div>
             )}
-          </div>
+          </InfoPanel>
         </div>
       </Modal.Body>
 
       <Modal.Footer>
-        <Button type="button" variant="tertiary" onPress={() => onOpenChange(false)}>
+        <Button slot="close" type="button" variant="tertiary">
           {id.common.cancel}
         </Button>
-        <Button isDisabled={isPending} type="submit">
-          {isPending ? id.common.loading : id.common.save}
-        </Button>
+        <PendingButton isPending={isPending} type="submit">
+          {id.common.save}
+        </PendingButton>
       </Modal.Footer>
     </Form>
   )
@@ -415,6 +428,7 @@ function CategoryComboBox({
     <ComboBox
       allowsEmptyCollection
       fullWidth
+      variant="secondary"
       // Sentinelnya harus benar-benar jadi kunci terpilih, bukan dipetakan balik
       // ke `null`: React Aria menutup popover lewat perubahan `selectedKey`, jadi
       // kunci yang tak pernah sampai membuat daftarnya menggantung terbuka.

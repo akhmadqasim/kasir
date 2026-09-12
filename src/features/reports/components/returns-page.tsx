@@ -2,11 +2,12 @@ import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useReturns } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Retur Produk"
 const COLUMN_COUNT = 7
@@ -37,7 +38,6 @@ export function ReturnsPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -45,13 +45,9 @@ export function ReturnsPage() {
       }
     >
       {totals && (
-        <div className="grid grid-cols-2 gap-4">
-          <ReportStatCard label="Total Retur" value={totals.count} />
-          <ReportStatCard
-            label="Total Nilai Retur"
-            tone="danger"
-            value={formatRupiah(totals.amount)}
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatCard label="Total Retur" value={formatNumber(totals.count)} />
+          <StatCard label="Total Nilai Retur" tone="danger" value={formatRupiah(totals.amount)} />
         </div>
       )}
 

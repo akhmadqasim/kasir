@@ -4,13 +4,8 @@ import { useApiMutation } from "@/hooks/use-api"
 import { createBackup } from "@/lib/api/backups"
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/toast"
+import { formatFileSize } from "../lib/format"
 import type { BackupInfo } from "../types"
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 /**
  * Take a backup now.

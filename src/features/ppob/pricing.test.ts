@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { calculateSellPrice, extractNominal, resolvePpobSellPrice } from "./ppob-pricing"
+import { calculateSellPrice, extractNominal, resolvePpobSellPrice } from "./pricing"
 
 describe("extractNominal", () => {
   it("reads an un-dotted nominal from a product name", () => {

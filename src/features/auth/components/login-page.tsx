@@ -1,17 +1,15 @@
 import { useRef, useState } from "react"
-import { Button, Form, Input, Label, Spinner, TextField } from "@heroui/react"
+import { Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
 import { AuthCard, AuthScreen } from "@/components/auth-card"
+import { PendingButton } from "@/components/pending-button"
 import { useLogin } from "@/features/auth/hooks/use-auth"
 import { PinInput } from "@/features/auth/components/pin-input"
 
 /**
  * Bentuk kartunya mengikuti `login-demo.tsx` resmi HeroUI lewat `AuthCard`.
- * Yang tersisa di sini hanya formulir dan rantai keyboardnya.
- *
- * Kolom isian memakai `variant="secondary"` karena berdiri di atas `Card`,
- * yang sudah `bg-surface`; dokumentasi TextField meminta itu supaya kolomnya
- * tidak menyatu dengan latar kartunya.
+ * Yang tersisa di sini hanya formulir dan rantai keyboardnya. Kolom isiannya
+ * `variant="secondary"` — DESIGN.md §4.
  */
 export function LoginPage() {
   const [username, setUsername] = useState("")
@@ -78,19 +76,14 @@ export function LoginPage() {
             onChange={setPin}
             onEnter={submit}
           />
-          <Button
+          <PendingButton
             fullWidth
             isDisabled={!canSubmit}
             isPending={loginMutation.isPending}
             type="submit"
           >
-            {({ isPending }) => (
-              <>
-                {isPending ? <Spinner color="current" size="sm" /> : null}
-                {t.loginButton}
-              </>
-            )}
-          </Button>
+            {t.loginButton}
+          </PendingButton>
         </Form>
       </AuthCard>
     </AuthScreen>

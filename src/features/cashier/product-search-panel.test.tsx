@@ -15,7 +15,7 @@ vi.mock("@/lib/toast", () => ({
 
 import { installApiMock, type ApiCall, type ApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
-import { useCartStore } from "./hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { ProductSearchPanel } from "./components/product-search-panel"
 
 function product(overrides: Partial<Product> = {}): Product {

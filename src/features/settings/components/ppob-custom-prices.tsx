@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
-import { Button, Chip, Input, NumberField, TextField } from "@heroui/react"
+import { Button, Chip, Description, Fieldset, Input, NumberField, TextField } from "@heroui/react"
 
 import { formatRupiah, parseIndonesianInteger } from "@/lib/format"
 
@@ -72,19 +72,17 @@ export function PpobCustomPrices({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-0.5">
-        <p className="text-base font-medium">Harga Jual Pulsa per Nominal</p>
-        <p className="text-xs text-muted">
-          Berlaku untuk semua provider. Nominal tanpa harga pakai markup umum.
-        </p>
-      </div>
+    <Fieldset>
+      <Fieldset.Legend>Harga Jual Pulsa per Nominal</Fieldset.Legend>
+      <Description>
+        Berlaku untuk semua provider. Nominal tanpa harga pakai markup umum.
+      </Description>
 
       <div className="grid gap-2">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs font-medium text-muted">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs text-muted">
           <span>Nominal</span>
           <span className="w-28 text-center">Harga Jual</span>
-          <span className="w-8" />
+          <span aria-hidden="true" className="w-9 md:w-8" />
         </div>
         {allNominals.map((nominal) => {
           const sellPrice = customPrices[String(nominal)]
@@ -95,11 +93,7 @@ export function PpobCustomPrices({
             <div key={nominal} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium tabular-nums">{formatRupiah(nominal)}</span>
-                {isCustomNominal && (
-                  <Chip size="sm" variant="tertiary">
-                    custom
-                  </Chip>
-                )}
+                {isCustomNominal && <Chip size="sm">custom</Chip>}
               </div>
               {/* NumberField replaces `<input type="number">` and the CSS that used to
                   hide its spinners. Grouping is off on purpose: React Aria parses with
@@ -112,6 +106,7 @@ export function PpobCustomPrices({
                 isDisabled={disabled}
                 minValue={0}
                 value={hasPrice ? sellPrice : Number.NaN}
+                variant="secondary"
                 onChange={(value) =>
                   handlePriceChange(
                     nominal,
@@ -119,9 +114,9 @@ export function PpobCustomPrices({
                   )
                 }
               >
-                <NumberField.Group className="h-8">
+                <NumberField.Group>
                   <NumberField.Input
-                    className="text-xs tabular-nums"
+                    className="text-right tabular-nums"
                     placeholder={`cth: ${formatRupiah(nominal + 2000)}`}
                   />
                 </NumberField.Group>
@@ -129,48 +124,44 @@ export function PpobCustomPrices({
               {hasPrice || isCustomNominal ? (
                 <Button
                   aria-label={`Hapus harga nominal ${formatRupiah(nominal)}`}
-                  className="h-7 w-7"
                   isDisabled={disabled}
                   isIconOnly
                   size="sm"
                   variant="danger"
                   onPress={() => handleRemoveCustom(nominal)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 />
                 </Button>
               ) : (
-                <div className="w-7" />
+                // Selebar tombol `sm` ikon-saja, supaya kolom nominal tidak bergeser
+                // antara baris yang punya tombol hapus dan yang tidak.
+                <span aria-hidden="true" className="w-9 md:w-8" />
               )}
             </div>
           )
         })}
       </div>
 
-      <div className="flex items-center gap-2 pt-1">
+      <Fieldset.Actions>
         <TextField
           aria-label="Nominal lain"
           className="flex-1"
           isDisabled={disabled}
           value={newNominal}
+          variant="secondary"
           onChange={setNewNominal}
         >
           <Input
-            className="h-8 text-xs"
+            className="tabular-nums"
             placeholder="Nominal lain, cth: 12000"
             onKeyDown={(e) => e.key === "Enter" && handleAddNominal()}
           />
         </TextField>
-        <Button
-          className="h-8"
-          isDisabled={disabled || !newNominal}
-          size="sm"
-          variant="secondary"
-          onPress={handleAddNominal}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+        <Button isDisabled={disabled || !newNominal} variant="secondary" onPress={handleAddNominal}>
+          <Plus />
           Tambah
         </Button>
-      </div>
-    </div>
+      </Fieldset.Actions>
+    </Fieldset>
   )
 }

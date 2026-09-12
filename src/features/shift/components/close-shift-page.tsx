@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState } from "react"
-import type { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import { AlertDialog, Button, Card, Input, Label, Spinner, TextField, Tooltip } from "@heroui/react"
 import {
-  ArrowDownCircle,
-  ArrowLeft,
-  ArrowUpCircle,
-  Banknote,
-  CreditCard,
-  Receipt,
-  ShoppingBag,
-  Trash2,
-  User,
-  Wallet,
-} from "lucide-react"
+  Alert,
+  AlertDialog,
+  Button,
+  Card,
+  Input,
+  Label,
+  Separator,
+  Spinner,
+  TextField,
+  Tooltip,
+} from "@heroui/react"
+import { ArrowDownCircle, ArrowLeft, ArrowUpCircle, Trash2 } from "lucide-react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { getDefaultRouteForRole } from "@/app/resume-route"
 import { useAuthStore } from "@/features/auth"
 import { useLogout } from "@/features/auth/hooks/use-auth"
@@ -136,9 +141,9 @@ export function CloseShiftPage() {
   if (!summary) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
-        <p className="text-muted">Gagal memuat ringkasan shift.</p>
+        <NoData title="Gagal memuat ringkasan shift." tone="danger" />
         <Button variant="tertiary" onPress={() => navigate(-1)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+          <ArrowLeft />
           Kembali
         </Button>
       </div>
@@ -164,90 +169,55 @@ export function CloseShiftPage() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      {/* Page header */}
-      <div className="flex items-center justify-between px-4 lg:px-6">
-        <div className="flex items-center gap-3">
-          <Button aria-label="Kembali" isIconOnly variant="tertiary" onPress={() => navigate(-1)}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">Tutup Kasir</h1>
-        </div>
-      </div>
+      <SubpageHeader title="Tutup Kasir" onBack={() => navigate(-1)} />
 
       {/* Detail Kasir card */}
-      <div className="px-4 lg:px-6">
-        <Card>
-          <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <User className="h-4 w-4" />
-              Detail Kasir
-            </Card.Title>
-          </Card.Header>
-          <Card.Content>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <p className="text-sm text-muted">Kasir</p>
-                <p className="text-sm font-medium">{summary.shift.userName}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted">Tanggal Buka</p>
-                <p className="text-sm font-medium">{formatDateTime(summary.shift.openedAt)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted">Modal Awal</p>
-                <p className="text-sm font-medium tabular-nums">
-                  {formatRupiah(summary.shift.openingCash)}
-                </p>
-              </div>
+      <Card>
+        <Card.Header>
+          <Card.Title>Detail Kasir</Card.Title>
+        </Card.Header>
+        <Card.Content>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-muted">Kasir</p>
+              <p className="font-medium">{summary.shift.userName}</p>
             </div>
-          </Card.Content>
-        </Card>
-      </div>
+            <div>
+              <p className="text-muted">Tanggal Buka</p>
+              <p className="font-medium">{formatDateTime(summary.shift.openedAt)}</p>
+            </div>
+            <div>
+              <p className="text-muted">Modal Awal</p>
+              <p className="font-medium tabular-nums">{formatRupiah(summary.shift.openingCash)}</p>
+            </div>
+          </div>
+        </Card.Content>
+      </Card>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-4 px-4 sm:grid-cols-3 lg:px-6">
-        <StatCard
-          icon={<Receipt className="h-3.5 w-3.5" />}
-          label="Transaksi"
-          value={String(summary.totalTransactions)}
-        />
-        <StatCard
-          icon={<ShoppingBag className="h-3.5 w-3.5" />}
-          label="Total Penjualan"
-          value={formatRupiah(summary.totalSales)}
-        />
-        <StatCard
-          className="border border-accent/20"
-          icon={<Wallet className="h-3.5 w-3.5" />}
-          label="Saldo Tutup Kasir"
-          value={formatRupiah(summary.expectedCash)}
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Transaksi" value={String(summary.totalTransactions)} />
+        <StatCard label="Total Penjualan" value={formatRupiah(summary.totalSales)} />
+        <StatCard label="Saldo Tutup Kasir" value={formatRupiah(summary.expectedCash)} />
       </div>
 
       {/* Detail cards */}
-      <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Payment breakdown */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <CreditCard className="h-4 w-4" />
-              Pembayaran
-            </Card.Title>
+            <Card.Title>Pembayaran</Card.Title>
           </Card.Header>
           <Card.Content>
             {summary.paymentBreakdown.length > 0 ? (
-              <div className="space-y-3">
-                {summary.paymentBreakdown.map((pb) => (
-                  <div key={pb.method} className="flex items-center justify-between">
-                    <span className="text-sm text-muted">{paymentMethodLabel(pb.method)}</span>
-                    <span className="text-sm font-medium tabular-nums">
-                      {formatRupiah(pb.total)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <SummaryList
+                items={summary.paymentBreakdown.map((pb) => ({
+                  label: paymentMethodLabel(pb.method),
+                  value: formatRupiah(pb.total),
+                }))}
+              />
             ) : (
-              <p className="text-sm text-muted">Belum ada transaksi</p>
+              <NoData title="Belum ada transaksi" />
             )}
           </Card.Content>
         </Card>
@@ -255,20 +225,17 @@ export function CloseShiftPage() {
         {/* Cash flows */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2 text-base">
-              <Banknote className="h-4 w-4" />
-              Uang Masuk / Keluar
-            </Card.Title>
+            <Card.Title>Uang Masuk / Keluar</Card.Title>
           </Card.Header>
           <Card.Content>
             {summary.cashFlows.length > 0 ? (
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
                 {summary.cashFlows.map((cf) => (
                   <div key={cf.id} className="flex items-center gap-2">
                     {cf.flowType === "in" ? (
-                      <ArrowDownCircle className="h-4 w-4 shrink-0 text-success" />
+                      <ArrowDownCircle className="size-4 shrink-0 text-success" />
                     ) : (
-                      <ArrowUpCircle className="h-4 w-4 shrink-0 text-danger" />
+                      <ArrowUpCircle className="size-4 shrink-0 text-danger" />
                     )}
                     <CashFlowDescription description={cf.description} />
                     <span
@@ -286,90 +253,91 @@ export function CloseShiftPage() {
                         variant="danger"
                         onPress={() => setCashFlowToDelete(cf)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 />
                       </Button>
                     )}
                   </div>
                 ))}
-                <div className="flex items-center justify-between border-t pt-3">
-                  <span className="text-sm font-medium">Total</span>
-                  <span
-                    className={`text-sm font-semibold tabular-nums ${summary.cashIn - summary.cashOut >= 0 ? "text-success" : "text-danger"}`}
-                  >
-                    {signedRupiah(summary.cashIn - summary.cashOut)}
-                  </span>
-                </div>
-                {/* Retur tunai bukan arus kas manual, tapi sudah dipotong dari
-                    saldo tutup kasir. Tanpa barisnya, laci kurang dan tidak ada
-                    yang menjelaskan kenapa. */}
-                {summary.cashRefunds > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted">Retur tunai</span>
-                    <span className="text-sm font-semibold tabular-nums text-danger">
-                      {signedRupiah(-summary.cashRefunds)}
-                    </span>
-                  </div>
-                )}
+                <Separator />
+                <SummaryList
+                  items={[
+                    {
+                      label: "Total",
+                      value: signedRupiah(summary.cashIn - summary.cashOut),
+                      tone: summary.cashIn - summary.cashOut >= 0 ? "success" : "danger",
+                    },
+                    // Retur tunai bukan arus kas manual, tapi sudah dipotong dari
+                    // saldo tutup kasir. Tanpa barisnya, laci kurang dan tidak ada
+                    // yang menjelaskan kenapa.
+                    ...(summary.cashRefunds > 0
+                      ? [
+                          {
+                            label: "Retur tunai",
+                            value: signedRupiah(-summary.cashRefunds),
+                            tone: "danger" as const,
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </div>
             ) : (
-              <p className="text-sm text-muted">Tidak ada arus kas</p>
+              <NoData title="Tidak ada arus kas" />
             )}
           </Card.Content>
         </Card>
       </div>
 
       {/* Close shift action */}
-      <div className="px-4 lg:px-6">
-        <Card>
-          <Card.Header>
-            <Card.Title className="text-base">Tutup Shift</Card.Title>
-            <Card.Description>
-              Masukkan saldo aktual di laci kasir lalu tutup shift
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <TextField
-                  autoFocus
-                  fullWidth
-                  value={groupDigits(closingCash)}
-                  onChange={(value) => setClosingCash(toDigits(value))}
-                >
-                  <Label>Saldo Aktual</Label>
-                  <Input
-                    className="h-12 text-right text-lg font-bold tabular-nums"
-                    inputMode="numeric"
-                    placeholder="Opsional"
-                  />
-                </TextField>
-                {cashDifference !== null && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-muted">Selisih:</span>
-                    <StatusBadge status={cashDifferenceStatus(cashDifference)}>
-                      {signedRupiah(cashDifference)}
-                    </StatusBadge>
-                  </div>
-                )}
-              </div>
-              <TextField fullWidth value={notes} onChange={setNotes}>
-                <Label>Catatan</Label>
-                <Input className="h-12" placeholder="Opsional" />
+      <Card>
+        <Card.Header>
+          <Card.Title>Tutup Shift</Card.Title>
+          <Card.Description>Masukkan saldo aktual di laci kasir lalu tutup shift</Card.Description>
+        </Card.Header>
+        <Card.Content>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <TextField
+                autoFocus
+                fullWidth
+                value={groupDigits(closingCash)}
+                variant="secondary"
+                onChange={(value) => setClosingCash(toDigits(value))}
+              >
+                <Label>Saldo Aktual</Label>
+                <Input
+                  className="text-right tabular-nums"
+                  inputMode="numeric"
+                  placeholder="Opsional"
+                />
               </TextField>
+              {cashDifference !== null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-muted">Selisih:</span>
+                  <StatusBadge status={cashDifferenceStatus(cashDifference)}>
+                    {signedRupiah(cashDifference)}
+                  </StatusBadge>
+                </div>
+              )}
             </div>
-          </Card.Content>
-          <Card.Footer>
-            <Button
-              className="h-12 w-full text-base font-semibold"
-              isDisabled={isSubmitting}
-              variant="danger"
-              onPress={() => setCloseStep("review")}
-            >
-              {isSubmitting ? "Menutup..." : "Tutup Kasir"}
-            </Button>
-          </Card.Footer>
-        </Card>
-      </div>
+            <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
+              <Label>Catatan</Label>
+              <Input placeholder="Opsional" />
+            </TextField>
+          </div>
+        </Card.Content>
+        <Card.Footer>
+          {/* Hanya membuka langkah review — belum ada mutasi, jadi bukan `isPending`. */}
+          <Button
+            fullWidth
+            isDisabled={isSubmitting}
+            variant="danger"
+            onPress={() => setCloseStep("review")}
+          >
+            Tutup Kasir
+          </Button>
+        </Card.Footer>
+      </Card>
 
       {/* Step 1 of the close chain: read the numbers back.
           `isKeyboardDismissDisabled={false}` restores Escape-to-cancel, which the
@@ -385,28 +353,26 @@ export function CloseShiftPage() {
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>Konfirmasi Tutup Kasir</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.
-              </p>
-              <div className="space-y-2 rounded-md border bg-default/50 px-3 py-2 text-sm">
-                <SummaryRow label="Kasir" value={summary.shift.userName} />
-                <SummaryRow label="Total transaksi" value={String(summary.totalTransactions)} />
-                <SummaryRow label="Saldo aplikasi" value={formatRupiah(summary.expectedCash)} />
-                {closingCash ? (
-                  <SummaryRow label="Saldo aktual" value={formatRupiah(numericClosing)} />
-                ) : null}
-                {cashDifference !== null ? (
-                  <SummaryRow label="Selisih" value={signedRupiah(cashDifference)} />
-                ) : null}
-              </div>
+            <AlertDialog.Body>
+              <p>Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.</p>
+              <InfoPanel>
+                <SummaryList
+                  items={[
+                    { label: "Kasir", value: summary.shift.userName },
+                    { label: "Total transaksi", value: String(summary.totalTransactions) },
+                    { label: "Saldo aplikasi", value: formatRupiah(summary.expectedCash) },
+                    ...(closingCash
+                      ? [{ label: "Saldo aktual", value: formatRupiah(numericClosing) }]
+                      : []),
+                    ...(cashDifference !== null
+                      ? [{ label: "Selisih", value: signedRupiah(cashDifference) }]
+                      : []),
+                  ]}
+                />
+              </InfoPanel>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button
-                isDisabled={isSubmitting}
-                variant="tertiary"
-                onPress={() => setCloseStep("idle")}
-              >
+              <Button isDisabled={isSubmitting} slot="close" variant="tertiary">
                 Batal
               </Button>
               <Button
@@ -433,27 +399,28 @@ export function CloseShiftPage() {
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>Verifikasi Terakhir</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">
+            <AlertDialog.Body>
+              <p>
                 Shift akan ditutup sekarang dan laporan tutup kasir akan dibuat. Lanjutkan hanya
                 jika Anda benar-benar yakin.
               </p>
-              <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger-soft-foreground">
-                Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang masih
-                dalam proses pembayaran.
-              </div>
+              <Alert status="danger">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Description>
+                    Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang
+                    masih dalam proses pembayaran.
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button
-                isDisabled={isSubmitting}
-                variant="tertiary"
-                onPress={() => setCloseStep("idle")}
-              >
+              <Button isDisabled={isSubmitting} slot="close" variant="tertiary">
                 Kembali
               </Button>
-              <Button isDisabled={isSubmitting} variant="danger" onPress={handleClose}>
-                {isSubmitting ? "Menutup..." : "Ya, Tutup Kasir"}
-              </Button>
+              <PendingButton isPending={isSubmitting} variant="danger" onPress={handleClose}>
+                Ya, Tutup Kasir
+              </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>
@@ -470,79 +437,40 @@ export function CloseShiftPage() {
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>Hapus Arus Kas</AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                Entri uang masuk/keluar ini akan dihapus dari shift yang sedang berjalan.
-              </p>
+            <AlertDialog.Body>
+              <p>Entri uang masuk/keluar ini akan dihapus dari shift yang sedang berjalan.</p>
               {cashFlowToDelete && (
-                <div className="rounded-md border bg-default/50 px-3 py-2 text-sm">
-                  <div>
-                    <span className="text-muted">Jenis:</span>{" "}
-                    {cashFlowToDelete.flowType === "in" ? "Uang Masuk" : "Uang Keluar"}
-                  </div>
-                  <div>
-                    <span className="text-muted">Nominal:</span>{" "}
-                    {formatRupiah(cashFlowToDelete.amount)}
-                  </div>
-                  <div>
-                    <span className="text-muted">Keterangan:</span> {cashFlowToDelete.description}
-                  </div>
-                </div>
+                <InfoPanel>
+                  <SummaryList
+                    layout="grid"
+                    items={[
+                      {
+                        label: "Jenis",
+                        value: cashFlowToDelete.flowType === "in" ? "Uang Masuk" : "Uang Keluar",
+                      },
+                      { label: "Nominal", value: formatRupiah(cashFlowToDelete.amount) },
+                      { label: "Keterangan", value: cashFlowToDelete.description },
+                    ]}
+                  />
+                </InfoPanel>
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button
-                isDisabled={isDeletingCashFlow}
-                variant="tertiary"
-                onPress={() => setCashFlowToDelete(null)}
-              >
+              <Button isDisabled={isDeletingCashFlow} slot="close" variant="tertiary">
                 Batal
               </Button>
-              <Button
-                isDisabled={isDeletingCashFlow}
+              <PendingButton
+                isPending={isDeletingCashFlow}
                 variant="danger"
                 onPress={handleDeleteCashFlow}
               >
-                {isDeletingCashFlow ? "Menghapus..." : "Hapus"}
-              </Button>
+                Hapus
+              </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
     </div>
-  )
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
-    </div>
-  )
-}
-
-function StatCard({
-  className,
-  icon,
-  label,
-  value,
-}: {
-  className?: string
-  icon: ReactNode
-  label: string
-  value: string
-}) {
-  return (
-    <Card className={`bg-gradient-to-t from-accent/5 to-surface shadow-xs ${className ?? ""}`}>
-      <Card.Header>
-        <Card.Description className="flex items-center gap-1.5">
-          {icon}
-          {label}
-        </Card.Description>
-        <Card.Title className="text-2xl font-semibold tabular-nums">{value}</Card.Title>
-      </Card.Header>
-    </Card>
   )
 }
 

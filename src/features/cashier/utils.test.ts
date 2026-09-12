@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { getQuantityWarning } from "./utils"
-import { MAX_CART_QUANTITY } from "./hooks/use-cart-store"
+import { MAX_CART_QUANTITY } from "@/stores/cart-store"
 
 const makeItem = (overrides: Partial<{ stock: number; unit: string; is_ppob: boolean }> = {}) => ({
   stock: 10,

@@ -15,6 +15,7 @@ import {
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
@@ -99,14 +100,15 @@ export function PrinterSettingsTab() {
           Konfigurasi printer thermal untuk mencetak struk transaksi
         </Card.Description>
       </Card.Header>
-      <Card.Content className="space-y-6">
+      <Card.Content className="gap-6">
         {/* Printer Selection */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-1">
           <div className="flex items-end gap-2">
             <Select
               className="flex-1"
               placeholder={id.settings.noPrinterSelected}
               value={selectedPrinter || null}
+              variant="secondary"
               onChange={(value) => setSelectedPrinter(value === null ? "" : String(value))}
             >
               <Label>{id.settings.selectPrinter}</Label>
@@ -138,12 +140,12 @@ export function PrinterSettingsTab() {
               variant="tertiary"
               onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
             >
-              <RefreshCw className={`h-4 w-4 ${printersQuery.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={printersQuery.isFetching ? "animate-spin" : undefined} />
             </Button>
           </div>
-          <p className="text-xs text-muted">
+          <Description>
             Pastikan printer thermal sudah terhubung dan terinstall di Windows
-          </p>
+          </Description>
         </div>
 
         <Separator />
@@ -152,6 +154,7 @@ export function PrinterSettingsTab() {
         <Select
           fullWidth
           value={paperWidth}
+          variant="secondary"
           onChange={(value) => value !== null && setPaperWidth(String(value))}
         >
           <Label>{id.settings.paperWidth}</Label>
@@ -178,40 +181,41 @@ export function PrinterSettingsTab() {
         {/* Auto Print */}
         <Switch className="w-full" isSelected={autoPrint} onChange={setAutoPrint}>
           <Switch.Content className="w-full justify-between">
-            <span className="text-sm font-medium">{id.settings.autoPrint}</span>
+            {id.settings.autoPrint}
             <Switch.Control>
               <Switch.Thumb />
             </Switch.Control>
           </Switch.Content>
-          <Description className="text-xs">{id.settings.autoPrintDesc}</Description>
+          <Description>{id.settings.autoPrintDesc}</Description>
         </Switch>
 
         <Separator />
 
         {/* Footer Text */}
-        <TextField fullWidth value={footerText} onChange={setFooterText}>
+        <TextField fullWidth value={footerText} variant="secondary" onChange={setFooterText}>
           <Label>{id.settings.footerText}</Label>
           <TextArea placeholder={id.settings.footerTextPlaceholder} rows={3} />
         </TextField>
-
-        <Separator />
-
-        {/* Actions */}
-        <div className="flex gap-2">
-          <Button isDisabled={saveMutation.isPending || !isReady} onPress={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-          </Button>
-          <Button
-            isDisabled={testPrintMutation.isPending || !selectedPrinter}
-            variant="secondary"
-            onPress={() => testPrintMutation.mutate(undefined)}
-          >
-            <TestTube className="mr-2 h-4 w-4" />
-            {testPrintMutation.isPending ? "Mengirim..." : id.settings.testPrint}
-          </Button>
-        </div>
       </Card.Content>
+      <Card.Footer className="gap-2">
+        <PendingButton
+          isDisabled={!isReady}
+          isPending={saveMutation.isPending}
+          onPress={handleSave}
+        >
+          <Save />
+          Simpan
+        </PendingButton>
+        <PendingButton
+          isDisabled={!selectedPrinter}
+          isPending={testPrintMutation.isPending}
+          variant="secondary"
+          onPress={() => testPrintMutation.mutate(undefined)}
+        >
+          <TestTube />
+          {id.settings.testPrint}
+        </PendingButton>
+      </Card.Footer>
     </Card>
   )
 }

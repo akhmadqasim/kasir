@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Input,
+  Kbd,
   Label,
   Modal,
   ScrollShadow,
@@ -21,10 +22,12 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
-import { useCartStore } from "../hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { CartItemRow } from "./cart-item-row"
 import { CartItemEditDialog } from "./cart-item-edit-dialog"
@@ -40,6 +43,15 @@ interface CartPanelProps {
   shortcutsDisabled?: boolean
   onRequestProductSearchFocus?: () => void
 }
+
+/** Pintasan yang ditampilkan di kaki keranjang — pasangan tombol dan kata kerjanya. */
+const SHORTCUTS: ReadonlyArray<readonly [key: string, label: string]> = [
+  ["F1", "uang"],
+  ["F2", "diskon"],
+  ["F3", "simpan"],
+  ["F4", "bayar"],
+  ["F9", "tersimpan"],
+]
 
 function formatHeldDate(timestamp: number): string {
   const d = new Date(timestamp)
@@ -226,8 +238,7 @@ export function CartPanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3">
-        <ShoppingCart className="h-5 w-5" />
-        <h2 className="text-lg font-semibold">Keranjang</h2>
+        <h2 className="text-base font-medium">Keranjang</h2>
         {items.length > 0 && (
           <StatusBadge size="sm" status="neutral">
             {itemCount} item
@@ -238,13 +249,13 @@ export function CartPanel({
           <Button
             isDisabled={heldCarts.length === 0}
             size="sm"
-            variant="secondary"
+            variant="tertiary"
             onPress={() => {
               setSelectedIdx(0)
               setRecallDialogOpen(true)
             }}
           >
-            <PlayCircle className="mr-1 h-4 w-4" />
+            <PlayCircle />
             Tersimpan
           </Button>
           {heldCarts.length > 0 && (
@@ -259,12 +270,10 @@ export function CartPanel({
 
       {/* Cart Items */}
       {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <ShoppingCart className="h-10 w-10 text-muted" />
-          <p className="font-medium">Keranjang Kosong</p>
-          <p className="text-sm text-muted">
-            Scan barcode atau cari produk untuk menambahkan ke keranjang
-          </p>
+        <div className="flex flex-1 items-center justify-center">
+          <NoData icon={<ShoppingCart />} title="Keranjang Kosong">
+            Scan barcode atau cari produk
+          </NoData>
         </div>
       ) : (
         <ScrollShadow className="min-h-0 flex-1">
@@ -299,85 +308,68 @@ export function CartPanel({
 
       {/* Footer */}
       <Separator />
-      <div className="bg-surface p-4">
-        <div className="mb-3 space-y-1">
-          {totalDiscount > 0 && (
+      <div className="flex flex-col gap-4 p-4">
+        {totalDiscount > 0 && (
+          <SummaryList
+            items={[
+              { label: "Subtotal", value: formatRupiah(subtotal) },
+              { label: "Diskon", value: `-${formatRupiah(totalDiscount)}`, tone: "danger" },
+            ]}
+          />
+        )}
+        {/* Total keranjang dibaca kasir dan pelanggan dari jarak, jadi ia satu
+            tingkat di atas angka KPI — DESIGN.md §3.4. */}
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="text-sm text-muted">Total</span>
+          <span className="text-3xl font-semibold tracking-tight tabular-nums">
+            {formatRupiah(total)}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            isDisabled={items.length === 0}
+            size="sm"
+            variant="secondary"
+            onPress={() => setDiscountDialogOpen(true)}
+          >
+            <Percent />
+            Diskon
+          </Button>
+          <Button
+            isDisabled={items.length === 0}
+            size="sm"
+            variant="secondary"
+            onPress={handleHold}
+          >
+            <PauseCircle />
+            Simpan
+          </Button>
+          {activeShift && (
             <>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted">Subtotal</span>
-                <span className="tabular-nums">{formatRupiah(subtotal)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm text-danger">
-                <span>Diskon</span>
-                <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
-              </div>
+              <Button size="sm" variant="secondary" onPress={() => setCashFlowOpen(true)}>
+                <ArrowDownUp />
+                Uang
+              </Button>
+              <Button size="sm" variant="danger" onPress={() => navigate("/close-shift")}>
+                <DoorClosed />
+                Tutup
+              </Button>
             </>
           )}
-          <div className="flex items-center justify-between">
-            <span className="text-2xl font-semibold">Total</span>
-            <span className="text-4xl font-bold leading-none tabular-nums md:text-5xl">
-              {formatRupiah(total)}
-            </span>
-          </div>
         </div>
-        <div className="flex flex-wrap-reverse gap-2">
-          <div className="grid min-w-0 flex-1 basis-40 grid-cols-2 gap-1.5">
-            <Button
-              className="h-9 px-2 text-xs"
-              isDisabled={items.length === 0}
-              variant="secondary"
-              onPress={() => setDiscountDialogOpen(true)}
-            >
-              <Percent className="mr-1 h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Diskon</span>
-              {totalDiscount > 0 && (
-                <StatusBadge className="ml-1" size="sm" status="error">
-                  -{formatRupiah(totalDiscount)}
-                </StatusBadge>
-              )}
-            </Button>
-            <Button
-              className="h-9 px-2 text-xs"
-              isDisabled={items.length === 0}
-              variant="secondary"
-              onPress={handleHold}
-            >
-              <PauseCircle className="mr-1 h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Simpan</span>
-            </Button>
-            {activeShift && (
-              <>
-                <Button
-                  className="h-9 px-2 text-xs"
-                  variant="secondary"
-                  onPress={() => setCashFlowOpen(true)}
-                >
-                  <ArrowDownUp className="mr-1 h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Uang</span>
-                </Button>
-                <Button
-                  className="h-9 px-2 text-xs"
-                  variant="danger"
-                  onPress={() => navigate("/close-shift")}
-                >
-                  <DoorClosed className="mr-1 h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Tutup</span>
-                </Button>
-              </>
-            )}
-          </div>
-          <Button
-            className="h-auto min-h-[4.5rem] flex-1 basis-20 bg-success text-lg font-semibold text-success-foreground hover:bg-success-hover"
-            isDisabled={items.length === 0 || disabled}
-            size="lg"
-            onPress={onPay}
-          >
-            Bayar
-          </Button>
-        </div>
+        <Button fullWidth isDisabled={items.length === 0 || disabled} size="lg" onPress={onPay}>
+          Bayar
+        </Button>
         {items.length > 0 && (
-          <p className="mt-3 text-xs text-muted">
-            Shortcut cepat: F1 uang, F2 diskon, F3 simpan, F4 bayar, F9 transaksi tersimpan.
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+            {SHORTCUTS.map(([key, label]) => (
+              <span key={key} className="flex items-center gap-1">
+                <Kbd>
+                  <Kbd.Content>{key}</Kbd.Content>
+                </Kbd>
+                {label}
+              </span>
+            ))}
           </p>
         )}
       </div>
@@ -386,28 +378,32 @@ export function CartPanel({
       <Modal.Backdrop isOpen={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
         <Modal.Container size="sm">
           <Modal.Dialog aria-label="Simpan Transaksi">
+            <Modal.CloseTrigger />
             <Modal.Header>
               <Modal.Heading>Simpan Transaksi</Modal.Heading>
-              <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                Beri label agar mudah dikenali (opsional), lalu tekan Enter
-              </p>
-              <TextField autoFocus fullWidth value={holdLabel} onChange={setHoldLabel}>
+            <Modal.Body>
+              <p>Beri label agar mudah dikenali (opsional), lalu tekan Enter.</p>
+              <TextField
+                autoFocus
+                fullWidth
+                value={holdLabel}
+                variant="secondary"
+                onChange={setHoldLabel}
+              >
                 <Label className="sr-only">Label transaksi</Label>
                 <Input
                   placeholder="Contoh: Pelanggan 1"
                   onKeyDown={(e) => e.key === "Enter" && confirmHold()}
                 />
               </TextField>
-              <p className="text-sm text-muted">
+              <p>
                 {itemCount} item • {formatRupiah(total)}
               </p>
             </Modal.Body>
             <Modal.Footer>
-              <Button className="w-full" onPress={confirmHold}>
-                <PauseCircle className="mr-2 h-4 w-4" />
+              <Button fullWidth onPress={confirmHold}>
+                <PauseCircle />
                 Simpan Transaksi
               </Button>
             </Modal.Footer>
@@ -418,15 +414,18 @@ export function CartPanel({
       {/* Recall Dialog — Wide table view */}
       <Modal.Backdrop isOpen={recallDialogOpen} onOpenChange={setRecallDialogOpen}>
         <Modal.Container size="lg">
-          <Modal.Dialog aria-label="Transaksi Tersimpan">
+          {/* Tabelnya enam kolom (nomor, tanggal, label, barang, total, aksi);
+              `lg` (32rem) terlalu sempit, jadi lebarnya diberi lewat className
+              Dialog seperti pola dokumentasi (`sm:max-w-…`). */}
+          <Modal.Dialog aria-label="Transaksi Tersimpan" className="sm:max-w-3xl">
+            <Modal.CloseTrigger />
             <Modal.Header>
               <Modal.Heading>Transaksi Tersimpan ({heldCarts.length})</Modal.Heading>
-              <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                ↑↓ pilih • Enter lanjut • Del hapus • Angka 1-
-                {Math.min(heldCarts.length, 9)} panggil cepat
+            <Modal.Body>
+              <p>
+                ↑↓ pilih • Enter lanjut • Del hapus • Angka 1-{Math.min(heldCarts.length, 9)}{" "}
+                panggil cepat
               </p>
               <ScrollShadow className="max-h-[500px]">
                 <Table variant="secondary">
@@ -475,16 +474,11 @@ export function CartPanel({
                           </Table.Cell>
                           <Table.Cell className="text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <Button
-                                className="h-7 text-xs"
-                                size="sm"
-                                onPress={() => handleRecall(held.id)}
-                              >
-                                <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                              <Button size="sm" onPress={() => handleRecall(held.id)}>
+                                <PlayCircle />
                                 Lanjut
                               </Button>
                               <Button
-                                className="h-7 text-xs"
                                 size="sm"
                                 variant="danger"
                                 onPress={() => {
@@ -492,7 +486,7 @@ export function CartPanel({
                                   if (heldCarts.length <= 1) setRecallDialogOpen(false)
                                 }}
                               >
-                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                <Trash2 />
                                 Hapus
                               </Button>
                             </div>

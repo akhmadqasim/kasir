@@ -3,11 +3,12 @@ import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
 import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useCashFlows } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Uang Masuk / Keluar"
 const COLUMN_COUNT = 5
@@ -21,7 +22,6 @@ export function CashFlowsPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -29,18 +29,10 @@ export function CashFlowsPage() {
       }
     >
       {data && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <ReportStatCard
-            label="Total Uang Masuk"
-            tone="success"
-            value={formatRupiah(data.totalIn)}
-          />
-          <ReportStatCard
-            label="Total Uang Keluar"
-            tone="danger"
-            value={formatRupiah(data.totalOut)}
-          />
-          <ReportStatCard
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard label="Total Uang Masuk" tone="success" value={formatRupiah(data.totalIn)} />
+          <StatCard label="Total Uang Keluar" tone="danger" value={formatRupiah(data.totalOut)} />
+          <StatCard
             label="Saldo Bersih"
             tone={data.netTotal >= 0 ? "success" : "danger"}
             value={formatRupiah(data.netTotal)}
@@ -73,7 +65,7 @@ export function CashFlowsPage() {
               <Table.Cell>
                 <StatusBadge status={isIn ? "neutral" : "error"}>
                   <span className="flex items-center gap-1.5">
-                    <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                    <Icon aria-hidden="true" className="size-3" />
                     {isIn ? "Uang Masuk" : "Uang Keluar"}
                   </span>
                 </StatusBadge>
@@ -82,7 +74,7 @@ export function CashFlowsPage() {
                 {row.description}
               </Table.Cell>
               <Table.Cell
-                className={`text-right font-medium tabular-nums ${isIn ? "text-success" : "text-danger"}`}
+                className={`text-right font-medium ${isIn ? "text-success" : "text-danger"}`}
               >
                 {isIn ? "+" : "-"}
                 {formatRupiah(row.amount)}

@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
-import { useCartStore, type HeldCart } from "./hooks/use-cart-store"
+import { useCartStore, type HeldCart } from "@/stores/cart-store"
 import { CartPanel } from "./components/cart-panel"
 import type { CartItem } from "./types"
 

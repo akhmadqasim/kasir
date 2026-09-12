@@ -12,6 +12,7 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
@@ -34,6 +35,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container scroll="inside" size="sm">
         <Modal.Dialog aria-label={user ? id.users.editUser : id.users.addUser}>
+          <Modal.CloseTrigger />
           {/* React Aria unmounts the dialog as it closes rather than keeping it
               alive through an exit animation, so the state below starts empty on
               every open — reopening for another user can no longer show the
@@ -121,18 +123,22 @@ function UserFormBody({
     // Aria's default ("native") an `isInvalid` field calls setCustomValidity, and
     // the browser then blocks every later submit — including the one that would
     // clear the error.
-    <Form validationBehavior="aria" onSubmit={handleSubmit}>
+    <Form
+      className="flex min-h-0 flex-1 flex-col"
+      validationBehavior="aria"
+      onSubmit={handleSubmit}
+    >
       <Modal.Header>
         <Modal.Heading>{isEdit ? id.users.editUser : id.users.addUser}</Modal.Heading>
-        <Modal.CloseTrigger />
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
+      <Modal.Body>
         <TextField
           fullWidth
           isDisabled={isPending}
           isInvalid={Boolean(errors.username)}
           value={username}
+          variant="secondary"
           onChange={setUsername}
         >
           <Label>{id.users.username}</Label>
@@ -145,6 +151,7 @@ function UserFormBody({
           isDisabled={isPending}
           isInvalid={Boolean(errors.fullName)}
           value={fullName}
+          variant="secondary"
           onChange={setFullName}
         >
           <Label>{id.users.fullName}</Label>
@@ -156,6 +163,7 @@ function UserFormBody({
           fullWidth
           isDisabled={isPending}
           value={role}
+          variant="secondary"
           onChange={(value) => setRole(value === "admin" ? "admin" : "kasir")}
         >
           <Label>{id.users.role}</Label>
@@ -182,6 +190,7 @@ function UserFormBody({
           description={isEdit ? id.users.resetPinDesc : undefined}
           placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
           value={pin}
+          variant="secondary"
           onChange={setPin}
         />
 
@@ -192,23 +201,19 @@ function UserFormBody({
             label={id.users.confirmPin}
             placeholder="Ulangi PIN"
             value={confirmPin}
+            variant="secondary"
             onChange={setConfirmPin}
           />
         )}
       </Modal.Body>
 
       <Modal.Footer>
-        <Button
-          isDisabled={isPending}
-          type="button"
-          variant="tertiary"
-          onPress={() => onOpenChange(false)}
-        >
+        <Button isDisabled={isPending} slot="close" type="button" variant="tertiary">
           {id.users.cancel}
         </Button>
-        <Button isDisabled={isPending} type="submit">
-          {isPending ? "..." : id.users.save}
-        </Button>
+        <PendingButton isPending={isPending} type="submit">
+          {id.users.save}
+        </PendingButton>
       </Modal.Footer>
     </Form>
   )

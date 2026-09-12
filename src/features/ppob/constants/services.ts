@@ -107,15 +107,24 @@ export const PPOB_SERVICES: PpobServiceDef[] = [
   { key: "voucher", icon: Ticket, label: id.ppob.voucher, path: "voucher" },
 ]
 
-const QUICK_ACCESS_KEYS: Set<PpobServiceKey> = new Set([
-  "pulsa",
-  "data",
-  "pln",
-  "pdam",
-  "bpjs",
-  "emoney",
-])
+export type QuickAccessServiceDef = PpobServiceDef & { key: QuickAccessServiceKey }
+
+// `Record` dan bukan `Set`: TypeScript menuntut setiap anggota
+// `QuickAccessServiceKey` ada di sini, jadi lookup di bawah tidak bisa bolong.
+const QUICK_ACCESS_KEYS: Record<QuickAccessServiceKey, true> = {
+  pulsa: true,
+  data: true,
+  pln: true,
+  pdam: true,
+  bpjs: true,
+  emoney: true,
+}
 
 export const QUICK_ACCESS_SERVICES = PPOB_SERVICES.filter(
-  (svc): svc is PpobServiceDef & { key: QuickAccessServiceKey } => QUICK_ACCESS_KEYS.has(svc.key),
+  (svc): svc is QuickAccessServiceDef => svc.key in QUICK_ACCESS_KEYS,
 )
+
+/** Layanan per kunci; setiap kunci pasti ada karena `QUICK_ACCESS_KEYS` lengkap. */
+export const QUICK_ACCESS_SERVICE_BY_KEY = Object.fromEntries(
+  QUICK_ACCESS_SERVICES.map((svc) => [svc.key, svc]),
+) as Record<QuickAccessServiceKey, QuickAccessServiceDef>

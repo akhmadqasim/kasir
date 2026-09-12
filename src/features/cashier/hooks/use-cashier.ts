@@ -1,7 +1,7 @@
 import { useApiMutation } from "@/hooks/use-api"
 import { checkoutTransaction } from "@/lib/api/transactions"
 import type { CheckoutTransactionInput, TransactionResult } from "../types"
-import { useCartStore } from "./use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 
 export { getProductByBarcode } from "@/lib/api/products"
 

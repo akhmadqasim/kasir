@@ -1,12 +1,17 @@
 import type { ReactNode } from "react"
-import { Card, Skeleton, Table } from "@heroui/react"
+import { Skeleton, Table } from "@heroui/react"
+
+import { NoData } from "@/components/no-data"
+import { cn } from "@/lib/utils"
 
 /**
  * Bagian yang benar-benar sama di sebelas layar laporan — dan hanya itu.
  *
- * Yang di sini: kerangka halaman (judul + baris filter), kartu ringkasan
- * label/nilai yang tersalin 25 kali, dan rangka `Table` HeroUI yang bersarang
- * lima tingkat sebelum sampai ke baris pertama.
+ * Yang di sini: kerangka halaman (baris filter + isi) dan rangka `Table` HeroUI
+ * yang bersarang lima tingkat sebelum sampai ke baris pertama. Kartu ringkasan
+ * memakai `StatCard` dari `src/components/` (DESIGN.md §4.2).
+ *
+ * Judul halaman tidak digambar di sini — DESIGN.md §5.1.
  *
  * Yang **tidak** di sini, dan sengaja tetap ditulis di tiap layar karena justru
  * di situlah laporannya berbeda:
@@ -15,60 +20,22 @@ import { Card, Skeleton, Table } from "@heroui/react"
  *  - baris total di kaki tabel — hanya "Jenis Pembayaran" yang punya, dan itu
  *    baris biasa di dalam `Table.Body`, bukan `Table.Footer` (kaki HeroUI
  *    duduk di luar `<table>` dan tidak sejajar dengan kolom, jadi tempatnya
- *    pagination, bukan angka total);
- *  - blok ringkasan yang bukan kartu label/nilai — grid per-alasan di laporan
- *    kerugian dan kartu berbilah persentase di jenis pembayaran.
+ *    pagination, bukan angka total).
  */
 
 interface ReportPageProps {
-  title: string
   /** Isi baris filter. Dilewatkan kalau laporannya tidak punya filter. */
   filters?: ReactNode
   children: ReactNode
 }
 
-export function ReportPage({ title, filters, children }: ReportPageProps) {
+/** Kerangka satu layar laporan: baris filter, lalu isinya. Jarak dan padding: DESIGN.md §5.1, §3.5. */
+export function ReportPage({ filters, children }: ReportPageProps) {
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">{title}</h1>
-      {filters && <div className="flex flex-wrap items-center gap-3">{filters}</div>}
+    <div className="flex h-full flex-col gap-4">
+      {filters && <div className="flex flex-wrap items-center gap-2">{filters}</div>}
       {children}
     </div>
-  )
-}
-
-/** Nada angka ringkasan: laba hijau, kerugian merah, sisanya netral. */
-export type ReportStatTone = "default" | "success" | "danger"
-
-const STAT_TONE_CLASS: Record<ReportStatTone, string> = {
-  default: "",
-  success: "text-success",
-  danger: "text-danger",
-}
-
-interface ReportStatCardProps {
-  label: string
-  value: ReactNode
-  tone?: ReportStatTone
-}
-
-/**
- * Satu angka ringkasan di atas tabel.
- *
- * Labelnya memakai `Card.Description`, bukan `Card.Title`: `Card.Title` HeroUI
- * merender `h3`, dan lima kartu di bawah satu `h1` akan melompati tingkat
- * heading tanpa alasan — label metrik bukan judul bagian.
- */
-export function ReportStatCard({ label, value, tone = "default" }: ReportStatCardProps) {
-  return (
-    <Card>
-      <Card.Header className="pb-2">
-        <Card.Description className="text-sm font-medium text-muted">{label}</Card.Description>
-      </Card.Header>
-      <Card.Content>
-        <p className={`text-2xl font-bold ${STAT_TONE_CLASS[tone]}`.trimEnd()}>{value}</p>
-      </Card.Content>
-    </Card>
   )
 }
 
@@ -99,6 +66,11 @@ interface ReportTableProps {
   children: ReactNode
 }
 
+/**
+ * `tabular-nums` dipasang sekali di `Table.Content` dan diwariskan ke setiap sel:
+ * kolom nominal yang rata kanan tidak lagi bergoyang saat datanya berubah, dan
+ * sebelas laporan tidak perlu mengulang kelas itu di tiap `Table.Cell`.
+ */
 export function ReportTable({
   label,
   columnCount,
@@ -109,18 +81,18 @@ export function ReportTable({
   contentClassName,
   children,
 }: ReportTableProps) {
-  const renderEmptyState = () => {
-    if (error) {
-      return <p className="py-10 text-center text-danger">Error: {error.message}</p>
-    }
-    return <p className="py-10 text-center text-muted">{emptyMessage}</p>
-  }
+  const renderEmptyState = () =>
+    error ? (
+      <NoData title={`Error: ${error.message}`} tone="danger" />
+    ) : (
+      <NoData title={emptyMessage} />
+    )
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <Table variant="secondary">
         <Table.ScrollContainer>
-          <Table.Content aria-label={label} className={contentClassName}>
+          <Table.Content aria-label={label} className={cn("tabular-nums", contentClassName)}>
             <Table.Header>{columns}</Table.Header>
             <Table.Body renderEmptyState={renderEmptyState}>
               {isLoading

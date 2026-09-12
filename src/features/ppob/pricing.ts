@@ -1,4 +1,4 @@
-import type { PpobMarkupConfig } from "@/features/ppob/types/auth"
+import type { PpobMarkupConfig } from "./types/auth"
 
 export const DEFAULT_PPOB_MARKUP: PpobMarkupConfig = { type: "fixed", value: 0 }
 

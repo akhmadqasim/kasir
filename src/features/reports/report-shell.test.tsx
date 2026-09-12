@@ -5,9 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Table } from "@heroui/react"
 
 import { installApiMock, type ApiRoutes } from "@/test-utils/api-mock"
+import { StatCard } from "@/components/stat-card"
 import { formatRupiah } from "@/lib/format"
 
-import { ReportPage, ReportStatCard, ReportTable } from "./components/report-shell"
+import { ReportPage, ReportTable } from "./components/report-shell"
 import { CashFlowsPage } from "./components/cash-flows-page"
 import { CurrentStockPage } from "./components/current-stock-page"
 import { LossesPage } from "./components/losses-page"
@@ -236,29 +237,31 @@ beforeEach(() => {
  * sekali saat masih skeleton, sekali setelah datanya masuk.
  */
 describe("kerangka laporan", () => {
-  it("menampilkan judul dan kontrol filter", () => {
+  it("menampilkan kontrol filter tanpa menggambar judul sendiri", () => {
     render(
-      <ReportPage title="Laporan Uji" filters={<button type="button">Filter</button>}>
+      <ReportPage filters={<button type="button">Filter</button>}>
         <p>Isi</p>
       </ReportPage>,
     )
 
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Laporan Uji")
     expect(screen.getByRole("button", { name: "Filter" })).toBeInTheDocument()
+    // Judul halaman milik navbar `AppLayout`, diturunkan dari rute. `h1` kedua
+    // di badan halaman hanya mengulanginya, jadi kerangka ini tidak punya heading.
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument()
   })
 
   it("menulis label kartu ringkasan sebagai teks biasa, bukan heading", () => {
     render(
-      <ReportPage title="Laporan Uji">
-        <ReportStatCard label="Laba Kotor" tone="success" value="Rp 50.000" />
+      <ReportPage>
+        <StatCard label="Laba Kotor" tone="success" value="Rp 50.000" />
       </ReportPage>,
     )
 
     expect(screen.getByText("Laba Kotor")).toBeInTheDocument()
     expect(screen.getByText("Rp 50.000")).toHaveClass("text-success")
-    // Satu-satunya heading tetap judul halaman: `Card.Title` HeroUI merender `h3`
-    // dan akan melompati tingkat heading, jadi labelnya sengaja bukan heading.
-    expect(screen.getAllByRole("heading")).toHaveLength(1)
+    // `Card.Title` HeroUI merender `h3` dan akan melompati tingkat heading di
+    // bawah judul navbar, jadi labelnya sengaja `Card.Description`, bukan heading.
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument()
   })
 
   it("membedakan tabel yang gagal dimuat dari tabel yang memang kosong", () => {

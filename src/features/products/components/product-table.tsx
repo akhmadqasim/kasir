@@ -5,6 +5,7 @@ import { AlertDialog, Button, Table, Tooltip } from "@heroui/react"
 import type { SortDescriptor } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { id } from "@/i18n/id"
@@ -113,9 +114,7 @@ export function ProductTable({
     direction: sortOrder === "desc" ? "descending" : "ascending",
   }
 
-  const renderEmptyState = () => (
-    <p className="py-8 text-center text-muted">{id.products.noProducts}</p>
-  )
+  const renderEmptyState = () => <NoData title={id.products.noProducts} />
 
   return (
     <div className="space-y-4">
@@ -211,7 +210,7 @@ export function ProductTable({
                         variant="secondary"
                         onPress={() => onEdit(product)}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil />
                       </Button>
                       <Button
                         aria-label={`${id.common.delete} ${product.name}`}
@@ -220,7 +219,7 @@ export function ProductTable({
                         variant="danger"
                         onPress={() => setDeleteTarget(product)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 />
                       </Button>
                     </div>
                   </Table.Cell>
@@ -245,10 +244,10 @@ export function ProductTable({
               <AlertDialog.Heading>{id.common.confirm}</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
-              <p className="text-sm text-muted">{id.products.deleteConfirm}</p>
+              <p>{id.products.deleteConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="tertiary" onPress={() => setDeleteTarget(null)}>
+              <Button slot="close" variant="tertiary">
                 {id.common.cancel}
               </Button>
               <Button variant="danger" onPress={handleDelete}>
@@ -276,7 +275,7 @@ function PinActionButton({ isPinned, onPress }: { isPinned: boolean; onPress: ()
   return (
     <Tooltip>
       <Button aria-label={label} isIconOnly size="sm" variant="secondary" onPress={onPress}>
-        <Pin className={cn("h-4 w-4", isPinned ? "fill-current text-accent" : "text-muted")} />
+        <Pin className={isPinned ? "fill-current text-accent" : "text-muted"} />
       </Button>
       <Tooltip.Content>{label}</Tooltip.Content>
     </Tooltip>

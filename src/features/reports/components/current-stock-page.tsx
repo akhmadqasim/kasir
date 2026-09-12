@@ -2,11 +2,12 @@ import { useState } from "react"
 import { Label, ListBox, SearchField, Select, Table } from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
-import { formatRupiah } from "@/lib/format"
+import { formatNumber, formatRupiah } from "@/lib/format"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useCurrentStock } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Stok Saat Ini"
 const COLUMN_COUNT = 9
@@ -39,7 +40,6 @@ export function CurrentStockPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <>
           <SearchField
@@ -79,11 +79,15 @@ export function CurrentStockPage() {
       }
     >
       {totals && data && (
-        <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-4">
-            <ReportStatCard label="Total Produk" value={data.totalCount} />
-            <ReportStatCard label="Produk Stok Menipis" tone="danger" value={totals.lowStock} />
-            <ReportStatCard label="Total Nilai Stok" value={formatRupiah(totals.value)} />
+        <div className="flex flex-col gap-2">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard label="Total Produk" value={formatNumber(data.totalCount)} />
+            <StatCard
+              label="Produk Stok Menipis"
+              tone="danger"
+              value={formatNumber(totals.lowStock)}
+            />
+            <StatCard label="Total Nilai Stok" value={formatRupiah(totals.value)} />
           </div>
           {isTruncated && (
             <p className="text-sm text-muted">
@@ -128,7 +132,9 @@ export function CurrentStockPage() {
               <Table.Cell className="font-mono text-sm text-muted">{row.barcode ?? "-"}</Table.Cell>
               <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
               <Table.Cell className="text-right">
-                <span className={isLow ? "font-bold text-danger" : "font-medium"}>{row.stock}</span>
+                <span className={isLow ? "font-semibold text-danger" : "font-medium"}>
+                  {row.stock}
+                </span>
                 {isLow && (
                   <StatusBadge className="ml-2" size="sm" status="error">
                     Menipis

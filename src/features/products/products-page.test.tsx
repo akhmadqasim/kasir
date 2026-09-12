@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import type { User } from "@/features/auth/types"
 import type { Category, PaginatedProducts, Product } from "./types"
 
@@ -52,13 +53,19 @@ const PRODUCTS: PaginatedProducts = {
   total_pages: 1,
 }
 
+/**
+ * Aksi halaman (Import, Kelola Kategori, Tambah Produk) di-portal ke slot navbar
+ * lewat `NavbarActions`, jadi tanpa `TestNavbar` tombolnya tidak pernah tergambar.
+ */
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <ProductsPage />
+      <TestNavbar>
+        <ProductsPage />
+      </TestNavbar>
     </QueryClientProvider>,
   )
 }

@@ -54,7 +54,7 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
             </p>
             {item.is_ppob ? (
               <div className="mt-0.5 flex items-center gap-1">
-                <PpobIcon className="h-3 w-3 shrink-0 text-muted" />
+                <PpobIcon aria-hidden="true" className="size-3 shrink-0 text-muted" />
                 <p className="text-xs text-muted">{item.service_ref}</p>
               </div>
             ) : (
@@ -74,13 +74,12 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
             ditekan, jadi tidak ada lagi `stopPropagation` yang perlu ditulis. */}
         <Button
           aria-label={`Hapus ${item.product_name}`}
-          className="h-7 w-7"
           isIconOnly
           size="sm"
           variant="danger"
           onPress={() => onRemove(item.cart_id)}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 />
         </Button>
       </Table.Cell>
     </Table.Row>

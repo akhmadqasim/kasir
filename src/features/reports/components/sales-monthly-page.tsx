@@ -4,9 +4,10 @@ import { id as idLocale } from "date-fns/locale"
 import { Label, ListBox, Select, Table } from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
-import { formatRupiah } from "@/lib/format"
+import { StatCard } from "@/components/stat-card"
+import { formatNumber, formatRupiah } from "@/lib/format"
 import { useSalesMonthly } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Penjualan per Bulan"
 const COLUMN_COUNT = 5
@@ -32,7 +33,6 @@ export function SalesMonthlyPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <Select
@@ -60,11 +60,11 @@ export function SalesMonthlyPage() {
       }
     >
       {totals && (
-        <div className="grid grid-cols-4 gap-4">
-          <ReportStatCard label="Total Transaksi" value={totals.transactions} />
-          <ReportStatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
-          <ReportStatCard label="Total Modal" value={formatRupiah(totals.cost)} />
-          <ReportStatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Total Transaksi" value={formatNumber(totals.transactions)} />
+          <StatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
+          <StatCard label="Total Modal" value={formatRupiah(totals.cost)} />
+          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
         </div>
       )}
 

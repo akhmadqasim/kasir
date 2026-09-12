@@ -54,7 +54,7 @@ describe("dialog buka kasir", () => {
   it("memberi pemisah ribuan sambil diketik dan mengirim angka mentahnya", async () => {
     render(<OpenShiftDialog open onOpenChange={() => {}} />)
 
-    const field = within(await screen.findByRole("dialog")).getByLabelText("Modal Awal (Opsional)")
+    const field = within(await screen.findByRole("dialog")).getByLabelText("Modal awal")
     fireEvent.change(field, { target: { value: "50000" } })
     expect(field).toHaveValue("50.000")
 

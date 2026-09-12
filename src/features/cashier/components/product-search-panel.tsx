@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
-import { Button, InputGroup, Kbd, ScrollShadow, Tabs } from "@heroui/react"
+import { Button, InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
 import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
@@ -16,7 +17,7 @@ import {
 import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product, ShortcutProduct } from "@/features/products/types"
-import { useCartStore } from "../hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { getProductByBarcode } from "../hooks/use-cashier"
 import {
   getProductSearchEnterAction,
@@ -24,7 +25,7 @@ import {
   rankProductsForSearch,
 } from "../search-behavior"
 import { formatRupiah } from "../utils"
-import { PpobQuickAccess } from "./ppob-quick-access"
+import { PpobQuickAccess } from "@/features/ppob"
 
 /** How many shortcut tiles the cashier screen asks for. */
 const SHORTCUT_LIMIT = 30
@@ -351,108 +352,119 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Search Bar */}
-      <div
-        className={cn("flex flex-col border-b", showSearchResults ? "min-h-0 flex-1" : "h-auto")}
-      >
-        <InputGroup className="rounded-none border-0 border-b shadow-none">
-          <InputGroup.Prefix>
-            <Search className="h-4 w-4 text-muted" />
-          </InputGroup.Prefix>
-          <InputGroup.Input
-            ref={searchInputRef}
-            aria-activedescendant={
-              showSearchResults && selectedProductValue !== undefined
-                ? optionId(Number(selectedProductValue))
-                : undefined
-            }
-            aria-autocomplete="list"
-            aria-controls={listboxId}
-            aria-expanded={showSearchResults}
-            aria-label="Scan barcode atau cari produk"
-            autoComplete="off"
-            className="h-14 text-lg"
-            placeholder="Scan barcode atau cari produk..."
-            role="combobox"
-            value={searchQuery}
-            onChange={(e) => handleSearchQueryChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          <InputGroup.Suffix className="pe-3">
-            <Kbd>
-              <Kbd.Content>Enter</Kbd.Content>
-            </Kbd>
-          </InputGroup.Suffix>
-        </InputGroup>
+      <div className={cn("flex flex-col", showSearchResults ? "min-h-0 flex-1" : "h-auto")}>
+        {/* Kolom scan tinggal di dalam panel `Surface`, jadi `variant="secondary"`;
+            tinggi dan ukuran hurufnya bawaan HeroUI. */}
+        <div className="flex flex-col gap-2 p-4">
+          <InputGroup fullWidth variant="secondary">
+            <InputGroup.Prefix>
+              <Search aria-hidden="true" className="size-4" />
+            </InputGroup.Prefix>
+            <InputGroup.Input
+              ref={searchInputRef}
+              aria-activedescendant={
+                showSearchResults && selectedProductValue !== undefined
+                  ? optionId(Number(selectedProductValue))
+                  : undefined
+              }
+              aria-autocomplete="list"
+              aria-controls={listboxId}
+              aria-expanded={showSearchResults}
+              aria-label="Scan barcode atau cari produk"
+              autoComplete="off"
+              placeholder="Scan barcode atau cari produk..."
+              role="combobox"
+              value={searchQuery}
+              onChange={(e) => handleSearchQueryChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <InputGroup.Suffix>
+              <Kbd>
+                <Kbd.Content>Enter</Kbd.Content>
+              </Kbd>
+            </InputGroup.Suffix>
+          </InputGroup>
 
-        {showSearchResults && activeProduct && (
-          <div className="border-t px-4 py-2 text-xs text-muted">
-            Enter akan pilih item aktif:{" "}
-            <span className="font-medium text-foreground">{activeProduct.name}</span>{" "}
-            <span className="tabular-nums">({formatRupiah(activeProduct.sell_price)})</span>
-          </div>
-        )}
+          {showSearchResults && activeProduct && (
+            <p className="text-xs text-muted">
+              Enter akan pilih item aktif:{" "}
+              <span className="font-medium text-foreground">{activeProduct.name}</span>{" "}
+              <span className="tabular-nums">({formatRupiah(activeProduct.sell_price)})</span>
+            </p>
+          )}
+        </div>
 
         {/* Search Results */}
         {showSearchResults && (
-          <ScrollShadow className="min-h-0 flex-1">
-            {rankedSearchResults.length > 0 ? (
-              <ul aria-label="Hasil pencarian produk" className="p-1" id={listboxId} role="listbox">
-                {rankedSearchResults.map((product) => {
-                  const isActive = String(product.id) === selectedProductValue
-                  return (
-                    <li
-                      key={product.id}
-                      aria-selected={isActive}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm",
-                        isActive ? "bg-default text-default-foreground" : "hover:bg-default/60",
-                      )}
-                      id={optionId(product.id)}
-                      role="option"
-                      onPointerDown={(e) => {
-                        // Jangan sampai kolom scan kehilangan fokus sebelum
-                        // produknya masuk keranjang.
-                        e.preventDefault()
-                        handleProductSelect(product)
-                      }}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{product.name}</p>
-                        {product.barcode && (
-                          <p className="font-mono text-xs text-muted">{product.barcode}</p>
+          <>
+            <Separator />
+            <ScrollShadow className="min-h-0 flex-1">
+              {rankedSearchResults.length > 0 ? (
+                <ul
+                  aria-label="Hasil pencarian produk"
+                  className="p-2"
+                  id={listboxId}
+                  role="listbox"
+                >
+                  {rankedSearchResults.map((product) => {
+                    const isActive = String(product.id) === selectedProductValue
+                    return (
+                      // Bentuk barisnya mengikuti `.list-box-item` HeroUI — sudut
+                      // `rounded-2xl`, hover `bg-default` — karena inilah listbox-nya.
+                      <li
+                        key={product.id}
+                        aria-selected={isActive}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm",
+                          isActive ? "bg-default text-default-foreground" : "hover:bg-default/60",
                         )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge size="sm" status={product.stock <= 0 ? "error" : "neutral"}>
-                          {product.stock} {product.unit}
-                        </StatusBadge>
-                        <span className="min-w-[80px] text-right font-semibold tabular-nums">
-                          {formatRupiah(product.sell_price)}
-                        </span>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <p className="py-6 text-center text-sm text-muted">Produk tidak ditemukan</p>
-            )}
-          </ScrollShadow>
+                        id={optionId(product.id)}
+                        role="option"
+                        onPointerDown={(e) => {
+                          // Jangan sampai kolom scan kehilangan fokus sebelum
+                          // produknya masuk keranjang.
+                          e.preventDefault()
+                          handleProductSelect(product)
+                        }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{product.name}</p>
+                          {product.barcode && (
+                            <p className="font-mono text-xs text-muted">{product.barcode}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <StatusBadge size="sm" status={product.stock <= 0 ? "error" : "neutral"}>
+                            {product.stock} {product.unit}
+                          </StatusBadge>
+                          <span className="min-w-20 text-right font-semibold tabular-nums">
+                            {formatRupiah(product.sell_price)}
+                          </span>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <NoData title="Produk tidak ditemukan" />
+              )}
+            </ScrollShadow>
+          </>
         )}
       </div>
 
-      {/* Tabs: Produk Favorit / PPOB — only when not searching */}
+      {/* Tabs: Favorit / PPOB — only when not searching. Tabnya sudah di panel produk, jadi kata "Produk" tidak diulang di labelnya. */}
       {!showSearchResults && (
         <Tabs className="flex min-h-0 flex-1 flex-col" defaultSelectedKey="produk">
-          <Tabs.ListContainer className="mx-4 mt-2 w-auto self-start">
+          <Tabs.ListContainer className="mx-4 mt-4 w-auto self-start">
             <Tabs.List aria-label="Pintasan kasir">
-              <Tabs.Tab className="gap-1.5" id="produk">
-                <TrendingUp className="h-3.5 w-3.5" />
-                Produk Favorit
+              <Tabs.Tab className="gap-2" id="produk">
+                <TrendingUp aria-hidden="true" className="size-4" />
+                Favorit
                 <Tabs.Indicator />
               </Tabs.Tab>
-              <Tabs.Tab className="gap-1.5" id="ppob">
-                <Smartphone className="h-3.5 w-3.5" />
+              <Tabs.Tab className="gap-2" id="ppob">
+                <Smartphone aria-hidden="true" className="size-4" />
                 PPOB
                 <Tabs.Indicator />
               </Tabs.Tab>
@@ -482,9 +494,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                           variant="secondary"
                           onPress={() => !isHolding && handleShortcutSelect(product)}
                         >
-                          <span className="w-full truncate text-sm font-medium">
-                            {product.name}
-                          </span>
+                          <span className="w-full truncate">{product.name}</span>
                           <span className="text-xs tabular-nums text-muted">
                             {formatRupiah(product.sell_price)}
                           </span>
@@ -492,18 +502,18 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                             <span
                               aria-label="Tahan untuk hapus pin"
                               role="button"
-                              className="group/pin absolute bottom-1 right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-danger/10"
+                              className="group/pin absolute right-1 bottom-1 flex size-6 cursor-pointer items-center justify-center rounded-full hover:bg-danger/10"
                               onPointerDown={(e) => startHoldUnpin(e, product.id)}
                               onPointerUp={cancelHoldUnpin}
                               onPointerLeave={cancelHoldUnpin}
                               onClick={(e) => e.stopPropagation()}
                             >
                               {isHolding ? (
-                                <Trash2 className="h-3 w-3 text-danger" />
+                                <Trash2 className="size-3 text-danger" />
                               ) : (
                                 <>
-                                  <Pin className="h-3 w-3 fill-current text-accent opacity-40 group-hover/pin:hidden" />
-                                  <Trash2 className="hidden h-3 w-3 text-danger group-hover/pin:block" />
+                                  <Pin className="size-3 fill-current text-accent opacity-40 group-hover/pin:hidden" />
+                                  <Trash2 className="hidden size-3 text-danger group-hover/pin:block" />
                                 </>
                               )}
                             </span>
@@ -511,13 +521,13 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                             <span
                               aria-label="Pin produk"
                               role="button"
-                              className="absolute bottom-1 right-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-default group-hover:opacity-100"
+                              className="absolute right-1 bottom-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-default group-hover:opacity-100"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleTogglePin(product.id)
                               }}
                             >
-                              <Pin className="h-3 w-3 text-muted" />
+                              <Pin className="size-3 text-muted" />
                             </span>
                           )}
                         </Button>
@@ -525,22 +535,20 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                     })}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 py-10 text-center">
-                    <Search className="h-10 w-10 text-muted" />
-                    <p className="font-medium">Cari Produk</p>
-                    <p className="max-w-sm text-sm text-muted">
-                      Scan barcode, ketik nama produk, atau ketik sebagian barcode. Produk yang
-                      sering dicari akan tampil di sini.
-                    </p>
-                  </div>
+                  <NoData icon={<TrendingUp />} title="Produk yang sering dicari tampil di sini" />
                 )}
               </div>
             </ScrollShadow>
           </Tabs.Panel>
 
+          {/* Padding luar milik panel ini, bukan `PpobQuickAccess`: di halaman
+              PPOB komponen yang sama berdiri langsung di atas kanvas yang sudah
+              diberi padding `AppLayout`. */}
           <Tabs.Panel className="mt-0 min-h-0 flex-1" id="ppob">
             <ScrollShadow className="h-full">
-              <PpobQuickAccess />
+              <div className="p-4">
+                <PpobQuickAccess />
+              </div>
             </ScrollShadow>
           </Tabs.Panel>
         </Tabs>

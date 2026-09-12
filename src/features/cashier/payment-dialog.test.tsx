@@ -16,7 +16,7 @@ import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
-import { useCartStore } from "./hooks/use-cart-store"
+import { useCartStore } from "@/stores/cart-store"
 import { PaymentDialog } from "./components/payment-dialog"
 import type { CartItem, TransactionResult } from "./types"
 

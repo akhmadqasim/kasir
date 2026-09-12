@@ -2,6 +2,8 @@ import { useState, useMemo } from "react"
 import { PlusIcon, PencilIcon, UserXIcon, UserCheckIcon } from "lucide-react"
 import { AlertDialog, Button, SearchField, Skeleton, Table } from "@heroui/react"
 
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -67,28 +69,25 @@ export function UsersPage() {
     )
   }
 
-  const renderEmptyState = () => {
-    if (isError) {
-      return (
-        <p className="py-8 text-center text-danger">
-          Gagal memuat daftar pengguna: {error?.message ?? id.common.error}
-        </p>
-      )
-    }
-    return (
-      <p className="py-8 text-center text-muted">{search ? "Tidak ada hasil" : id.users.noUsers}</p>
+  const renderEmptyState = () =>
+    isError ? (
+      <NoData
+        title={`Gagal memuat daftar pengguna: ${error?.message ?? id.common.error}`}
+        tone="danger"
+      />
+    ) : (
+      <NoData title={search ? "Tidak ada hasil" : id.users.noUsers} />
     )
-  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.users.title}</h1>
-        <Button isDisabled={isError} onPress={handleAdd}>
-          <PlusIcon className="mr-2 h-4 w-4" />
+    // DESIGN.md §5.1: judul dari navbar, aksi lewat `NavbarActions`.
+    <div className="flex flex-col gap-4">
+      <NavbarActions>
+        <Button isDisabled={isError} size="sm" onPress={handleAdd}>
+          <PlusIcon />
           {id.users.addUser}
         </Button>
-      </div>
+      </NavbarActions>
 
       <SearchField
         aria-label={id.users.searchPlaceholder}
@@ -154,7 +153,7 @@ export function UsersPage() {
                             variant="secondary"
                             onPress={() => handleEdit(user)}
                           >
-                            <PencilIcon className="h-4 w-4" />
+                            <PencilIcon />
                           </Button>
                           {user.id !== currentUser?.id && (
                             <Button
@@ -164,11 +163,7 @@ export function UsersPage() {
                               variant={user.is_active ? "danger" : "secondary"}
                               onPress={() => handleToggleActive(user)}
                             >
-                              {user.is_active ? (
-                                <UserXIcon className="h-4 w-4" />
-                              ) : (
-                                <UserCheckIcon className="h-4 w-4" />
-                              )}
+                              {user.is_active ? <UserXIcon /> : <UserCheckIcon />}
                             </Button>
                           )}
                         </div>
@@ -194,10 +189,10 @@ export function UsersPage() {
               <AlertDialog.Heading>{id.users.deactivate}</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
-              <p className="text-sm text-muted">{id.users.deactivateConfirm}</p>
+              <p>{id.users.deactivateConfirm}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button variant="tertiary" onPress={() => setDeactivateUser(null)}>
+              <Button slot="close" variant="tertiary">
                 {id.users.cancel}
               </Button>
               <Button variant="danger" onPress={confirmDeactivate}>

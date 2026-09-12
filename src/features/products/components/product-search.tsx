@@ -111,7 +111,7 @@ export function ProductSearch({
               // memilih ulang nilai yang sama alih-alih mematikannya.
               onChange={() => onQuickFilterChange(filter.value)}
             >
-              <Icon className="mr-1.5 h-3.5 w-3.5" />
+              <Icon />
               {filter.label}
             </ToggleButton>
           )

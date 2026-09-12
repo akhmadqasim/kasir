@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react"
-import { Upload, FileSpreadsheet, CheckCircle2, Download } from "lucide-react"
+import { Upload, FileSpreadsheet, Download } from "lucide-react"
 import { read, utils, type WorkBook } from "xlsx"
 import { Alert, Button, Label, ListBox, Modal, ScrollShadow, Select, Table } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
+import { PendingButton } from "@/components/pending-button"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { useApiMutation } from "@/hooks/use-api"
@@ -341,18 +342,21 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
-      <Modal.Container scroll="inside" size="lg">
-        <Modal.Dialog aria-label={id.products.importProducts} className="max-h-[90vh] sm:max-w-6xl">
+      {/* `cover`: wizard-nya lebar (grid mapping dua kolom + tabel preview),
+          jadi memakai ukuran HeroUI yang memang untuk konten selebar layar,
+          bukan `max-w-*` tulisan tangan. */}
+      <Modal.Container size="cover">
+        <Modal.Dialog aria-label={id.products.importProducts}>
+          <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5" />
-              {id.products.importProducts}
-            </Modal.Heading>
-            <Modal.CloseTrigger />
+            <Modal.Icon className="bg-default text-foreground">
+              <FileSpreadsheet className="size-5" />
+            </Modal.Icon>
+            <Modal.Heading>{id.products.importProducts}</Modal.Heading>
           </Modal.Header>
 
-          <Modal.Body className="flex flex-col gap-4">
-            <p className="text-sm text-muted">
+          <Modal.Body>
+            <p>
               {step === "upload" && "Upload file CSV atau Excel untuk mengimport produk"}
               {step === "mapping" &&
                 `${rows.length} baris ditemukan — mapping kolom ke field produk`}
@@ -363,9 +367,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
               <div className="flex flex-col gap-2 py-4">
                 <p className="text-sm font-medium">File</p>
                 {/* Input filenya sengaja tetap HTML biasa: `<label>` yang
-                    membungkusnya sekaligus jadi nama aksesibel dan area drop. */}
+                    membungkusnya sekaligus jadi nama aksesibel dan area drop.
+                    `border-dashed` dipertahankan — satu-satunya pengecualian
+                    DESIGN.md §5.7, karena ini drop-zone berkas sungguhan. */}
                 <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-accent hover:bg-default/50">
-                  <Upload className="h-10 w-10 text-muted" />
+                  <Upload className="size-10 text-muted" />
                   <div>
                     <p className="font-medium">Klik untuk memilih file</p>
                     <p className="text-sm text-muted">
@@ -380,12 +386,12 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   />
                 </label>
                 <Button
-                  className="h-auto self-start p-0 text-xs"
+                  className="self-start"
                   size="sm"
                   variant="tertiary"
                   onPress={downloadSampleTemplate}
                 >
-                  <Download className="mr-1 h-3 w-3" />
+                  <Download />
                   Download contoh template
                 </Button>
               </div>
@@ -396,7 +402,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 {/* Column Mapping */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Mapping Kolom</p>
+                    <p className="text-sm font-medium">{id.products.columnMapping}</p>
                     <StatusBadge status="neutral" size="sm">
                       {mappedCount} field dimapping
                     </StatusBadge>
@@ -414,6 +420,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                               aria-label={`Field untuk ${columnLabel}`}
                               className="flex-1"
                               value={columnMap[idx] ?? "skip"}
+                              variant="secondary"
                               onChange={(value) =>
                                 handleColumnMapChange(
                                   idx,
@@ -506,16 +513,16 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
             {step === "result" && result && (
               <div className="flex flex-col gap-4 py-4">
-                <div className="flex items-center gap-3 rounded-lg border bg-default/50 p-4">
-                  <CheckCircle2 className="h-8 w-8 text-success" />
-                  <div>
-                    <p className="text-lg font-semibold">Import Selesai</p>
-                    <p className="text-sm text-muted">
+                <Alert status="success">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>Import Selesai</Alert.Title>
+                    <Alert.Description>
                       {result.imported} diimport, {result.updated} diupdate, {result.skipped}{" "}
                       dilewati
-                    </p>
-                  </div>
-                </div>
+                    </Alert.Description>
+                  </Alert.Content>
+                </Alert>
 
                 {result.errors.length > 0 && (
                   <div className="space-y-2">
@@ -534,6 +541,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           </Modal.Body>
 
           {step === "mapping" && (
+            // `justify-between` disengaja: "Kembali" adalah langkah mundur wizard
+            // dan berdiri di kiri, terpisah dari aksi utama di kanan.
             <Modal.Footer className="justify-between">
               <Button variant="tertiary" onPress={resetState}>
                 {id.common.back}
@@ -542,12 +551,13 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 <span className="text-sm text-muted">
                   {getMappedProducts().products.length} produk valid
                 </span>
-                <Button
-                  isDisabled={!hasNameMapped || !hasPriceMapped || importMutation.isPending}
+                <PendingButton
+                  isDisabled={!hasNameMapped || !hasPriceMapped}
+                  isPending={importMutation.isPending}
                   onPress={handleImport}
                 >
-                  {importMutation.isPending ? id.products.importing : id.products.startImport}
-                </Button>
+                  {id.products.startImport}
+                </PendingButton>
               </div>
             </Modal.Footer>
           )}
@@ -557,7 +567,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
               <Button variant="secondary" onPress={resetState}>
                 Import Lagi
               </Button>
-              <Button onPress={() => handleOpenChange(false)}>Selesai</Button>
+              <Button slot="close">Selesai</Button>
             </Modal.Footer>
           )}
         </Modal.Dialog>

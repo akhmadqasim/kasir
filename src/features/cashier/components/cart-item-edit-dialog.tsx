@@ -3,7 +3,8 @@ import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } fr
 import { Minus, Plus } from "lucide-react"
 
 import { selectedText } from "@/components/selected-text"
-import { MAX_CART_QUANTITY, useCartStore } from "../hooks/use-cart-store"
+import { SummaryList } from "@/components/summary-list"
+import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
 import type { CartItem } from "../types"
 import { formatRupiah, getQuantityWarning } from "../utils"
 
@@ -144,38 +145,41 @@ function CartItemEditBody({
 
   return (
     <>
+      <Modal.CloseTrigger />
       <Modal.Header>
-        <Modal.Heading className="leading-snug">{item.product_name}</Modal.Heading>
-        <Modal.CloseTrigger />
+        <Modal.Heading>{item.product_name}</Modal.Heading>
       </Modal.Header>
 
-      <Modal.Body className="space-y-4">
-        {/* Price info */}
-        <div className="text-sm text-muted">
+      <Modal.Body>
+        <p>
           Harga: {formatRupiah(item.product_price)} / {item.unit ?? "pcs"}
-        </div>
+        </p>
 
         {/* Quantity */}
         {!item.is_ppob && (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {/* Judul blok, bukan label kolom: kolomnya sendiri diberi `aria-label`
                 supaya tidak ada `<label>` yang menggantung tanpa kolom. */}
             <p className="text-sm font-medium">Jumlah</p>
             <div className="flex items-center gap-2">
               <Button
                 aria-label="Kurangi jumlah"
-                className="h-9 w-9"
                 isDisabled={qty <= 1}
                 isIconOnly
                 variant="secondary"
                 onPress={() => handleQtyChange(qty - 1)}
               >
-                <Minus className="h-4 w-4" />
+                <Minus />
               </Button>
-              <TextField aria-label="Jumlah" value={qtyRaw} onChange={handleQtyInputChange}>
+              <TextField
+                aria-label="Jumlah"
+                value={qtyRaw}
+                variant="secondary"
+                onChange={handleQtyInputChange}
+              >
                 <Input
                   ref={qtyInputRef}
-                  className="h-9 w-20 text-center text-lg font-semibold tabular-nums"
+                  className="w-20 text-center tabular-nums"
                   inputMode="numeric"
                   onBlur={() => setQtyRaw(String(qty))}
                   onKeyDown={(e) => {
@@ -185,13 +189,12 @@ function CartItemEditBody({
               </TextField>
               <Button
                 aria-label="Tambah jumlah"
-                className="h-9 w-9"
                 isDisabled={qty >= MAX_CART_QUANTITY}
                 isIconOnly
                 variant="secondary"
                 onPress={() => handleQtyChange(qty + 1)}
               >
-                <Plus className="h-4 w-4" />
+                <Plus />
               </Button>
             </div>
             {quantityWarning && (
@@ -203,12 +206,12 @@ function CartItemEditBody({
         <Separator />
 
         {/* Discount */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">Diskon</p>
           <div className="flex items-center gap-2">
             <Select
               aria-label="Jenis diskon"
-              className="w-[130px]"
+              variant="secondary"
               value={discType}
               onChange={(value) => handleTypeChange(value as "fixed" | "percentage")}
             >
@@ -230,11 +233,12 @@ function CartItemEditBody({
             <TextField
               aria-label="Nilai diskon"
               className="flex-1"
+              variant="secondary"
               value={formatDiscDisplay(discRaw)}
               onChange={handleDiscChange}
             >
               <Input
-                className="h-9 text-right tabular-nums"
+                className="text-right tabular-nums"
                 inputMode="numeric"
                 placeholder={discType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
                 onKeyDown={(e) => {
@@ -243,32 +247,26 @@ function CartItemEditBody({
               />
             </TextField>
           </div>
-          {discAmount > 0 && (
-            <p className="text-sm tabular-nums text-danger">
-              Potongan: -{formatRupiah(discAmount)}
-            </p>
-          )}
         </div>
 
         <Separator />
 
         {/* Summary */}
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted">Subtotal</span>
-            <span className="tabular-nums">{formatRupiah(lineTotal)}</span>
-          </div>
-          {discAmount > 0 && (
-            <div className="flex justify-between text-danger">
-              <span>Diskon</span>
-              <span className="tabular-nums">-{formatRupiah(discAmount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold">
-            <span>Total</span>
-            <span className="tabular-nums">{formatRupiah(finalTotal)}</span>
-          </div>
-        </div>
+        <SummaryList
+          items={[
+            { label: "Subtotal", value: formatRupiah(lineTotal) },
+            ...(discAmount > 0
+              ? [
+                  {
+                    label: "Diskon",
+                    value: `-${formatRupiah(discAmount)}`,
+                    tone: "danger" as const,
+                  },
+                ]
+              : []),
+            { label: "Total", value: formatRupiah(finalTotal), tone: "strong" },
+          ]}
+        />
       </Modal.Body>
 
       <Modal.Footer>

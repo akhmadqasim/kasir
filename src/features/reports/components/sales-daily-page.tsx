@@ -2,10 +2,11 @@ import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
 import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
 import { useSalesDaily } from "../hooks/use-reports"
-import { ReportPage, ReportStatCard, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Penjualan per Hari"
 const COLUMN_COUNT = 5
@@ -30,7 +31,6 @@ export function SalesDailyPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <div className="ml-auto">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -38,11 +38,11 @@ export function SalesDailyPage() {
       }
     >
       {totals && (
-        <div className="grid grid-cols-4 gap-4">
-          <ReportStatCard label="Total Transaksi" value={totals.transactions} />
-          <ReportStatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
-          <ReportStatCard label="Total Modal" value={formatRupiah(totals.cost)} />
-          <ReportStatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Total Transaksi" value={formatNumber(totals.transactions)} />
+          <StatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
+          <StatCard label="Total Modal" value={formatRupiah(totals.cost)} />
+          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
         </div>
       )}
 

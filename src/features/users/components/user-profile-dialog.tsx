@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { Button, Form, Modal, Separator } from "@heroui/react"
 
+import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
@@ -72,17 +73,21 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     <Modal.Backdrop isOpen={open} onOpenChange={handleOpenChange}>
       <Modal.Container scroll="inside" size="sm">
         <Modal.Dialog aria-label={id.profile.title}>
+          <Modal.CloseTrigger />
           {/* validationBehavior="aria" keeps validation in this component. With
               React Aria's default ("native") an `isInvalid` field calls
               setCustomValidity, and the browser then blocks every later submit —
               including the one that would clear the error. */}
-          <Form validationBehavior="aria" onSubmit={handleChangePin}>
+          <Form
+            className="flex min-h-0 flex-1 flex-col"
+            validationBehavior="aria"
+            onSubmit={handleChangePin}
+          >
             <Modal.Header>
               <Modal.Heading>{id.profile.title}</Modal.Heading>
-              <Modal.CloseTrigger />
             </Modal.Header>
 
-            <Modal.Body className="space-y-4">
+            <Modal.Body>
               <div className="grid grid-cols-[100px_1fr] items-center gap-2 text-sm">
                 <span className="text-muted">{id.users.username}</span>
                 <span className="font-medium">{user.username}</span>
@@ -103,6 +108,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                 isDisabled={changePin.isPending}
                 label={id.profile.currentPin}
                 value={currentPin}
+                variant="secondary"
                 onChange={setCurrentPin}
               />
               <PinInput
@@ -110,6 +116,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                 isDisabled={changePin.isPending}
                 label={id.profile.newPin}
                 value={newPin}
+                variant="secondary"
                 onChange={setNewPin}
               />
               <PinInput
@@ -117,6 +124,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                 isDisabled={changePin.isPending}
                 label={id.profile.confirmNewPin}
                 value={confirmPin}
+                variant="secondary"
                 onChange={setConfirmPin}
               />
             </Modal.Body>
@@ -124,15 +132,15 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
             <Modal.Footer>
               <Button
                 isDisabled={changePin.isPending}
+                slot="close"
                 type="button"
                 variant="tertiary"
-                onPress={() => handleOpenChange(false)}
               >
                 {id.users.cancel}
               </Button>
-              <Button isDisabled={changePin.isPending} type="submit">
-                {changePin.isPending ? "..." : id.users.save}
-              </Button>
+              <PendingButton isPending={changePin.isPending} type="submit">
+                {id.users.save}
+              </PendingButton>
             </Modal.Footer>
           </Form>
         </Modal.Dialog>

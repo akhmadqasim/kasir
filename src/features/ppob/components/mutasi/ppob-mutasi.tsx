@@ -1,8 +1,13 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Search, RefreshCw, Loader2 } from "lucide-react"
-import { Button, Card, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
+import { ArrowDownCircle, ArrowUpCircle, Search, RefreshCw } from "lucide-react"
+import { Button, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { selectedText } from "@/components/selected-text"
 import type { DateRange } from "@/lib/date-range"
@@ -213,21 +218,25 @@ function MutasiDetailDialog({
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label={heading}>
+          <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Heading className="flex items-center gap-2">
-              {isIn ? (
-                <ArrowDownCircle className="h-5 w-5 text-success" />
-              ) : (
-                <ArrowUpCircle className="h-5 w-5 text-danger" />
-              )}
-              {heading}
-            </Modal.Heading>
-            <Modal.CloseTrigger />
+            <Modal.Icon
+              className={
+                isIn
+                  ? "bg-success-soft text-success-soft-foreground"
+                  : "bg-danger-soft text-danger-soft-foreground"
+              }
+            >
+              {isIn ? <ArrowDownCircle className="size-5" /> : <ArrowUpCircle className="size-5" />}
+            </Modal.Icon>
+            <Modal.Heading>{heading}</Modal.Heading>
           </Modal.Header>
 
-          <Modal.Body className="space-y-3">
+          <Modal.Body>
             <div className="flex items-center justify-between">
-              <span className={`text-lg font-bold ${isIn ? "text-success" : "text-danger"}`}>
+              <span
+                className={`text-xl font-semibold tracking-tight tabular-nums ${isIn ? "text-success" : "text-danger"}`}
+              >
                 {isIn ? "+" : "-"}
                 {item.amount != null ? formatRupiah(item.amount) : "-"}
               </span>
@@ -236,15 +245,15 @@ function MutasiDetailDialog({
 
             <Separator />
 
-            <div className="max-h-[400px] space-y-1 overflow-y-auto pr-1">
-              {detailRows.map((row) => (
-                <div key={row.label} className="grid grid-cols-[120px_1fr] gap-2 py-0.5 text-sm">
-                  <span className="text-xs text-muted">{row.label}</span>
-                  <span className="font-medium break-words">{row.value}</span>
-                </div>
-              ))}
-            </div>
+            {/* The container's default `scroll="inside"` already caps the dialog
+                height and scrolls the body, so no scroll box of its own here. */}
+            <SummaryList items={detailRows} layout="grid" />
           </Modal.Body>
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              Tutup
+            </Button>
+          </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
@@ -286,19 +295,20 @@ function MutasiRow({ item, onPress }: { item: MutasiItem; onPress: () => void })
 
   return (
     <Button
-      className="h-auto w-full justify-start gap-3 p-3 text-left"
+      fullWidth
+      className="h-auto justify-start gap-3 p-3 text-left"
       variant="secondary"
       onPress={onPress}
     >
       <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+        className={`flex size-10 shrink-0 items-center justify-center rounded-full ${
           isIn ? "bg-success-soft" : "bg-danger-soft"
         }`}
       >
         {isIn ? (
-          <ArrowDownCircle className="h-5 w-5 text-success" />
+          <ArrowDownCircle className="size-5 text-success" />
         ) : (
-          <ArrowUpCircle className="h-5 w-5 text-danger" />
+          <ArrowUpCircle className="size-5 text-danger" />
         )}
       </span>
 
@@ -403,76 +413,49 @@ export function PpobMutasi() {
   }, [dateFilteredItems])
 
   return (
-    <div className="space-y-5 p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button
-          aria-label={i18n.common.back}
-          isIconOnly
-          variant="tertiary"
-          onPress={() => navigate("/ppob")}
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.mutasiTitle}</h1>
-        <div className="ml-auto">
-          <Button isDisabled={isFetching} size="sm" variant="tertiary" onPress={() => refetch()}>
-            {isFetching ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
+    <div className="flex flex-col gap-6">
+      <SubpageHeader
+        actions={
+          <PendingButton
+            isPending={isFetching}
+            size="sm"
+            variant="tertiary"
+            onPress={() => refetch()}
+          >
+            <RefreshCw />
             Refresh
-          </Button>
-        </div>
+          </PendingButton>
+        }
+        title={i18n.ppob.mutasiTitle}
+        onBack={() => navigate("/ppob")}
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label={i18n.ppob.saldo} value={saldoData ? formatRupiah(saldoData.saldo) : "-"} />
+        <StatCard
+          label={`Total Masuk (${summary.countIn} trx)`}
+          tone="success"
+          value={`+${formatRupiah(summary.totalIn)}`}
+        >
+          {undatedIn > 0 && (
+            <p className="text-xs text-muted">
+              Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
+            </p>
+          )}
+        </StatCard>
+        <StatCard
+          label={`Total Keluar (${summary.countOut} trx)`}
+          tone="danger"
+          value={`-${formatRupiah(summary.totalOut)}`}
+        />
       </div>
 
-      {/* Saldo + Summary Cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card>
-          <Card.Header>
-            <Card.Description>{i18n.ppob.saldo}</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <p className="text-xl font-semibold tracking-tight tabular-nums">
-              {saldoData ? formatRupiah(saldoData.saldo) : "-"}
-            </p>
-          </Card.Content>
-        </Card>
-        <Card>
-          <Card.Header>
-            <Card.Description>Total Masuk ({summary.countIn} trx)</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <p className="text-xl font-semibold tracking-tight text-success tabular-nums">
-              +{formatRupiah(summary.totalIn)}
-            </p>
-            {undatedIn > 0 && (
-              <p className="text-xs text-muted">
-                Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
-              </p>
-            )}
-          </Card.Content>
-        </Card>
-        <Card>
-          <Card.Header>
-            <Card.Description>Total Keluar ({summary.countOut} trx)</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <p className="text-xl font-semibold tracking-tight text-danger tabular-nums">
-              -{formatRupiah(summary.totalOut)}
-            </p>
-          </Card.Content>
-        </Card>
-      </div>
-
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <DateRangePicker value={dateRange} onChange={setDateRange} align="start" />
 
         <Select
           aria-label="Filter jenis mutasi"
-          className="w-[140px]"
+          className="w-36"
           value={typeFilter}
           onChange={(value) => setTypeFilter(String(value))}
         >
@@ -493,30 +476,22 @@ export function PpobMutasi() {
         </Select>
       </div>
 
-      {/* List */}
       {isLoading ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="mb-1 font-medium text-danger">Gagal memuat mutasi</p>
-          <p className="text-sm text-muted">
-            {error instanceof Error ? error.message : "Terjadi kesalahan"}
-          </p>
-        </div>
+        <NoData title="Gagal memuat mutasi" tone="danger">
+          {error instanceof Error ? error.message : i18n.common.error}
+        </NoData>
       ) : filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Search className="mb-3 h-10 w-10 text-muted" />
-          <p className="mb-1 font-medium">{i18n.ppob.mutasiNoData}</p>
-          <p className="text-sm text-muted">
-            Tidak ditemukan mutasi pada rentang tanggal yang dipilih
-          </p>
-        </div>
+        <NoData icon={<Search />} title={i18n.ppob.mutasiNoData}>
+          Tidak ditemukan mutasi pada rentang tanggal yang dipilih
+        </NoData>
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {filteredItems.map((item, index) => (
             <MutasiRow key={item.id ?? index} item={item} onPress={() => setSelectedItem(item)} />
           ))}

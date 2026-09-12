@@ -1,7 +1,9 @@
 import { useState } from "react"
-import { Modal, Separator, Table } from "@heroui/react"
+import { Button, Modal, Separator, Table } from "@heroui/react"
 
+import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import type { HistoryPaymentItem } from "../../types"
 import {
@@ -41,22 +43,14 @@ function PpobStatusBadge({ status }: { status: string | null }) {
   }
 }
 
-function DetailRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string | null | undefined
-  mono?: boolean
-}) {
-  if (!value || value === "-") return null
-  return (
-    <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-      <span className="text-xs text-muted">{label}</span>
-      <span className={mono ? "font-mono" : ""}>{value}</span>
-    </div>
-  )
+/** Baris rincian hanya digambar bila vendor memang mengisi nilainya. */
+function detailItem(
+  label: string,
+  value: string | null | undefined,
+  tone?: SummaryItem["tone"],
+): SummaryItem[] {
+  if (!value || value === "-") return []
+  return [{ label, value, tone }]
 }
 
 function TransactionDetailDialog({
@@ -71,27 +65,56 @@ function TransactionDetailDialog({
   const profit =
     item && item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
 
+  const referenceItems: SummaryItem[] = item
+    ? [
+        ...detailItem("No. Transaksi", item.trxId, "mono"),
+        ...detailItem("No. Pelanggan", item.customerNo, "mono"),
+        ...detailItem("No. Referensi", item.noRef, "mono"),
+        ...detailItem("Kode Bayar", item.paymentCode, "mono"),
+        ...detailItem("Token/SN", item.tokenNumber ?? item.serialNumber, "mono"),
+        ...detailItem("Provider", item.provider),
+        ...detailItem("Denom", item.denom),
+        ...detailItem("Keterangan", item.igrDesc),
+      ]
+    : []
+
+  const priceItems: SummaryItem[] = item
+    ? [
+        ...(item.basePrice != null ? detailItem("Harga Modal", formatRupiah(item.basePrice)) : []),
+        ...(nominal != null ? detailItem("Harga Jual", formatRupiah(nominal), "strong") : []),
+        ...(item.adminFee != null && item.adminFee > 0
+          ? detailItem("Biaya Admin", formatRupiah(item.adminFee))
+          : []),
+        ...(profit != null
+          ? detailItem(
+              "Profit",
+              `${profit >= 0 ? "+" : ""}${formatRupiah(profit)}`,
+              profit >= 0 ? "success" : "danger",
+            )
+          : []),
+      ]
+    : []
+
   return (
     <Modal.Backdrop isOpen={!!item} onOpenChange={(open) => !open && onClose()}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label="Detail Transaksi">
+          <Modal.CloseTrigger />
           <Modal.Header>
             <Modal.Heading>Detail Transaksi</Modal.Heading>
-            <Modal.CloseTrigger />
           </Modal.Header>
           {item && service && (
-            <Modal.Body className="space-y-4">
-              {/* Header: service info + status */}
+            <Modal.Body>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${service.bg}`}
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-full ${service.bg}`}
                   >
-                    <service.icon className={`h-5 w-5 ${service.text}`} />
+                    <service.icon className={`size-5 ${service.text}`} />
                   </div>
                   <div>
-                    <p className="font-semibold">{service.label}</p>
-                    <p className="text-sm text-muted">{formatDateTime(item.createdAt)}</p>
+                    <p className="font-semibold text-foreground">{service.label}</p>
+                    <p>{formatDateTime(item.createdAt)}</p>
                   </div>
                 </div>
                 <PpobStatusBadge status={item.status} />
@@ -99,55 +122,25 @@ function TransactionDetailDialog({
 
               <Separator />
 
-              <div className="text-sm">
-                <p className="mb-1 text-muted">Deskripsi</p>
-                <p className="font-medium">{buildDescription(item)}</p>
+              <div>
+                <p>Deskripsi</p>
+                <p className="font-medium text-foreground">{buildDescription(item)}</p>
               </div>
 
               <Separator />
 
-              <div className="space-y-1">
-                <DetailRow label="No. Transaksi" value={item.trxId} mono />
-                <DetailRow label="No. Pelanggan" value={item.customerNo} mono />
-                <DetailRow label="No. Referensi" value={item.noRef} mono />
-                <DetailRow label="Kode Bayar" value={item.paymentCode} mono />
-                <DetailRow label="Token/SN" value={item.tokenNumber ?? item.serialNumber} mono />
-                <DetailRow label="Provider" value={item.provider} />
-                <DetailRow label="Denom" value={item.denom} />
-                <DetailRow label="Keterangan" value={item.igrDesc} />
-              </div>
+              <SummaryList items={referenceItems} layout="grid" />
 
               <Separator />
 
-              <div className="space-y-1">
-                {item.basePrice != null && (
-                  <DetailRow label="Harga Modal" value={formatRupiah(item.basePrice)} />
-                )}
-                {nominal != null && (
-                  <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-                    <span className="text-xs text-muted">Harga Jual</span>
-                    <span className="font-semibold">{formatRupiah(nominal)}</span>
-                  </div>
-                )}
-                {item.adminFee != null && item.adminFee > 0 && (
-                  <DetailRow label="Biaya Admin" value={formatRupiah(item.adminFee)} />
-                )}
-                {profit != null && (
-                  <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-                    <span className="text-xs text-muted">Profit</span>
-                    <span
-                      className={
-                        profit >= 0 ? "font-semibold text-success" : "font-semibold text-danger"
-                      }
-                    >
-                      {profit >= 0 ? "+" : ""}
-                      {formatRupiah(profit)}
-                    </span>
-                  </div>
-                )}
-              </div>
+              <SummaryList items={priceItems} layout="grid" />
             </Modal.Body>
           )}
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              Tutup
+            </Button>
+          </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
@@ -160,10 +153,6 @@ interface HistoryTableProps {
 
 export function HistoryTable({ items }: HistoryTableProps) {
   const [selectedItem, setSelectedItem] = useState<HistoryPaymentItem | null>(null)
-
-  const renderEmptyState = () => (
-    <p className="py-8 text-center text-muted">Tidak ada transaksi ditemukan</p>
-  )
 
   return (
     <>
@@ -181,7 +170,7 @@ export function HistoryTable({ items }: HistoryTableProps) {
               </Table.Column>
               <Table.Column id="status">Status</Table.Column>
             </Table.Header>
-            <Table.Body renderEmptyState={renderEmptyState}>
+            <Table.Body renderEmptyState={() => <NoData />}>
               {items.map((item, idx) => {
                 const rowId = item.trxId ?? `item-${idx}`
                 const service = detectServiceType(item)
@@ -197,9 +186,9 @@ export function HistoryTable({ items }: HistoryTableProps) {
                     <Table.Cell>
                       <div className="flex items-center gap-2.5">
                         <div
-                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${service.bg}`}
+                          className={`flex size-8 shrink-0 items-center justify-center rounded-full ${service.bg}`}
                         >
-                          <service.icon className={`h-4 w-4 ${service.text}`} />
+                          <service.icon className={`size-4 ${service.text}`} />
                         </div>
                         <span className="text-sm font-semibold">{service.label}</span>
                       </div>
@@ -210,7 +199,7 @@ export function HistoryTable({ items }: HistoryTableProps) {
                     <Table.Cell className="text-sm">
                       <p className="truncate">{buildDescription(item)}</p>
                     </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-right font-semibold">
+                    <Table.Cell className="whitespace-nowrap text-right font-semibold tabular-nums">
                       {nominal != null ? formatRupiah(nominal) : "-"}
                     </Table.Cell>
                     <Table.Cell>

@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from "react"
 import { Eye, X } from "lucide-react"
 import { Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
 
+import { NoData } from "@/components/no-data"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
@@ -63,19 +64,18 @@ export function RefundsPage() {
 
   const refunds = data?.items ?? []
 
-  const renderEmptyState = () => {
-    if (error) {
-      return <p className="py-10 text-center text-danger">Error: {error.message}</p>
-    }
-    return <p className="py-10 text-center text-muted">{id.refund.noRefunds}</p>
-  }
+  const renderEmptyState = () =>
+    error ? (
+      <NoData title={`Error: ${error.message}`} tone="danger" />
+    ) : (
+      <NoData title={id.refund.noRefunds} />
+    )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">{id.refund.history}</h1>
-
+    // DESIGN.md §5.1
+    <div className="flex h-full flex-col gap-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           aria-label={id.refund.allTypes}
           className="w-48"
@@ -104,7 +104,7 @@ export function RefundsPage() {
 
         {hasFilters && (
           <Button size="sm" variant="tertiary" onPress={resetFilters}>
-            <X className="mr-1 h-4 w-4" />
+            <X />
             {id.transactions.resetFilter}
           </Button>
         )}
@@ -125,7 +125,7 @@ export function RefundsPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         <Table variant="secondary">
           <Table.ScrollContainer>
-            <Table.Content aria-label={id.refund.history}>
+            <Table.Content aria-label={id.refund.history} className="tabular-nums">
               <Table.Header>
                 <Table.Column isRowHeader>{id.refund.refundNumber}</Table.Column>
                 <Table.Column>{id.refund.transactionReceipt}</Table.Column>
@@ -166,16 +166,16 @@ export function RefundsPage() {
                             {refundTypeLabel(item.refund_type)}
                           </StatusBadge>
                         </Table.Cell>
-                        <Table.Cell className="text-right tabular-nums">
+                        <Table.Cell className="text-right">
                           {formatRupiah(item.total_refund_amount)}
                         </Table.Cell>
-                        <Table.Cell className="text-right tabular-nums">
+                        <Table.Cell className="text-right">
                           {item.refund_type === "exchange"
                             ? formatRupiah(item.total_exchange_amount)
                             : "—"}
                         </Table.Cell>
                         <Table.Cell
-                          className={`text-right tabular-nums ${differenceToneClass(item.difference_amount)}`}
+                          className={`text-right ${differenceToneClass(item.difference_amount)}`}
                         >
                           {item.refund_type === "exchange"
                             ? formatRupiah(item.difference_amount)
@@ -190,10 +190,10 @@ export function RefundsPage() {
                             aria-label={id.refund.detail}
                             isIconOnly
                             size="sm"
-                            variant="secondary"
+                            variant="tertiary"
                             onPress={() => setDetailRefundId(item.id)}
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye />
                           </Button>
                         </Table.Cell>
                       </Table.Row>

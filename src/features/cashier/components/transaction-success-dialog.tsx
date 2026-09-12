@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Modal, Separator } from "@heroui/react"
-import { CheckCircle2, Loader2, Printer } from "lucide-react"
+import { Button, Modal, Separator, Spinner } from "@heroui/react"
+import { CheckCircle2, Printer } from "lucide-react"
 
+import { InfoPanel } from "@/components/info-panel"
+import { PendingButton } from "@/components/pending-button"
+import { SummaryList } from "@/components/summary-list"
 import { toast } from "@/lib/toast"
 import { getPrinterSettings, printReceipt } from "@/lib/api/printers"
 import { errorMessage } from "@/lib/api/client"
@@ -121,71 +124,61 @@ export function TransactionSuccessDialog({
     <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label="Transaksi Berhasil">
-          <Modal.Body className="space-y-4">
-            <div className="flex flex-col items-center gap-4 pt-4">
-              <CheckCircle2 className="h-16 w-16 text-success" />
-              <h2 className="text-xl font-bold">Transaksi Berhasil!</h2>
-            </div>
+          <Modal.CloseTrigger />
+          <Modal.Header className="items-center text-center">
+            <Modal.Icon className="bg-success-soft text-success-soft-foreground">
+              <CheckCircle2 className="size-5" />
+            </Modal.Icon>
+            <Modal.Heading>Transaksi Berhasil!</Modal.Heading>
+          </Modal.Header>
 
-            <div className="space-y-3 rounded-lg bg-default p-4">
+          <Modal.Body>
+            <InfoPanel className="flex flex-col gap-3">
               <div className="text-center">
-                <p className="text-sm text-muted">No. Struk</p>
-                <p className="font-mono text-lg font-bold">{transaction.receipt_number}</p>
+                <p className="text-muted">No. Struk</p>
+                <p className="font-mono font-medium">{transaction.receipt_number}</p>
               </div>
 
               <Separator />
 
-              <div className="flex justify-between">
-                <span className="text-muted">Total</span>
-                <span className="font-semibold tabular-nums">
-                  {formatRupiah(transaction.total_amount)}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-muted">Metode Pembayaran</span>
-                <span className="font-medium">
-                  {formatPaymentSplitLabel(
-                    transaction.payment_method,
-                    paymentBreakdown[0]?.bank_name,
-                  )}
-                </span>
-              </div>
+              <SummaryList
+                items={[
+                  { label: "Total", value: formatRupiah(transaction.total_amount), tone: "strong" },
+                  {
+                    label: "Metode Pembayaran",
+                    value: formatPaymentSplitLabel(
+                      transaction.payment_method,
+                      paymentBreakdown[0]?.bank_name,
+                    ),
+                  },
+                ]}
+              />
 
               {paymentBreakdown.length > 1 && (
                 <>
                   <Separator />
-                  <div className="space-y-2 text-sm">
-                    {paymentBreakdown.map((split) => (
-                      <div
-                        key={`${split.payment_method}-${split.bank_name ?? "default"}`}
-                        className="flex justify-between"
-                      >
-                        <span className="text-muted">
-                          {formatPaymentSplitLabel(split.payment_method, split.bank_name)}
-                        </span>
-                        <span className="font-medium tabular-nums">
-                          {formatRupiah(split.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <SummaryList
+                    items={paymentBreakdown.map((split) => ({
+                      label: formatPaymentSplitLabel(split.payment_method, split.bank_name),
+                      value: formatRupiah(split.amount),
+                    }))}
+                  />
                 </>
               )}
 
               {changeAmount > 0 && (
                 <>
                   <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted">Jumlah Bayar</span>
-                    <span className="text-lg font-semibold tabular-nums">
-                      {formatRupiah(transaction.payment_amount)}
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="py-3 text-center">
-                    <p className="mb-1 text-sm text-muted">Kembalian</p>
-                    <p className="text-5xl font-extrabold tracking-tight tabular-nums text-success">
+                  <SummaryList
+                    items={[
+                      { label: "Jumlah Bayar", value: formatRupiah(transaction.payment_amount) },
+                    ]}
+                  />
+                  {/* Kembalian dibaca pelanggan dari seberang meja — peran
+                      "Total keranjang" di DESIGN.md §3.4. */}
+                  <div className="text-center">
+                    <p className="text-muted">Kembalian</p>
+                    <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
                       {formatRupiah(changeAmount)}
                     </p>
                   </div>
@@ -194,8 +187,8 @@ export function TransactionSuccessDialog({
               {hasPpob && (
                 <>
                   <Separator />
-                  <div className="flex items-center gap-2 text-sm text-accent">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  <div className="flex items-center gap-2 text-accent">
+                    <Spinner color="current" size="sm" />
                     <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
                   </div>
                 </>
@@ -203,26 +196,26 @@ export function TransactionSuccessDialog({
               {transaction.notes && (
                 <>
                   <Separator />
-                  <div className="text-sm">
-                    <p className="mb-0.5 text-muted">Catatan</p>
+                  <div>
+                    <p className="text-muted">Catatan</p>
                     <p>{transaction.notes}</p>
                   </div>
                 </>
               )}
-            </div>
+            </InfoPanel>
           </Modal.Body>
 
-          <Modal.Footer className="flex-col gap-2">
-            <Button
-              className="w-full"
-              isDisabled={isPrinting}
+          <Modal.Footer className="flex-col">
+            <PendingButton
+              fullWidth
+              isPending={isPrinting}
               variant="secondary"
               onPress={handlePrint}
             >
-              <Printer className="mr-2 h-4 w-4" />
-              {isPrinting ? "Mencetak..." : "Cetak Struk"}
-            </Button>
-            <Button className="w-full" onPress={onNewTransaction}>
+              <Printer />
+              Cetak Struk
+            </PendingButton>
+            <Button fullWidth onPress={onNewTransaction}>
               Transaksi Baru
             </Button>
           </Modal.Footer>

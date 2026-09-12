@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Chip, SearchField, Table } from "@heroui/react"
+import { SearchField, Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatusBadge } from "@/components/status-badge"
@@ -26,7 +26,6 @@ export function SalesReceiptPage() {
 
   return (
     <ReportPage
-      title={TITLE}
       filters={
         <>
           <SearchField
@@ -82,9 +81,9 @@ export function SalesReceiptPage() {
             <Table.Cell>{row.cashierName}</Table.Cell>
             <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
             <Table.Cell className="text-right">{row.itemCount}</Table.Cell>
-            <Table.Cell>
-              <Chip size="sm">{paymentMethodLabel(row.paymentMethod)}</Chip>
-            </Table.Cell>
+            {/* Teks, bukan `Chip`: sepuluh lencana per layar berhenti berarti apa-apa.
+                Lencana disimpan untuk kolom Status yang memang menyatakan keadaan. */}
+            <Table.Cell>{paymentMethodLabel(row.paymentMethod)}</Table.Cell>
             <Table.Cell>
               {/* Peta status/warna sebelumnya disalin di file ini; `@/lib/labels`
                   sudah jadi satu-satunya sumbernya untuk seluruh aplikasi. */}

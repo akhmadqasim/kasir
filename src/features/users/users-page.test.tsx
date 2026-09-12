@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import type { User } from "@/features/auth/types"
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -29,7 +30,9 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <UsersPage />
+      <TestNavbar>
+        <UsersPage />
+      </TestNavbar>
     </QueryClientProvider>,
   )
 }

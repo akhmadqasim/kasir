@@ -4,7 +4,6 @@ import { Eye, Printer, RotateCcw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
 import {
   Button,
-  Chip,
   Label,
   ListBox,
   SearchField,
@@ -15,6 +14,7 @@ import {
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { NoData } from "@/components/no-data"
 import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
@@ -79,10 +79,10 @@ function RefundActionButton({
       isDisabled={blockedReason !== null}
       isIconOnly
       size="sm"
-      variant="secondary"
+      variant="tertiary"
       onPress={onPress}
     >
-      <RotateCcw className="h-4 w-4" />
+      <RotateCcw />
     </Button>
   )
 
@@ -170,19 +170,18 @@ export function TransactionsPage() {
 
   const transactions = data?.data ?? []
 
-  const renderEmptyState = () => {
-    if (error) {
-      return <p className="py-10 text-center text-danger">Error: {error.message}</p>
-    }
-    return <p className="py-10 text-center text-muted">{id.transactions.noTransactions}</p>
-  }
+  const renderEmptyState = () =>
+    error ? (
+      <NoData title={`Error: ${error.message}`} tone="danger" />
+    ) : (
+      <NoData title={id.transactions.noTransactions} />
+    )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">{id.transactions.title}</h1>
-
+    // DESIGN.md §5.1
+    <div className="flex h-full flex-col gap-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <SearchField
           aria-label={id.transactions.searchPlaceholder}
           className="w-64"
@@ -253,7 +252,7 @@ export function TransactionsPage() {
 
         {hasFilters && (
           <Button size="sm" variant="tertiary" onPress={resetFilters}>
-            <X className="mr-1 h-4 w-4" />
+            <X />
             {id.transactions.resetFilter}
           </Button>
         )}
@@ -274,7 +273,10 @@ export function TransactionsPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         <Table variant="secondary">
           <Table.ScrollContainer>
-            <Table.Content aria-label={id.transactions.title} className="min-w-[1180px]">
+            <Table.Content
+              aria-label={id.transactions.title}
+              className="min-w-[1180px] tabular-nums"
+            >
               <Table.Header>
                 <Table.Column isRowHeader>{id.transactions.receiptNumber}</Table.Column>
                 <Table.Column>{id.transactions.cashier}</Table.Column>
@@ -322,9 +324,8 @@ export function TransactionsPage() {
                           {formatDateTime(txn.created_at)}
                         </Table.Cell>
                         <Table.Cell className="text-center">{txn.item_count}</Table.Cell>
-                        <Table.Cell>
-                          <Chip size="sm">{paymentMethodLabel(txn.payment_method)}</Chip>
-                        </Table.Cell>
+                        {/* Teks, bukan `Chip`: lencana disimpan untuk kolom Status. */}
+                        <Table.Cell>{paymentMethodLabel(txn.payment_method)}</Table.Cell>
                         <Table.Cell className="max-w-64 whitespace-normal">
                           <p className="break-words text-sm text-muted">
                             {getTransactionDescription(txn)}
@@ -335,7 +336,7 @@ export function TransactionsPage() {
                             {transactionStatusLabel(txn.status)}
                           </StatusBadge>
                         </Table.Cell>
-                        <Table.Cell className="text-right font-semibold tabular-nums">
+                        <Table.Cell className="text-right font-medium">
                           {formatRupiah(txn.total_amount)}
                         </Table.Cell>
                         <Table.Cell className="text-right">
@@ -344,10 +345,10 @@ export function TransactionsPage() {
                               aria-label={id.transactions.detail}
                               isIconOnly
                               size="sm"
-                              variant="secondary"
+                              variant="tertiary"
                               onPress={() => setDetailTxn(txn)}
                             >
-                              <Eye className="h-4 w-4" />
+                              <Eye />
                             </Button>
                             {!txn.has_ppob &&
                               txn.status !== "refunded" &&
@@ -366,10 +367,10 @@ export function TransactionsPage() {
                               }
                               isIconOnly
                               size="sm"
-                              variant="secondary"
+                              variant="tertiary"
                               onPress={() => handlePrint(txn.id)}
                             >
-                              <Printer className="h-4 w-4" />
+                              <Printer />
                             </Button>
                           </div>
                         </Table.Cell>

@@ -90,7 +90,12 @@ const CurrentStockPage = lazy(() =>
 const LossesPage = lazy(() =>
   import("@/features/reports/components/losses-page").then((m) => ({ default: m.LossesPage })),
 )
-const PpobPage = lazy(() => import("@/features/ppob").then((m) => ({ default: m.PpobPage })))
+// Modul halamannya langsung, bukan barrel: barrel `@/features/ppob` juga
+// mengekspor `PpobQuickAccess` yang dimuat kasir secara eager, jadi lewat barrel
+// seluruh pohon PPOB ikut masuk chunk kasir dan batas `lazy()` ini jadi percuma.
+const PpobPage = lazy(() =>
+  import("@/features/ppob/components/ppob-page").then((m) => ({ default: m.PpobPage })),
+)
 const StockWriteoffPage = lazy(() =>
   import("@/features/stock").then((m) => ({ default: m.StockWriteoffPage })),
 )

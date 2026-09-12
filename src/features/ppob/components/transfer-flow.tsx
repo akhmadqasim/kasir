@@ -1,12 +1,15 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button, Card, Input, Label, SearchField, Skeleton, TextField } from "@heroui/react"
-import { ArrowLeft } from "lucide-react"
 
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { useTransferChannels } from "../hooks"
 import type { TransferChannelGroup, TransferChannelDetail } from "../types"
+import { FlowColumns } from "./flow-columns"
+import { ConfirmCard } from "./quick-access/confirm-card"
 
 export function TransferFlow() {
   const navigate = useNavigate()
@@ -46,236 +49,210 @@ export function TransferFlow() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center gap-3">
-        <Button
-          aria-label={id.common.back}
-          isIconOnly
-          variant="tertiary"
-          onPress={() => navigate("/ppob")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{id.ppob.transfer}</h1>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <SubpageHeader title={id.ppob.transfer} onBack={() => navigate("/ppob")} />
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-8 space-y-6">
-          {/* Bank Selection */}
-          {!selectedChannel && (
-            <>
-              <SearchField
-                aria-label={id.ppob.searchBank}
-                className="max-w-sm"
-                value={search}
-                onChange={setSearch}
-              >
-                <SearchField.Group>
-                  <SearchField.SearchIcon />
-                  <SearchField.Input placeholder={id.ppob.searchBank} />
-                  <SearchField.ClearButton />
-                </SearchField.Group>
-              </SearchField>
-
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-16" />
-                  ))}
-                </div>
-              ) : (
-                <div className="max-h-[60vh] space-y-2 overflow-y-auto">
-                  {filtered.map((ch) => (
-                    <Button
-                      key={ch.channel}
-                      className="h-auto w-full flex-col items-start gap-0.5 px-4 py-4 text-left"
-                      variant="secondary"
-                      onPress={() => {
-                        setSelectedChannel(ch)
-                        if (ch.details.length === 1) {
-                          setSelectedDetail(ch.details[0])
-                        }
-                      }}
-                    >
-                      <span className="font-medium">{ch.channel}</span>
-                      <span className="text-sm text-muted">{ch.details.length} tipe transfer</span>
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Channel Detail Selection (if multiple) */}
-          {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
-            <Card>
-              <Card.Header>
-                <Card.Title className="text-lg">{selectedChannel.channel}</Card.Title>
-              </Card.Header>
-              <Card.Content className="space-y-2">
-                {selectedChannel.details.map((detail) => (
-                  <Button
-                    key={detail.channelId}
-                    className="h-auto w-full justify-between px-4 py-3"
-                    variant="secondary"
-                    onPress={() => setSelectedDetail(detail)}
-                  >
-                    <span className="font-medium">{detail.transferType}</span>
-                    <span className="text-sm text-muted">
-                      {id.ppob.fee}: {formatRupiah(detail.fee)}
-                    </span>
-                  </Button>
-                ))}
-                <Button className="mt-2" size="sm" variant="tertiary" onPress={resetChannel}>
-                  Ganti Bank
+      <FlowColumns
+        aside={
+          selectedChannel && selectedDetail && isFormValid ? (
+            <ConfirmCard
+              footer={
+                <Button fullWidth isDisabled size="lg">
+                  {id.ppob.process} (Coming Soon)
                 </Button>
+              }
+              items={[
+                { label: id.ppob.selectBank, value: selectedChannel.channel },
+                { label: id.ppob.accountNumber, value: accountNumber, tone: "mono" },
+                { label: id.ppob.amount, value: formatRupiah(amountNum) },
+                ...(description ? [{ label: id.ppob.description, value: description }] : []),
+                { label: id.ppob.senderName, value: senderName },
+                { label: id.ppob.senderPhone, value: senderPhone, tone: "mono" },
+              ]}
+              title={<Card.Title>{id.ppob.confirm}</Card.Title>}
+              totals={[
+                { label: id.ppob.fee, value: formatRupiah(fee) },
+                { label: id.ppob.totalPayment, value: formatRupiah(total), tone: "strong" },
+              ]}
+            />
+          ) : channels ? (
+            <Card>
+              <Card.Content>
+                <NoData title="Pilih produk untuk melihat konfirmasi" />
               </Card.Content>
             </Card>
-          )}
+          ) : null
+        }
+      >
+        {/* Bank Selection */}
+        {!selectedChannel && (
+          <>
+            <SearchField
+              aria-label={id.ppob.searchBank}
+              className="max-w-sm"
+              value={search}
+              onChange={setSearch}
+            >
+              <SearchField.Group>
+                <SearchField.SearchIcon />
+                <SearchField.Input placeholder={id.ppob.searchBank} />
+                <SearchField.ClearButton />
+              </SearchField.Group>
+            </SearchField>
 
-          {/* Transfer Form */}
-          {selectedChannel && selectedDetail && (
-            <Card>
-              <Card.Content className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{selectedChannel.channel}</p>
-                    <p className="text-sm text-muted">
-                      {selectedDetail.transferType} — {id.ppob.fee}:{" "}
-                      {formatRupiah(selectedDetail.fee)}
-                    </p>
-                  </div>
+            {isLoading ? (
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
+                {filtered.map((ch) => (
                   <Button
-                    size="sm"
-                    variant="tertiary"
+                    key={ch.channel}
+                    fullWidth
+                    className="h-auto flex-col items-start gap-0.5 whitespace-normal px-4 py-4 text-left"
+                    variant="secondary"
                     onPress={() => {
-                      resetChannel()
-                      setAccountNumber("")
-                      setAmount("")
-                      setDescription("")
-                      setSenderName("")
-                      setSenderPhone("")
+                      setSelectedChannel(ch)
+                      if (ch.details.length === 1) {
+                        setSelectedDetail(ch.details[0])
+                      }
                     }}
                   >
-                    Ganti
+                    <span>{ch.channel}</span>
+                    <span className="text-muted">{ch.details.length} tipe transfer</span>
                   </Button>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField
-                    fullWidth
-                    value={accountNumber}
-                    onChange={(value) => setAccountNumber(value.replace(/\D/g, ""))}
-                  >
-                    <Label className="text-base">{id.ppob.accountNumber}</Label>
-                    <Input
-                      className="h-12 font-mono text-xl"
-                      inputMode="numeric"
-                      placeholder={id.ppob.accountNumberPlaceholder}
-                    />
-                  </TextField>
-
-                  <TextField
-                    fullWidth
-                    value={amount}
-                    onChange={(value) => setAmount(value.replace(/\D/g, ""))}
-                  >
-                    <Label className="text-base">{id.ppob.amount}</Label>
-                    <Input
-                      className="h-12 font-mono text-xl"
-                      inputMode="numeric"
-                      placeholder={id.ppob.amountPlaceholder}
-                    />
-                  </TextField>
-
-                  <TextField fullWidth value={description} onChange={setDescription}>
-                    <Label>{id.ppob.description}</Label>
-                    <Input placeholder={id.ppob.descriptionPlaceholder} />
-                  </TextField>
-
-                  <TextField fullWidth value={senderName} onChange={setSenderName}>
-                    <Label>{id.ppob.senderName}</Label>
-                    <Input placeholder={id.ppob.senderNamePlaceholder} />
-                  </TextField>
-
-                  <TextField
-                    fullWidth
-                    value={senderPhone}
-                    onChange={(value) => setSenderPhone(value.replace(/\D/g, ""))}
-                  >
-                    <Label>{id.ppob.senderPhone}</Label>
-                    <Input
-                      className="font-mono"
-                      inputMode="tel"
-                      placeholder={id.ppob.senderPhonePlaceholder}
-                    />
-                  </TextField>
-                </div>
-              </Card.Content>
-            </Card>
-          )}
-        </div>
-
-        <div className="col-span-4">
-          <div className="sticky top-6">
-            {selectedChannel && selectedDetail && isFormValid ? (
-              <Card className="border-accent">
-                <Card.Header>
-                  <Card.Title className="text-lg">{id.ppob.confirm}</Card.Title>
-                </Card.Header>
-                <Card.Content className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-muted">{id.ppob.selectBank}</span>
-                    <span className="font-medium">{selectedChannel.channel}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">{id.ppob.accountNumber}</span>
-                    <span className="font-mono text-base font-medium">{accountNumber}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">{id.ppob.amount}</span>
-                    <span className="font-medium">{formatRupiah(amountNum)}</span>
-                  </div>
-                  {description && (
-                    <div className="flex justify-between">
-                      <span className="text-muted">{id.ppob.description}</span>
-                      <span>{description}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted">{id.ppob.senderName}</span>
-                    <span>{senderName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">{id.ppob.senderPhone}</span>
-                    <span className="font-mono text-base font-medium">{senderPhone}</span>
-                  </div>
-                  <div className="mt-3 space-y-2 border-t pt-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted">{id.ppob.fee}</span>
-                      <span>{formatRupiah(fee)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-medium text-muted">{id.ppob.totalPayment}</span>
-                      <span className="text-lg font-bold">{formatRupiah(total)}</span>
-                    </div>
-                  </div>
-                  <Button className="mt-4 w-full" isDisabled size="lg">
-                    {id.ppob.process} (Coming Soon)
-                  </Button>
-                </Card.Content>
-              </Card>
-            ) : channels ? (
-              <div className="py-8 text-center text-sm text-muted">
-                Pilih produk untuk melihat konfirmasi
+                ))}
               </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+            )}
+          </>
+        )}
+
+        {/* Channel Detail Selection (if multiple) */}
+        {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
+          <Card>
+            <Card.Header>
+              <Card.Title>{selectedChannel.channel}</Card.Title>
+            </Card.Header>
+            <Card.Content className="gap-2">
+              {selectedChannel.details.map((detail) => (
+                <Button
+                  key={detail.channelId}
+                  fullWidth
+                  className="h-auto justify-between whitespace-normal px-4 py-3"
+                  variant="secondary"
+                  onPress={() => setSelectedDetail(detail)}
+                >
+                  <span>{detail.transferType}</span>
+                  <span className="text-muted tabular-nums">
+                    {id.ppob.fee}: {formatRupiah(detail.fee)}
+                  </span>
+                </Button>
+              ))}
+            </Card.Content>
+            <Card.Footer>
+              <Button size="sm" variant="tertiary" onPress={resetChannel}>
+                Ganti Bank
+              </Button>
+            </Card.Footer>
+          </Card>
+        )}
+
+        {/* Transfer Form */}
+        {selectedChannel && selectedDetail && (
+          <Card>
+            <Card.Header className="flex-row items-start justify-between gap-2">
+              <div className="min-w-0">
+                <Card.Title>{selectedChannel.channel}</Card.Title>
+                <Card.Description>
+                  {selectedDetail.transferType} — {id.ppob.fee}: {formatRupiah(selectedDetail.fee)}
+                </Card.Description>
+              </div>
+              <Button
+                size="sm"
+                variant="tertiary"
+                onPress={() => {
+                  resetChannel()
+                  setAccountNumber("")
+                  setAmount("")
+                  setDescription("")
+                  setSenderName("")
+                  setSenderPhone("")
+                }}
+              >
+                Ganti
+              </Button>
+            </Card.Header>
+            <Card.Content>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  fullWidth
+                  value={accountNumber}
+                  variant="secondary"
+                  onChange={(value) => setAccountNumber(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.accountNumber}</Label>
+                  <Input
+                    className="tabular-nums"
+                    inputMode="numeric"
+                    placeholder={id.ppob.accountNumberPlaceholder}
+                  />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={amount}
+                  variant="secondary"
+                  onChange={(value) => setAmount(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.amount}</Label>
+                  <Input
+                    className="text-right tabular-nums"
+                    inputMode="numeric"
+                    placeholder={id.ppob.amountPlaceholder}
+                  />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={description}
+                  variant="secondary"
+                  onChange={setDescription}
+                >
+                  <Label>{id.ppob.description}</Label>
+                  <Input placeholder={id.ppob.descriptionPlaceholder} />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={senderName}
+                  variant="secondary"
+                  onChange={setSenderName}
+                >
+                  <Label>{id.ppob.senderName}</Label>
+                  <Input placeholder={id.ppob.senderNamePlaceholder} />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={senderPhone}
+                  variant="secondary"
+                  onChange={(value) => setSenderPhone(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.senderPhone}</Label>
+                  <Input
+                    className="tabular-nums"
+                    inputMode="tel"
+                    placeholder={id.ppob.senderPhonePlaceholder}
+                  />
+                </TextField>
+              </div>
+            </Card.Content>
+          </Card>
+        )}
+      </FlowColumns>
     </div>
   )
 }
