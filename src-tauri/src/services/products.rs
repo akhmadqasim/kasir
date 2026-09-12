@@ -49,6 +49,22 @@ pub fn low_stock_condition() -> Condition {
     Condition::all().add(Expr::cust(LOW_STOCK_SQL))
 }
 
+/// `true` when `trimmed` is a digit run that could be the *tail* of a barcode
+/// the cashier is reading off a worn label — the gate on the suffix match in
+/// [`build_search_condition`].
+///
+/// Under 3 digits matches so much of a 10k catalogue that the result list tells
+/// the user nothing, and that short a query is far likelier to be the start of a
+/// longer code still being typed. From 13 up is a whole code, which the prefix
+/// match already resolves to exactly one product — widening it would only add
+/// coincidental tails alongside the answer.
+///
+/// Digits only, which is also why the `LIKE` pattern built from it needs no
+/// escaping: `%` and `_` cannot get past this check.
+fn is_partial_barcode(trimmed: &str) -> bool {
+    (3..=12).contains(&trimmed.len()) && trimmed.bytes().all(|b| b.is_ascii_digit())
+}
+
 fn build_search_condition(params: &ProductSearchParams) -> Condition {
     let mut condition = Condition::all().add(products::Column::IsActive.eq(true));
 
@@ -62,6 +78,15 @@ fn build_search_condition(params: &ProductSearchParams) -> Condition {
                 .add(products::Column::Name.contains(trimmed))
                 .add(products::Column::Barcode.starts_with(trimmed))
                 .add(products::Column::Sku.starts_with(trimmed));
+
+            // A short digit run also matches the *end* of a barcode, so
+            // `484807` finds `8992761484807`. Suffix and not substring on
+            // purpose: every Indonesian EAN opens with `899`, so `LIKE '%899%'`
+            // would tip the whole catalogue into the result list, and the prefix
+            // match above already covers a code read from the front.
+            if is_partial_barcode(trimmed) {
+                text_search = text_search.add(products::Column::Barcode.ends_with(trimmed));
+            }
 
             // Also match sell_price if query looks like a number
             if let Ok(price) = trimmed.parse::<f64>() {
@@ -1192,6 +1217,101 @@ mod tests {
 
         assert_eq!(result.data.len(), 1);
         assert_eq!(result.data[0].name, "Tanpa barcode dan kategori");
+    }
+
+    // --- Barcode suffix search ---
+
+    /// Seeds the two catalogue rows every case below searches over.
+    async fn seed_barcode_catalogue() -> DatabaseConnection {
+        let conn = setup_test_db().await;
+        for (name, barcode) in [
+            ("Indomie Goreng", "8992761484807"),
+            ("Sarimi Ayam Bawang", "8991234534567"),
+        ] {
+            let mut input = make_valid_input();
+            input.name = name.to_string();
+            input.barcode = Some(barcode.to_string());
+            input.sku = None;
+            create(&conn, &admin(), input).await.expect("product");
+        }
+        conn
+    }
+
+    async fn search_names(conn: &DatabaseConnection, query: &str) -> Vec<String> {
+        let mut params = search_params("name", 1, 50);
+        params.query = Some(query.to_string());
+        search(conn, params)
+            .await
+            .expect("search")
+            .data
+            .into_iter()
+            .map(|p| p.name)
+            .collect()
+    }
+
+    /// The point of the feature: the cashier can only read the last digits off a
+    /// worn label and types those.
+    #[tokio::test]
+    async fn a_digit_run_matches_the_end_of_a_barcode() {
+        let conn = seed_barcode_catalogue().await;
+
+        assert_eq!(search_names(&conn, "484807").await, vec!["Indomie Goreng"]);
+        assert_eq!(
+            search_names(&conn, "34567").await,
+            vec!["Sarimi Ayam Bawang"]
+        );
+    }
+
+    /// The suffix match is additive — a prefix still finds everything it did.
+    #[tokio::test]
+    async fn a_prefix_still_matches_every_barcode_starting_with_it() {
+        let conn = seed_barcode_catalogue().await;
+
+        let mut names = search_names(&conn, "899").await;
+        names.sort_unstable();
+        assert_eq!(names, vec!["Indomie Goreng", "Sarimi Ayam Bawang"]);
+    }
+
+    /// A whole EAN-13 is left to the indexed prefix match, and still resolves to
+    /// exactly its own product.
+    #[tokio::test]
+    async fn a_full_barcode_still_matches_only_its_own_product() {
+        let conn = seed_barcode_catalogue().await;
+
+        assert_eq!(
+            search_names(&conn, "8992761484807").await,
+            vec!["Indomie Goreng"]
+        );
+    }
+
+    /// Text queries are untouched: no digits, no suffix clause.
+    #[tokio::test]
+    async fn a_name_fragment_still_searches_names() {
+        let conn = seed_barcode_catalogue().await;
+
+        assert_eq!(search_names(&conn, "Indo").await, vec!["Indomie Goreng"]);
+    }
+
+    /// A digit run that appears mid-barcode but not at the end must not match —
+    /// this is the substring behaviour we deliberately did not implement.
+    #[tokio::test]
+    async fn a_mid_barcode_digit_run_does_not_match() {
+        let conn = seed_barcode_catalogue().await;
+
+        assert!(search_names(&conn, "2761").await.is_empty());
+    }
+
+    #[test]
+    fn only_short_digit_runs_count_as_a_partial_barcode() {
+        assert!(is_partial_barcode("484807"));
+        assert!(is_partial_barcode("899"));
+        assert!(!is_partial_barcode("89"), "too short to be useful");
+        assert!(
+            !is_partial_barcode("8992761484807"),
+            "a whole EAN-13 belongs to the indexed prefix match"
+        );
+        assert!(!is_partial_barcode("48a807"), "not all digits");
+        assert!(!is_partial_barcode("%4807"), "wildcards cannot reach LIKE");
     }
 
     // --- Bulk import ---

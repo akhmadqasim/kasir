@@ -3,6 +3,7 @@ import {
   getProductSearchEnterAction,
   isBarcodeScannerCandidate,
   isLikelyBarcodeScannerInput,
+  isWholeBarcodeQuery,
   rankProductsForSearch,
 } from "./search-behavior"
 
@@ -85,5 +86,47 @@ describe("cashier product search behavior", () => {
     ]
 
     expect(rankProductsForSearch(products, "899").map((product) => product.id)).toEqual([2, 3, 1])
+  })
+
+  it("counts every real barcode length as a whole code, and nothing else", () => {
+    // EAN-8, UPC-A, EAN-13, ITF-14 — a miss on one of these is a real miss.
+    expect(isWholeBarcodeQuery("89912345")).toBe(true)
+    expect(isWholeBarcodeQuery("899123456789")).toBe(true)
+    expect(isWholeBarcodeQuery("8992761484807")).toBe(true)
+    expect(isWholeBarcodeQuery("89927614848070")).toBe(true)
+
+    // Lengths no barcode has — these are tails the search still has to resolve.
+    expect(isWholeBarcodeQuery("484807")).toBe(false)
+    expect(isWholeBarcodeQuery("4848070")).toBe(false)
+    expect(isWholeBarcodeQuery("899276148")).toBe(false)
+    expect(isWholeBarcodeQuery("Indo")).toBe(false)
+    expect(isWholeBarcodeQuery("8992761a")).toBe(false)
+  })
+
+  it("ranks a barcode ending in the query above a code that merely contains it", () => {
+    const products = [
+      { id: 1, name: "Kopi Sachet", barcode: "8991484807220", sku: null },
+      { id: 2, name: "Indomie Goreng", barcode: "8992761484807", sku: null },
+    ]
+
+    expect(rankProductsForSearch(products, "484807").map((product) => product.id)).toEqual([2, 1])
+  })
+
+  it("ranks a barcode suffix hit above a name fragment", () => {
+    const products = [
+      { id: 1, name: "Teh 484807 Spesial", barcode: "1111111111111", sku: null },
+      { id: 2, name: "Indomie Goreng", barcode: "8992761484807", sku: null },
+    ]
+
+    expect(rankProductsForSearch(products, "484807").map((product) => product.id)).toEqual([2, 1])
+  })
+
+  it("still puts an exact barcode first when another code ends with the query", () => {
+    const products = [
+      { id: 1, name: "Beras Premium", barcode: "8992761484807", sku: null },
+      { id: 2, name: "Indomie Goreng", barcode: "484807", sku: null },
+    ]
+
+    expect(rankProductsForSearch(products, "484807").map((product) => product.id)).toEqual([2, 1])
   })
 })

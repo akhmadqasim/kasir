@@ -22,6 +22,7 @@ import { getProductByBarcode } from "../hooks/use-cashier"
 import {
   getProductSearchEnterAction,
   isLikelyBarcodeScannerInput,
+  isWholeBarcodeQuery,
   rankProductsForSearch,
 } from "../search-behavior"
 import { formatRupiah } from "../utils"
@@ -310,7 +311,14 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         query,
       })
 
-      if (isLikelyScannerInput) {
+      // A whole barcode that misses really is missing, so say so and clear the
+      // field — leaving it filled would let the next scan land on the tail of
+      // this one. A digit run of any other length may be the *tail* of a
+      // barcode read off a worn label, which only the list search resolves;
+      // toasting there would abort that search. The length test matters because
+      // the timing heuristic fires on hand-typed input too: any pause over 50ms
+      // restarts the window at the last keystroke.
+      if (isLikelyScannerInput && isWholeBarcodeQuery(query)) {
         toast.error(`Barcode "${query}" tidak ditemukan`)
         clearSearch()
         focusInput()
