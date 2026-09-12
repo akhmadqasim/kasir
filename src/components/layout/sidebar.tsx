@@ -235,7 +235,7 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
       data-slot="sidebar"
       data-state={state}
       className={cn(
-        "group/sidebar hidden shrink-0 flex-col p-2 transition-[width] duration-200 ease-linear md:flex",
+        "group/sidebar hidden shrink-0 flex-col border-r border-border p-2 transition-[width] duration-200 ease-linear md:flex",
         open ? "w-64" : "w-[4.125rem]",
         className,
       )}
@@ -255,6 +255,14 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
 }
 
 /** The page area next to the sidebar, drawn as an inset card. */
+/**
+ * Area isi halaman. Namanya masih "Inset" dari shadcn, tapi panel bertepi
+ * bulat dan berbayang yang dulu menyertainya sudah dilepas: sidebar dan isi
+ * duduk di kanvas `--background` yang sama, dipisah satu garis tepi, dan kartu
+ * `--surface` di dalamnya yang menonjol — persis susunan template dashboard
+ * HeroUI. Panel putih di atas kanvas abu-abu membuat kartu putih di dalamnya
+ * kehilangan tepinya.
+ */
 export function SidebarInset({
   children,
   className,
@@ -265,11 +273,7 @@ export function SidebarInset({
   return (
     <main
       data-slot="sidebar-inset"
-      className={cn(
-        "relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background",
-        "md:my-2 md:mr-2 md:rounded-xl md:shadow-sm",
-        className,
-      )}
+      className={cn("relative flex min-w-0 flex-1 flex-col overflow-hidden", className)}
     >
       {children}
     </main>

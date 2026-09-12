@@ -55,7 +55,10 @@ export function RevenueChart({ days }: { days: number }) {
     }
   }, [dailyRevenue])
 
-  const hasData = (dailyRevenue?.length ?? 0) > 0
+  // Backend mengisi setiap hari dalam rentang, termasuk yang nol, supaya
+  // sumbu-x-nya utuh. Kalau semuanya nol tidak ada yang bisa digambar — grid
+  // kosong dengan sumbu 0–4 hanya membuat orang mencari batang yang tidak ada.
+  const hasData = (dailyRevenue ?? []).some((row) => row.revenue !== 0 || row.transactions > 0)
 
   return (
     <Card>

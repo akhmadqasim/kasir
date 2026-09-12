@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom"
 
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarLabel,
   SidebarMenu,
   SidebarMenuItem,
@@ -22,13 +21,11 @@ export function NavSecondary({ items, className }: { items: NavItem[]; className
 
   return (
     <SidebarGroup className={className}>
-      <SidebarGroupLabel>Admin</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.title}>
             <SidebarMenuLink
               to={item.url}
-              size="sm"
               tooltip={item.title}
               isActive={isPathWithin(location.pathname, item.url)}
             >

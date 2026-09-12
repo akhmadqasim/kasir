@@ -46,7 +46,9 @@ export function DashboardPage() {
   const days = daysForRange(range)
 
   return (
-    <div className="flex flex-col gap-6">
+    // Dipusatkan dengan lebar maksimum, seperti template dashboard HeroUI. Layar
+    // kasir sengaja tidak — ia butuh seluruh lebar untuk keranjang dan katalog.
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <DashboardHeader />
 
       <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(key as DashboardTab)}>

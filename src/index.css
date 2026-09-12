@@ -81,10 +81,9 @@
  *
  * Yang ditulis di sini hanya nilai yang memang kami pilih berbeda dari bawaan
  * HeroUI: hue netralnya (253.83, sehingga permukaannya sewarna dengan aksen
- * birunya alih-alih abu-abu keunguan bawaan) dan `--radius` 0.75rem. Sisanya —
- * `--radius-*`, `--spacing`, seluruh warna `*-hover` dan `*-soft`, bayangan,
- * lebar cincin fokus — dihitung sendiri oleh HeroUI dari nilai-nilai ini dan
- * tidak perlu diulang.
+ * birunya alih-alih abu-abu keunguan bawaan). Sisanya — `--radius` dan seluruh
+ * skalanya, `--spacing`, warna `*-hover` dan `*-soft`, bayangan, lebar cincin
+ * fokus — adalah bawaan HeroUI dan tidak perlu diulang.
  */
 :root,
 .light,
@@ -130,7 +129,12 @@
   --field-placeholder: oklch(55.17% 0.003 253.83);
   --field-border: transparent;
 
-  --radius: 0.75rem;
+  /* `--radius` sengaja TIDAK ditulis. HeroUI menurunkan seluruh skala dari
+     satu angka itu — `--radius-3xl: calc(var(--radius) * 3)` — dan kartunya
+     memakai `min(32px, var(--radius-3xl))`. Dengan 0.75rem yang pernah dipakai
+     di sini, sudut kartu jadi 32px dan baris menu 24px; template dashboard
+     HeroUI memakai bawaan 0.5rem, yang memberi 24px dan 16px. Perbedaan
+     itulah yang membuat tampilannya terasa "beda" meski paletnya sama. */
 }
 
 .dark,

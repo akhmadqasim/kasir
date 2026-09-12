@@ -62,11 +62,11 @@ export function useSidebar(): SidebarContextValue {
  * (`rounded-md`, `gap-2`, `ring-sidebar-ring`), dan itulah yang membuat menu
  * aktif terlihat berasal dari sistem lain daripada isi halamannya.
  *
- * Aktif memakai `bg-surface`, bukan warna hover yang dipermanenkan. Sidebar
- * duduk di atas `--background`; baris yang sedang dibuka naik ke `--surface`,
- * hubungan yang sama persis dengan kartu terhadap kanvasnya. Nilainya berbeda
- * dari `--default` di terang maupun gelap, jadi aktif dan hover tidak pernah
- * tertukar tanpa perlu garis atau bayangan tambahan.
+ * Aktif dan hover sama-sama `bg-default`, dibedakan oleh bobot huruf — persis
+ * `.list-box-item` HeroUI, yang juga memakai `bg-default` untuk hover dan
+ * menandai yang terpilih dengan cara lain. Sidebar dan isi halaman duduk di
+ * kanvas yang sama, jadi `--surface` (putih) untuk baris aktif akan terlihat
+ * seperti kartu yang tersesat di navigasi, bukan seperti pilihan.
  *
  * The collapsed rail is driven by `data-state` on the sidebar root (group
  * `sidebar`) instead of a prop, so a row does not need to re-render to shrink.
@@ -78,7 +78,7 @@ const MENU_BUTTON_BASE = [
   "hover:bg-default",
   "focus-visible:status-focused",
   "active:scale-[0.98]",
-  "data-[active=true]:bg-surface data-[active=true]:font-medium",
+  "data-[active=true]:bg-default data-[active=true]:font-medium",
   "disabled:status-disabled aria-disabled:status-disabled",
   "[&_svg]:size-4 [&_svg]:shrink-0",
   "group-data-[state=collapsed]/sidebar:w-9 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0",
@@ -105,7 +105,7 @@ export function sidebarSubMenuButtonClass(className?: string): string {
     "transition-[background-color,color] duration-150 motion-reduce:transition-none",
     "hover:bg-default hover:text-foreground",
     "focus-visible:status-focused",
-    "data-[active=true]:bg-surface data-[active=true]:font-medium data-[active=true]:text-foreground",
+    "data-[active=true]:bg-default data-[active=true]:font-medium data-[active=true]:text-foreground",
     className,
   )
 }

@@ -95,7 +95,9 @@ export function PaymentTrendChart({ days }: { days: number }) {
 
   const data = useMemo(() => pivot(rows ?? []), [rows])
   const total = useMemo(() => (rows ?? []).reduce((sum, row) => sum + row.total, 0), [rows])
-  const hasData = data.length > 0 && methods.length > 0
+  // Sama seperti grafik penjualan: baris nol untuk mengisi hari kosong bukan
+  // data yang bisa digambar.
+  const hasData = methods.length > 0 && (rows ?? []).some((row) => row.total !== 0)
 
   return (
     <Card>
