@@ -2,6 +2,8 @@ import { id } from "@kasir/shared";
 import { Description, FieldError, Input, Label, TextField } from "heroui-native";
 import type { JSX } from "react";
 
+import { fieldVariant } from "@/lib/platform";
+
 interface NumberFieldProps {
   label: string;
   value: string;
@@ -47,6 +49,7 @@ export function NumberField({
     <TextField isRequired={isRequired} isInvalid={message !== null}>
       <Label>{label}</Label>
       <Input
+        variant={fieldVariant}
         value={value}
         onChangeText={onChangeText}
         keyboardType={decimal ? "decimal-pad" : "number-pad"}

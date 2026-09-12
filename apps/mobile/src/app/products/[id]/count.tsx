@@ -11,14 +11,17 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, Button, Spinner, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
+import { View } from "react-native";
 
 import { FieldRow } from "@/components/field-row";
 import { NumberField } from "@/components/number-field";
 import { ReasonSelect } from "@/components/reason-select";
 import { ScrollScreen } from "@/components/screen";
+import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
 import { useAdjustStock, useCreateWriteoff, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
+import { savedThenBack } from "@/lib/mutation-feedback";
 
 /**
  * Stock count (opname) for one product: type what is on the shelf, see the
@@ -57,7 +60,7 @@ export default function StockCountScreen(): JSX.Element {
       isPending={isPending}
       error={adjust.error ?? writeoff.error}
       onAdjust={(countedStock) =>
-        adjust.mutate({ product: product.data, countedStock }, { onSuccess: () => router.back() })
+        adjust.mutate({ product: product.data, countedStock }, savedThenBack(router))
       }
       onWriteoff={(quantity, reason) =>
         writeoff.mutate(
@@ -65,7 +68,7 @@ export default function StockCountScreen(): JSX.Element {
             product: product.data,
             input: { productId: product.data.id, quantity, reason, notes: id.stock.count },
           },
-          { onSuccess: () => router.back() }
+          savedThenBack(router)
         )
       }
     />
@@ -120,48 +123,53 @@ function CountForm({
 
   return (
     <ScrollScreen>
-      <Typography.Heading type="h4">{product.name}</Typography.Heading>
-      <Typography type="body-sm" color="muted">
-        {id.stock.countDescription}
-      </Typography>
+      <View className="gap-1">
+        <Typography.Heading type="h4">{product.name}</Typography.Heading>
+        <Typography type="body-sm" color="muted">
+          {id.stock.countDescription}
+        </Typography>
+      </View>
 
-      <FieldRow
-        label={id.stock.systemLabel}
-        value={`${formatNumber(product.stock)} ${product.unit}`}
-      />
-
-      <NumberField
-        label={id.stock.countedLabel}
-        value={countedText}
-        onChangeText={setCountedText}
-        parsed={counted}
-        error={countedError}
-        isRequired
-        autoFocus
-        onSubmitEditing={submit}
-      />
-
-      {outcome ? (
+      <Section>
         <FieldRow
-          label={id.stock.differenceLabel}
-          value={
-            outcome.kind === "match"
-              ? id.stock.noDifference
-              : `${difference > 0 ? "+" : ""}${formatNumber(difference)} ${product.unit}`
-          }
-          emphasize
-          danger={difference < 0}
+          label={id.stock.systemLabel}
+          value={`${formatNumber(product.stock)} ${product.unit}`}
         />
-      ) : null}
+        {outcome ? (
+          <FieldRow
+            label={id.stock.differenceLabel}
+            value={
+              outcome.kind === "match"
+                ? id.stock.noDifference
+                : `${difference > 0 ? "+" : ""}${formatNumber(difference)} ${product.unit}`
+            }
+            emphasize
+            danger={difference < 0}
+          />
+        ) : null}
+      </Section>
 
-      {shortfall ? (
-        <ReasonSelect
-          reasons={reasons}
-          value={reason}
-          onChange={setReason}
-          description={role === "admin" ? undefined : id.stock.lostAdminOnly}
+      <Section variant="fields">
+        <NumberField
+          label={id.stock.countedLabel}
+          value={countedText}
+          onChangeText={setCountedText}
+          parsed={counted}
+          error={countedError}
+          isRequired
+          autoFocus
+          onSubmitEditing={submit}
         />
-      ) : null}
+
+        {shortfall ? (
+          <ReasonSelect
+            reasons={reasons}
+            value={reason}
+            onChange={setReason}
+            description={role === "admin" ? undefined : id.stock.lostAdminOnly}
+          />
+        ) : null}
+      </Section>
 
       {outcome?.kind === "blocked" ? (
         <Alert status="warning">

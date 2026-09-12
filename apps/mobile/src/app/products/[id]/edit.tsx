@@ -14,9 +14,11 @@ import { useState, type JSX } from "react";
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
 import { ScrollScreen } from "@/components/screen";
+import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
 import { useCategories, usePatchProduct, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
+import { savedThenBack } from "@/lib/mutation-feedback";
 
 /**
  * Admin: sell price, buy price, minimum stock, category. Stock itself is not
@@ -54,7 +56,7 @@ export default function EditProductScreen(): JSX.Element {
       isPending={patch.isPending}
       error={patch.error}
       onSubmit={(values) =>
-        patch.mutate({ product: product.data, patch: values }, { onSuccess: () => router.back() })
+        patch.mutate({ product: product.data, patch: values }, savedThenBack(router))
       }
     />
   );
@@ -96,33 +98,41 @@ function EditForm({ product, categories, isPending, error, onSubmit }: EditFormP
     <ScrollScreen>
       <Typography.Heading type="h4">{product.name}</Typography.Heading>
 
-      <NumberField
-        label={id.products.sellPrice}
-        value={sellPrice}
-        onChangeText={setSellPrice}
-        parsed={sell}
-        decimal
-        isRequired
-        returnKeyType="next"
-      />
-      <NumberField
-        label={id.products.buyPrice}
-        value={buyPrice}
-        onChangeText={setBuyPrice}
-        parsed={buy}
-        decimal
-        isRequired
-        returnKeyType="next"
-      />
-      <NumberField
-        label={id.products.minStock}
-        value={minStock}
-        onChangeText={setMinStock}
-        parsed={min}
-        isRequired
-        onSubmitEditing={submit}
-      />
-      <CategorySelect categories={categories} value={categoryId} onChange={setCategoryId} />
+      <Section title={id.products.sectionPrice} variant="fields">
+        <NumberField
+          label={id.products.sellPrice}
+          value={sellPrice}
+          onChangeText={setSellPrice}
+          parsed={sell}
+          decimal
+          isRequired
+          returnKeyType="next"
+        />
+        <NumberField
+          label={id.products.buyPrice}
+          value={buyPrice}
+          onChangeText={setBuyPrice}
+          parsed={buy}
+          decimal
+          isRequired
+          returnKeyType="next"
+        />
+      </Section>
+
+      <Section title={id.products.sectionStock} variant="fields">
+        <NumberField
+          label={id.products.minStock}
+          value={minStock}
+          onChangeText={setMinStock}
+          parsed={min}
+          isRequired
+          onSubmitEditing={submit}
+        />
+      </Section>
+
+      <Section title={id.products.sectionIdentity} variant="fields">
+        <CategorySelect categories={categories} value={categoryId} onChange={setCategoryId} />
+      </Section>
 
       <InlineError error={error} />
 

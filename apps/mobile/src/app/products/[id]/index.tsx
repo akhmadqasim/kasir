@@ -8,18 +8,25 @@ import {
   isLowStock,
 } from "@kasir/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Card, Chip, Separator } from "heroui-native";
+import { Chip, Typography } from "heroui-native";
 import type { JSX } from "react";
 import { View } from "react-native";
 
+import { ActionBar, type ScreenAction } from "@/components/action-bar";
 import { FieldRow } from "@/components/field-row";
 import { ScrollScreen } from "@/components/screen";
+import { Section } from "@/components/section";
 import { ErrorView, LoadingView } from "@/components/state-view";
 import { useCategories, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
 
 /**
  * Everything about one product, and the stock actions this role may take.
+ *
+ * The facts are grouped the way the questions come — how many are there, what
+ * does it cost, which item is this — and the actions live in the platform's own
+ * bottom bar rather than as a stack of buttons under the last fact, so reaching
+ * them never means scrolling past the numbers.
  *
  * Gating here is a courtesy: the server checks the same role from the session
  * and refuses regardless. What the UI enforces on its own is *visibility* —
@@ -47,57 +54,75 @@ export default function ProductDetailScreen(): JSX.Element {
   const low = isLowStock(item);
   const params = { id: String(item.id) };
 
+  const actions: ScreenAction[] = [
+    {
+      key: "count",
+      label: id.stock.count,
+      sf: "checklist",
+      md: "clipboard-check-outline",
+      primary: true,
+      onPress: () => router.push({ pathname: "/products/[id]/count", params }),
+    },
+    {
+      key: "writeoff",
+      label: id.stock.writeoff,
+      sf: "trash",
+      md: "trash-can-outline",
+      destructive: true,
+      onPress: () => router.push({ pathname: "/products/[id]/writeoff", params }),
+    },
+  ];
+
+  if (canEditProduct(user.role)) {
+    actions.push({
+      key: "edit",
+      label: id.products.editPriceShort,
+      sf: "tag",
+      md: "tag-outline",
+      onPress: () => router.push({ pathname: "/products/[id]/edit", params }),
+    });
+  }
+
   return (
-    <ScrollScreen>
-      <Card>
-        <Card.Header className="flex-row items-start justify-between gap-3">
-          <Card.Title className="flex-1">{item.name}</Card.Title>
+    <View className="flex-1 bg-background">
+      <ScrollScreen className="pb-32">
+        <View className="flex-row items-start justify-between gap-3">
+          <Typography.Heading type="h4" className="flex-1">
+            {item.name}
+          </Typography.Heading>
           {low ? (
             <Chip color="danger" variant="secondary" size="sm">
               <Chip.Label>{id.products.lowStockBadge}</Chip.Label>
             </Chip>
           ) : null}
-        </Card.Header>
-        <Card.Body>
+        </View>
+
+        <Section title={id.products.sectionStock}>
           <FieldRow
             label={id.products.stock}
             value={`${formatNumber(item.stock)} ${item.unit}`}
             emphasize
             danger={low}
           />
-          <Separator />
           <FieldRow label={id.products.minStock} value={formatNumber(item.min_stock)} />
+        </Section>
+
+        <Section title={id.products.sectionPrice}>
           <FieldRow label={id.products.sellPrice} value={formatRupiah(item.sell_price)} />
           {canSeeBuyPrice(user.role) ? (
             <FieldRow label={id.products.buyPrice} value={formatRupiah(item.buy_price)} />
           ) : null}
-          <Separator />
+        </Section>
+
+        <Section title={id.products.sectionIdentity}>
           <FieldRow label={id.products.barcode} value={item.barcode ?? "—"} />
           <FieldRow label={id.products.sku} value={item.sku ?? "—"} />
           <FieldRow label={id.products.category} value={categoryLabel(category)} />
           <FieldRow label={id.products.unit} value={item.unit} />
-        </Card.Body>
-      </Card>
+        </Section>
+      </ScrollScreen>
 
-      <View className="gap-3">
-        <Button onPress={() => router.push({ pathname: "/products/[id]/count", params })}>
-          {id.stock.count}
-        </Button>
-        <Button
-          variant="secondary"
-          onPress={() => router.push({ pathname: "/products/[id]/writeoff", params })}
-        >
-          {id.stock.writeoff}
-        </Button>
-        {canEditProduct(user.role) ? (
-          <Button
-            variant="tertiary"
-            onPress={() => router.push({ pathname: "/products/[id]/edit", params })}
-          >
-            {id.products.editPrice}
-          </Button>
-        ) : null}
-      </View>
-    </ScrollScreen>
+      <ActionBar actions={actions} />
+    </View>
   );
 }
