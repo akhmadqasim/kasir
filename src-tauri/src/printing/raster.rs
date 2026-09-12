@@ -39,10 +39,16 @@ pub const DOTS_80MM: u32 = 576;
 /// column counts come from: 12 dots across is what makes 32 of them come to
 /// exactly the 384 dots 58mm paper is.
 const CELL_WIDTH: u32 = super::receipt::CELL_DOTS as u32;
-/// Cell height. Measured off the Mitra app's own print on this paper: 17 rows
-/// of its PLN table span about 61 mm, a line pitch of 3.6 mm — 28 dots at
-/// 203 dpi — with the typewriter face at the size whose advance is 12 dots.
-const CELL_HEIGHT: u32 = 28;
+/// Cell height. The Mitra app's print measures a 28-dot line pitch; four more
+/// dots here keep one line's descenders clear of the next line's ascenders now
+/// that the glyphs are taller than that print's.
+const CELL_HEIGHT: u32 = 32;
+/// Glyph height — ascent plus descent, no internal leading — inside a normal
+/// cell. The face at its natural proportions comes to only 19 dots on a 12-dot
+/// advance, which the shop found small; they asked for bigger twice, and this
+/// is as tall as a 12-dot-wide glyph goes before the cell has to grow again.
+/// `CreateFontW` takes this negative to mean exactly the character height.
+const GLYPH_HEIGHT: i32 = 28;
 
 /// The face to draw with, best first. Both are monospace and both ship with
 /// Windows; `Consolas` is the cleaner of the two at this size.
@@ -68,7 +74,9 @@ fn ensure_typewriter_font() {
                 TYPEWRITER_TTF.as_ptr().cast(),
                 TYPEWRITER_TTF.len() as u32,
                 None,
-                &mut installed,
+                // GDI writes the count here even though the binding spells the
+                // pointer `*const`, so it has to point at something mutable.
+                std::ptr::from_mut(&mut installed).cast_const(),
             )
         };
         !handle.is_invalid() && installed > 0
@@ -186,9 +194,9 @@ unsafe fn draw(
     SetTextColor(dc, windows::Win32::Foundation::COLORREF(0x00_00_00));
 
     ensure_typewriter_font();
-    let normal = font_for(dc, CELL_WIDTH, FW_NORMAL.0);
-    let emphasised = font_for(dc, CELL_WIDTH, FW_BOLD.0);
-    let doubled = font_for(dc, CELL_WIDTH * 2, FW_NORMAL.0);
+    let normal = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_NORMAL.0);
+    let emphasised = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_BOLD.0);
+    let doubled = font_for(dc, CELL_WIDTH * 2, GLYPH_HEIGHT * 2, FW_NORMAL.0);
 
     let mut y = 0_i32;
     for line in lines {
@@ -220,11 +228,11 @@ unsafe fn draw(
     let _ = GdiFlush();
 
     let pixels = std::slice::from_raw_parts(bits.cast::<u8>(), len);
-    let mut data = threshold(pixels, stride, dots_wide, height);
-    // The phone draws antialiased glyphs and the head burns every grey that is
-    // not near-white, so its stems come out two dots wide; ours are drawn
-    // without antialiasing and would be one. Widen them to match.
-    thicken(&mut data, dots_wide.div_ceil(8) as usize);
+    // One-dot strokes, deliberately. Every attempt at a heavier weight — a
+    // synthetic bold, a one-dot smear sideways, even a one-dot smear downwards
+    // — put the caps line over 180-210 dots a row for twenty rows running, and
+    // this printer's supply browns out and reboots at that load at USB speed.
+    let data = threshold(pixels, stride, dots_wide, height);
 
     SelectObject(dc, previous);
     let _ = DeleteObject(normal.into());
@@ -240,54 +248,43 @@ unsafe fn draw(
     })
 }
 
-/// The largest size of the face at its natural proportions whose characters
-/// advance no more than `advance` dots.
+/// A font `glyph_height` dots tall whose characters advance no more than
+/// `advance` dots.
 ///
-/// The em size that produces a given advance is a property of the face, so it
-/// is measured rather than assumed: walk the heights, keep the last one whose
-/// run of characters still fits the cell. Natural proportions matter — the
-/// Mitra print is this face at exactly that size, and condensing or stretching
-/// it to some other height is what made ours look like a different font.
-unsafe fn font_for(dc: HDC, advance: u32, weight: u32) -> HFONT {
-    let mut best: Option<HFONT> = None;
-
+/// Height and width are asked for separately: GDI scales a TrueType face
+/// horizontally to the requested average width, so the glyphs can be taller
+/// than the face would naturally be at this advance. The advance is then
+/// measured rather than trusted — faces round differently — and the width
+/// walked down a dot at a time until a run of characters really fits the cell.
+unsafe fn font_for(dc: HDC, advance: u32, glyph_height: i32, weight: u32) -> HFONT {
     for face in FACES {
-        for height in 8..=(advance as i32 * 4) {
-            let font = create_font(face, height, weight);
+        for width in (1..=advance as i32).rev() {
+            let font = create_font(face, -glyph_height, width, weight);
             if font.is_invalid() {
                 continue;
             }
 
             match measured_advance(dc, font) {
-                Some(measured) if measured <= advance => {
-                    if let Some(previous) = best.replace(font) {
-                        let _ = DeleteObject(previous.into());
-                    }
-                }
+                Some(measured) if measured <= advance => return font,
                 _ => {
                     let _ = DeleteObject(font.into());
-                    break;
                 }
             }
-        }
-
-        if best.is_some() {
-            break;
         }
     }
 
     // Nothing measurable at all — no face installed, or a DC that answers
     // nothing. The mapper will substitute something for this; a receipt in the
     // wrong font beats no receipt.
-    best.unwrap_or_else(|| create_font(FACES[2], advance as i32, weight))
+    create_font(FACES[2], -glyph_height, advance as i32, weight)
 }
 
-unsafe fn create_font(face: &str, height: i32, weight: u32) -> HFONT {
+unsafe fn create_font(face: &str, height: i32, width: i32, weight: u32) -> HFONT {
     let name: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
 
     CreateFontW(
         height,
-        0,
+        width,
         0,
         0,
         weight as i32,
@@ -322,24 +319,6 @@ unsafe fn measured_advance(dc: HDC, font: HFONT) -> Option<u32> {
 /// A single threshold is right here rather than dithering — the source is
 /// antialiasing-free text on white, so every pixel is already one or the other
 /// apart from a handful on the edges of curves.
-/// Widen every stroke by one dot to the right.
-///
-/// The Mitra app's print has heavier strokes than a one-dot-wide GDI stem on a
-/// 203 dpi head, and asking the face for a bolder weight clogs the counters of
-/// a glyph condensed to a 12-dot advance. Smearing each set dot one dot to the
-/// right thickens every stroke by the same amount, straight or curved, without
-/// changing the letterforms.
-fn thicken(data: &mut [u8], bytes_per_row: usize) {
-    for row in data.chunks_mut(bytes_per_row) {
-        let mut carry = 0_u8;
-        for byte in row.iter_mut() {
-            let next_carry = (*byte & 1) << 7;
-            *byte |= (*byte >> 1) | carry;
-            carry = next_carry;
-        }
-    }
-}
-
 fn threshold(pixels: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
     let bytes_per_row = width.div_ceil(8) as usize;
     let mut data = vec![0_u8; bytes_per_row * height as usize];
@@ -438,21 +417,13 @@ mod tests {
         assert!(last_byte_has_dots, "the 32nd character fell off the paper");
     }
 
-    /// A single dot becomes two; a run keeps its left edge and grows one dot on
-    /// the right, across a byte boundary too.
-    #[test]
-    fn thicken_smears_every_dot_one_to_the_right() {
-        let mut row = vec![0b1000_0000, 0b0000_0001, 0b0000_0000];
-        thicken(&mut row, 3);
-        assert_eq!(row, vec![0b1100_0000, 0b0000_0001, 0b1000_0000]);
-    }
-
     #[test]
     fn a_pbm_carries_the_header_and_every_row() {
         let bitmap = render_lines(&[ReceiptTextLine::plain("X")], 32, DOTS_58MM).expect("rendered");
         let pbm = bitmap.to_pbm();
 
-        assert!(pbm.starts_with(b"P4\n384 28\n"));
-        assert_eq!(pbm.len(), 10 + 48 * 28);
+        let header = format!("P4\n384 {CELL_HEIGHT}\n");
+        assert!(pbm.starts_with(header.as_bytes()));
+        assert_eq!(pbm.len(), header.len() + 48 * CELL_HEIGHT as usize);
     }
 }
