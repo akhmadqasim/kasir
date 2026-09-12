@@ -9,10 +9,18 @@
 //! `invoice_string`), and when they do the honest thing is to print it verbatim
 //! rather than re-derive it from fields whose names change per service.
 //!
-//! This module therefore does three things and no more: wraps our own header
-//! and totals around that block, re-wraps any provider line too long for the
-//! paper, and synthesises a minimal block from the fields we did capture when
-//! the provider sent no preformatted text at all.
+//! This module therefore wraps our own header and totals around that block,
+//! re-lays out any provider line too long for the paper, and synthesises a
+//! minimal block from the fields we did capture when the provider sent no
+//! preformatted text at all.
+//!
+//! It also carries a handful of judgements about what the provider *meant* —
+//! that a twenty-digit run of digits is a PLN token and a reference number is
+//! not, that what BPJS returns as a serial is the payer's phone, that a fused
+//! `TerdekatDownload` was two words before their wrapper got to it. They live
+//! here rather than in the service layer because each one is a decision about
+//! what belongs on the paper, and because the fixtures that justify them are the
+//! ones in this file's tests.
 //!
 //! Pure and side-effect free: it takes a [`PpobReceiptData`] and returns lines.
 //! Loading that struct out of the database is `services::receipt`'s job.
@@ -36,6 +44,19 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 /// `-` (PDAM's idea of an absent token) and `0` (payment point's).
 fn meaningful(value: Option<&str>) -> Option<&str> {
     non_empty(value).filter(|text| *text != "-" && *text != "0")
+}
+
+/// An Indonesian mobile number: `08` or `62` and ten to thirteen digits in all.
+///
+/// A twenty-digit PLN token cannot be mistaken for one, and neither can a pulsa
+/// serial, which is longer and mixes in letters.
+fn looks_like_phone_number(value: &str) -> bool {
+    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+    if digits.len() != value.chars().filter(|c| !c.is_whitespace()).count() {
+        return false;
+    }
+
+    (10..=13).contains(&digits.len()) && (digits.starts_with("08") || digits.starts_with("62"))
 }
 
 /// Width of the key column in the fallback block. Sized to the widest key we
@@ -137,6 +158,28 @@ impl PpobReceiptData {
         (digits.len() == 20).then_some(digits)
     }
 
+    /// The serial number, when there is one worth printing.
+    ///
+    /// BPJS answers with the payer's mobile number in both `serial_number` and
+    /// `token_number` — `08125520208`, the number on the account — which is not
+    /// a serial and is not proof of anything. Pulsa and data return a real SN,
+    /// so the block is worth keeping for them.
+    fn printable_serial(&self) -> Option<&str> {
+        if self.service_type == "bpjs" {
+            return None;
+        }
+
+        let serial = meaningful(self.serial_number.as_deref())?;
+        if looks_like_phone_number(serial) {
+            return None;
+        }
+        if meaningful(self.customer_id.as_deref()) == Some(serial) {
+            return None;
+        }
+
+        Some(serial)
+    }
+
     /// The heading, for the services whose `receipt_text` does not carry one.
     fn title(&self) -> Cow<'static, str> {
         match self.service_type.as_str() {
@@ -172,12 +215,18 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
     let mut lines = Vec::new();
 
+    // The provider's block, folded back into whole lines, is needed twice: once
+    // to print, and once to know where its labels sit so ours can line up.
+    let block = non_empty(data.provider_receipt_text.as_deref()).map(unfold_provider_text);
+
     push_header(&mut lines, data, cpl);
     push_serial_block(&mut lines, data, cpl);
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-    push_detail_block(&mut lines, data, cpl);
-    if non_empty(data.provider_receipt_text.as_deref()).is_some() {
-        push_reference_block(&mut lines, data, cpl);
+    let layout = LabelLayout::of(block.as_deref().unwrap_or(&[]), cpl);
+
+    push_detail_block(&mut lines, data, block.as_deref(), layout, cpl);
+    if block.is_some() {
+        push_reference_block(&mut lines, data, layout, cpl);
     }
     push_totals(&mut lines, data, cpl);
     push_footer(&mut lines, data, cpl);
@@ -231,7 +280,7 @@ fn push_serial_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
         return;
     }
 
-    let Some(serial) = meaningful(data.serial_number.as_deref()) else {
+    let Some(serial) = data.printable_serial() else {
         return;
     };
 
@@ -288,7 +337,11 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
         if blank && (out.is_empty() || out.last().is_some_and(|last| last.trim().is_empty())) {
             continue;
         }
-        out.extend(expand_pipe_segments(&line));
+        out.extend(
+            expand_pipe_segments(&line)
+                .into_iter()
+                .map(|segment| unglue_prose(&segment)),
+        );
     }
     while out.last().is_some_and(|last| last.trim().is_empty()) {
         out.pop();
@@ -296,6 +349,49 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
 
     out
 }
+
+/// Put back the space the provider lost when it wrapped its own prose.
+///
+/// PLN's footer arrives as `...PLN TerdekatDownload PLN Mobile`: their wrapper
+/// broke the sentence across lines and dropped the space at the seam, so folding
+/// the lines back leaves two words fused. A lowercase letter immediately
+/// followed by a capital is that seam, and nothing else on a struk looks like
+/// it — reference numbers are all caps, codes carry digits and dashes, and a
+/// `LABEL : value` line is left alone entirely.
+fn unglue_prose(line: &str) -> String {
+    let is_code = line.contains('-') && line.chars().any(|c| c.is_ascii_digit());
+    if line.contains(':') || is_code {
+        return line.to_string();
+    }
+
+    line.split(' ')
+        .map(|word| {
+            // Only a word long enough to be two words: `TerdekatDownload` is
+            // sixteen characters, while the camel-case biller names payment
+            // point is full of — `MyRepublic`, `ShopeePay`, `LinkAja` — are ten
+            // or fewer and must survive intact.
+            if word.chars().count() <= GLUED_WORD_MIN {
+                return word.to_string();
+            }
+
+            let mut out = String::with_capacity(word.len() + 1);
+            let mut previous: Option<char> = None;
+            for ch in word.chars() {
+                if ch.is_uppercase() && previous.is_some_and(|p| p.is_lowercase()) {
+                    out.push(' ');
+                }
+                out.push(ch);
+                previous = Some(ch);
+            }
+            out
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Shortest word we will take for two words fused together. Above every
+/// camel-case brand name Mitra's payment-point catalogue is known to carry.
+const GLUED_WORD_MIN: usize = 12;
 
 /// `MKM` and its like: the app naming itself, not something a customer reads.
 fn is_channel_code(segment: &str) -> bool {
@@ -347,12 +443,18 @@ fn expand_pipe_segments(line: &str) -> Vec<String> {
 ///
 /// PLN's text already opens with its own heading, so ours would be the second
 /// one on the paper; the other services send no heading at all and get one.
-fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let Some(text) = non_empty(data.provider_receipt_text.as_deref()) else {
+fn push_detail_block(
+    lines: &mut Vec<ReceiptTextLine>,
+    data: &PpobReceiptData,
+    block: Option<&[String]>,
+    layout: LabelLayout,
+    cpl: usize,
+) {
+    let Some(block) = block else {
         push_title(lines, data, cpl);
         for (key, value) in fallback_fields(data) {
-            for wrapped in wrap_line(&format!("{:<KEY_WIDTH$}: {}", key, value), cpl) {
-                lines.push(ReceiptTextLine::plain(wrapped));
+            for line in label_value_lines(key, &value, KEY_WIDTH, cpl) {
+                lines.push(ReceiptTextLine::plain(line));
             }
         }
         // `fallback_fields` is the whole block in this case, reference and admin
@@ -361,26 +463,137 @@ fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
         return;
     };
 
-    let block = unfold_provider_text(text);
     if !block.iter().any(|line| is_title_line(line)) {
         push_title(lines, data, cpl);
     }
 
-    for line in &block {
+    lines.extend(layout_block(block, layout, cpl));
+}
+
+/// A `LABEL : VALUE` line, split into its parts.
+///
+/// The colon has to be early enough in the line to plausibly end a label, and
+/// the label itself free of the brackets that mark out a trace line — otherwise
+/// `[I001IGR1-(10/09/2026 12:45:39)-CA]` reads as a label of `[I001IGR1-(10/09/2026 12`.
+fn split_pair(line: &str, cpl: usize) -> Option<(&str, usize, &str)> {
+    let (left, right) = line.split_once(':')?;
+    let column = left.chars().count();
+
+    let label = left.trim();
+    if label.is_empty() || column > cpl.saturating_sub(10) || label.contains(['(', '[']) {
+        return None;
+    }
+
+    Some((label, column, right.trim()))
+}
+
+/// Lay the provider's block out for our paper.
+///
+/// Mitra pads its labels to a column of its own choosing — 19 for PDAM, 18 for
+/// BPJS — which on 58mm paper leaves eleven or twelve columns for the value and
+/// breaks `Kota Samarinda` across two lines. Where the provider padded wider
+/// than its own longest label needs, the column is pulled back in; where it did
+/// not (PLN, whose 16 is one more than its longest label), the block is left
+/// exactly as it came.
+///
+/// A value that still does not fit goes on its own indented lines rather than
+/// in a narrow ravine down the right-hand side.
+fn layout_block(block: &[String], layout: LabelLayout, cpl: usize) -> Vec<ReceiptTextLine> {
+    let mut out = Vec::with_capacity(block.len());
+    for line in block {
         // A key the provider had no value for is a colon and nothing else. On a
         // screen it is a gap; on paper it is a line of ink saying nothing.
         if is_empty_pair(line) {
             continue;
         }
 
-        // The provider's own heading gets the weight ours would have had.
+        // Weight is decided by the line the provider sent, not by the rows it
+        // was cut into, so a heading that has to wrap stays bold throughout.
         let emphasise = is_title_line(line);
-        for wrapped in wrap_line(line, cpl) {
-            lines.push(if emphasise {
-                ReceiptTextLine::bold(wrapped)
+        let rows = match (layout, split_pair(line, cpl)) {
+            (LabelLayout::Repad(width), Some((label, _, value))) => {
+                label_value_lines(label, value, width, cpl)
+            }
+            _ => wrap_line(line, cpl),
+        };
+
+        out.extend(rows.into_iter().map(|row| {
+            if emphasise {
+                ReceiptTextLine::bold(row)
             } else {
-                ReceiptTextLine::plain(wrapped)
-            });
+                ReceiptTextLine::plain(row)
+            }
+        }));
+    }
+
+    out
+}
+
+/// One `LABEL : VALUE` line at a chosen label width, wrapped if it has to be.
+fn label_value_lines(label: &str, value: &str, width: usize, cpl: usize) -> Vec<String> {
+    let head = format!("{:<width$}: ", label, width = width);
+
+    if head.chars().count() + value.chars().count() <= cpl {
+        return vec![format!("{}{}", head, value)];
+    }
+
+    // Two columns of indent under the label reads as "this belongs to the line
+    // above" and still leaves the value nearly the whole paper, where wrapping
+    // it under the colon would leave it a ravine ten characters wide.
+    let mut out = vec![head.trim_end().to_string()];
+    out.extend(
+        wrap_words(value, cpl.saturating_sub(2))
+            .into_iter()
+            .map(|row| format!("  {}", row)),
+    );
+    out
+}
+
+/// Where the labels of a block sit, and whether we chose that or the provider did.
+#[derive(Clone, Copy)]
+enum LabelLayout {
+    /// The provider's own column, left exactly as it came.
+    AsSent(usize),
+    /// Our column, because the provider's wasted too much of the paper.
+    Repad(usize),
+}
+
+impl LabelLayout {
+    fn of(block: &[String], cpl: usize) -> Self {
+        let target = if cpl >= 42 { 18 } else { 14 };
+        let pairs: Vec<(&str, usize, &str)> = block
+            .iter()
+            .filter_map(|line| split_pair(line, cpl))
+            .collect();
+
+        let Some(column) = pairs.iter().map(|(_, column, _)| *column).max() else {
+            return Self::AsSent(KEY_WIDTH);
+        };
+        let widest = pairs
+            .iter()
+            .map(|(label, ..)| label.chars().count())
+            .max()
+            .unwrap_or(0);
+
+        // Re-lay out only when the provider padded wider than its own longest
+        // label ever needed, and wider than the column we would have chosen.
+        // PLN prepaid pads to 16 for a longest label of 15 and is left exactly
+        // as it came; PDAM pads to 19 for a longest of 13.
+        //
+        // The new column is the longest label itself, never narrower: a label
+        // that did not fit would push its own colon out and take the block's
+        // alignment — the very thing being fixed — with it.
+        if column > widest + 1 && column > target {
+            Self::Repad(widest)
+        } else {
+            Self::AsSent(column)
+        }
+    }
+
+    /// The column our own added lines should line up with.
+    fn column(self) -> usize {
+        match self {
+            Self::AsSent(column) | Self::Repad(column) => column,
         }
     }
 }
@@ -409,11 +622,16 @@ fn push_title(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usi
 /// PLN prints its admin fee and its reference inside `receipt_text`; PDAM, BPJS
 /// and payment point print neither, and a struk with no reference on it is no
 /// use at the counter when the customer comes back to query the payment.
-fn push_reference_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+fn push_reference_block(
+    lines: &mut Vec<ReceiptTextLine>,
+    data: &PpobReceiptData,
+    layout: LabelLayout,
+    cpl: usize,
+) {
     let text = data.provider_receipt_text.as_deref().unwrap_or("");
-    // Line our keys up with the provider's, so the block reads as one table
-    // rather than as two that disagree about where the colon goes.
-    let key_width = provider_key_width(text, cpl).unwrap_or(KEY_WIDTH);
+    // Line our labels up with the block above, whether that column is the
+    // provider's or the one we chose for it, so the two read as one table.
+    let key_width = layout.column();
     let upper = text.to_uppercase();
     let shows_admin = upper.contains("ADMIN");
     let shows_reference = upper.contains("NO REF");
@@ -422,48 +640,24 @@ fn push_reference_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData
     if !shows_admin && data.admin_fee > 0.0 {
         extras.push(("Admin Fee", format!("Rp {}", format_rupiah(data.admin_fee))));
     }
-    // PLN's own `NO REF` is PLN's reference, not Mitra's, and two lines both
-    // labelled a reference with different numbers on them is worse than one.
+    // Both of these hang off the same question — did the provider already give
+    // the customer something to quote back? Where it did, ours would be a second
+    // number under a near-identical label, and the shop can find the payment
+    // from the provider's own reference anyway. PLN is the only one that does.
     if !shows_reference {
         if let Some(reference) = meaningful(data.reference_number.as_deref()) {
             extras.push(("No. Ref", reference.to_string()));
         }
-    }
-    // The payment code is never in the provider's block, whatever the service,
-    // and it is the handle the shop quotes back to Mitra.
-    if let Some(code) = meaningful(data.payment_code.as_deref()) {
-        extras.push(("Kode Bayar", code.to_string()));
+        if let Some(code) = meaningful(data.payment_code.as_deref()) {
+            extras.push(("Kode Bayar", code.to_string()));
+        }
     }
 
     for (key, value) in extras {
-        for wrapped in wrap_line(
-            &format!("{:<width$}: {}", key, value, width = key_width),
-            cpl,
-        ) {
-            lines.push(ReceiptTextLine::plain(wrapped));
+        for line in label_value_lines(key, &value, key_width, cpl) {
+            lines.push(ReceiptTextLine::plain(line));
         }
     }
-}
-
-/// Where the provider puts the colon in its own key/value lines.
-///
-/// They align every key to one column, so the widest one that still leaves a
-/// usable value column is that column. `None` when the text has no such lines —
-/// payment point writes `Nilai   316350` with no colon at all.
-fn provider_key_width(text: &str, cpl: usize) -> Option<usize> {
-    let limit = cpl.saturating_sub(10);
-
-    text.split('\n')
-        .filter_map(|line| {
-            // `find` lands on the space before the colon; the column we want is
-            // the colon's own, counted in characters because it is used as a
-            // padding width.
-            let byte_index = line.find(" : ")? + 1;
-            let key = &line[..byte_index];
-            (!key.trim().is_empty() && !key.starts_with(' ')).then(|| key.chars().count())
-        })
-        .filter(|colon| *colon <= limit)
-        .max()
 }
 
 /// What we can say about the transaction without the provider's help. Only
@@ -609,17 +803,14 @@ fn wrap_line(text: &str, width: usize) -> Vec<String> {
         return vec![text.to_string()];
     }
 
-    // Everything up to and including the colon, plus the space after it. Only
-    // worth honouring if it leaves the value at least a third of the paper.
-    let key_column = text.find(':').and_then(|colon| {
-        let indent = text[..colon].chars().count() + 2;
-        (indent * 3 < width * 2).then_some((colon, indent))
-    });
-
-    let Some((colon, indent)) = key_column else {
+    // The value column, when this is one of the provider's key/value lines.
+    // `split_pair` is the one place that decides what counts as one.
+    let Some((_, column, _)) = split_pair(text, width) else {
         return wrap_words(text, width);
     };
 
+    let indent = column + 2;
+    let colon = text.find(':').expect("split_pair found one");
     let (head, value) = text.split_at(colon + 1);
     let mut rows = wrap_words(value.trim(), width - indent).into_iter();
     let first = rows.next().unwrap_or_default();
@@ -939,19 +1130,56 @@ mod tests {
         }
     }
 
-    /// BPJS sends a real serial, so it prints — bold, at normal size, since
-    /// nobody retypes it into a meter on a wall.
+    /// Pulsa returns a serial that really is one, so it prints — bold, at normal
+    /// size, since nobody retypes it into a meter on a wall.
     #[test]
     fn a_real_serial_prints_bold_at_normal_size() {
-        let lines = format_ppob_receipt(&bpjs(), 58);
+        let lines = format_ppob_receipt(&pulsa(), 58);
         let serial = lines
             .iter()
-            .find(|line| line.text.contains("08120000001"))
+            .find(|line| line.text.contains("SN0001234567890123"))
             .expect("serial printed");
 
         assert!(serial.bold);
         assert_eq!(serial.size, LineSize::Normal);
         assert!(text_of(&lines).contains("No. Seri"));
+    }
+
+    /// What BPJS returns as a serial is the payer's mobile number — it matches
+    /// the phone on the account — and printing it under `No. Seri` tells the
+    /// customer their own number back while implying it proves something.
+    #[test]
+    fn a_phone_number_dressed_as_a_serial_is_not_printed() {
+        let text = text_of(&format_ppob_receipt(&bpjs(), 58));
+        assert!(!text.contains("No. Seri"));
+        assert!(!text.contains("08120000001"));
+
+        // Not just BPJS: any service answering with a mobile number.
+        let mut phoned = pulsa();
+        phoned.serial_number = Some("081200000001".to_string());
+        assert!(!text_of(&format_ppob_receipt(&phoned, 58)).contains("No. Seri"));
+
+        // And not a serial that merely happens to be numeric.
+        let mut numeric = pulsa();
+        numeric.serial_number = Some("770012345678901".to_string());
+        assert!(text_of(&format_ppob_receipt(&numeric, 58)).contains("No. Seri"));
+    }
+
+    fn pulsa() -> PpobReceiptData {
+        PpobReceiptData {
+            service_type: "pulsa".to_string(),
+            product_name: Some("Telkomsel 25.000".to_string()),
+            customer_id: Some("081200000002".to_string()),
+            serial_number: Some("SN0001234567890123".to_string()),
+            reference_number: Some("4323384".to_string()),
+            payment_code: Some("TS25-1-260911094954".to_string()),
+            service_description: Some("PULSA - 081200000002".to_string()),
+            amount: 25000.0,
+            admin_fee: 0.0,
+            total: 25000.0,
+            grand_total: 27000.0,
+            ..base()
+        }
     }
 
     /// PLN's postpaid footer arrives as `MKM|"..."|Download PLN Mobile`. The
@@ -979,14 +1207,17 @@ mod tests {
         let pln = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
         assert!(!pln.contains("Admin Fee"));
         assert!(!pln.contains("No. Ref          :"));
-        assert!(pln.contains("Kode Bayar      : L14300000001-1"));
+        assert!(!pln.contains("Kode Bayar"));
 
-        // Our keys line up with the provider's own column, so the two blocks
-        // read as one table: PDAM puts its colon at 19.
+        // Our labels line up with the block above them, at the column the block
+        // was laid out to — 13 for PDAM, pulled in from the provider's 19.
         let water = text_of(&format_ppob_receipt(&pdam(), 58));
-        assert!(water.contains("Admin Fee          : Rp 2.500"));
-        assert!(water.contains("No. Ref            : 1212031"));
-        assert!(water.contains("Kode Bayar         : A1100001"));
+        assert!(water.contains("Admin Fee    : Rp 2.500"));
+        assert!(water.contains("No. Ref      : 1212031"));
+        assert!(water.contains(
+            "Kode Bayar   :
+  A1100001-80-260911101312"
+        ));
     }
 
     /// `amount` from the provider already includes the admin fee — 23.500 is
@@ -1019,26 +1250,56 @@ mod tests {
     /// `Rp 69.729,00` between services and we are not the ones to correct it.
     #[test]
     fn provider_numbers_are_printed_exactly_as_sent() {
-        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan      : 69,163"));
+        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan: 69,163"));
         assert!(text_of(&format_ppob_receipt(&pln_postpaid(), 58))
-            .contains("RP TAG PLN     : Rp 69.729,00"));
+            .contains("RP TAG PLN : Rp 69.729,00"));
     }
 
-    /// A value too long for the paper wraps under its own column, keeping the
-    /// key column the provider aligned.
+    /// PDAM pads its labels to nineteen columns for a longest label of thirteen,
+    /// which on 58mm paper leaves eleven for the value and splits `Kota
+    /// Samarinda` in half. Pulling the column in fixes most lines outright.
     #[test]
-    fn a_long_value_wraps_under_the_value_column() {
+    fn a_provider_column_wider_than_its_labels_need_is_pulled_in() {
+        let text = text_of(&format_ppob_receipt(&pdam(), 58));
+
+        assert!(text.contains("Nama PDAM    : Kota Samarinda"));
+        assert!(text.contains("No. Pelanggan: 1100001"));
+        assert!(text.contains("Total Tagihan: 69,163"));
+    }
+
+    /// A value that still does not fit goes on its own lines, indented two, not
+    /// into a ravine down the right-hand edge of the paper.
+    #[test]
+    fn a_value_too_long_even_then_moves_to_its_own_lines() {
         let lines = format_ppob_receipt(&pdam(), 58);
         let rows: Vec<&str> = lines
             .iter()
             .map(|line| line.text.as_str())
             .skip_while(|text| !text.starts_with("Alamat"))
-            .take(3)
+            .take(2)
             .collect();
 
-        assert_eq!(rows[0], "Alamat             : JL MELATI");
-        assert_eq!(rows[1], "                     PRM CONTOH");
-        assert_eq!(rows[2], "                     D");
+        assert_eq!(rows[0], "Alamat       :");
+        assert_eq!(rows[1], "  JL MELATI PRM CONTOH D");
+    }
+
+    /// PLN pads to sixteen for a longest label of fifteen — nothing to reclaim —
+    /// so its block has to come out exactly as the provider sent it, values
+    /// wrapping under the colon as before.
+    #[test]
+    fn a_provider_column_that_fits_its_labels_is_left_alone() {
+        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let rows: Vec<&str> = lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .skip_while(|text| !text.starts_with("NO METER"))
+            .take(4)
+            .collect();
+
+        assert_eq!(rows[0], "NO METER        : 14300000001");
+        assert_eq!(rows[1], "IDPEL           : 231000000001");
+        assert_eq!(rows[2], "NAMA            : BUDI SANTOSA");
+        assert_eq!(rows[3], "                  WIJAYA");
     }
 
     #[test]
@@ -1067,7 +1328,10 @@ mod tests {
         assert!(text.contains("NAMA        : BUDI SANTOSA"));
         assert!(text.contains("NOMINAL     : Rp 20.000"));
         assert!(text.contains("ADMIN BANK  : Rp 3.500"));
-        assert!(text.contains("KODE BAYAR  : L14300000001-1"));
+        assert!(text.contains(
+            "KODE BAYAR  :
+  L14300000001-1-260910124538"
+        ));
         // The token block does not depend on the provider's text.
         assert!(text.contains("1111-2222-3333-"));
 
@@ -1107,6 +1371,32 @@ mod tests {
         assert_eq!(
             wrap_line("Informasi Hubungi Call Center 123 Atau PLN", 32),
             vec!["Informasi Hubungi Call Center", "123 Atau PLN"]
+        );
+    }
+
+    /// The provider's wrapper drops the space where it cut, so folding the lines
+    /// back leaves two words fused. Putting it back must not reach the camel-case
+    /// brand names payment point is full of.
+    #[test]
+    fn a_word_fused_by_the_providers_wrapper_is_split_but_a_brand_name_is_not() {
+        assert_eq!(
+            unglue_prose("Atau hubungi PLN TerdekatDownload PLN Mobile"),
+            "Atau hubungi PLN Terdekat Download PLN Mobile"
+        );
+
+        for brand in ["MyRepublic", "ShopeePay", "LinkAja", "GoPay", "Indihome"] {
+            let line = format!("Merchant {}", brand);
+            assert_eq!(unglue_prose(&line), line, "{} was split", brand);
+        }
+
+        // Key/value lines and codes are left alone whatever they contain.
+        assert_eq!(
+            unglue_prose("NAMA : BudiSantosaWijaya"),
+            "NAMA : BudiSantosaWijaya"
+        );
+        assert_eq!(
+            unglue_prose("[I001IGR1-(10/09/2026 12:45:39)-CA]"),
+            "[I001IGR1-(10/09/2026 12:45:39)-CA]"
         );
     }
 
