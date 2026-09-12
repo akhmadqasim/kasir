@@ -23,26 +23,34 @@ export function ServiceGrid<S extends PpobServiceDef>({
   compact = false,
 }: ServiceGridProps<S>) {
   return (
+    // `auto-rows-fr` menyamakan tinggi ubin sebaris; tanpanya label dua baris
+    // membuat satu ubin lebih tinggi dari tetangganya.
+    //
+    // Kisi ringkas memakai `auto-fill` alih-alih breakpoint: lebarnya ditentukan
+    // panel kasir, bukan viewport, jadi `lg:grid-cols-6` yang menyala di layar
+    // lebar justru memerasnya jadi enam kolom 58px. Kisi halaman penuh memang
+    // selebar viewport, jadi breakpoint-nya benar di sana.
     <div
       className={cn(
-        "grid grid-cols-3 sm:grid-cols-4",
-        compact ? "gap-2 lg:grid-cols-6" : "gap-3 lg:grid-cols-5 xl:grid-cols-6",
+        "grid auto-rows-fr",
+        compact
+          ? "grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2"
+          : "grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
       )}
     >
       {services.map((service) => (
+        // Bentuk ubinnya dari kelas `.tile` (`index.css`), sama dengan ubin
+        // Favorit di tab sebelahnya.
         <Button
           key={service.key}
-          className={cn(
-            "h-auto flex-col whitespace-normal",
-            compact ? "gap-1.5 py-3" : "gap-2 py-4",
-          )}
+          className={cn("tile flex-col px-2", compact ? "gap-1.5 py-3" : "gap-2 py-4")}
           variant="secondary"
           onPress={() => onSelect(service)}
         >
           <service.icon
             className={cn(compact ? "size-5" : "size-6", PPOB_SERVICE_COLORS[service.key].text)}
           />
-          <span className="text-center">{service.label}</span>
+          <span className="line-clamp-2 w-full text-center break-words">{service.label}</span>
         </Button>
       ))}
     </div>

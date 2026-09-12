@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
-import { Button, InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
-import { Search, Pin, Trash2, TrendingUp } from "lucide-react"
+import { InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
+import { Search, TrendingUp } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { NoData } from "@/components/no-data"
@@ -26,6 +26,7 @@ import {
 } from "../search-behavior"
 import { formatRupiah } from "../utils"
 import { PpobQuickAccess } from "@/features/ppob"
+import { ShortcutTile } from "./shortcut-tile"
 
 /** How many shortcut tiles the cashier screen asks for. */
 const SHORTCUT_LIMIT = 30
@@ -198,6 +199,11 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     (e: React.PointerEvent, productId: number) => {
       e.stopPropagation()
       e.preventDefault()
+      // Dua jari di dua pin sekaligus (layar sentuh) meninggalkan interval
+      // pertama tetap jalan: interval kedua menimpa ref-nya, lalu
+      // `clearInterval` di dalam callback pertama justru mematikan yang kedua
+      // dan menyisakan yang pertama memanggil `handleTogglePin` tiap 16ms.
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current)
       setHoldingPinId(productId)
       setHoldProgress(0)
       holdStartRef.current = Date.now()
@@ -224,6 +230,13 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     }
     setHoldingPinId(null)
     setHoldProgress(0)
+  }, [])
+
+  // Berpindah layar sambil menahan pin meninggalkan interval-nya hidup.
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current)
+    }
   }, [])
 
   const addToCart = useCallback(
@@ -342,10 +355,15 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
     focusInput()
   }
 
-  const handleShortcutSelect = (product: ShortcutProduct) => {
-    addToCart(product, false)
-    focusInput()
-  }
+  // `useCallback` supaya `ShortcutTile` yang ter-`memo` benar-benar melewatkan
+  // render: identitas yang berubah tiap render akan membatalkan memo-nya.
+  const handleShortcutSelect = useCallback(
+    (product: ShortcutProduct) => {
+      addToCart(product, false)
+      focusInput()
+    },
+    [addToCart, focusInput],
+  )
 
   const showSearchResults = debouncedQuery.length > 0
 
@@ -478,66 +496,28 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
             <ScrollShadow className="h-full">
               <div className="p-4">
                 {shortcutProducts && shortcutProducts.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                    {shortcutProducts.map((product) => {
-                      const isHolding = holdingPinId === product.id
-                      return (
-                        // Ubin dua baris (nama, harga) — tinggi bawaan `Button` satu
-                        // baris, jadi `h-auto` dan susunan kolomnya ditulis di sini.
-                        <Button
-                          key={product.id}
-                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
-                          style={
-                            isHolding
-                              ? {
-                                  borderColor: `color-mix(in srgb, var(--danger) ${holdProgress}%, var(--border))`,
-                                  backgroundColor: `color-mix(in srgb, var(--danger) ${holdProgress * 0.15}%, transparent)`,
-                                  boxShadow: `0 0 0 1px color-mix(in srgb, var(--danger) ${holdProgress * 0.5}%, transparent)`,
-                                }
-                              : undefined
-                          }
-                          variant="secondary"
-                          onPress={() => !isHolding && handleShortcutSelect(product)}
-                        >
-                          <span className="w-full truncate">{product.name}</span>
-                          <span className="text-xs tabular-nums text-muted">
-                            {formatRupiah(product.sell_price)}
-                          </span>
-                          {product.is_pinned ? (
-                            <span
-                              aria-label="Tahan untuk hapus pin"
-                              role="button"
-                              className="group/pin absolute right-1 bottom-1 flex size-6 cursor-pointer items-center justify-center rounded-full hover:bg-danger/10"
-                              onPointerDown={(e) => startHoldUnpin(e, product.id)}
-                              onPointerUp={cancelHoldUnpin}
-                              onPointerLeave={cancelHoldUnpin}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {isHolding ? (
-                                <Trash2 className="size-3 text-danger" />
-                              ) : (
-                                <>
-                                  <Pin className="size-3 fill-current text-accent opacity-40 group-hover/pin:hidden" />
-                                  <Trash2 className="hidden size-3 text-danger group-hover/pin:block" />
-                                </>
-                              )}
-                            </span>
-                          ) : (
-                            <span
-                              aria-label="Pin produk"
-                              role="button"
-                              className="absolute right-1 bottom-1 cursor-pointer rounded-full p-1 opacity-0 hover:bg-default group-hover:opacity-100"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleTogglePin(product.id)
-                              }}
-                            >
-                              <Pin className="size-3 text-muted" />
-                            </span>
-                          )}
-                        </Button>
-                      )
-                    })}
+                  // Kolomnya dihitung dari lebar panel, bukan dari breakpoint
+                  // viewport: panel ini selebar sepertiga layar, jadi `lg:` yang
+                  // menyala di layar 1400px memecahnya jadi empat kolom 91px dan
+                  // setiap nama terpotong setelah tujuh huruf. `auto-fill` dengan
+                  // lebar minimum menjamin ubin selalu cukup lebar untuk dibaca.
+                  // `auto-rows-fr` menyamakan tingginya.
+                  <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
+                    {shortcutProducts.map((product) => (
+                      <ShortcutTile
+                        key={product.id}
+                        // Hanya ubin yang sedang ditahan yang menerima angka
+                        // yang berubah tiap 16ms; sisanya tetap `0` dan
+                        // dilewati `memo`.
+                        holdProgress={holdingPinId === product.id ? holdProgress : 0}
+                        isHolding={holdingPinId === product.id}
+                        product={product}
+                        onHoldCancel={cancelHoldUnpin}
+                        onHoldStart={startHoldUnpin}
+                        onSelect={handleShortcutSelect}
+                        onTogglePin={handleTogglePin}
+                      />
+                    ))}
                   </div>
                 ) : (
                   <NoData icon={<TrendingUp />} title="Produk yang sering dicari tampil di sini" />
