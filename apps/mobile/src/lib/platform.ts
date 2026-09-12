@@ -12,20 +12,6 @@ import { Platform } from "react-native";
 export const isIOS = Platform.OS === "ios";
 export const isAndroid = Platform.OS === "android";
 
-/** iOS major version, or `0` anywhere else. `26` is the Liquid Glass release. */
-export const iosVersion = isIOS ? Number.parseInt(String(Platform.Version), 10) || 0 : 0;
-
-/**
- * iOS 26 draws tab bars, toolbars and sheets as Liquid Glass on its own.
- *
- * Nothing is gated on this flag that the system would ignore anyway —
- * `minimizeBehavior` and the glass tab bar degrade by themselves on iOS 18.
- * It exists for the one case where we choose a *different component*: the
- * bottom toolbar is only worth frosting where the system frosts everything
- * else around it.
- */
-export const hasLiquidGlass = iosVersion >= 26;
-
 /**
  * Input styling. iOS fields sit inside a grouped card, so they take the
  * `secondary` variant to stay distinct from the card behind them (DESIGN.md

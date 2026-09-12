@@ -11,7 +11,6 @@ import "../global.css";
 
 import { useResolveSessionUser } from "@/hooks/use-session";
 import { queryClient } from "@/lib/query-client";
-import { isIOS } from "@/lib/platform";
 import { useSessionStore } from "@/stores/session-store";
 
 /**
@@ -51,8 +50,10 @@ function RootNavigator(): JSX.Element {
       screenOptions={{
         headerBackButtonDisplayMode: "minimal",
         headerTransparent: false,
-        // iOS collapses a large title into the bar as the page scrolls; Android's
-        // top app bar has no such state and a "large" header there is just tall.
+        // Inline titles everywhere. HIG reserves a large title for the root of a
+        // section, and every screen behind this stack is a detail or a form
+        // pushed from somewhere else; Material 3's top app bar has no large
+        // state to lose in the first place.
         headerLargeTitle: false,
       }}
     >
@@ -66,10 +67,7 @@ function RootNavigator(): JSX.Element {
 
       <Stack.Protected guard={loggedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="products/[id]/index"
-          options={{ title: id.products.detail, headerLargeTitle: isIOS }}
-        />
+        <Stack.Screen name="products/[id]/index" options={{ title: id.products.detail }} />
         <Stack.Screen name="products/[id]/edit" options={{ title: id.products.editPrice }} />
         <Stack.Screen name="products/[id]/count" options={{ title: id.stock.count }} />
         <Stack.Screen name="products/[id]/writeoff" options={{ title: id.stock.writeoffTitle }} />

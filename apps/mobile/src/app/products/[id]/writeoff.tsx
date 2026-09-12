@@ -10,13 +10,14 @@ import {
   type WriteoffReason,
 } from "@kasir/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
+import { Input, Label, TextField, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
 import { View } from "react-native";
 
 import { FieldRow } from "@/components/field-row";
 import { NumberField } from "@/components/number-field";
 import { ReasonSelect } from "@/components/reason-select";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
@@ -172,9 +173,13 @@ function WriteoffForm({
 
       <InlineError error={error} />
 
-      <Button variant="danger" isDisabled={!valid || isPending} onPress={submit}>
-        {isPending ? <Spinner size="sm" /> : <Button.Label>{id.stock.submitWriteoff}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={id.stock.submitWriteoff}
+        destructive
+        isDisabled={!valid}
+        isPending={isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }

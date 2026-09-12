@@ -9,13 +9,14 @@ import {
   type WriteoffReason,
 } from "@kasir/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, Button, Spinner, Typography } from "heroui-native";
+import { Alert, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
 import { View } from "react-native";
 
 import { FieldRow } from "@/components/field-row";
 import { NumberField } from "@/components/number-field";
 import { ReasonSelect } from "@/components/reason-select";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
@@ -186,9 +187,12 @@ function CountForm({
 
       <InlineError error={error} />
 
-      <Button isDisabled={!canSubmit || isPending} onPress={submit}>
-        {isPending ? <Spinner size="sm" /> : <Button.Label>{submitLabel}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={submitLabel}
+        isDisabled={!canSubmit}
+        isPending={isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }

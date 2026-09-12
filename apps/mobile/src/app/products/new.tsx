@@ -7,11 +7,12 @@ import {
 } from "@kasir/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
+import { Input, Label, TextField, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
 
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { InlineError } from "@/components/state-view";
@@ -187,9 +188,12 @@ export default function NewProductScreen(): JSX.Element {
 
       <InlineError error={create.error} />
 
-      <Button isDisabled={!valid || create.isPending} onPress={submit}>
-        {create.isPending ? <Spinner size="sm" /> : <Button.Label>{id.common.save}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={id.common.save}
+        isDisabled={!valid}
+        isPending={create.isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }

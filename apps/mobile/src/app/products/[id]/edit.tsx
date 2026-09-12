@@ -8,11 +8,12 @@ import {
   type Product,
 } from "@kasir/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Spinner, Typography } from "heroui-native";
+import { Typography } from "heroui-native";
 import { useState, type JSX } from "react";
 
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
@@ -136,9 +137,12 @@ function EditForm({ product, categories, isPending, error, onSubmit }: EditFormP
 
       <InlineError error={error} />
 
-      <Button isDisabled={!valid || isPending} onPress={submit}>
-        {isPending ? <Spinner size="sm" /> : <Button.Label>{id.common.save}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={id.common.save}
+        isDisabled={!valid}
+        isPending={isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }
