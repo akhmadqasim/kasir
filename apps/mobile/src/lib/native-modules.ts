@@ -3,19 +3,15 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import { isIOS } from "@/lib/platform";
 
 /**
- * Which native modules this binary actually has.
+ * Whether this binary can actually draw SF Symbols.
  *
- * Both `expo-symbols` and `@expo/ui` are documented as shipping inside Expo Go,
- * but "documented" is not "present in the build on this phone" — an older Expo
- * Go, a custom dev client built before the dependency was added, or a future
- * SDK that drops one, and the screen renders nothing at all. That is exactly
- * what happened to the scanner's camera button: an SF Symbol that never drew,
- * and no fallback behind it.
+ * `expo-symbols` is documented as shipping inside Expo Go, but "documented" is
+ * not "present in the build on this phone" — an older Expo Go, or a dev client
+ * made before the dependency was added, and `SymbolView` renders nothing at
+ * all. That is what hid the scanner's camera button: a symbol that never drew,
+ * with no fallback behind it.
  *
- * `requireOptionalNativeModule` answers the question without throwing, so every
- * use of these APIs can pick a plain React Native drawing instead.
+ * `requireOptionalNativeModule` answers without throwing, so `PlatformIcon` can
+ * fall back to a font glyph, which always renders.
  */
 export const hasSfSymbols = isIOS && requireOptionalNativeModule("SymbolModule") !== null;
-
-/** SwiftUI hosting — `@expo/ui/swift-ui`'s `Host`, `List`, `Form`, `Section`. */
-export const hasSwiftUI = isIOS && requireOptionalNativeModule("ExpoUI") !== null;

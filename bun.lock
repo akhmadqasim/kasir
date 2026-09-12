@@ -51,7 +51,6 @@
       "version": "0.1.0",
       "dependencies": {
         "@expo/metro-runtime": "~57.0.14",
-        "@expo/ui": "~57.0.18",
         "@expo/vector-icons": "^15.1.1",
         "@gorhom/bottom-sheet": "^5.2.14",
         "@kasir/shared": "workspace:*",

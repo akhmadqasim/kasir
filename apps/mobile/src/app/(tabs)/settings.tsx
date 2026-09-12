@@ -3,25 +3,23 @@ import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { Button, ListGroup, Spinner, Typography } from "heroui-native";
 import type { JSX } from "react";
-import { Alert as NativeAlert, View } from "react-native";
+import { Alert as NativeAlert } from "react-native";
 
-import { NativeSettingsList } from "@/components/native-list";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
-import { Screen, ScrollScreen } from "@/components/screen";
+import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { useCurrentUser, useLogout } from "@/hooks/use-session";
-import { hasSwiftUI } from "@/lib/native-modules";
 import { useSessionStore } from "@/stores/session-store";
 
 /**
  * Which server, who is logged in, and the way out.
  *
- * On iOS this is a SwiftUI `List` — the same grouped form every Settings screen
- * on the phone uses, down to the red destructive row. Android gets the Material 3
- * equivalent. Confirming the logout is `Alert.alert` either way: already an
- * action sheet on iOS and a Material dialog on Android, so there is nothing to
- * write ourselves.
+ * Three grouped sections and a destructive action, drawn by `Section` — inset
+ * grouped with hairlines on iOS, Material 3 rows on a surface on Android.
+ * Confirming the logout is `Alert.alert`, which is already an action sheet on
+ * one platform and a Material dialog on the other, so there is nothing to write
+ * ourselves.
  */
 export default function SettingsTab(): JSX.Element {
   const router = useRouter();
@@ -44,26 +42,6 @@ export default function SettingsTab(): JSX.Element {
       { text: id.auth.logout, style: "destructive", onPress: () => logout.mutate() },
     ]);
   };
-
-  if (hasSwiftUI) {
-    return (
-      <Screen>
-        {/* No Android inset to add here: `hasSwiftUI` is iOS-only, and the
-            SwiftUI `List` below applies the safe area itself. */}
-        <View className="px-4 pb-2">
-          <PageHeader title={id.settings.title} />
-        </View>
-        <NativeSettingsList
-          user={user}
-          serverAuthority={serverAuthority}
-          appVersion={appVersion}
-          onChangeServer={changeServer}
-          onLogout={confirmLogout}
-          isLoggingOut={logout.isPending}
-        />
-      </Screen>
-    );
-  }
 
   return (
     <ScrollScreen headerless>

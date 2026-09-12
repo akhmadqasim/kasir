@@ -1,9 +1,11 @@
 import { formatNumber, isLowStock, productRowSubtitle, type Product } from "@kasir/shared";
-import { ListGroup, Typography } from "heroui-native";
+import { ListGroup, Typography, useThemeColor } from "heroui-native";
 import type { JSX } from "react";
 import { View } from "react-native";
 
+import { PlatformIcon } from "@/components/platform-icon";
 import { useOpenProduct } from "@/hooks/use-open-product";
+import { isIOS } from "@/lib/platform";
 
 interface ProductRowProps {
   product: Product;
@@ -18,6 +20,7 @@ interface ProductRowProps {
  */
 export function ProductRow({ product, emphasizeStock = false }: ProductRowProps): JSX.Element {
   const open = useOpenProduct();
+  const muted = useThemeColor("muted");
   const low = isLowStock(product);
 
   return (
@@ -33,13 +36,20 @@ export function ProductRow({ product, emphasizeStock = false }: ProductRowProps)
         </ListGroup.ItemDescription>
       </ListGroup.ItemContent>
       <ListGroup.ItemSuffix>
-        <View className="items-end">
-          <Typography weight="medium" className={low ? "text-danger" : undefined}>
-            {formatNumber(product.stock)}
-          </Typography>
-          <Typography type="body-xs" color="muted">
-            {product.unit}
-          </Typography>
+        <View className="flex-row items-center gap-2">
+          <View className="items-end">
+            <Typography weight="medium" className={low ? "text-danger" : undefined}>
+              {formatNumber(product.stock)}
+            </Typography>
+            <Typography type="body-xs" color="muted">
+              {product.unit}
+            </Typography>
+          </View>
+          {/* iOS marks a row that leads somewhere with a chevron; Material 3
+              leaves it to the ripple. */}
+          {isIOS ? (
+            <PlatformIcon sf="chevron.right" md="chevron-right" size={14} color={muted} />
+          ) : null}
         </View>
       </ListGroup.ItemSuffix>
     </ListGroup.Item>
