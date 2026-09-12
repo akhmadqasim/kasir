@@ -162,8 +162,6 @@ export const id = {
     qty: "Qty",
     price: "Harga",
     subtotal: "Subtotal",
-    dateFrom: "Dari Tanggal",
-    dateTo: "Sampai Tanggal",
     filter: "Filter",
     resetFilter: "Reset",
     page: "Halaman",
