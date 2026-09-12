@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react"
+import { Avatar, Button } from "@heroui/react"
 import {
   ShoppingCartIcon,
   PackageIcon,
@@ -124,33 +125,34 @@ export function AppSidebar({ style }: { style?: CSSProperties }) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
+            {/* Baris merek meniru kepala sidebar template HeroUI Pro: Avatar 36px
+                lalu dua baris teks, nama `text-sm font-medium` dan keterangan
+                `text-xs font-medium text-muted`. Avatar-nya di-`shrink-0`
+                supaya tidak ikut menyempit saat rail dilipat. */}
             <SidebarMenuLink to="/dashboard" size="lg" tooltip={id.app.name}>
-              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                <StoreIcon className="size-4" />
-              </div>
+              <Avatar className="size-9 shrink-0">
+                <Avatar.Fallback>
+                  <StoreIcon className="size-4" />
+                </Avatar.Fallback>
+              </Avatar>
               <SidebarLabel className="grid leading-tight">
                 <span className="truncate text-sm font-medium">{id.app.name}</span>
-                <span className="truncate text-xs">Point of Sale</span>
+                <span className="truncate text-xs font-medium text-muted">Point of Sale</span>
               </SidebarLabel>
             </SidebarMenuLink>
           </SidebarMenuItem>
         </SidebarMenu>
         {open && (
-          <button
-            type="button"
-            onClick={handleToggleClick}
-            className="absolute top-3 right-2 flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-default hover:text-foreground"
-            title={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
+          <Button
+            isIconOnly
+            aria-label={hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
+            className="absolute top-4 right-3"
+            size="sm"
+            variant="tertiary"
+            onPress={handleToggleClick}
           >
-            {hoverExpanded ? (
-              <PanelLeftOpenIcon className="size-4" />
-            ) : (
-              <PanelLeftCloseIcon className="size-4" />
-            )}
-            <span className="sr-only">
-              {hoverExpanded ? "Sematkan sidebar" : "Kecilkan sidebar"}
-            </span>
-          </button>
+            {hoverExpanded ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
+          </Button>
         )}
       </SidebarHeader>
       <SidebarContent>

@@ -44,7 +44,7 @@ export function StatCard({ label, value, delta = null, note }: StatCardProps) {
         ) : null}
       </Card.Header>
       <Card.Content>
-        <p className="text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
+        <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
       </Card.Content>
     </Card>
   )

@@ -139,8 +139,15 @@ fn start_http_server(
 /// contains the port the server just bound, which no static config can know
 /// ahead of time — the default port is tried first, but a busy machine walks
 /// up to the next one.
+///
+/// In a debug build the window loads the Vite dev server from `devUrl`
+/// instead. The embedded server only ever serves the `dist/` that was compiled
+/// into the binary, so pointing the window there during development meant a
+/// saved `.tsx` never showed up until `bun run build` and a Rust rebuild. Vite
+/// proxies `/api` to the same server, so sessions and CSRF behave exactly as
+/// they do in the browser, and `KASIR_ALLOWED_ORIGINS` already covers 5173.
 fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
-    let origin = format!("http://127.0.0.1:{http_port}");
+    let origin = window_origin(app, http_port);
     utils::logging::log_startup(&format!("Window will load {origin}"));
     let url = WebviewUrl::External(origin.parse().expect("a bound port makes a valid URL"));
 
@@ -152,4 +159,17 @@ fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
         .build()?;
 
     Ok(())
+}
+
+/// Debug: Vite's `devUrl` from `tauri.conf.json` when it is configured, so
+/// the window hot-reloads with the browser. Release: always the embedded server.
+fn window_origin(app: &tauri::App, http_port: u16) -> String {
+    #[cfg(debug_assertions)]
+    if let Some(dev_url) = &app.config().build.dev_url {
+        return dev_url.to_string().trim_end_matches('/').to_string();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = app;
+
+    format!("http://127.0.0.1:{http_port}")
 }

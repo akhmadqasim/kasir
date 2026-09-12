@@ -62,32 +62,33 @@ export function useSidebar(): SidebarContextValue {
  * (`rounded-md`, `gap-2`, `ring-sidebar-ring`), dan itulah yang membuat menu
  * aktif terlihat berasal dari sistem lain daripada isi halamannya.
  *
- * Aktif dan hover sama-sama `bg-default`, dibedakan oleh bobot huruf — persis
- * `.list-box-item` HeroUI, yang juga memakai `bg-default` untuk hover dan
- * menandai yang terpilih dengan cara lain. Sidebar dan isi halaman duduk di
- * kanvas yang sama, jadi `--surface` (putih) untuk baris aktif akan terlihat
- * seperti kartu yang tersesat di navigasi, bukan seperti pilihan.
+ * Ukurannya diambil dari computed style template dashboard HeroUI Pro, bukan
+ * dikira-kira: baris 36px, `padding: 6px 8px`, `gap: 12px`, sudut 16px, ikon
+ * 20px, label `text-sm font-medium` untuk semua item, dan yang aktif memakai
+ * `--default` — bukan `--surface`, yang di kanvas yang sama akan terlihat
+ * seperti kartu tersesat di navigasi. Hover memakai warna yang sama dengan
+ * aktif, seperti `.list-box-item` HeroUI.
  *
  * The collapsed rail is driven by `data-state` on the sidebar root (group
  * `sidebar`) instead of a prop, so a row does not need to re-render to shrink.
  */
 const MENU_BUTTON_BASE = [
   "group/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-2xl px-2 py-1.5",
-  "text-left text-foreground outline-none no-highlight",
+  "text-left text-sm font-medium text-foreground outline-none no-highlight",
   "transition-[background-color,box-shadow] duration-150 motion-reduce:transition-none",
   "hover:bg-default",
   "focus-visible:status-focused",
   "active:scale-[0.98]",
-  "data-[active=true]:bg-default data-[active=true]:font-medium",
+  "data-[active=true]:bg-default",
   "disabled:status-disabled aria-disabled:status-disabled",
-  "[&_svg]:size-4 [&_svg]:shrink-0",
+  "[&_svg]:size-5 [&_svg]:shrink-0",
   "group-data-[state=collapsed]/sidebar:w-9 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0",
 ].join(" ")
 
 const MENU_BUTTON_SIZE: Record<SidebarMenuSize, string> = {
   sm: "min-h-8 text-xs",
-  default: "min-h-9 text-sm",
-  lg: "min-h-12 text-sm",
+  default: "min-h-9",
+  lg: "min-h-12",
 }
 
 export function sidebarMenuButtonClass(

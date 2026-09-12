@@ -235,8 +235,8 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
       data-slot="sidebar"
       data-state={state}
       className={cn(
-        "group/sidebar hidden shrink-0 flex-col border-r border-border p-2 transition-[width] duration-200 ease-linear md:flex",
-        open ? "w-64" : "w-[4.125rem]",
+        "group/sidebar hidden shrink-0 flex-col border-r border-border transition-[width] duration-200 ease-linear md:flex",
+        open ? "w-60" : "w-15",
         className,
       )}
       style={style}
@@ -254,7 +254,6 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
   )
 }
 
-/** The page area next to the sidebar, drawn as an inset card. */
 /**
  * Area isi halaman. Namanya masih "Inset" dari shadcn, tapi panel bertepi
  * bulat dan berbayang yang dulu menyertainya sudah dilepas: sidebar dan isi
@@ -288,7 +287,13 @@ export function SidebarHeader({
   className?: string
 }) {
   return (
-    <div data-slot="sidebar-header" className={cn("relative flex flex-col gap-2 p-2", className)}>
+    <div
+      data-slot="sidebar-header"
+      className={cn(
+        "relative flex flex-col gap-2 px-4 pt-4 pb-2 group-data-[state=collapsed]/sidebar:px-3",
+        className,
+      )}
+    >
       {children}
     </div>
   )
@@ -305,7 +310,7 @@ export function SidebarContent({
     <div
       data-slot="sidebar-content"
       className={cn(
-        "scrollbar-none flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
+        "scrollbar-none flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto px-3",
         className,
       )}
     >
@@ -322,7 +327,7 @@ export function SidebarFooter({
   className?: string
 }) {
   return (
-    <div data-slot="sidebar-footer" className={cn("flex flex-col gap-2 p-2", className)}>
+    <div data-slot="sidebar-footer" className={cn("flex flex-col gap-1 px-3 pt-2 pb-4", className)}>
       {children}
     </div>
   )
@@ -338,7 +343,7 @@ export function SidebarGroup({
   return (
     <div
       data-slot="sidebar-group"
-      className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+      className={cn("relative flex w-full min-w-0 flex-col gap-1", className)}
     >
       {children}
     </div>
@@ -374,7 +379,7 @@ export function SidebarMenu({
   className?: string
 }) {
   return (
-    <ul data-slot="sidebar-menu" className={cn("flex w-full min-w-0 flex-col", className)}>
+    <ul data-slot="sidebar-menu" className={cn("flex w-full min-w-0 flex-col gap-1", className)}>
       {children}
     </ul>
   )

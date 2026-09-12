@@ -44,7 +44,7 @@ export function DashboardHeader() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex min-w-0 items-center gap-3">
-        <h1 className="truncate text-2xl font-semibold tracking-tight">
+        <h1 className="truncate text-xl font-semibold">
           {greeting(new Date().getHours())}
           {user ? `, ${user.full_name}` : ""}
         </h1>

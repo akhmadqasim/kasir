@@ -231,3 +231,18 @@
 @theme inline {
   --font-sans: "Geist Variable", sans-serif;
 }
+
+/* Penyesuaian komponen, lewat jalur yang disediakan dokumentasi HeroUI
+ * (`@layer components` + kelas BEM-nya).
+ *
+ * Kartu: bawaan `.card` memakai `min(32px, var(--radius-3xl))`, yaitu 24px
+ * pada `--radius` 0.5rem. Template dashboard HeroUI Pro menimpanya ke 16px
+ * (`rounded-2xl`) pada setiap kartu, dan itulah sudut yang membuat kartunya
+ * terasa lebih rapat dengan baris menu 16px di sebelahnya. Ditulis sekali di
+ * sini, bukan sebagai `className` di puluhan `<Card>`.
+ */
+@layer components {
+  .card {
+    border-radius: var(--radius-2xl);
+  }
+}
