@@ -626,16 +626,20 @@ struct PpobOutcome {
 
 impl PpobOutcome {
     fn success(payment_result: &PaymentResult) -> Self {
+        let receipt_data = if payment_result.receipt_data.is_null() {
+            None
+        } else {
+            // A `Value` parsed from a response always serialises back, so the
+            // `ok()` is belt and braces: losing the struk data must not cost the
+            // cashier the far more important `success` status.
+            serde_json::to_string(&payment_result.receipt_data).ok()
+        };
+
         Self {
             status: PPOB_STATUS_SUCCESS,
             message: Some(build_ppob_success_message(payment_result)),
             serial_number: payment_result.serial_number.clone(),
-            // A `Value` that was parsed from a response always serialises back,
-            // so the `ok()` is belt and braces: losing the struk data must not
-            // cost the cashier the far more important `success` status.
-            receipt_data: (!payment_result.receipt_data.is_null())
-                .then(|| serde_json::to_string(&payment_result.receipt_data).ok())
-                .flatten(),
+            receipt_data,
         }
     }
 

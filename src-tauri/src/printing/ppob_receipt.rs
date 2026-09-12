@@ -19,6 +19,15 @@
 
 use super::receipt::{center_text, format_rupiah, two_col_text, ReceiptTextLine};
 
+/// A field worth printing: present, and something other than whitespace.
+///
+/// The provider sends `""` and `"  "` for fields it did not fill in as readily
+/// as it omits them, and a struk line with nothing after the colon is worse
+/// than no line at all.
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|text| !text.is_empty())
+}
+
 /// Width of the key column in the fallback block. Sized to the widest key we
 /// emit, `NO PELANGGAN`, so a normal-length value still fits on 32 columns —
 /// the Mitra app's own 17-column keys leave too little room for ours.
@@ -104,10 +113,10 @@ fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
     lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
     lines.push(ReceiptTextLine::bold(center_text(&data.store_name, cpl)));
 
-    if let Some(address) = data.store_address.as_deref().filter(|a| !a.is_empty()) {
+    if let Some(address) = non_empty(data.store_address.as_deref()) {
         lines.push(ReceiptTextLine::plain(center_text(address, cpl)));
     }
-    if let Some(phone) = data.store_phone.as_deref().filter(|p| !p.is_empty()) {
+    if let Some(phone) = non_empty(data.store_phone.as_deref()) {
         lines.push(ReceiptTextLine::plain(center_text(
             &format!("Telp: {}", phone),
             cpl,
@@ -139,12 +148,7 @@ fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
 /// characters, grouped in fours. Every other service's serial is a reference
 /// nobody retypes under pressure, so bold at normal size is enough.
 fn push_serial_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let Some(serial) = data
-        .serial_number
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    else {
+    let Some(serial) = non_empty(data.serial_number.as_deref()) else {
         return;
     };
 
@@ -166,11 +170,7 @@ fn push_serial_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
 
 /// The provider's own block if they sent one, our reconstruction otherwise.
 fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let provider_text = data
-        .provider_receipt_text
-        .as_deref()
-        .map(str::trim)
-        .filter(|text| !text.is_empty());
+    let provider_text = non_empty(data.provider_receipt_text.as_deref());
 
     if let Some(text) = provider_text {
         for raw in text.lines() {
@@ -195,7 +195,7 @@ fn fallback_fields(data: &PpobReceiptData) -> Vec<(&'static str, String)> {
     let mut fields: Vec<(&'static str, String)> = Vec::new();
 
     let mut push_optional = |key: &'static str, value: &Option<String>| {
-        if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(value) = non_empty(value.as_deref()) {
             fields.push((key, value.to_string()));
         }
     };
@@ -237,11 +237,7 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
 }
 
 fn push_footer(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let footer = data
-        .footer_text
-        .as_deref()
-        .map(str::trim)
-        .filter(|text| !text.is_empty());
+    let footer = non_empty(data.footer_text.as_deref());
 
     let Some(footer) = footer else {
         lines.push(ReceiptTextLine::plain(center_text(
@@ -318,16 +314,16 @@ fn wrap_line(text: &str, width: usize) -> Vec<String> {
 
     // Everything up to and including the colon, plus the space after it. Only
     // worth honouring if it leaves the value at least a third of the paper.
-    let key_column = text
-        .find(':')
-        .map(|byte_index| text[..byte_index].chars().count() + 2)
-        .filter(|indent| *indent * 3 < width * 2);
+    let key_column = text.find(':').and_then(|colon| {
+        let indent = text[..colon].chars().count() + 2;
+        (indent * 3 < width * 2).then_some((colon, indent))
+    });
 
-    let Some(indent) = key_column else {
+    let Some((colon, indent)) = key_column else {
         return wrap_words(text, width);
     };
 
-    let (head, value) = text.split_at(text.find(':').expect("colon located above") + 1);
+    let (head, value) = text.split_at(colon + 1);
     let mut rows = wrap_words(value.trim(), width - indent).into_iter();
     let first = rows.next().unwrap_or_default();
 

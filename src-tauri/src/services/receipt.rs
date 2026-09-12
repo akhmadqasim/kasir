@@ -11,7 +11,7 @@ use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
 use crate::printing::receipt::{
     format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
 };
-use crate::services::ppob::parsers::{get_num_field, get_str_field};
+use crate::services::ppob::parsers::{get_num_field, get_str_field, response_objects};
 use crate::services::transactions::PPOB_STATUS_SUCCESS;
 use crate::utils::AppError;
 
@@ -332,34 +332,19 @@ pub async fn print_ppob_item(
     send_jobs(printer_id, vec![lines]).await
 }
 
-/// Places the provider hides the interesting fields, in the order we look.
-///
-/// Mitra wraps its answer differently per endpoint — `pulsa/v2/topup` replies
-/// `{"history_payment": {...}}`, `confirm-payment` replies
-/// `{"receipt_data": {...}}`, the `*/payment` endpoints answer flat — so every
-/// lookup tries the root and each known wrapper. Searching all of them beats a
-/// match on service type that would quietly print a blank struk the day they
-/// add another one.
-const PROVIDER_WRAPPERS: &[&str] = &["history_payment", "receipt_data", "data", "detail"];
-
-fn provider_objects(
-    raw: &serde_json::Value,
-) -> impl Iterator<Item = &serde_json::Map<String, serde_json::Value>> {
-    std::iter::once(raw)
-        .chain(PROVIDER_WRAPPERS.iter().filter_map(|key| raw.get(*key)))
-        .filter_map(|value| value.as_object())
-}
-
-/// First non-empty string the provider offers under any of `keys`.
+/// First non-empty string the provider offers under any of `keys`, looked for
+/// in the response itself and in every wrapper `response_objects` knows about —
+/// a payment response keeps its status at the top and the struk details one
+/// level down, and which level that is depends on the endpoint.
 fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    provider_objects(raw)
+    response_objects(raw)
         .find_map(|object| get_str_field(object, keys))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
 
 fn provider_number(raw: &serde_json::Value, keys: &[&str]) -> Option<f64> {
-    provider_objects(raw).find_map(|object| get_num_field(object, keys))
+    response_objects(raw).find_map(|object| get_num_field(object, keys))
 }
 
 /// Assemble a PPOB struk from the sold line and the provider blob stored with
