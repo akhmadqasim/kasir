@@ -28,6 +28,12 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|text| !text.is_empty())
 }
 
+/// As [`non_empty`], plus the two placeholders Mitra uses for "no value here":
+/// `-` (PDAM's idea of an absent token) and `0` (payment point's).
+fn meaningful(value: Option<&str>) -> Option<&str> {
+    non_empty(value).filter(|text| *text != "-" && *text != "0")
+}
+
 /// Width of the key column in the fallback block. Sized to the widest key we
 /// emit, `NO PELANGGAN`, so a normal-length value still fits on 32 columns —
 /// the Mitra app's own 17-column keys leave too little room for ours.
@@ -52,14 +58,25 @@ pub struct PpobReceiptData {
     /// Token for PLN prepaid, serial number for everything else.
     pub serial_number: Option<String>,
     pub reference_number: Option<String>,
+    /// Mitra's `payment_code`, e.g. `L14337486261-1-260910124538`.
+    pub payment_code: Option<String>,
+    /// The provider's `description`, e.g. `Telkom Indihome - 161312001945`.
+    /// The part before the dash is the biller a payment-point struk is titled
+    /// after; there is no other field that names it.
+    pub service_description: Option<String>,
+    /// The provider's `igr_desc`, e.g. `Pre paid dengan nomor meter`.
+    pub provider_description: Option<String>,
     /// The provider's preformatted key/value block, printed verbatim.
     pub provider_receipt_text: Option<String>,
+    /// The bill itself, before the admin fee.
     pub amount: f64,
     pub admin_fee: f64,
-    /// What the provider charged us — the figure their own struk shows.
+    /// What the provider charged us, admin fee included — the figure their own
+    /// struk and their PDF invoice both call the total.
     pub total: f64,
-    /// Our own margin on this line: what the customer paid minus `total`.
-    pub service_fee: f64,
+    /// What the customer handed us for this line. The difference from `total`
+    /// is our own margin, or a discount when the sale carried one.
+    pub grand_total: f64,
     /// Free text the provider wants at the bottom (call centre, etc).
     pub footer_text: Option<String>,
 }
@@ -67,24 +84,65 @@ pub struct PpobReceiptData {
 impl PpobReceiptData {
     /// True when this is a PLN prepaid purchase, the one case that prints a
     /// token in double-size characters.
+    ///
+    /// Four ways of telling, because which of them is present depends on where
+    /// the data came from: `flag_id` is ours and always set at checkout, while
+    /// `igr_desc` and the provider's own title only exist in the blob, and a
+    /// token that is actually there settles it whatever the labels say.
     fn is_pln_prepaid(&self) -> bool {
-        self.service_type == "pln" && self.flag_id.as_deref() == Some("0")
+        if self.service_type != "pln" {
+            return false;
+        }
+
+        self.flag_id.as_deref() == Some("0")
+            || self
+                .provider_description
+                .as_deref()
+                .is_some_and(|desc| desc.to_lowercase().contains("pre paid"))
+            || self
+                .provider_receipt_text
+                .as_deref()
+                .is_some_and(|text| text.contains("PRABAYAR"))
+            || self.token().is_some()
     }
 
-    /// The heading the provider's own struk uses for this service.
-    fn title(&self) -> &'static str {
+    /// The token digits, if there are any.
+    ///
+    /// Mitra sends `4617 5400 1832 5962 7611` when there is a token and one of
+    /// `""`, `"-"` or `"0"` when there is not — postpaid PLN, PDAM and payment
+    /// point respectively, each with its own idea of what "nothing" looks like.
+    fn token(&self) -> Option<String> {
+        let serial = meaningful(self.serial_number.as_deref())?;
+        let digits: String = serial.chars().filter(char::is_ascii_digit).collect();
+        (digits.len() >= 12).then_some(digits)
+    }
+
+    /// The heading, for the services whose `receipt_text` does not carry one.
+    fn title(&self) -> String {
         match self.service_type.as_str() {
-            "pln" if self.is_pln_prepaid() => "STRUK PEMBELIAN LISTRIK PRABAYAR",
-            "pln" => "STRUK PEMBAYARAN LISTRIK PASCABAYAR",
-            "pulsa" => "STRUK PEMBELIAN PULSA",
-            "data" => "STRUK PEMBELIAN PAKET DATA",
-            "pdam" => "STRUK PEMBAYARAN PDAM",
-            "bpjs" => "STRUK PEMBAYARAN BPJS KESEHATAN",
-            "pp" => "STRUK PEMBAYARAN PAYMENT POINT",
-            "transfer" => "STRUK TRANSFER UANG",
-            "emoney" => "STRUK TOP UP E-MONEY",
-            _ => "STRUK TRANSAKSI PPOB",
+            "pln" if self.is_pln_prepaid() => "STRUK PEMBELIAN LISTRIK PRABAYAR".to_string(),
+            "pln" => "STRUK PEMBAYARAN TAGIHAN LISTRIK".to_string(),
+            "pulsa" => "STRUK PEMBELIAN PULSA".to_string(),
+            "data" => "STRUK PEMBELIAN PAKET DATA".to_string(),
+            "pdam" => "STRUK PEMBAYARAN PDAM".to_string(),
+            "bpjs" => "STRUK PEMBAYARAN BPJS KESEHATAN".to_string(),
+            "transfer" => "STRUK TRANSFER UANG".to_string(),
+            "emoney" => "STRUK TOP UP E-MONEY".to_string(),
+            // Payment point is a hundred billers behind one service code, so the
+            // heading has to come from the transaction: `Telkom Indihome -
+            // 161312001945` is titled after the half before the dash.
+            _ => match self.biller() {
+                Some(biller) => format!("STRUK PEMBAYARAN {}", biller),
+                None => "STRUK PEMBAYARAN".to_string(),
+            },
         }
+    }
+
+    fn biller(&self) -> Option<&str> {
+        let described = meaningful(self.service_description.as_deref())
+            .map(|desc| desc.split(" - ").next().unwrap_or(desc));
+
+        described.or_else(|| meaningful(self.product_name.as_deref()))
     }
 }
 
@@ -96,18 +154,26 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
 
     push_header(&mut lines, data, cpl);
     push_serial_block(&mut lines, data, cpl);
-
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-    for wrapped in wrap_line(data.title(), cpl) {
-        lines.push(ReceiptTextLine::bold(wrapped));
-    }
-
     push_detail_block(&mut lines, data, cpl);
+    push_reference_block(&mut lines, data, cpl);
     push_totals(&mut lines, data, cpl);
     push_footer(&mut lines, data, cpl);
 
     lines
 }
+
+/// A provider line long enough to have been wrapped starts its continuation
+/// with this many spaces. The threshold is loose because the indent Mitra
+/// actually emits wobbles between services.
+const MIN_CONTINUATION_SPACES: usize = 10;
+
+/// How much of a continuation line is the indent itself. Exactly 18, even where
+/// the key column is 17 wide, and even where the 19th character is a space that
+/// belongs to the value — `STROOM/TOKEN : 4617 5400 1832` continues with
+/// `" 5962 7611"`, space and all. Stripping a fixed 18 keeps that space and
+/// drops the padding.
+const CONTINUATION_INDENT: usize = 18;
 
 fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
     lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
@@ -148,44 +214,201 @@ fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
 /// characters, grouped in fours. Every other service's serial is a reference
 /// nobody retypes under pressure, so bold at normal size is enough.
 fn push_serial_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let Some(serial) = non_empty(data.serial_number.as_deref()) else {
+    if let Some(token) = data.token().filter(|_| data.is_pln_prepaid()) {
+        lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+        lines.push(ReceiptTextLine::plain(center_text("Stroom / Token", cpl)));
+        // Double-size characters are twice as wide, so they fit half the columns.
+        for row in group_token(&token, cpl / 2) {
+            lines.push(ReceiptTextLine::double(center_text(&row, cpl / 2)));
+        }
+        return;
+    }
+
+    let Some(serial) = meaningful(data.serial_number.as_deref()) else {
         return;
     };
 
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-
-    if data.is_pln_prepaid() {
-        lines.push(ReceiptTextLine::plain(center_text("Stroom / Token", cpl)));
-        // Double-size characters are twice as wide, so they fit half the columns.
-        for row in group_token(serial, cpl / 2) {
-            lines.push(ReceiptTextLine::double(center_text(&row, cpl / 2)));
-        }
-    } else {
-        lines.push(ReceiptTextLine::plain(center_text("No. Seri", cpl)));
-        for row in wrap_words(serial, cpl) {
-            lines.push(ReceiptTextLine::bold(center_text(&row, cpl)));
-        }
+    lines.push(ReceiptTextLine::plain(center_text("No. Seri", cpl)));
+    for row in wrap_words(serial, cpl) {
+        lines.push(ReceiptTextLine::bold(center_text(&row, cpl)));
     }
 }
 
-/// The provider's own block if they sent one, our reconstruction otherwise.
-fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let provider_text = non_empty(data.provider_receipt_text.as_deref());
+/// Undo the provider's own line wrapping.
+///
+/// Mitra wraps `receipt_text` to about 32 columns before sending it, and does it
+/// by counting characters: `NAMA : ABDUL MUKTI RI` continues with `AD`, mid-word
+/// and mid-name. Their width is not ours — 80mm paper has ten more columns, and
+/// even on 58mm their wrap leaves `Call Center 12` / `3 Atau hubungi` — so the
+/// text is folded back into whole logical lines here and re-wrapped afterwards
+/// at our own width, on word boundaries.
+///
+/// Blank lines survive as separators but never in runs, and the leading pair
+/// every PLN text starts with is dropped: on paper they are just wasted feed.
+fn unfold_provider_text(text: &str) -> Vec<String> {
+    let mut folded: Vec<String> = Vec::new();
 
-    if let Some(text) = provider_text {
-        for raw in text.lines() {
-            for wrapped in wrap_line(raw.trim_end(), cpl) {
+    for raw in text.split('\n') {
+        // `receipt_text` is CRLF-delimited.
+        let line = raw.trim_end_matches('\r').trim_end();
+        let indent = line.len() - line.trim_start().len();
+
+        match folded.last_mut() {
+            Some(previous) if indent >= MIN_CONTINUATION_SPACES && !previous.is_empty() => {
+                // Below the full indent there is nothing to preserve, so the
+                // whole run of spaces goes; at or above it, only the padding.
+                let continued = if indent >= CONTINUATION_INDENT {
+                    &line[CONTINUATION_INDENT..]
+                } else {
+                    line.trim_start()
+                };
+                previous.push_str(continued);
+            }
+            _ => folded.push(line.to_string()),
+        }
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    for line in folded {
+        let line = line.trim_end().to_string();
+        let blank = line.trim().is_empty();
+        if blank && (out.is_empty() || out.last().is_some_and(|last| last.trim().is_empty())) {
+            continue;
+        }
+        out.extend(expand_pipe_segments(&line));
+    }
+    while out.last().is_some_and(|last| last.trim().is_empty()) {
+        out.pop();
+    }
+
+    out
+}
+
+/// Flatten the pipe-delimited footer PLN postpaid ends with:
+/// `MKM|"Informasi Hubungi Call Center 123 ..."|Download PLN Mobile`.
+///
+/// The short all-caps segment is a channel code — `MKM` is the app's own name
+/// for itself, not something the customer should read — and the quotes are the
+/// provider's, not part of the sentence.
+fn expand_pipe_segments(line: &str) -> Vec<String> {
+    if !line.contains('|') {
+        return vec![line.to_string()];
+    }
+
+    let joined = line
+        .split('|')
+        .map(|segment| segment.trim().trim_matches('"').trim())
+        .filter(|segment| {
+            !segment.is_empty()
+                && !(segment.len() <= 4
+                    && segment
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    vec![joined]
+}
+
+/// The provider's own block if they sent one, our reconstruction otherwise.
+///
+/// PLN's text already opens with its own heading, so ours would be the second
+/// one on the paper; the other services send no heading at all and get one.
+fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+    let Some(text) = non_empty(data.provider_receipt_text.as_deref()) else {
+        push_title(lines, data, cpl);
+        for (key, value) in fallback_fields(data) {
+            for wrapped in wrap_line(&format!("{:<KEY_WIDTH$}: {}", key, value), cpl) {
                 lines.push(ReceiptTextLine::plain(wrapped));
             }
         }
         return;
+    };
+
+    let block = unfold_provider_text(text);
+    if !block.iter().any(|line| is_title_line(line)) {
+        push_title(lines, data, cpl);
     }
 
-    for (key, value) in fallback_fields(data) {
-        for wrapped in wrap_line(&format!("{:<KEY_WIDTH$}: {}", key, value), cpl) {
+    for line in &block {
+        // The provider's own heading gets the weight ours would have had.
+        let emphasise = is_title_line(line);
+        for wrapped in wrap_line(line, cpl) {
+            lines.push(if emphasise {
+                ReceiptTextLine::bold(wrapped)
+            } else {
+                ReceiptTextLine::plain(wrapped)
+            });
+        }
+    }
+}
+
+fn is_title_line(line: &str) -> bool {
+    line.trim_start().starts_with("STRUK ")
+}
+
+fn push_title(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+    for wrapped in wrap_words(&data.title(), cpl) {
+        lines.push(ReceiptTextLine::bold(wrapped));
+    }
+}
+
+/// What the provider's own block leaves out.
+///
+/// PLN prints its admin fee and its reference inside `receipt_text`; PDAM, BPJS
+/// and payment point print neither, and a struk with no reference on it is no
+/// use at the counter when the customer comes back to query the payment.
+fn push_reference_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+    let text = data.provider_receipt_text.as_deref().unwrap_or("");
+    // Line our keys up with the provider's, so the block reads as one table
+    // rather than as two that disagree about where the colon goes.
+    let key_width = provider_key_width(text, cpl).unwrap_or(KEY_WIDTH);
+    let shows_admin = text.to_uppercase().contains("ADMIN");
+    let shows_reference = text.to_uppercase().contains("NO REF");
+
+    let mut extras: Vec<(&str, String)> = Vec::new();
+    if !shows_admin && data.admin_fee > 0.0 {
+        extras.push(("Admin Fee", format!("Rp {}", format_rupiah(data.admin_fee))));
+    }
+    if !shows_reference {
+        if let Some(reference) = meaningful(data.reference_number.as_deref()) {
+            extras.push(("No. Ref", reference.to_string()));
+        }
+        if let Some(code) = meaningful(data.payment_code.as_deref()) {
+            extras.push(("Kode Bayar", code.to_string()));
+        }
+    }
+
+    for (key, value) in extras {
+        for wrapped in wrap_line(
+            &format!("{:<width$}: {}", key, value, width = key_width),
+            cpl,
+        ) {
             lines.push(ReceiptTextLine::plain(wrapped));
         }
     }
+}
+
+/// Where the provider puts the colon in its own key/value lines.
+///
+/// They align every key to one column, so the widest one that still leaves a
+/// usable value column is that column. `None` when the text has no such lines —
+/// payment point writes `Nilai   316350` with no colon at all.
+fn provider_key_width(text: &str, cpl: usize) -> Option<usize> {
+    let limit = cpl.saturating_sub(10);
+
+    text.split('\n')
+        .filter_map(|line| {
+            // `find` lands on the space before the colon; the column we want is
+            // the colon's own.
+            let colon = line.find(" : ")? + 1;
+            let key = &line[..colon];
+            (!key.trim().is_empty() && !key.starts_with(' ')).then_some(colon)
+        })
+        .filter(|colon| *colon <= limit)
+        .max()
 }
 
 /// What we can say about the transaction without the provider's help. Only
@@ -228,15 +451,13 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
     // and PPOB ones are not excluded. `Biaya Layanan  Rp -500` on a slip the
     // customer takes to PLN reads like a mistake, so a negative figure is
     // labelled as the discount it actually is.
-    let (fee_label, fee_amount) = if data.service_fee < 0.0 {
-        (
-            "Diskon",
-            format!("-Rp {}", format_rupiah(-data.service_fee)),
-        )
+    let service_fee = data.grand_total - data.total;
+    let (fee_label, fee_amount) = if service_fee < 0.0 {
+        ("Diskon", format!("-Rp {}", format_rupiah(-service_fee)))
     } else {
         (
             "Biaya Layanan",
-            format!("Rp {}", format_rupiah(data.service_fee)),
+            format!("Rp {}", format_rupiah(service_fee)),
         )
     };
     lines.push(ReceiptTextLine::plain(two_col_text(
@@ -246,7 +467,7 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
     )));
     lines.push(ReceiptTextLine::bold(two_col_text(
         "Grand Total",
-        &format!("Rp {}", format_rupiah(data.total + data.service_fee)),
+        &format!("Rp {}", format_rupiah(data.grand_total)),
         cpl,
     )));
     lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
@@ -386,38 +607,134 @@ mod tests {
     use super::*;
     use crate::printing::receipt::LineSize;
 
-    fn pln_prepaid() -> PpobReceiptData {
+    /// The provider texts below are anonymised copies of real Mitra responses:
+    /// the customer names, meter numbers, IDs and tokens are made up, while the
+    /// shape — CRLF line endings, the leading blank lines, the 18-space
+    /// continuation indent, the mid-word wrap, the pipe-delimited footer — is
+    /// reproduced exactly as the provider sent it.
+    const PLN_PREPAID_TEXT: &str = "\r\n\r\nSTRUK PEMBELIAN LISTRIK PRABAYAR\r\n\r\nNO METER        : 14300000001\r\nIDPEL           : 231000000001\r\nNAMA            : BUDI SANTOSA W\r\n                  IJAYA\r\nTARIF/DAYA      : R1/000001300VA\r\nNO REF          : 11002500AAA1A1\r\n                  111AA111AA1111\r\n                  AA11\r\nRP BAYAR        : Rp 23.500,00\r\nMETERAI         : Rp 0,00\r\nPPN             : Rp 0,00\r\nPBJT-TL         : Rp 1.819,00\r\nANGSURAN        : Rp 0,00\r\nRP STROOM/TOKEN : Rp 18.181,00\r\nJML KWH         : 12,6\r\nSTROOM/TOKEN    : 1111 2222 3333\r\n                   4444 5555\r\nADMIN BANK      : Rp 3.500\r\n\r\nInformasi Hubungi Call Center 12\r\n                  3 Atau hubungi PLN TerdekatDownl\r\n                  oad PLN Mobile\r\n\r\n[I001IGR1-(10/09/2026 12:45:39)-\r\n                  CA]";
+
+    const PLN_POSTPAID_TEXT: &str = "\r\n\r\nSTRUK PEMBAYARAN TAGIHAN LISTRIK\r\n\r\nIDPEL          : 231000000002\r\nNAMA           : PT.CONTOH SEJA H\r\n                  TERA\r\nTARIF/DAYA     : R1/000000450VA\r\nSTAND METER    : 11701-11847\r\nBL/TH          : SEP26\r\nRP TAG PLN     : Rp 69.729,00\r\nNO REF         : 11002500AAA1A11\r\n                  11AA111111A1AA1\r\n                  11\r\n\r\nADMIN BANK     : Rp 3.500,00\r\nTOTAL BAYAR    : Rp 73.229,00\r\n\r\nMKM|\"Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :\"|Download PLN Mobile\r\n[I001IGR1-(11/09/2026 10:11:51)-\r\n                  CA]";
+
+    const PDAM_TEXT: &str = "Nama PDAM          : Kota Samarinda\r\nNo. Pelanggan      : 1100001\r\nNama               : Siti Aminah\r\nAlamat             : JL MELATI PRM CONTOH D\r\nGolongan           : D2\r\nNo. Sambungan      : 1100001\r\n\r\nPeriode - 202608\r\nMeter Lalu         : 9\r\nMeter Kini         : 22\r\nPemakaian          : 13 M3\r\nTotal              : 69,163\r\n\r\nTotal Tagihan      : 69,163";
+
+    const BPJS_TEXT: &str = "Nomor VA          : 8888800000000001\r\nPeriode           : 1 BULAN\r\nNomor Telepon     : 00\r\nJumlah Peserta    : 1\r\n\r\n----- Peserta 1 -----\r\nNomor Peserta     : 8888800000000001\r\nNama Peserta      : AHMAD FAUZI NUGROHO\r\nKode Cabang       : 1601\r\nNama Cabang       : SAMARINDA\r\nSaldo             : 150,000\r\nPremi             : 150,000\r\n\r\nTotal Saldo       : 150,000\r\nTotal Premi       : 150,000\r\nTotal Tagihan     : 150,000\r\n";
+
+    const PAYMENT_POINT_TEXT: &str = "Merchant/Biller: Indihome\r\nNo.Pelanggan   : 161300000001\r\nNama Pelanggan : RIZKY PRATAMA\r\n--Detail Tagihan 1--\r\nPeriode 09-2026\r\nNilai   316350\r\n";
+
+    fn base() -> PpobReceiptData {
         PpobReceiptData {
-            store_name: "Toko Makmur".to_string(),
+            store_name: "Cahaya513 Mini Mart".to_string(),
             store_address: Some("Jl. Raya No. 1".to_string()),
             store_phone: Some("08123456789".to_string()),
             receipt_number: "TRX-20260912-0007".to_string(),
             date_time: "12/09/2026 14:30".to_string(),
             cashier_name: "Ahmad".to_string(),
             service_type: "pln".to_string(),
+            flag_id: None,
+            product_name: None,
+            customer_id: None,
+            customer_name: None,
+            serial_number: None,
+            reference_number: None,
+            payment_code: None,
+            service_description: None,
+            provider_description: None,
+            provider_receipt_text: None,
+            amount: 0.0,
+            admin_fee: 0.0,
+            total: 0.0,
+            grand_total: 0.0,
+            footer_text: None,
+        }
+    }
+
+    fn pln_prepaid() -> PpobReceiptData {
+        PpobReceiptData {
             flag_id: Some("0".to_string()),
-            product_name: Some("Token PLN 50.000".to_string()),
-            customer_id: Some("231001678084".to_string()),
-            customer_name: Some("EDA RUSDIANI".to_string()),
-            serial_number: Some("69915243803067642910".to_string()),
-            reference_number: Some("22002500CLH2H88B69".to_string()),
-            provider_receipt_text: Some(
-                "NO METER         : 45094614059\n\
-                 IDPEL            : 231001678084\n\
-                 NAMA             : EDA RUSDIANI\n\
-                 TARIF/DAYA       : R1M/900VA\n\
-                 NO REF           : 22002500CLH2H88B69ABC\n\
-                 RP BAYAR         : Rp 54.500,00\n\
-                 JML KWH          : 33,7"
-                    .to_string(),
-            ),
-            amount: 50000.0,
-            admin_fee: 4500.0,
-            total: 54500.0,
-            service_fee: 0.0,
-            footer_text: Some(
-                "Informasi Hubungi Call Center 123\nAtau hubungi PLN Terdekat".to_string(),
-            ),
+            product_name: Some("Token PLN 20.000".to_string()),
+            customer_id: Some("14300000001".to_string()),
+            serial_number: Some("1111 2222 3333 4444 5555".to_string()),
+            reference_number: Some("13514299".to_string()),
+            payment_code: Some("L14300000001-1-260910124538".to_string()),
+            service_description: Some("PLN - 14300000001".to_string()),
+            provider_description: Some("Pre paid dengan nomor meter".to_string()),
+            provider_receipt_text: Some(PLN_PREPAID_TEXT.to_string()),
+            amount: 20000.0,
+            admin_fee: 3500.0,
+            total: 23500.0,
+            grand_total: 25000.0,
+            ..base()
+        }
+    }
+
+    fn pln_postpaid() -> PpobReceiptData {
+        PpobReceiptData {
+            flag_id: Some("1".to_string()),
+            customer_id: Some("231000000002".to_string()),
+            serial_number: Some(String::new()),
+            reference_number: Some("13516345".to_string()),
+            payment_code: Some("L231000000002-2-260911101150".to_string()),
+            service_description: Some("PLN - 231000000002".to_string()),
+            provider_description: Some("Post paid".to_string()),
+            provider_receipt_text: Some(PLN_POSTPAID_TEXT.to_string()),
+            amount: 69729.0,
+            admin_fee: 3500.0,
+            total: 73229.0,
+            grand_total: 75000.0,
+            ..base()
+        }
+    }
+
+    fn pdam() -> PpobReceiptData {
+        PpobReceiptData {
+            service_type: "pdam".to_string(),
+            customer_id: Some("1100001".to_string()),
+            serial_number: Some("-".to_string()),
+            reference_number: Some("1212031".to_string()),
+            payment_code: Some("A1100001-80-260911101312".to_string()),
+            service_description: Some("PDAM - 1100001".to_string()),
+            provider_receipt_text: Some(PDAM_TEXT.to_string()),
+            amount: 69163.0,
+            admin_fee: 2500.0,
+            total: 71663.0,
+            grand_total: 73000.0,
+            ..base()
+        }
+    }
+
+    fn bpjs() -> PpobReceiptData {
+        PpobReceiptData {
+            service_type: "bpjs".to_string(),
+            customer_id: Some("01100000001".to_string()),
+            serial_number: Some("08120000001".to_string()),
+            reference_number: Some("E86846143A9C74D4".to_string()),
+            payment_code: Some("B01100000001-1-260911083601".to_string()),
+            service_description: Some("BPJSKES - 01100000001".to_string()),
+            provider_description: Some("BPJSKES".to_string()),
+            provider_receipt_text: Some(BPJS_TEXT.to_string()),
+            amount: 150000.0,
+            admin_fee: 2500.0,
+            total: 152500.0,
+            grand_total: 154000.0,
+            ..base()
+        }
+    }
+
+    fn payment_point() -> PpobReceiptData {
+        PpobReceiptData {
+            service_type: "pp".to_string(),
+            customer_id: Some("161300000001".to_string()),
+            serial_number: Some("0".to_string()),
+            reference_number: Some("4323384".to_string()),
+            payment_code: Some("PP161300000001-354-260911094954".to_string()),
+            service_description: Some("Telkom Indihome - 161300000001".to_string()),
+            provider_receipt_text: Some(PAYMENT_POINT_TEXT.to_string()),
+            amount: 316350.0,
+            admin_fee: 3000.0,
+            total: 319350.0,
+            grand_total: 321000.0,
+            ..base()
         }
     }
 
@@ -429,44 +746,117 @@ mod tests {
             .join("\n")
     }
 
+    fn all_fixtures() -> Vec<PpobReceiptData> {
+        vec![
+            pln_prepaid(),
+            pln_postpaid(),
+            pdam(),
+            bpjs(),
+            payment_point(),
+        ]
+    }
+
     #[test]
-    fn every_line_fits_the_paper() {
-        for data in [pln_prepaid(), pulsa()] {
-            for line in format_ppob_receipt(&data, 58) {
-                let limit = if line.size == LineSize::Double {
-                    16
-                } else {
-                    32
-                };
-                assert!(
-                    line.text.chars().count() <= limit,
-                    "line over {} cols: {:?}",
-                    limit,
-                    line.text
-                );
+    fn every_line_of_every_service_fits_the_paper() {
+        for data in all_fixtures() {
+            for paper in [58_u8, 80] {
+                let cpl = if paper >= 80 { 42 } else { 32 };
+                for line in format_ppob_receipt(&data, paper) {
+                    let limit = if line.size == LineSize::Double {
+                        cpl / 2
+                    } else {
+                        cpl
+                    };
+                    assert!(
+                        line.text.chars().count() <= limit,
+                        "{} at {}mm over {} cols: {:?}",
+                        data.service_type,
+                        paper,
+                        limit,
+                        line.text
+                    );
+                }
             }
         }
     }
 
+    /// The provider wraps by counting characters, so it breaks names and
+    /// reference numbers mid-word. Folding those continuations back is what lets
+    /// us re-wrap on word boundaries — and what stops `BUDI SANTOSA W` / `IJAYA`
+    /// reaching the paper as two lines with a hole in the name.
     #[test]
-    fn pln_prepaid_prints_the_provider_block_verbatim() {
+    fn provider_continuations_are_folded_back_before_rewrapping() {
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+
+        assert!(text.contains("NAMA            : BUDI SANTOSA"));
+        assert!(text.contains("WIJAYA"));
+
+        // The reference arrives as three provider lines and is one value again
+        // before anything is wrapped; at 32 columns it then has to break, but on
+        // our terms rather than theirs.
+        let folded = unfold_provider_text(PLN_PREPAID_TEXT);
+        assert!(folded
+            .iter()
+            .any(|line| line.contains("11002500AAA1A1111AA111AA1111AA11")));
+    }
+
+    /// Mitra's own text opens with `STRUK PEMBELIAN LISTRIK PRABAYAR`. Printing
+    /// ours as well would put two headings on one slip.
+    #[test]
+    fn a_provider_title_is_not_doubled_up_and_prints_bold() {
         let lines = format_ppob_receipt(&pln_prepaid(), 58);
         let text = text_of(&lines);
 
-        assert!(text.contains("Toko Makmur"));
-        assert!(text.contains("TRX-20260912-0007"));
-        assert!(text.contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
-        assert!(text.contains("NO METER         : 45094614059"));
-        assert!(text.contains("TARIF/DAYA       : R1M/900VA"));
-        assert!(text.contains("JML KWH          : 33,7"));
-        assert!(text.contains("Informasi Hubungi Call Center"));
-        // The provider block is authoritative, so nothing we could have
-        // reconstructed is printed alongside it.
-        assert!(!text.contains("NO PELANGGAN"));
+        assert_eq!(text.matches("STRUK PEMBELIAN LISTRIK PRABAYAR").count(), 1);
+        let title = lines
+            .iter()
+            .find(|line| line.text.contains("STRUK PEMBELIAN"))
+            .expect("title printed");
+        assert!(title.bold);
+    }
+
+    /// PDAM, BPJS and payment point send no heading at all.
+    #[test]
+    fn services_without_a_provider_title_get_ours() {
+        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("STRUK PEMBAYARAN PDAM"));
+        assert!(
+            text_of(&format_ppob_receipt(&bpjs(), 58)).contains("STRUK PEMBAYARAN BPJS KESEHATAN")
+        );
+        // A hundred billers hide behind one payment-point code, so the heading
+        // is taken from the transaction's own description.
+        assert!(text_of(&format_ppob_receipt(&payment_point(), 58))
+            .contains("STRUK PEMBAYARAN Telkom Indihome"));
     }
 
     #[test]
-    fn pln_prepaid_prints_the_token_double_size_in_groups_of_four() {
+    fn a_payment_point_with_no_description_falls_back_to_a_bare_heading() {
+        let mut data = payment_point();
+        data.service_description = None;
+        data.product_name = None;
+        let text = text_of(&format_ppob_receipt(&data, 58));
+
+        assert!(text.contains("STRUK PEMBAYARAN\n"));
+    }
+
+    /// The provider's leading blank lines, and its double blank before the
+    /// footer, are feed nobody paid for.
+    #[test]
+    fn leading_and_repeated_blank_lines_are_dropped() {
+        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let body: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+
+        let title = body
+            .iter()
+            .position(|line| line.contains("STRUK PEMBELIAN"))
+            .expect("title printed");
+        assert!(!body[title - 1].trim().is_empty(), "blank above the title");
+        assert!(!body
+            .windows(2)
+            .any(|pair| pair[0].trim().is_empty() && pair[1].trim().is_empty()));
+    }
+
+    #[test]
+    fn the_token_is_normalised_from_space_groups_and_printed_double_size() {
         let lines = format_ppob_receipt(&pln_prepaid(), 58);
         let token_rows: Vec<&str> = lines
             .iter()
@@ -474,110 +864,146 @@ mod tests {
             .map(|line| line.text.trim())
             .collect();
 
-        assert_eq!(token_rows, vec!["6991-5243-8030-", "6764-2910"]);
+        assert_eq!(token_rows, vec!["1111-2222-3333-", "4444-5555"]);
         assert!(text_of(&lines).contains("Stroom / Token"));
     }
 
+    /// Postpaid PLN sends `""`, PDAM `"-"` and payment point `"0"`. All three
+    /// mean the same thing and none of them belongs on paper.
     #[test]
-    fn totals_add_our_service_fee_to_the_provider_total() {
-        let mut data = pln_prepaid();
-        data.service_fee = 1500.0;
-        let text = text_of(&format_ppob_receipt(&data, 58));
-
-        assert!(text.contains(&two_col_text("Total", "Rp 54.500", 32)));
-        assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", 32)));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 56.000", 32)));
+    fn the_placeholders_mitra_uses_for_no_token_print_nothing() {
+        for data in [pln_postpaid(), pdam(), payment_point()] {
+            let text = text_of(&format_ppob_receipt(&data, 58));
+            assert!(!text.contains("Stroom / Token"), "{}", data.service_type);
+            assert!(!text.contains("No. Seri"), "{}", data.service_type);
+        }
     }
 
-    /// A cart-wide discount is shared out over every line, PPOB included, so
-    /// the shop can end up having sold the line below what the provider charged.
-    /// That is a discount, and the slip the customer takes to PLN has to read
-    /// like one rather than like a negative fee.
+    /// BPJS sends a real serial, so it prints — bold, at normal size, since
+    /// nobody retypes it into a meter on a wall.
+    #[test]
+    fn a_real_serial_prints_bold_at_normal_size() {
+        let lines = format_ppob_receipt(&bpjs(), 58);
+        let serial = lines
+            .iter()
+            .find(|line| line.text.contains("08120000001"))
+            .expect("serial printed");
+
+        assert!(serial.bold);
+        assert_eq!(serial.size, LineSize::Normal);
+        assert!(text_of(&lines).contains("No. Seri"));
+    }
+
+    /// PLN's postpaid footer arrives as `MKM|"..."|Download PLN Mobile`. The
+    /// channel code is the app talking to itself.
+    #[test]
+    fn the_pipe_delimited_footer_is_flattened_into_a_sentence() {
+        let text = text_of(&format_ppob_receipt(&pln_postpaid(), 58));
+
+        assert!(!text.contains("MKM"));
+        assert!(!text.contains('|'));
+        assert!(!text.contains('"'));
+        assert!(text.contains("Informasi Hubungi Call Center"));
+        assert!(text.contains("Download PLN Mobile"));
+    }
+
+    /// PLN prints its own admin fee and reference; the others print neither, and
+    /// a struk with no reference is no use when the customer comes back to ask
+    /// about the payment.
+    #[test]
+    fn only_the_services_that_omit_them_get_our_reference_lines() {
+        let pln = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+        assert!(!pln.contains("Admin Fee"));
+        assert!(!pln.contains("Kode Bayar"));
+
+        // Our keys line up with the provider's own column, so the two blocks
+        // read as one table: PDAM puts its colon at 19.
+        let water = text_of(&format_ppob_receipt(&pdam(), 58));
+        assert!(water.contains("Admin Fee          : Rp 2.500"));
+        assert!(water.contains("No. Ref            : 1212031"));
+        assert!(water.contains("Kode Bayar         : A1100001"));
+    }
+
+    /// `amount` from the provider already includes the admin fee — 23.500 is
+    /// 20.000 of electricity plus a 3.500 bank charge — so the struk's Total is
+    /// that figure, not that figure plus the fee a second time.
+    #[test]
+    fn the_totals_block_matches_what_the_provider_billed() {
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+
+        assert!(text.contains(&two_col_text("Total", "Rp 23.500", 32)));
+        assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", 32)));
+        assert!(text.contains(&two_col_text("Grand Total", "Rp 25.000", 32)));
+    }
+
+    /// A cart-wide discount is shared out over every line, PPOB included, so the
+    /// shop can end up having sold the line below what the provider charged.
+    /// That is a discount, and the slip has to read like one.
     #[test]
     fn a_line_sold_below_the_provider_total_prints_a_discount_not_a_negative_fee() {
         let mut data = pln_prepaid();
-        data.service_fee = -500.0;
+        data.grand_total = 23_000.0;
         let text = text_of(&format_ppob_receipt(&data, 58));
 
         assert!(text.contains(&two_col_text("Diskon", "-Rp 500", 32)));
         assert!(!text.contains("Biaya Layanan"));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 54.000", 32)));
+        assert!(text.contains(&two_col_text("Grand Total", "Rp 23.000", 32)));
     }
 
+    /// Numbers inside the provider's block are theirs: they mix `69,163` and
+    /// `Rp 69.729,00` between services and we are not the ones to correct it.
+    #[test]
+    fn provider_numbers_are_printed_exactly_as_sent() {
+        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan      : 69,163"));
+        assert!(text_of(&format_ppob_receipt(&pln_postpaid(), 58))
+            .contains("RP TAG PLN     : Rp 69.729,00"));
+    }
+
+    /// A value too long for the paper wraps under its own column, keeping the
+    /// key column the provider aligned.
+    #[test]
+    fn a_long_value_wraps_under_the_value_column() {
+        let lines = format_ppob_receipt(&pdam(), 58);
+        let rows: Vec<&str> = lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .skip_while(|text| !text.starts_with("Alamat"))
+            .take(3)
+            .collect();
+
+        assert_eq!(rows[0], "Alamat             : JL MELATI");
+        assert_eq!(rows[1], "                     PRM CONTOH");
+        assert_eq!(rows[2], "                     D");
+    }
+
+    #[test]
+    fn the_header_carries_the_shop_and_the_sale() {
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+
+        assert!(text.contains("Cahaya513 Mini Mart"));
+        assert!(text.contains("Jl. Raya No. 1"));
+        assert!(text.contains("Telp: 08123456789"));
+        assert!(text.contains("TRX-20260912-0007"));
+        assert!(text.contains("12/09/2026 14:30"));
+        assert!(text.contains("Ahmad"));
+    }
+
+    /// An item stored before migration 023 has no provider text at all.
     #[test]
     fn without_provider_text_the_captured_fields_are_printed_instead() {
         let mut data = pln_prepaid();
         data.provider_receipt_text = None;
+        data.customer_name = Some("BUDI SANTOSA".to_string());
         let text = text_of(&format_ppob_receipt(&data, 58));
 
-        assert!(text.contains("PRODUK      : Token PLN 50.000"));
-        assert!(text.contains("NO PELANGGAN: 231001678084"));
-        assert!(text.contains("NAMA        : EDA RUSDIANI"));
-        assert!(text.contains("NOMINAL     : Rp 50.000"));
-        assert!(text.contains("ADMIN BANK  : Rp 4.500"));
-        // Still a PLN prepaid struk: the token block does not depend on the
-        // provider's preformatted text.
-        assert!(text.contains("6991-5243-8030-"));
-    }
-
-    #[test]
-    fn a_long_value_wraps_under_the_value_column() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
-        let rows: Vec<&str> = lines
-            .iter()
-            .map(|line| line.text.as_str())
-            .skip_while(|text| !text.starts_with("NO REF"))
-            .take(2)
-            .collect();
-
-        // The key column keeps the provider's own padding; the value continues
-        // under itself rather than back at column zero.
-        assert_eq!(rows[0], "NO REF           : 22002500CLH2H");
-        assert_eq!(rows[1], "                   88B69ABC");
-    }
-
-    fn pulsa() -> PpobReceiptData {
-        PpobReceiptData {
-            store_name: "Toko Makmur".to_string(),
-            store_address: None,
-            store_phone: None,
-            receipt_number: "TRX-20260912-0008".to_string(),
-            date_time: "12/09/2026 14:35".to_string(),
-            cashier_name: "Ahmad".to_string(),
-            service_type: "pulsa".to_string(),
-            flag_id: None,
-            product_name: Some("Telkomsel 25.000".to_string()),
-            customer_id: Some("081234567890".to_string()),
-            customer_name: None,
-            serial_number: Some("SN1234567890123".to_string()),
-            reference_number: None,
-            provider_receipt_text: None,
-            amount: 25000.0,
-            admin_fee: 0.0,
-            total: 25500.0,
-            service_fee: 1000.0,
-            footer_text: None,
-        }
-    }
-
-    #[test]
-    fn pulsa_shows_a_bold_serial_and_its_own_title() {
-        let lines = format_ppob_receipt(&pulsa(), 58);
-        let text = text_of(&lines);
-
-        assert!(text.contains("STRUK PEMBELIAN PULSA"));
-        assert!(text.contains("No. Seri"));
-        assert!(text.contains("NO PELANGGAN: 081234567890"));
-        // No admin fee from the provider, so no empty line claiming one.
-        assert!(!text.contains("ADMIN BANK"));
-        assert!(text.contains("Simpan struk ini sebagai"));
-
-        let serial = lines
-            .iter()
-            .find(|line| line.text.contains("SN1234567890123"))
-            .expect("serial printed");
-        assert!(serial.bold);
-        assert_eq!(serial.size, LineSize::Normal);
+        assert!(text.contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
+        assert!(text.contains("PRODUK      : Token PLN 20.000"));
+        assert!(text.contains("NO PELANGGAN: 14300000001"));
+        assert!(text.contains("NAMA        : BUDI SANTOSA"));
+        assert!(text.contains("NOMINAL     : Rp 20.000"));
+        assert!(text.contains("ADMIN BANK  : Rp 3.500"));
+        // The token block does not depend on the provider's text.
+        assert!(text.contains("1111-2222-3333-"));
     }
 
     #[test]
@@ -585,44 +1011,14 @@ mod tests {
         let lines = format_ppob_receipt(&pln_prepaid(), 80);
 
         assert!(lines.iter().any(|line| line.text == "=".repeat(42)));
-        for line in &lines {
-            let limit = if line.size == LineSize::Double {
-                21
-            } else {
-                42
-            };
-            assert!(line.text.chars().count() <= limit, "{:?}", line.text);
-        }
-        // Wider paper fits one more group on the first row.
         let token_rows: Vec<&str> = lines
             .iter()
             .filter(|line| line.size == LineSize::Double)
             .map(|line| line.text.trim())
             .collect();
-        assert_eq!(token_rows, vec!["6991-5243-8030-6764-", "2910"]);
-    }
-
-    #[test]
-    fn postpaid_pln_prints_the_bill_title_and_no_token_block() {
-        let mut data = pln_prepaid();
-        data.flag_id = Some("1".to_string());
-        data.serial_number = Some("ABC123456".to_string());
-        let text = text_of(&format_ppob_receipt(&data, 58));
-
-        // 35 characters, so it wraps on the word boundary.
-        assert!(text.contains("STRUK PEMBAYARAN LISTRIK\nPASCABAYAR"));
-        assert!(!text.contains("Stroom / Token"));
-        assert!(text.contains("No. Seri"));
-    }
-
-    #[test]
-    fn a_missing_serial_drops_the_block_rather_than_printing_an_empty_one() {
-        let mut data = pulsa();
-        data.serial_number = None;
-        let text = text_of(&format_ppob_receipt(&data, 58));
-
-        assert!(!text.contains("No. Seri"));
-        assert!(!text.contains("Stroom / Token"));
+        assert_eq!(token_rows, vec!["1111-2222-3333-4444-", "5555"]);
+        // Wider paper re-wraps the provider's 32-column text to 42.
+        assert!(text_of(&lines).contains("NAMA            : BUDI SANTOSA WIJAYA"));
     }
 
     #[test]
@@ -637,5 +1033,101 @@ mod tests {
             wrap_line("Informasi Hubungi Call Center 123 Atau PLN", 32),
             vec!["Informasi Hubungi Call Center", "123 Atau PLN"]
         );
+    }
+
+    #[test]
+    fn unfolding_an_empty_or_blank_text_yields_nothing() {
+        assert!(unfold_provider_text("").is_empty());
+        assert!(unfold_provider_text("\r\n\r\n   \r\n").is_empty());
+    }
+
+    /// Render three real captured transactions to disk, for a human to send to
+    /// a printer and compare against the Mitra app's own output.
+    ///
+    /// Ignored, and deliberately not a test of anything: it reads fixtures that
+    /// only exist on the machine they were captured on and writes files nobody
+    /// asserts against. Run it with
+    /// `cargo test --lib writes_sample_struks_for_the_printer -- --ignored`.
+    /// The captured responses carry real customer names and meter numbers, which
+    /// is why they live in the temp directory and never in this repository.
+    #[test]
+    #[ignore = "writes sample files from locally captured Mitra fixtures"]
+    fn writes_sample_struks_for_the_printer() {
+        use crate::printing::escpos::encode_lines;
+
+        let root = std::env::temp_dir().join("ppob");
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).expect("create output directory");
+
+        for name in ["pln-111194906366", "pdam-111194917241", "bpjs-111194915846"] {
+            let path = root.join("receipts").join(format!("{name}.json"));
+            let json = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            let fixture: serde_json::Value =
+                serde_json::from_str(&json).expect("fixture is valid JSON");
+
+            let data = from_history_fixture(&fixture);
+            let lines = format_ppob_receipt(&data, 58);
+
+            std::fs::write(out.join(format!("{name}.bin")), encode_lines(&lines))
+                .expect("write bytes");
+            std::fs::write(out.join(format!("{name}.txt")), text_of(&lines))
+                .expect("write preview");
+        }
+
+        println!("wrote samples to {}", out.display());
+    }
+
+    /// Map one captured `HistoryPaymentItem` onto the struk. Test-only glue: the
+    /// history endpoint answers in camelCase while the payment endpoints the
+    /// service layer reads answer in snake_case.
+    fn from_history_fixture(fixture: &serde_json::Value) -> PpobReceiptData {
+        let text = |key: &str| {
+            fixture
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        let number = |key: &str| {
+            fixture
+                .get(key)
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0)
+        };
+
+        let service_type = match text("serviceType").unwrap_or_default().as_str() {
+            "PLN" => "pln",
+            "PDAM" => "pdam",
+            "BPJS" => "bpjs",
+            _ => "pp",
+        };
+        // What the provider billed. The samples are printed at cost, so the
+        // service fee prints as zero rather than inventing a markup.
+        let total = number("amount");
+
+        PpobReceiptData {
+            store_name: "Cahaya513 Mini Mart".to_string(),
+            store_address: None,
+            store_phone: None,
+            receipt_number: format!("TRX-{}", text("trxId").unwrap_or_default()),
+            date_time: text("createdAt").unwrap_or_default(),
+            cashier_name: "Kasir".to_string(),
+            service_type: service_type.to_string(),
+            flag_id: None,
+            product_name: text("productName"),
+            customer_id: text("customerNo"),
+            customer_name: None,
+            serial_number: text("tokenNumber").or_else(|| text("serialNumber")),
+            reference_number: text("noRef"),
+            payment_code: text("paymentCode"),
+            service_description: text("description"),
+            provider_description: text("igrDesc"),
+            provider_receipt_text: text("receiptText"),
+            amount: number("basePrice"),
+            admin_fee: number("adminFee"),
+            total,
+            grand_total: total,
+            footer_text: None,
+        }
     }
 }

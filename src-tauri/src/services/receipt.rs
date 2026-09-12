@@ -399,14 +399,24 @@ fn build_ppob_receipt_data(
 
     let admin_fee =
         provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]).unwrap_or(0.0);
-    let amount = provider_number(&raw, &["amount", "nominal", "denom"]).unwrap_or(0.0);
-    // What the provider charged us: their own total if they sent one, its two
-    // parts added up otherwise, and failing both the rupiah the customer paid —
-    // which at worst shows a service fee of zero rather than a wrong figure.
-    let provider_total = provider_number(&raw, &["total", "total_amount", "total_payment"])
-        .filter(|total| *total > 0.0)
-        .or_else(|| (amount > 0.0).then_some(amount + admin_fee))
-        .unwrap_or(item.net_subtotal);
+
+    // What the provider charged us, admin fee included.
+    //
+    // `amount` is that figure, not the bill: a real PLN response reads
+    // `amount: 23500, base_price: 20000, admin_fee: 3500`, and the PDF invoice
+    // Mitra issues for the same transaction calls 23.500 the total. Adding the
+    // fee on top of `amount` would bill it twice. `total` is tried first only
+    // because a response that sends both means the other one to be the bill.
+    let provider_total =
+        provider_number(&raw, &["total", "total_payment", "total_amount", "amount"])
+            .filter(|total| *total > 0.0)
+            .unwrap_or(item.net_subtotal);
+
+    // The bill on its own, for the fallback block. Derived when absent, because
+    // `amount` is already spoken for above.
+    let bill_amount = provider_number(&raw, &["base_price", "nominal", "denom"])
+        .filter(|amount| *amount > 0.0)
+        .unwrap_or((provider_total - admin_fee).max(0.0));
 
     PpobReceiptData {
         store_name: store.name.clone(),
@@ -433,20 +443,24 @@ fn build_ppob_receipt_data(
             &raw,
             &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
         ),
-        serial_number: stored(&item.ppob_serial_number)
-            .or_else(|| provider_field(&raw, &["token_number", "serial_number", "token", "sn"])),
+        // The token is worth more than the serial: PLN prepaid answers with the
+        // token in `token_number` and an empty `serial_number`, and the column
+        // was filled from the latter.
+        serial_number: provider_field(&raw, &["token_number"])
+            .or_else(|| stored(&item.ppob_serial_number))
+            .or_else(|| provider_field(&raw, &["serial_number", "token", "sn"])),
         reference_number: provider_field(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
+        payment_code: stored(&item.ppob_payment_code)
+            .or_else(|| provider_field(&raw, &["payment_code", "raw_paymentcode"])),
+        service_description: provider_field(&raw, &["description", "plu_desc"]),
+        provider_description: provider_field(&raw, &["igr_desc"]),
         provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
-        amount: if amount > 0.0 {
-            amount
-        } else {
-            (provider_total - admin_fee).max(0.0)
-        },
+        amount: bill_amount,
         admin_fee,
         total: provider_total,
-        // Our margin on the line: what the customer handed over minus what the
-        // provider charged. Zero on a line sold at cost.
-        service_fee: item.net_subtotal - provider_total,
+        // What the customer actually handed over for this line, discounts and
+        // our markup already in it.
+        grand_total: item.net_subtotal,
         footer_text: provider_field(&raw, &["footer", "footer_text"]),
     }
 }
