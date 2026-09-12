@@ -249,7 +249,7 @@ unsafe fn pwstr_to_string(ptr: PWSTR) -> String {
 mod tests {
     use super::*;
     use crate::printing::escpos::encode_lines;
-    use crate::printing::receipt::{format_test_page_text, PrintMode};
+    use crate::printing::receipt::format_test_page_text;
 
     #[test]
     fn aligned_buffer_is_aligned_for_printer_info() {
@@ -270,7 +270,7 @@ mod tests {
     #[test]
     #[ignore = "needs a physical POS58 printer attached"]
     fn sends_a_test_page_to_the_pos58_queue() {
-        let bytes = encode_lines(&format_test_page_text("Toko Test", 58, PrintMode::Text));
+        let bytes = encode_lines(&format_test_page_text("Toko Test", 58));
         send_raw_data("POS58 Printer", &bytes).expect("test page should reach the printer");
     }
 

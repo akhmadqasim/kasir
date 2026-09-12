@@ -31,13 +31,13 @@ const PAPER_WIDTHS = [
   { key: "80", label: "80mm (42 karakter/baris)" },
 ]
 
-// Gambar adalah bawaannya: hurufnya seragam, sama seperti struk yang dicetak
-// aplikasi Mitra Indogrosir di printer yang sama. Teks lebih cepat dan datanya
-// jauh lebih kecil, tapi tebal, tinggi, dan lebarnya terlihat seperti tiga font
-// berbeda dalam satu struk.
+// Teks adalah bawaannya: font printer sendiri, persis cara aplikasi Mitra
+// Indogrosir mencetak struknya di printer yang sama, dan datanya kecil sehingga
+// cepat. Gambar menggambar struk dengan satu font mesin tik lalu mengirim
+// gambarnya — seragam, tapi lebih lambat dan hanya jalan di Windows.
 const PRINT_MODES = [
-  { key: "raster", label: "Gambar (rapi)" },
-  { key: "text", label: "Teks (cepat)" },
+  { key: "text", label: "Teks (font printer)" },
+  { key: "raster", label: "Gambar (font mesin tik)" },
 ]
 
 export function PrinterSettingsTab() {
@@ -47,7 +47,7 @@ export function PrinterSettingsTab() {
   const [paperWidth, setPaperWidth] = useState<string>("58")
   const [autoPrint, setAutoPrint] = useState(false)
   const [footerText, setFooterText] = useState("")
-  const [printMode, setPrintMode] = useState<string>("raster")
+  const [printMode, setPrintMode] = useState<string>("text")
   const [initialized, setInitialized] = useState(false)
 
   // Printers are the ones the *till's* operating system can see: the server

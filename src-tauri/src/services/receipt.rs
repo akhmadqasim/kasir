@@ -96,7 +96,7 @@ fn send_to_printer(
                 } else {
                     DOTS_58MM
                 };
-                let bitmap = render_lines(lines, columns(paper_width, mode), dots)?;
+                let bitmap = render_lines(lines, columns(paper_width), dots)?;
                 crate::printing::escpos::encode_raster(&bitmap)
             }
             PrintMode::Text => crate::printing::escpos::encode_lines(lines),
@@ -302,7 +302,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         original_total_amount,
     };
 
-    let text_lines = format_receipt_text(&receipt_data, paper_width, mode);
+    let text_lines = format_receipt_text(&receipt_data, paper_width);
 
     eprintln!(
         "[print_receipt] Generated {} text lines for printer '{}'",
@@ -328,7 +328,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     let mut jobs = vec![text_lines];
     jobs.extend(fulfilled.into_iter().map(|item| {
         let data = build_ppob_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
-        format_ppob_receipt(&data, paper_width, mode)
+        format_ppob_receipt(&data, paper_width)
     }));
 
     send_jobs(printer_id, jobs, paper_width, mode).await
@@ -396,7 +396,7 @@ pub async fn print_ppob_item(
         .map(|row| row.data);
 
     let data = build_ppob_receipt_data(&store, &item, blob.as_deref());
-    let lines = format_ppob_receipt(&data, paper_width, mode);
+    let lines = format_ppob_receipt(&data, paper_width);
 
     send_jobs(printer_id, vec![lines], paper_width, mode).await
 }
@@ -528,7 +528,7 @@ pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
         ..
     } = print_target(db).await?;
 
-    let text_lines = format_test_page_text(&store.name, paper_width, mode);
+    let text_lines = format_test_page_text(&store.name, paper_width);
 
     send_jobs(printer_id, vec![text_lines], paper_width, mode).await
 }

@@ -17,7 +17,7 @@ pub struct PrinterSettings {
     pub paper_width: Option<u8>,
     pub auto_print: Option<bool>,
     pub footer_text: Option<String>,
-    /// `"raster"` (the default) or `"text"`. See `printing::receipt::PrintMode`.
+    /// `"text"` (the default) or `"raster"`. See `printing::receipt::PrintMode`.
     pub print_mode: Option<String>,
 }
 
