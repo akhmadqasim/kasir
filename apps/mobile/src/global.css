@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "uniwind";
+
+@import "heroui-native/styles";
+
+/* heroui-native >= 1.0.8 registers its own @source, so no path to
+   node_modules is needed here — which matters in this workspace, where the
+   package is hoisted to the repo root rather than apps/mobile/node_modules. */
