@@ -8,6 +8,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
+    // Hanya `src/`: worktree agent di `.claude/worktrees/` dan paket lain di
+    // monorepo punya suite sendiri; tanpa ini vitest ikut menjalankan mereka
+    // dan gagal karena dua salinan React.
+    include: ["src/**/*.test.{ts,tsx}"],
     // Setiap file test membangun jsdom sendiri lalu memuat bundel HeroUI yang
     // berat. Satu worker per core membuat mereka berebut CPU sampai `findBy*`
     // kehabisan waktu — dan file yang gagal berpindah-pindah tiap run. Setengah

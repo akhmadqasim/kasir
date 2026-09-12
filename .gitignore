@@ -52,3 +52,6 @@ data/backups/
 tmp-*.png
 # heroui-agents-md
 .heroui-docs/
+
+# Claude Code agent worktrees
+.claude/worktrees/

@@ -1,0 +1,8 @@
+# Prettier menuntut LF (`endOfLine: "lf"`); tanpa ini checkout Windows (autocrlf)
+# menulis CRLF dan `prettier --check` menandai ratusan file yang isinya tidak berubah.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.woff2 binary
