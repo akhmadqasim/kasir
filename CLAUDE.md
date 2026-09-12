@@ -309,6 +309,12 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 >
 > The HeroUI v3 MCP server is configured in `.mcp.json` (`list_components`,
 > `get_component_docs`, `get_theme_variables`) — use it instead of guessing a component's API.
+>
+> Before any HeroUI UI work, also use: the Claude Code skills in `.claude/skills/heroui-react`,
+> `heroui-migration`, and `heroui-native` (auto-discovered, or invoke with `/heroui-react`); the
+> local docs index in [`AGENTS.md`](AGENTS.md) (rooted at `.heroui-docs/react/`, regenerate with
+> `npx heroui-cli@latest agents-md --react --output AGENTS.md`); and, as a fallback reference,
+> https://heroui.com/react/llms.txt (quick index) / `llms-full.txt` (complete docs).
 
 ### General
 - Bahasa kode: **English** (variable names, functions, comments)
