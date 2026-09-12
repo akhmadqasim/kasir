@@ -89,8 +89,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/022_refund_shift.sql"),
     ),
     (
-        "023_transaction_item_ppob_receipt",
-        include_str!("../../migrations/023_transaction_item_ppob_receipt.sql"),
+        "023_ppob_receipts",
+        include_str!("../../migrations/023_ppob_receipts.sql"),
     ),
 ];
 

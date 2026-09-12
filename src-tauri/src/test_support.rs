@@ -209,7 +209,6 @@ pub async fn insert_transaction_item_spec(
         ppob_status: Set(None),
         ppob_message: Set(None),
         ppob_serial_number: Set(None),
-        ppob_receipt_data: Set(None),
         created_at: Set(Some(now_ts())),
     }
     .insert(conn)

@@ -17,7 +17,11 @@
 //! Pure and side-effect free: it takes a [`PpobReceiptData`] and returns lines.
 //! Loading that struct out of the database is `services::receipt`'s job.
 
-use super::receipt::{center_text, format_rupiah, two_col_text, ReceiptTextLine};
+use std::borrow::Cow;
+
+use super::receipt::{
+    center_text, format_rupiah, push_sale_details, push_store_banner, two_col_text, ReceiptTextLine,
+};
 
 /// A field worth printing: present, and something other than whitespace.
 ///
@@ -85,20 +89,28 @@ impl PpobReceiptData {
     /// True when this is a PLN prepaid purchase, the one case that prints a
     /// token in double-size characters.
     ///
-    /// Four ways of telling, because which of them is present depends on where
-    /// the data came from: `flag_id` is ours and always set at checkout, while
-    /// `igr_desc` and the provider's own title only exist in the blob, and a
-    /// token that is actually there settles it whatever the labels say.
+    /// `flag_id` is ours, set at checkout, and answers on its own when present.
+    /// The three fallbacks — the provider's `igr_desc`, its own heading, and a
+    /// token that is actually there — are for a line whose flag never reached
+    /// the blob.
     fn is_pln_prepaid(&self) -> bool {
         if self.service_type != "pln" {
             return false;
         }
 
-        self.flag_id.as_deref() == Some("0")
-            || self
-                .provider_description
-                .as_deref()
-                .is_some_and(|desc| desc.to_lowercase().contains("pre paid"))
+        // `flag_id` is ours, set at checkout from what the cashier chose, and it
+        // decides on its own when it is there. The rest are guesses for a line
+        // whose flag never made it into the blob, and a guess must not be able
+        // to overrule the fact.
+        match self.flag_id.as_deref() {
+            Some("0") => return true,
+            Some("1") => return false,
+            _ => {}
+        }
+
+        self.provider_description
+            .as_deref()
+            .is_some_and(|desc| desc.to_lowercase().contains("pre paid"))
             || self
                 .provider_receipt_text
                 .as_deref()
@@ -106,34 +118,42 @@ impl PpobReceiptData {
             || self.token().is_some()
     }
 
-    /// The token digits, if there are any.
+    /// The token, if this line has one.
     ///
-    /// Mitra sends `4617 5400 1832 5962 7611` when there is a token and one of
-    /// `""`, `"-"` or `"0"` when there is not — postpaid PLN, PDAM and payment
-    /// point respectively, each with its own idea of what "nothing" looks like.
+    /// A PLN token is twenty digits, always, and Mitra sends it as
+    /// `4617 5400 1832 5962 7611` — five groups, spaces between. When there is
+    /// no token the field holds `""`, `"-"` or `"0"`, one placeholder per
+    /// service. Insisting on exactly twenty digits out of digits-and-spaces is
+    /// what stops a reference number like `22002500CLH2H8976AA371713A6EA533`
+    /// being stripped down to its digits and printed as a token that does not
+    /// exist.
     fn token(&self) -> Option<String> {
         let serial = meaningful(self.serial_number.as_deref())?;
+        if !serial.chars().all(|c| c.is_ascii_digit() || c == ' ') {
+            return None;
+        }
+
         let digits: String = serial.chars().filter(char::is_ascii_digit).collect();
-        (digits.len() >= 12).then_some(digits)
+        (digits.len() == 20).then_some(digits)
     }
 
     /// The heading, for the services whose `receipt_text` does not carry one.
-    fn title(&self) -> String {
+    fn title(&self) -> Cow<'static, str> {
         match self.service_type.as_str() {
-            "pln" if self.is_pln_prepaid() => "STRUK PEMBELIAN LISTRIK PRABAYAR".to_string(),
-            "pln" => "STRUK PEMBAYARAN TAGIHAN LISTRIK".to_string(),
-            "pulsa" => "STRUK PEMBELIAN PULSA".to_string(),
-            "data" => "STRUK PEMBELIAN PAKET DATA".to_string(),
-            "pdam" => "STRUK PEMBAYARAN PDAM".to_string(),
-            "bpjs" => "STRUK PEMBAYARAN BPJS KESEHATAN".to_string(),
-            "transfer" => "STRUK TRANSFER UANG".to_string(),
-            "emoney" => "STRUK TOP UP E-MONEY".to_string(),
+            "pln" if self.is_pln_prepaid() => Cow::Borrowed("STRUK PEMBELIAN LISTRIK PRABAYAR"),
+            "pln" => Cow::Borrowed("STRUK PEMBAYARAN TAGIHAN LISTRIK"),
+            "pulsa" => Cow::Borrowed("STRUK PEMBELIAN PULSA"),
+            "data" => Cow::Borrowed("STRUK PEMBELIAN PAKET DATA"),
+            "pdam" => Cow::Borrowed("STRUK PEMBAYARAN PDAM"),
+            "bpjs" => Cow::Borrowed("STRUK PEMBAYARAN BPJS KESEHATAN"),
+            "transfer" => Cow::Borrowed("STRUK TRANSFER UANG"),
+            "emoney" => Cow::Borrowed("STRUK TOP UP E-MONEY"),
             // Payment point is a hundred billers behind one service code, so the
             // heading has to come from the transaction: `Telkom Indihome -
             // 161312001945` is titled after the half before the dash.
             _ => match self.biller() {
-                Some(biller) => format!("STRUK PEMBAYARAN {}", biller),
-                None => "STRUK PEMBAYARAN".to_string(),
+                Some(biller) => Cow::Owned(format!("STRUK PEMBAYARAN {}", biller)),
+                None => Cow::Borrowed("STRUK PEMBAYARAN"),
             },
         }
     }
@@ -176,35 +196,20 @@ const MIN_CONTINUATION_SPACES: usize = 10;
 const CONTINUATION_INDENT: usize = 18;
 
 fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
-    lines.push(ReceiptTextLine::bold(center_text(&data.store_name, cpl)));
-
-    if let Some(address) = non_empty(data.store_address.as_deref()) {
-        lines.push(ReceiptTextLine::plain(center_text(address, cpl)));
-    }
-    if let Some(phone) = non_empty(data.store_phone.as_deref()) {
-        lines.push(ReceiptTextLine::plain(center_text(
-            &format!("Telp: {}", phone),
-            cpl,
-        )));
-    }
-
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "No:",
+    push_store_banner(
+        lines,
+        &data.store_name,
+        data.store_address.as_deref(),
+        data.store_phone.as_deref(),
+        cpl,
+    );
+    push_sale_details(
+        lines,
         &data.receipt_number,
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Tanggal:",
         &data.date_time,
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Kasir:",
         &data.cashier_name,
         cpl,
-    )));
+    );
 }
 
 /// The token (PLN prepaid) or the serial number (everything else).
@@ -252,18 +257,23 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
     for raw in text.split('\n') {
         // `receipt_text` is CRLF-delimited.
         let line = raw.trim_end_matches('\r').trim_end();
-        let indent = line.len() - line.trim_start().len();
+        // Counted in characters, not bytes: the slice below has to land on a
+        // character boundary, and one stray non-breaking space in the padding
+        // would otherwise panic the print rather than misalign it.
+        let indent = line.chars().take_while(|c| c.is_whitespace()).count();
 
         match folded.last_mut() {
             Some(previous) if indent >= MIN_CONTINUATION_SPACES && !previous.is_empty() => {
-                // Below the full indent there is nothing to preserve, so the
-                // whole run of spaces goes; at or above it, only the padding.
-                let continued = if indent >= CONTINUATION_INDENT {
-                    &line[CONTINUATION_INDENT..]
+                if indent >= CONTINUATION_INDENT {
+                    // Drop the padding, keep whatever follows it — including a
+                    // 19th space, which belongs to the value.
+                    previous.extend(line.chars().skip(CONTINUATION_INDENT));
                 } else {
-                    line.trim_start()
-                };
-                previous.push_str(continued);
+                    // Too shallow to be one of the provider's fixed-width
+                    // continuations, so it is indented prose: join it as a word.
+                    previous.push(' ');
+                    previous.push_str(line.trim_start());
+                }
             }
             _ => folded.push(line.to_string()),
         }
@@ -285,6 +295,15 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
     out
 }
 
+/// `MKM` and its like: the app naming itself, not something a customer reads.
+fn is_channel_code(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment.chars().count() <= 4
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+}
+
 /// Flatten the pipe-delimited footer PLN postpaid ends with:
 /// `MKM|"Informasi Hubungi Call Center 123 ..."|Download PLN Mobile`.
 ///
@@ -296,16 +315,26 @@ fn expand_pipe_segments(line: &str) -> Vec<String> {
         return vec![line.to_string()];
     }
 
-    let joined = line
-        .split('|')
-        .map(|segment| segment.trim().trim_matches('"').trim())
-        .filter(|segment| {
-            !segment.is_empty()
-                && !(segment.len() <= 4
-                    && segment
-                        .chars()
-                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()))
+    let mut segments: Vec<&str> = line.split('|').map(str::trim).collect();
+
+    // Only the leading segment is ever a channel code. Dropping every short
+    // all-caps segment would also eat a real value: `Golongan : D2|A1` is two
+    // tariff classes, not a code and a class.
+    if segments.first().is_some_and(|first| is_channel_code(first)) {
+        segments.remove(0);
+    }
+
+    let joined = segments
+        .into_iter()
+        .map(|segment| {
+            // Quotes the provider wrapped a whole segment in are its own; a
+            // quote inside a value stays where it is.
+            match segment.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                Some(unquoted) => unquoted.trim(),
+                None => segment,
+            }
         })
+        .filter(|segment| !segment.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -333,6 +362,12 @@ fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
     }
 
     for line in &block {
+        // A key the provider had no value for is a colon and nothing else. On a
+        // screen it is a gap; on paper it is a line of ink saying nothing.
+        if is_empty_pair(line) {
+            continue;
+        }
+
         // The provider's own heading gets the weight ours would have had.
         let emphasise = is_title_line(line);
         for wrapped in wrap_line(line, cpl) {
@@ -347,6 +382,15 @@ fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
 
 fn is_title_line(line: &str) -> bool {
     line.trim_start().starts_with("STRUK ")
+}
+
+/// `Periode         : ` — a key, a colon, and nothing after it. A separator such
+/// as `----- Peserta 1 -----` has no colon and is not one of these.
+fn is_empty_pair(line: &str) -> bool {
+    match line.split_once(':') {
+        Some((key, value)) => !key.trim().is_empty() && value.trim().is_empty(),
+        None => false,
+    }
 }
 
 fn push_title(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
@@ -365,20 +409,25 @@ fn push_reference_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData
     // Line our keys up with the provider's, so the block reads as one table
     // rather than as two that disagree about where the colon goes.
     let key_width = provider_key_width(text, cpl).unwrap_or(KEY_WIDTH);
-    let shows_admin = text.to_uppercase().contains("ADMIN");
-    let shows_reference = text.to_uppercase().contains("NO REF");
+    let upper = text.to_uppercase();
+    let shows_admin = upper.contains("ADMIN");
+    let shows_reference = upper.contains("NO REF");
 
     let mut extras: Vec<(&str, String)> = Vec::new();
     if !shows_admin && data.admin_fee > 0.0 {
         extras.push(("Admin Fee", format!("Rp {}", format_rupiah(data.admin_fee))));
     }
+    // PLN's own `NO REF` is PLN's reference, not Mitra's, and two lines both
+    // labelled a reference with different numbers on them is worse than one.
     if !shows_reference {
         if let Some(reference) = meaningful(data.reference_number.as_deref()) {
             extras.push(("No. Ref", reference.to_string()));
         }
-        if let Some(code) = meaningful(data.payment_code.as_deref()) {
-            extras.push(("Kode Bayar", code.to_string()));
-        }
+    }
+    // The payment code is never in the provider's block, whatever the service,
+    // and it is the handle the shop quotes back to Mitra.
+    if let Some(code) = meaningful(data.payment_code.as_deref()) {
+        extras.push(("Kode Bayar", code.to_string()));
     }
 
     for (key, value) in extras {
@@ -402,10 +451,11 @@ fn provider_key_width(text: &str, cpl: usize) -> Option<usize> {
     text.split('\n')
         .filter_map(|line| {
             // `find` lands on the space before the colon; the column we want is
-            // the colon's own.
-            let colon = line.find(" : ")? + 1;
-            let key = &line[..colon];
-            (!key.trim().is_empty() && !key.starts_with(' ')).then_some(colon)
+            // the colon's own, counted in characters because it is used as a
+            // padding width.
+            let byte_index = line.find(" : ")? + 1;
+            let key = &line[..byte_index];
+            (!key.trim().is_empty() && !key.starts_with(' ')).then(|| key.chars().count())
         })
         .filter(|colon| *colon <= limit)
         .max()
@@ -418,7 +468,7 @@ fn fallback_fields(data: &PpobReceiptData) -> Vec<(&'static str, String)> {
     let mut fields: Vec<(&'static str, String)> = Vec::new();
 
     let mut push_optional = |key: &'static str, value: &Option<String>| {
-        if let Some(value) = non_empty(value.as_deref()) {
+        if let Some(value) = meaningful(value.as_deref()) {
             fields.push((key, value.to_string()));
         }
     };
@@ -451,8 +501,12 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
     // and PPOB ones are not excluded. `Biaya Layanan  Rp -500` on a slip the
     // customer takes to PLN reads like a mistake, so a negative figure is
     // labelled as the discount it actually is.
+    //
+    // Half a rupiah of slack because `grand_total` carries a prorated share of
+    // the cart discount: a line sold at cost can land a billionth below it, and
+    // `Diskon  -Rp 0` is not what that means.
     let service_fee = data.grand_total - data.total;
-    let (fee_label, fee_amount) = if service_fee < 0.0 {
+    let (fee_label, fee_amount) = if service_fee < -0.5 {
         ("Diskon", format!("-Rp {}", format_rupiah(-service_fee)))
     } else {
         (
@@ -738,7 +792,7 @@ mod tests {
         }
     }
 
-    fn text_of(lines: &[ReceiptTextLine]) -> String {
+    pub(super) fn text_of(lines: &[ReceiptTextLine]) -> String {
         lines
             .iter()
             .map(|line| line.text.as_str())
@@ -912,9 +966,14 @@ mod tests {
     /// about the payment.
     #[test]
     fn only_the_services_that_omit_them_get_our_reference_lines() {
+        // PLN prints its own admin fee and its own reference, so ours would be
+        // a second line saying the same thing — or worse, a different number
+        // under the same word. The payment code no service prints, and it is
+        // the one the shop quotes back to Mitra.
         let pln = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
         assert!(!pln.contains("Admin Fee"));
-        assert!(!pln.contains("Kode Bayar"));
+        assert!(!pln.contains("No. Ref          :"));
+        assert!(pln.contains("Kode Bayar      : L14300000001-1"));
 
         // Our keys line up with the provider's own column, so the two blocks
         // read as one table: PDAM puts its colon at 19.
@@ -1040,6 +1099,15 @@ mod tests {
         assert!(unfold_provider_text("").is_empty());
         assert!(unfold_provider_text("\r\n\r\n   \r\n").is_empty());
     }
+}
+
+/// Rendering captured transactions to disk, so a human can print them and
+/// compare against the Mitra app's own output. Nothing here asserts anything;
+/// it is a tool that happens to be spelled as a test.
+#[cfg(test)]
+mod sample_output {
+    use super::tests::text_of;
+    use super::*;
 
     /// Render three real captured transactions to disk, for a human to send to
     /// a printer and compare against the Mitra app's own output.

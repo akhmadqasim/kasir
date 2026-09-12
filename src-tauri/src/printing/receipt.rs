@@ -148,30 +148,69 @@ pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
     format!("{}{}{}", left, " ".repeat(spaces), right)
 }
 
+/// The shop's own name and contact details, between two rules.
+///
+/// Shared with the PPOB struk, which opens exactly the same way: a customer
+/// holding both pieces of paper should be in no doubt they came from the same
+/// till, and one copy of this means an address line added here appears on both.
+pub(super) fn push_store_banner(
+    lines: &mut Vec<ReceiptTextLine>,
+    store_name: &str,
+    store_address: Option<&str>,
+    store_phone: Option<&str>,
+    cpl: usize,
+) {
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::bold(center_text(store_name, cpl)));
+
+    if let Some(address) = store_address.map(str::trim).filter(|a| !a.is_empty()) {
+        lines.push(ReceiptTextLine::plain(center_text(address, cpl)));
+    }
+    if let Some(phone) = store_phone.map(str::trim).filter(|p| !p.is_empty()) {
+        lines.push(ReceiptTextLine::plain(center_text(
+            &format!("Telp: {}", phone),
+            cpl,
+        )));
+    }
+
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+}
+
+/// Which sale this is: its number, when it happened, who rang it up.
+pub(super) fn push_sale_details(
+    lines: &mut Vec<ReceiptTextLine>,
+    receipt_number: &str,
+    date_time: &str,
+    cashier_name: &str,
+    cpl: usize,
+) {
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "No:",
+        receipt_number,
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Tanggal:", date_time, cpl,
+    )));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Kasir:",
+        cashier_name,
+        cpl,
+    )));
+}
+
 /// Generate receipt as text lines for ESC/POS printing
 pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
     let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
     let mut lines = Vec::new();
 
-    // Header
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
-    lines.push(ReceiptTextLine::bold(center_text(&data.store_name, cpl)));
-
-    if let Some(ref addr) = data.store_address {
-        if !addr.is_empty() {
-            lines.push(ReceiptTextLine::plain(center_text(addr, cpl)));
-        }
-    }
-    if let Some(ref phone) = data.store_phone {
-        if !phone.is_empty() {
-            lines.push(ReceiptTextLine::plain(center_text(
-                &format!("Telp: {}", phone),
-                cpl,
-            )));
-        }
-    }
-
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    push_store_banner(
+        &mut lines,
+        &data.store_name,
+        data.store_address.as_deref(),
+        data.store_phone.as_deref(),
+        cpl,
+    );
     if data.is_deleted {
         lines.push(ReceiptTextLine::bold(center_text(
             "RECEIPT SALINAN (VOID)",
@@ -180,22 +219,13 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
     }
 
-    // Transaction info
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "No:",
+    push_sale_details(
+        &mut lines,
         &data.receipt_number,
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Tanggal:",
         &data.date_time,
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Kasir:",
         &data.cashier_name,
         cpl,
-    )));
+    );
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Items

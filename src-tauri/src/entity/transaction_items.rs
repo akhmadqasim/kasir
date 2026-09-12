@@ -29,15 +29,6 @@ pub struct Model {
     pub ppob_status: Option<String>,
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,
-    /// Raw JSON of the provider's payment response, kept verbatim so the PPOB
-    /// struk can be reprinted. Only written on a successful fulfilment; see
-    /// migration 023 for why it is one text blob and not columns.
-    ///
-    /// Never serialised: it is a multi-kilobyte provider blob that only the
-    /// printer path reads, and the item list it hangs off is returned for every
-    /// sale in a paginated history.
-    #[serde(skip, default)]
-    pub ppob_receipt_data: Option<String>,
     pub created_at: Option<String>,
 }
 

@@ -1,12 +1,16 @@
 //! Building a receipt from a transaction and getting it onto paper.
 
+use std::collections::HashMap;
+
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::domain::receipt::{
     PrinterInfoItem, PrinterSettings, PrinterSettingsResponse, ReceiptDataResponse,
     ReceiptItemResponse, ReceiptPaymentSplitResponse, UpdatePrinterSettingsInput,
 };
-use crate::entity::{store_info, transaction_items, transaction_payments, transactions, users};
+use crate::entity::{
+    ppob_receipts, store_info, transaction_items, transaction_payments, transactions, users,
+};
 use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
 use crate::printing::receipt::{
     format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
@@ -280,19 +284,48 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     // right behaviour — a struk with no token on it is worse than no struk — and
     // it is why the detail dialog has a button of its own. A reprint from there,
     // or any later print of the sale, picks them up.
+    let fulfilled: Vec<&transaction_items::Model> = items
+        .iter()
+        .filter(|item| item.ppob_status.as_deref() == Some(PPOB_STATUS_SUCCESS))
+        .collect();
+    let blobs = load_ppob_receipts(db, fulfilled.iter().map(|item| item.id)).await?;
+
     let mut jobs = vec![text_lines];
-    jobs.extend(
-        items
-            .iter()
-            .filter(|item| item.ppob_status.as_deref() == Some(PPOB_STATUS_SUCCESS))
-            .map(|item| {
-                let data =
-                    build_ppob_receipt_data(&store, &transaction, &cashier_name, &date_time, item);
-                format_ppob_receipt(&data, paper_width)
-            }),
-    );
+    jobs.extend(fulfilled.into_iter().map(|item| {
+        let data = build_ppob_receipt_data(
+            &store,
+            &transaction,
+            &cashier_name,
+            &date_time,
+            item,
+            blobs.get(&item.id).map(String::as_str),
+        );
+        format_ppob_receipt(&data, paper_width)
+    }));
 
     send_jobs(printer_id, jobs).await
+}
+
+/// The stored provider responses for the given lines, keyed by line.
+///
+/// Its own table, so the sale history and the refund screens never carry these
+/// kilobytes around. See migration 023.
+async fn load_ppob_receipts(
+    db: &DatabaseConnection,
+    item_ids: impl IntoIterator<Item = i64>,
+) -> Result<HashMap<i64, String>, AppError> {
+    let ids: Vec<i64> = item_ids.into_iter().collect();
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    Ok(ppob_receipts::Entity::find()
+        .filter(ppob_receipts::Column::TransactionItemId.is_in(ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|row| (row.transaction_item_id, row.data))
+        .collect())
 }
 
 /// Print the struk for one fulfilled PPOB line, on its own.
@@ -342,7 +375,19 @@ pub async fn print_ppob_item(
         .map(utc_to_local_formatted)
         .unwrap_or_else(|| "N/A".to_string());
 
-    let data = build_ppob_receipt_data(&store, &transaction, &cashier_name, &date_time, &item);
+    let blob = ppob_receipts::Entity::find_by_id(item.id)
+        .one(db)
+        .await?
+        .map(|row| row.data);
+
+    let data = build_ppob_receipt_data(
+        &store,
+        &transaction,
+        &cashier_name,
+        &date_time,
+        &item,
+        blob.as_deref(),
+    );
     let lines = format_ppob_receipt(&data, paper_width);
 
     send_jobs(printer_id, vec![lines]).await
@@ -390,33 +435,34 @@ fn build_ppob_receipt_data(
     cashier_name: &str,
     date_time: &str,
     item: &transaction_items::Model,
+    provider_response: Option<&str>,
 ) -> PpobReceiptData {
-    let raw: serde_json::Value = item
-        .ppob_receipt_data
-        .as_deref()
+    let raw: serde_json::Value = provider_response
         .and_then(|json| serde_json::from_str(json).ok())
         .unwrap_or(serde_json::Value::Null);
 
     let admin_fee =
         provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]).unwrap_or(0.0);
 
-    // What the provider charged us, admin fee included.
+    // The bill on its own, before the admin fee.
     //
-    // `amount` is that figure, not the bill: a real PLN response reads
-    // `amount: 23500, base_price: 20000, admin_fee: 3500`, and the PDF invoice
-    // Mitra issues for the same transaction calls 23.500 the total. Adding the
-    // fee on top of `amount` would bill it twice. `total` is tried first only
-    // because a response that sends both means the other one to be the bill.
-    let provider_total =
-        provider_number(&raw, &["total", "total_payment", "total_amount", "amount"])
-            .filter(|total| *total > 0.0)
-            .unwrap_or(item.net_subtotal);
-
-    // The bill on its own, for the fallback block. Derived when absent, because
-    // `amount` is already spoken for above.
-    let bill_amount = provider_number(&raw, &["base_price", "nominal", "denom"])
+    // On the payment endpoints — which is what this blob holds — `amount` means
+    // the bill: `{total: 52500, amount: 50000, admin_fee: 2500}`, read that way
+    // by `services/ppob/executor.rs` too. The history endpoint uses the same
+    // word for the total instead, so do not reach for a history item here.
+    let bill_amount = provider_number(&raw, &["base_price", "amount", "nominal", "denom"])
         .filter(|amount| *amount > 0.0)
-        .unwrap_or((provider_total - admin_fee).max(0.0));
+        .unwrap_or(0.0);
+
+    // What the provider charged us, admin fee included, which is the figure
+    // their own struk and their PDF invoice both call the total. Their total if
+    // they sent one, its two parts added up otherwise, and failing both the
+    // rupiah the customer paid — which at worst shows a service fee of zero
+    // rather than a wrong figure.
+    let provider_total = provider_number(&raw, &["total", "total_payment", "total_amount"])
+        .filter(|total| *total > 0.0)
+        .or_else(|| (bill_amount > 0.0).then_some(bill_amount + admin_fee))
+        .unwrap_or(item.net_subtotal);
 
     PpobReceiptData {
         store_name: store.name.clone(),
@@ -455,7 +501,11 @@ fn build_ppob_receipt_data(
         service_description: provider_field(&raw, &["description", "plu_desc"]),
         provider_description: provider_field(&raw, &["igr_desc"]),
         provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
-        amount: bill_amount,
+        amount: if bill_amount > 0.0 {
+            bill_amount
+        } else {
+            (provider_total - admin_fee).max(0.0)
+        },
         admin_fee,
         total: provider_total,
         // What the customer actually handed over for this line, discounts and

@@ -1,6 +1,7 @@
 //! Ringing up a sale: resolving the cart, splitting the money, writing the
 //! rows, and chasing PPOB fulfilment afterwards.
 
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, QueryFilter, Set, Statement, TransactionTrait,
@@ -22,7 +23,9 @@ use crate::domain::transactions::{
     CheckoutTransactionInput, PaymentSplit, TransactionItemInput, TransactionResult,
 };
 use crate::domain::Actor;
-use crate::entity::{products, transaction_items, transaction_payments, transactions};
+use crate::entity::{
+    ppob_receipts, products, transaction_items, transaction_payments, transactions,
+};
 use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::services::ppob::MitraClient;
 use crate::utils::AppError;
@@ -483,7 +486,6 @@ async fn persist_transaction<C: ConnectionTrait>(
             }),
             ppob_message: Set(None),
             ppob_serial_number: Set(None),
-            ppob_receipt_data: Set(None),
             created_at: Set(Some(now.clone())),
         };
 
@@ -667,8 +669,49 @@ async fn update_ppob_item_status(
     active_item.ppob_status = Set(Some(outcome.status.to_string()));
     active_item.ppob_message = Set(outcome.message);
     active_item.ppob_serial_number = Set(outcome.serial_number);
-    active_item.ppob_receipt_data = Set(outcome.receipt_data);
     active_item.update(db).await?;
+
+    // The provider's whole answer goes in its own table, keyed by the item, so
+    // that everything else reading `transaction_items` never carries it. A
+    // failure clears any earlier blob: only a failed line can be retried, so
+    // whatever is there belongs to an attempt that no longer stands.
+    match outcome.receipt_data {
+        Some(data) => store_ppob_receipt(db, item_id, data).await?,
+        None => {
+            ppob_receipts::Entity::delete_by_id(item_id)
+                .exec(db)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Write the provider's response, replacing anything already stored for the
+/// item. `insert` alone would fail on a retry that follows a stored success,
+/// which cannot happen today but would be a silent loss of the struk if it did.
+async fn store_ppob_receipt(
+    db: &DatabaseConnection,
+    item_id: i64,
+    data: String,
+) -> Result<(), AppError> {
+    let receipt = ppob_receipts::ActiveModel {
+        transaction_item_id: Set(item_id),
+        data: Set(data),
+        created_at: Set(Some(now_timestamp())),
+    };
+
+    ppob_receipts::Entity::insert(receipt)
+        .on_conflict(
+            OnConflict::column(ppob_receipts::Column::TransactionItemId)
+                .update_columns([
+                    ppob_receipts::Column::Data,
+                    ppob_receipts::Column::CreatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec(db)
+        .await?;
 
     Ok(())
 }
@@ -1002,7 +1045,7 @@ mod tests {
                 assert_eq!(request.service_type, "pulsa");
                 Ok(PaymentResult {
                     success: true,
-                    receipt_data: serde_json::json!({}),
+                    receipt_data: serde_json::json!({ "receipt_text": "STRUK", "no_ref": "R-9" }),
                     service_type: "pulsa".to_string(),
                     customer_id: request.customer_id.unwrap_or_default(),
                     amount: 10_000.0,
@@ -1023,6 +1066,42 @@ mod tests {
             result.items[0].ppob_serial_number.as_deref(),
             Some("SN-123")
         );
+
+        // The provider's whole answer is kept, in its own table, so the struk
+        // can be printed again next week.
+        let stored = ppob_receipts::Entity::find_by_id(result.items[0].id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("provider response stored");
+        assert!(stored.data.contains("STRUK"));
+        assert!(stored.data.contains("R-9"));
+    }
+
+    /// A line that failed has nothing to print, and whatever a previous attempt
+    /// left behind describes an attempt that no longer stands.
+    #[tokio::test]
+    async fn a_failed_fulfilment_leaves_no_provider_response_behind() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_SUCCESS).await;
+
+        store_ppob_receipt(&conn, item.id, "{\"receipt_text\":\"STRUK\"}".to_string())
+            .await
+            .expect("store");
+
+        update_ppob_item_status(
+            &conn,
+            item.id,
+            PpobOutcome::failure("Provider timeout".to_string()),
+        )
+        .await
+        .expect("mark failed");
+
+        assert!(ppob_receipts::Entity::find_by_id(item.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .is_none());
     }
 
     #[tokio::test]

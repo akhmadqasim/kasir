@@ -12,4 +12,15 @@
 -- differ per service (PLN, PDAM, BPJS, pulsa) and the provider adds new ones
 -- without warning. The formatter reads it defensively and tolerates anything
 -- missing.
-ALTER TABLE transaction_items ADD COLUMN ppob_receipt_data TEXT;
+--
+-- In its own table rather than as a column on `transaction_items`, because it
+-- is several kilobytes that only the printer ever reads. As a column it would
+-- be fetched and thrown away by every `SELECT` over that table -- the paginated
+-- sale history, fifty rows at a time, the refund screens, the admin views --
+-- none of which has any use for it. One-to-one with the item, so the row is
+-- keyed by the item and goes when the item goes.
+CREATE TABLE IF NOT EXISTS ppob_receipts (
+  transaction_item_id INTEGER PRIMARY KEY REFERENCES transaction_items(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

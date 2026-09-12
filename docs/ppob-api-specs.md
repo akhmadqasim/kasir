@@ -332,7 +332,7 @@ Riwayat top-up saldo.
 
 Respons pembayaran yang sukses membawa bahan struk, dan namanya berbeda-beda per
 layanan. Yang dipakai `printing/ppob_receipt.rs` (lewat `services/receipt.rs`,
-dari kolom `transaction_items.ppob_receipt_data` — JSON respons mentah, disimpan
+dari tabel `ppob_receipts` — JSON respons mentah, satu baris per item, disimpan
 migrasi 023):
 
 | Field | Isi |
