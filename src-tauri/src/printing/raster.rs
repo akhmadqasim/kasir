@@ -17,14 +17,16 @@
 
 use std::mem::size_of;
 
+use std::sync::OnceLock;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, SIZE};
+
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC, DeleteObject, GdiFlush, GetDC,
-    GetTextExtentPoint32W, GetTextMetricsW, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
-    TextOutW, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DIB_RGB_COLORS, FF_MODERN,
-    FIXED_PITCH, FW_BOLD, FW_NORMAL, HBITMAP, HDC, HFONT, NONANTIALIASED_QUALITY, OUT_TT_PRECIS,
-    TEXTMETRICW, TRANSPARENT,
+    AddFontMemResourceEx, CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC,
+    DeleteObject, GdiFlush, GetDC, GetTextExtentPoint32W, GetTextMetricsW, ReleaseDC, SelectObject,
+    SetBkMode, SetTextColor, TextOutW, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS,
+    DIB_RGB_COLORS, FF_MODERN, FIXED_PITCH, FW_BOLD, FW_NORMAL, HBITMAP, HDC, HFONT,
+    NONANTIALIASED_QUALITY, OUT_TT_PRECIS, TEXTMETRICW, TRANSPARENT,
 };
 
 use super::receipt::{LineSize, ReceiptTextLine};
@@ -37,19 +39,41 @@ pub const DOTS_80MM: u32 = 576;
 /// column counts come from: 12 dots across is what makes 32 of them come to
 /// exactly the 384 dots 58mm paper is.
 const CELL_WIDTH: u32 = super::receipt::CELL_DOTS as u32;
-/// Cell height. Measured off the Mitra app's own print on this paper: its line
-/// pitch is about 5 mm, forty dots at 203 dpi, and its glyphs are tall and
-/// narrow — roughly 32 dots high on a 12-dot advance. A 24-dot cell with a
-/// glyph sized to fit the advance came out squat and half as long, which is
-/// what the shop noticed first.
-const CELL_HEIGHT: u32 = 40;
-/// Glyph height (cap height plus descender, excluding internal leading) inside
-/// a normal cell. `CreateFontW` takes it negative to mean exactly that.
-const GLYPH_HEIGHT: i32 = 32;
+/// Cell height. Measured off the Mitra app's own print on this paper: 17 rows
+/// of its PLN table span about 61 mm, a line pitch of 3.6 mm — 28 dots at
+/// 203 dpi — with the typewriter face at the size whose advance is 12 dots.
+const CELL_HEIGHT: u32 = 28;
 
 /// The face to draw with, best first. Both are monospace and both ship with
 /// Windows; `Consolas` is the cleaner of the two at this size.
-const FACES: [&str; 2] = ["Consolas", "Courier New"];
+const FACES: [&str; 3] = [TYPEWRITER_FACE, "Consolas", "Courier New"];
+
+/// The face the Mitra Indogrosir app draws its struk with — it ships this very
+/// file as `assets/fonts/monospace.ttf` — so a struk from this till and one
+/// from the phone come out in the same letters. Manfred Klein's Monospace
+/// Typewriter (2004), free for private and commercial use.
+const TYPEWRITER_FACE: &str = "MonospaceTypewriter";
+const TYPEWRITER_TTF: &[u8] = include_bytes!("../../fonts/MonospaceTypewriter.ttf");
+
+/// Make the bundled face known to GDI for this process. The handle is never
+/// released: the font is needed for as long as the process prints, and Windows
+/// drops it at exit.
+fn ensure_typewriter_font() {
+    static REGISTERED: OnceLock<bool> = OnceLock::new();
+    REGISTERED.get_or_init(|| {
+        let mut installed = 0_u32;
+        // SAFETY: the byte slice outlives the call and GDI copies it.
+        let handle = unsafe {
+            AddFontMemResourceEx(
+                TYPEWRITER_TTF.as_ptr().cast(),
+                TYPEWRITER_TTF.len() as u32,
+                None,
+                &mut installed,
+            )
+        };
+        !handle.is_invalid() && installed > 0
+    });
+}
 
 /// A one-bit-per-pixel image, packed the way `GS v 0` wants it: rows top to
 /// bottom, within a row the leftmost dot in the high bit, a set bit meaning a
@@ -161,9 +185,10 @@ unsafe fn draw(
     let _ = SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, windows::Win32::Foundation::COLORREF(0x00_00_00));
 
-    let normal = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_NORMAL.0);
-    let emphasised = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_BOLD.0);
-    let doubled = font_for(dc, CELL_WIDTH * 2, GLYPH_HEIGHT * 2, FW_NORMAL.0);
+    ensure_typewriter_font();
+    let normal = font_for(dc, CELL_WIDTH, FW_NORMAL.0);
+    let emphasised = font_for(dc, CELL_WIDTH, FW_BOLD.0);
+    let doubled = font_for(dc, CELL_WIDTH * 2, FW_NORMAL.0);
 
     let mut y = 0_i32;
     for line in lines {
@@ -195,7 +220,11 @@ unsafe fn draw(
     let _ = GdiFlush();
 
     let pixels = std::slice::from_raw_parts(bits.cast::<u8>(), len);
-    let data = threshold(pixels, stride, dots_wide, height);
+    let mut data = threshold(pixels, stride, dots_wide, height);
+    // The phone draws antialiased glyphs and the head burns every grey that is
+    // not near-white, so its stems come out two dots wide; ours are drawn
+    // without antialiasing and would be one. Widen them to match.
+    thicken(&mut data, dots_wide.div_ceil(8) as usize);
 
     SelectObject(dc, previous);
     let _ = DeleteObject(normal.into());
@@ -211,44 +240,54 @@ unsafe fn draw(
     })
 }
 
-/// A font `glyph_height` dots tall whose characters advance exactly `advance`
-/// dots.
+/// The largest size of the face at its natural proportions whose characters
+/// advance no more than `advance` dots.
 ///
-/// Height and width are asked for separately: GDI scales a TrueType face
-/// horizontally to the requested average width, which is what gives the tall,
-/// narrow glyphs the Mitra print has instead of a face sized down until it fits
-/// the advance. The advance is then measured rather than trusted — faces round
-/// differently — and the width walked down a dot at a time until a run of
-/// characters really does fit the cell.
-unsafe fn font_for(dc: HDC, advance: u32, glyph_height: i32, weight: u32) -> HFONT {
+/// The em size that produces a given advance is a property of the face, so it
+/// is measured rather than assumed: walk the heights, keep the last one whose
+/// run of characters still fits the cell. Natural proportions matter — the
+/// Mitra print is this face at exactly that size, and condensing or stretching
+/// it to some other height is what made ours look like a different font.
+unsafe fn font_for(dc: HDC, advance: u32, weight: u32) -> HFONT {
+    let mut best: Option<HFONT> = None;
+
     for face in FACES {
-        for width in (1..=advance as i32).rev() {
-            let font = create_font(face, -glyph_height, width, weight);
+        for height in 8..=(advance as i32 * 4) {
+            let font = create_font(face, height, weight);
             if font.is_invalid() {
                 continue;
             }
 
             match measured_advance(dc, font) {
-                Some(measured) if measured <= advance => return font,
+                Some(measured) if measured <= advance => {
+                    if let Some(previous) = best.replace(font) {
+                        let _ = DeleteObject(previous.into());
+                    }
+                }
                 _ => {
                     let _ = DeleteObject(font.into());
+                    break;
                 }
             }
+        }
+
+        if best.is_some() {
+            break;
         }
     }
 
     // Nothing measurable at all — no face installed, or a DC that answers
     // nothing. The mapper will substitute something for this; a receipt in the
     // wrong font beats no receipt.
-    create_font(FACES[1], -glyph_height, advance as i32, weight)
+    best.unwrap_or_else(|| create_font(FACES[2], advance as i32, weight))
 }
 
-unsafe fn create_font(face: &str, height: i32, width: i32, weight: u32) -> HFONT {
+unsafe fn create_font(face: &str, height: i32, weight: u32) -> HFONT {
     let name: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
 
     CreateFontW(
         height,
-        width,
+        0,
         0,
         0,
         weight as i32,
@@ -283,6 +322,24 @@ unsafe fn measured_advance(dc: HDC, font: HFONT) -> Option<u32> {
 /// A single threshold is right here rather than dithering — the source is
 /// antialiasing-free text on white, so every pixel is already one or the other
 /// apart from a handful on the edges of curves.
+/// Widen every stroke by one dot to the right.
+///
+/// The Mitra app's print has heavier strokes than a one-dot-wide GDI stem on a
+/// 203 dpi head, and asking the face for a bolder weight clogs the counters of
+/// a glyph condensed to a 12-dot advance. Smearing each set dot one dot to the
+/// right thickens every stroke by the same amount, straight or curved, without
+/// changing the letterforms.
+fn thicken(data: &mut [u8], bytes_per_row: usize) {
+    for row in data.chunks_mut(bytes_per_row) {
+        let mut carry = 0_u8;
+        for byte in row.iter_mut() {
+            let next_carry = (*byte & 1) << 7;
+            *byte |= (*byte >> 1) | carry;
+            carry = next_carry;
+        }
+    }
+}
+
 fn threshold(pixels: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
     let bytes_per_row = width.div_ceil(8) as usize;
     let mut data = vec![0_u8; bytes_per_row * height as usize];
@@ -381,12 +438,21 @@ mod tests {
         assert!(last_byte_has_dots, "the 32nd character fell off the paper");
     }
 
+    /// A single dot becomes two; a run keeps its left edge and grows one dot on
+    /// the right, across a byte boundary too.
+    #[test]
+    fn thicken_smears_every_dot_one_to_the_right() {
+        let mut row = vec![0b1000_0000, 0b0000_0001, 0b0000_0000];
+        thicken(&mut row, 3);
+        assert_eq!(row, vec![0b1100_0000, 0b0000_0001, 0b1000_0000]);
+    }
+
     #[test]
     fn a_pbm_carries_the_header_and_every_row() {
         let bitmap = render_lines(&[ReceiptTextLine::plain("X")], 32, DOTS_58MM).expect("rendered");
         let pbm = bitmap.to_pbm();
 
-        assert!(pbm.starts_with(b"P4\n384 40\n"));
-        assert_eq!(pbm.len(), 10 + 48 * 40);
+        assert!(pbm.starts_with(b"P4\n384 28\n"));
+        assert_eq!(pbm.len(), 10 + 48 * 28);
     }
 }
