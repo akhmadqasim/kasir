@@ -1,14 +1,29 @@
 import { canEditProduct, id } from "@kasir/shared";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
-import { useFocusEffect, useRouter } from "expo-router";
-import { Alert, Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
+import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
+import {
+  Alert,
+  Button,
+  GlassView,
+  Input,
+  Label,
+  Spinner,
+  TextField,
+  Typography,
+} from "heroui-native";
 import { useCallback, useRef, useState, type JSX } from "react";
 import { View } from "react-native";
 
+import { PageHeader } from "@/components/page-header";
+import { PlatformIcon } from "@/components/platform-icon";
 import { ScrollScreen } from "@/components/screen";
 import { InlineError } from "@/components/state-view";
+import { useAppActive } from "@/hooks/use-app-active";
 import { useProductLookup } from "@/hooks/use-product-lookup";
 import { useCurrentUser } from "@/hooks/use-session";
+import { hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
+import { hasLiquidGlass, isIOS } from "@/lib/platform";
+import { useScannerStore } from "@/stores/scanner-store";
 
 /**
  * Retail barcodes only. EAN-13 is the Indonesian standard; EAN-8 for small
@@ -26,16 +41,17 @@ export default function ScanTab(): JSX.Element {
   const [permission, requestPermission] = useCameraPermissions();
   const lookup = useProductLookup();
 
+  const cameraEnabled = useScannerStore((state) => state.cameraEnabled);
+  const toggleCamera = useScannerStore((state) => state.toggleCamera);
+  const isFocused = useIsFocused();
+  const appActive = useAppActive();
+
   const [manual, setManual] = useState("");
-  const [focused, setFocused] = useState(false);
   const lastScan = useRef<{ code: string; at: number } | null>(null);
 
-  // Only run the camera while this tab is on screen.
   useFocusEffect(
     useCallback(() => {
-      setFocused(true);
       lookup.reset();
-      return () => setFocused(false);
       // `lookup` is a fresh object each render; `reset` itself is stable.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
@@ -43,19 +59,33 @@ export default function ScanTab(): JSX.Element {
 
   const notFound = lookup.data && lookup.data.product === null ? lookup.data.code : null;
 
+  /**
+   * The preview is mounted only while it is both wanted and useful: the user has
+   * not switched it off, the tab is on screen, and the app is in the foreground.
+   * Unmounting rather than hiding is what actually releases the camera.
+   */
+  const cameraLive = cameraEnabled && isFocused && appActive && permission?.granted === true;
+
   const onScanned = ({ data }: BarcodeScanningResult) => {
     const now = Date.now();
     const previous = lastScan.current;
     if (lookup.isPending || notFound) return;
     if (previous && previous.code === data && now - previous.at < RESCAN_COOLDOWN_MS) return;
     lastScan.current = { code: data, at: now };
-    lookup.mutate(data);
+    lookupCode(data);
+  };
+
+  const lookupCode = (code: string) => {
+    lookup.mutate(code, {
+      onSuccess: ({ product }) => (product ? hapticSuccess() : hapticWarning()),
+      onError: () => hapticWarning(),
+    });
   };
 
   const submitManual = () => {
     const code = manual.trim();
     if (!code || lookup.isPending) return;
-    lookup.mutate(code);
+    lookupCode(code);
   };
 
   const scanAgain = () => {
@@ -63,18 +93,48 @@ export default function ScanTab(): JSX.Element {
     lastScan.current = null;
   };
 
+  const onToggleCamera = () => {
+    hapticSelection();
+    toggleCamera();
+  };
+
   return (
-    <ScrollScreen>
+    <ScrollScreen headerless>
+      <PageHeader title={id.scan.title} />
+
       {permission?.granted ? (
         <View className="aspect-[3/4] w-full overflow-hidden rounded-3xl bg-surface-secondary">
-          {focused ? (
+          {cameraLive ? (
             <CameraView
               style={{ flex: 1 }}
               facing="back"
               barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }}
               onBarcodeScanned={notFound || lookup.isPending ? undefined : onScanned}
             />
-          ) : null}
+          ) : (
+            <View className="flex-1 items-center justify-center gap-3 px-6">
+              {/* SF Symbols 7 has no `camera.slash`; the hollow `camera` reads as
+                  "off" next to the filled one on the toggle. */}
+              <PlatformIcon sf="camera" md="camera-off-outline" size={32} />
+              {/* Switched off on purpose — the other reasons (tab in the
+                  background, app in the background) are never on screen long
+                  enough to read, and resolve themselves. */}
+              {cameraEnabled ? null : (
+                <>
+                  <Typography weight="medium">{id.scan.cameraPaused}</Typography>
+                  <Typography type="body-sm" color="muted" align="center">
+                    {id.scan.cameraPausedBody}
+                  </Typography>
+                  <Button variant="secondary" onPress={onToggleCamera}>
+                    <Button.Label>{id.scan.cameraOn}</Button.Label>
+                  </Button>
+                </>
+              )}
+            </View>
+          )}
+
+          {cameraLive ? <CameraToggle onPress={onToggleCamera} /> : null}
+
           {lookup.isPending ? (
             <View className="absolute inset-0 items-center justify-center">
               <Spinner />
@@ -97,7 +157,7 @@ export default function ScanTab(): JSX.Element {
         </Button>
       ) : null}
 
-      {permission?.granted && !notFound ? (
+      {cameraLive && !notFound ? (
         <Typography type="body-sm" color="muted" align="center">
           {id.scan.hint}
         </Typography>
@@ -137,6 +197,7 @@ export default function ScanTab(): JSX.Element {
         <Label>{id.scan.manualLabel}</Label>
         <View className="flex-row gap-3">
           <Input
+            containerClassName="flex-1"
             className="flex-1"
             value={manual}
             onChangeText={setManual}
@@ -156,5 +217,43 @@ export default function ScanTab(): JSX.Element {
         </View>
       </TextField>
     </ScrollScreen>
+  );
+}
+
+/**
+ * Switch the preview off without leaving the tab.
+ *
+ * iOS 26 floats controls over content on glass, so the button is a glass circle;
+ * Android uses a tonal icon button, which is Material 3's answer for the same
+ * "secondary action on top of media" job.
+ */
+function CameraToggle({ onPress }: { onPress: () => void }): JSX.Element {
+  const button = (
+    <Button
+      variant={isIOS ? "ghost" : "secondary"}
+      size="sm"
+      isIconOnly
+      className="rounded-full"
+      accessibilityLabel={id.scan.cameraOff}
+      onPress={onPress}
+    >
+      <PlatformIcon sf="camera.fill" md="camera" size={20} />
+    </Button>
+  );
+
+  return (
+    <View className="absolute right-3 top-3">
+      {isIOS ? (
+        <GlassView
+          className="overflow-hidden rounded-full"
+          forceFallbackColor={!hasLiquidGlass}
+          fallbackColor="overlay"
+        >
+          {button}
+        </GlassView>
+      ) : (
+        button
+      )}
+    </View>
   );
 }
