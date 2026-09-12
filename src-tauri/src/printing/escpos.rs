@@ -4,9 +4,18 @@
 //! datatype "RAW", so the printer renders its own built-in font instead of the
 //! driver rasterising a bitmap. Line width is already handled upstream by
 //! `format_receipt_text` / `format_test_page_text` (32 cols for 58mm, 42 for
-//! 80mm), which matches Font A. The one size command this module emits is the
-//! double-size toggle a line asks for through [`LineSize`]; the formatter that
-//! asks for it is also the one that halved the width it wrapped to.
+//! 80mm), which matches Font A. Weight and size come from one `ESC !` print-mode
+//! byte per line, and the formatter that asks for a double-size line is also the
+//! one that halved the width it wrapped to.
+//!
+//! **`GS !` is banned here.** It is the command most ESC/POS documentation
+//! reaches for to set character size, and on the POS58 (TECH CLA58) on this till
+//! it stops the print dead: isolation tests showed a job of plain text followed
+//! by `GS ! 0x11` printing the text and then nothing at all, while the same job
+//! byte-for-byte with `ESC ! 0x30` printed to the end. A short job with `GS !`
+//! had worked earlier, so the firmware only chokes on it once its buffer has
+//! filled — which is exactly the case a receipt is. `ESC !`, `ESC E`, `ESC d`,
+//! `GS V` and jobs of two kilobytes are all proven good on the same unit.
 //!
 //! Trailing feed and cut are this module's job alone — the formatters emit no
 //! blank filler lines, so there is one place to tune how much paper a receipt
@@ -16,15 +25,16 @@ use super::receipt::{LineSize, ReceiptTextLine};
 
 /// ESC @ — reset the printer to its power-on defaults.
 const INIT: [u8; 2] = [0x1B, 0x40];
-/// ESC E 1 — emphasised (bold) on.
-const BOLD_ON: [u8; 3] = [0x1B, 0x45, 0x01];
-/// ESC E 0 — emphasised (bold) off.
-const BOLD_OFF: [u8; 3] = [0x1B, 0x45, 0x00];
-/// GS ! 0x11 — double width and double height (the high nibble is the width
-/// multiplier, the low nibble the height, both 1 meaning "twice").
-const SIZE_DOUBLE: [u8; 3] = [0x1D, 0x21, 0x11];
-/// GS ! 0x00 — back to the single-size character.
-const SIZE_NORMAL: [u8; 3] = [0x1D, 0x21, 0x00];
+/// ESC ! — select print mode. The byte that follows carries every attribute at
+/// once, so one command says everything about how the next line looks and there
+/// is no way for two toggles to disagree.
+const PRINT_MODE: [u8; 2] = [0x1B, 0x21];
+/// Bit 3 of the print-mode byte: emphasised.
+const MODE_BOLD: u8 = 0x08;
+/// Bits 4 and 5 of the print-mode byte: double height and double width.
+const MODE_DOUBLE: u8 = 0x30;
+/// The power-on print mode, and what the printer is left in.
+const MODE_PLAIN: u8 = 0x00;
 /// ESC d 6 — feed 6 lines so the last printed line clears the cutter or tear
 /// bar (roughly 15-20mm past the print head on a 58mm unit). Six matches the
 /// blank filler lines the text formatters used to append, so consolidating the
@@ -39,19 +49,12 @@ pub fn encode_lines(lines: &[ReceiptTextLine]) -> Vec<u8> {
     let mut out = Vec::with_capacity(INIT.len() + lines.len() * 40 + 8);
     out.extend_from_slice(&INIT);
 
-    let mut bold = false;
-    let mut size = LineSize::Normal;
+    let mut mode = MODE_PLAIN;
     for line in lines {
-        if line.bold != bold {
-            out.extend_from_slice(if line.bold { &BOLD_ON } else { &BOLD_OFF });
-            bold = line.bold;
-        }
-        if line.size != size {
-            out.extend_from_slice(match line.size {
-                LineSize::Double => &SIZE_DOUBLE,
-                LineSize::Normal => &SIZE_NORMAL,
-            });
-            size = line.size;
+        let wanted = print_mode(line);
+        if wanted != mode {
+            push_mode(&mut out, wanted);
+            mode = wanted;
         }
         push_ascii(&mut out, &line.text);
         out.push(b'\n');
@@ -59,16 +62,30 @@ pub fn encode_lines(lines: &[ReceiptTextLine]) -> Vec<u8> {
 
     // Leave the printer in its default state: the feed below and the next job
     // both assume single-size, unemphasised characters.
-    if bold {
-        out.extend_from_slice(&BOLD_OFF);
-    }
-    if size != LineSize::Normal {
-        out.extend_from_slice(&SIZE_NORMAL);
+    if mode != MODE_PLAIN {
+        push_mode(&mut out, MODE_PLAIN);
     }
 
     out.extend_from_slice(&FEED_LINES);
     out.extend_from_slice(&PARTIAL_CUT);
     out
+}
+
+fn push_mode(out: &mut Vec<u8>, mode: u8) {
+    out.extend_from_slice(&PRINT_MODE);
+    out.push(mode);
+}
+
+/// Everything the printer needs to know about one line's appearance, in the one
+/// byte `ESC !` takes.
+fn print_mode(line: &ReceiptTextLine) -> u8 {
+    let bold = if line.bold { MODE_BOLD } else { 0 };
+    let size = match line.size {
+        LineSize::Double => MODE_DOUBLE,
+        LineSize::Normal => 0,
+    };
+
+    bold | size
 }
 
 /// Append `text` as single-byte ASCII, replacing anything outside 0x20..=0x7E
@@ -120,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn bold_toggles_only_on_state_change() {
+    fn bold_switches_the_print_mode_only_on_a_change() {
         let bytes = encode_lines(&[
             line("a", false),
             line("b", true),
@@ -129,16 +146,14 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40a\n\x1B\x45\x01b\nc\n\x1B\x45\x00d\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40a\n\x1B\x21\x08b\nc\n\x1B\x21\x00d\n\x1B\x64\x06\x1D\x56\x01".to_vec()
         );
     }
 
     #[test]
-    fn first_line_bold_emits_bold_on_once() {
+    fn a_job_that_opens_bold_sets_the_mode_once_and_clears_it_once() {
         let bytes = encode_lines(&[line("x", true), line("y", true)]);
-        assert_eq!(bytes.windows(3).filter(|w| *w == BOLD_ON).count(), 1);
-        // Bold is reset before the trailing feed so the next job starts clean.
-        assert_eq!(bytes.windows(3).filter(|w| *w == BOLD_OFF).count(), 1);
+        assert_eq!(mode_bytes(&bytes), vec![MODE_BOLD, MODE_PLAIN]);
     }
 
     #[test]
@@ -150,7 +165,7 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40a\n\x1D\x21\x11T\n\x1D\x21\x00b\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40a\n\x1B\x21\x30T\n\x1B\x21\x00b\n\x1B\x64\x06\x1D\x56\x01".to_vec()
         );
     }
 
@@ -160,18 +175,19 @@ mod tests {
             ReceiptTextLine::double("6991-4243"),
             ReceiptTextLine::double("8030-6764"),
         ]);
-        assert_eq!(bytes.windows(3).filter(|w| *w == SIZE_DOUBLE).count(), 1);
-        // Reset once, at the end, so the feed and the next job print normally.
-        assert_eq!(bytes.windows(3).filter(|w| *w == SIZE_NORMAL).count(), 1);
+        assert_eq!(mode_bytes(&bytes), vec![MODE_DOUBLE, MODE_PLAIN]);
+        // Reset before the trailing feed, so it feeds at single height and the
+        // next job starts clean.
         assert_eq!(
             &bytes[bytes.len() - 9..],
-            &[0x1D, 0x21, 0x00, 0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
+            &[0x1B, 0x21, 0x00, 0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
         );
     }
 
-    /// Size and weight are independent commands; a line can ask for both.
+    /// Weight and size ride in the same byte, so a line asking for both costs
+    /// one command and cannot end up half-applied.
     #[test]
-    fn bold_and_double_size_are_emitted_independently() {
+    fn bold_and_double_size_share_one_print_mode_byte() {
         let bytes = encode_lines(&[ReceiptTextLine {
             text: "X".to_string(),
             bold: true,
@@ -179,9 +195,50 @@ mod tests {
         }]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1B\x45\x01\x1D\x21\x11X\n\x1B\x45\x00\x1D\x21\x00\x1B\x64\x06\x1D\x56\x01"
-                .to_vec()
+            b"\x1B\x40\x1B\x21\x38X\n\x1B\x21\x00\x1B\x64\x06\x1D\x56\x01".to_vec()
         );
+    }
+
+    /// Going straight from one attribute to another is one command, not a reset
+    /// and a set. This is where the two-toggle scheme used to leak: clearing the
+    /// size with `GS ! 0x00` left bold on, clearing bold with `ESC E 0` left the
+    /// size, and the order they were written in decided what came out.
+    #[test]
+    fn moving_between_attributes_costs_a_single_command() {
+        let bytes = encode_lines(&[
+            line("bold", true),
+            ReceiptTextLine::double("6991-5243-8030-"),
+            line("plain", false),
+        ]);
+
+        assert_eq!(mode_bytes(&bytes), vec![MODE_BOLD, MODE_DOUBLE, MODE_PLAIN]);
+    }
+
+    /// `GS !` is what most ESC/POS documentation reaches for to set character
+    /// size, and it is the one command that kills this printer mid-job. Nothing
+    /// this encoder emits may contain it.
+    #[test]
+    fn no_gs_bang_anywhere_in_the_output() {
+        let bytes = encode_lines(&[
+            line("plain", false),
+            line("bold", true),
+            ReceiptTextLine::double("6991-5243-8030-"),
+            line("plain again", false),
+        ]);
+
+        assert!(
+            !bytes.windows(2).any(|pair| pair == [0x1D, 0x21]),
+            "GS ! must never reach the printer"
+        );
+    }
+
+    /// Every print-mode byte in a job, in order.
+    fn mode_bytes(bytes: &[u8]) -> Vec<u8> {
+        bytes
+            .windows(3)
+            .filter(|window| window[..2] == PRINT_MODE)
+            .map(|window| window[2])
+            .collect()
     }
 
     /// Anything outside printable ASCII — multi-byte UTF-8 and embedded control
