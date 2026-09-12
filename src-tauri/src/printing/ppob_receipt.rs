@@ -176,7 +176,9 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     push_serial_block(&mut lines, data, cpl);
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
     push_detail_block(&mut lines, data, cpl);
-    push_reference_block(&mut lines, data, cpl);
+    if non_empty(data.provider_receipt_text.as_deref()).is_some() {
+        push_reference_block(&mut lines, data, cpl);
+    }
     push_totals(&mut lines, data, cpl);
     push_footer(&mut lines, data, cpl);
 
@@ -353,6 +355,9 @@ fn push_detail_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, c
                 lines.push(ReceiptTextLine::plain(wrapped));
             }
         }
+        // `fallback_fields` is the whole block in this case, reference and admin
+        // fee included, so there is nothing left for `push_reference_block` to
+        // add and no way for it to print either of them twice.
         return;
     };
 
@@ -477,6 +482,7 @@ fn fallback_fields(data: &PpobReceiptData) -> Vec<(&'static str, String)> {
     push_optional("NO PELANGGAN", &data.customer_id);
     push_optional("NAMA", &data.customer_name);
     push_optional("NO REF", &data.reference_number);
+    push_optional("KODE BAYAR", &data.payment_code);
 
     fields.push(("NOMINAL", format!("Rp {}", format_rupiah(data.amount))));
     if data.admin_fee != 0.0 {
@@ -1061,8 +1067,18 @@ mod tests {
         assert!(text.contains("NAMA        : BUDI SANTOSA"));
         assert!(text.contains("NOMINAL     : Rp 20.000"));
         assert!(text.contains("ADMIN BANK  : Rp 3.500"));
+        assert!(text.contains("KODE BAYAR  : L14300000001-1"));
         // The token block does not depend on the provider's text.
         assert!(text.contains("1111-2222-3333-"));
+
+        // This block *is* the reference block here, so nothing may supplement
+        // it: a struk carrying both `NO REF` and `No. Ref` with the same number
+        // under two spellings is the sort of thing a customer queries.
+        assert_eq!(text.matches("NO REF").count(), 1);
+        assert_eq!(text.matches("ADMIN BANK").count(), 1);
+        assert!(!text.contains("Admin Fee"));
+        assert!(!text.contains("No. Ref"));
+        assert!(!text.contains("Kode Bayar"));
     }
 
     #[test]

@@ -402,9 +402,13 @@ pub async fn print_ppob_item(
 /// field it has no value for with `""` as readily as it omits the key, so a
 /// `"receipt_text": ""` at the root would otherwise end the search and hide the
 /// real block one level down.
+/// Keys outrank nesting: `admin_fee` anywhere beats `fee` at the root. They are
+/// listed most-specific first for exactly that reason, and a wrapper holding the
+/// real `admin_fee` should not lose to a root that happens to carry a vaguer
+/// synonym.
 fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    response_objects(raw).find_map(|object| {
-        keys.iter().find_map(|key| {
+    keys.iter().find_map(|key| {
+        response_objects(raw).find_map(|object| {
             parse_string(object.get(*key))
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
@@ -413,7 +417,8 @@ fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
 }
 
 fn provider_number(raw: &serde_json::Value, keys: &[&str]) -> Option<f64> {
-    response_objects(raw).find_map(|object| get_num_field(object, keys))
+    keys.iter()
+        .find_map(|key| response_objects(raw).find_map(|object| get_num_field(object, &[*key])))
 }
 
 /// One of our own columns, treating a blank string as the absence it means.
@@ -446,11 +451,12 @@ fn build_ppob_receipt_data(
 
     // The bill on its own, before the admin fee.
     //
-    // On the payment endpoints — which is what this blob holds — `amount` means
-    // the bill: `{total: 52500, amount: 50000, admin_fee: 2500}`, read that way
-    // by `services/ppob/executor.rs` too. The history endpoint uses the same
-    // word for the total instead, so do not reach for a history item here.
-    let bill_amount = provider_number(&raw, &["base_price", "amount", "nominal", "denom"])
+    // Deliberately not read from `amount`: the payment endpoints mean the bill
+    // by it and the history endpoint means the total, and from a stored blob
+    // there is no telling which shape arrived. Guessing wrong prints the admin
+    // fee twice or not at all, so the figure is only taken from a field that
+    // means one thing.
+    let bill_amount = provider_number(&raw, &["base_price", "nominal", "denom"])
         .filter(|amount| *amount > 0.0)
         .unwrap_or(0.0);
 
