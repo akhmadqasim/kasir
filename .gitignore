@@ -55,3 +55,20 @@ tmp-*.png
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Expo (apps/mobile)
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+apps/mobile/expo-env.d.ts
+apps/mobile/uniwind-types.d.ts
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/.kotlin/
+apps/mobile/.metro-health-check*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.tsbuildinfo
