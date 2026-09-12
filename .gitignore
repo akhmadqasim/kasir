@@ -50,3 +50,5 @@ tmp/
 temp/
 data/backups/
 tmp-*.png
+# heroui-agents-md
+.heroui-docs/

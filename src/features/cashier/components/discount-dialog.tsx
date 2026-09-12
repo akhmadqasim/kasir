@@ -1,24 +1,15 @@
 import { useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { useCartStore } from "../hooks/use-cart-store"
+import { Button, Input, Modal, TextField } from "@heroui/react"
+
+import { OptionSelect } from "@/components/option-select"
+import { SummaryList } from "@/components/summary-list"
+import { useCartStore } from "@/stores/cart-store"
 import { formatRupiah } from "../utils"
+
+const DISCOUNT_TYPES = [
+  { key: "fixed", label: "Nominal (Rp)" },
+  { key: "percentage", label: "Persen (%)" },
+] as const
 
 interface DiscountDialogProps {
   open: boolean
@@ -33,11 +24,15 @@ function parseDiscount(raw: string, type: "fixed" | "percentage"): number {
 
 export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-        <DiscountDialogBody onOpenChange={onOpenChange} />
-      </DialogContent>
-    </Dialog>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label="Diskon Total Transaksi">
+          {/* React Aria melepas isi dialog saat ia menutup, jadi form-nya lahir
+              ulang dari diskon yang tersimpan setiap kali dibuka. */}
+          <DiscountDialogBody onOpenChange={onOpenChange} />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -49,7 +44,9 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
   const getTotal = useCartStore((s) => s.getTotal)
   const getItemDiscountsTotal = useCartStore((s) => s.getItemDiscountsTotal)
 
-  const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(transactionDiscount?.type ?? "fixed")
+  const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(
+    transactionDiscount?.type ?? "fixed",
+  )
   const [txnRaw, setTxnRaw] = useState(transactionDiscount ? String(transactionDiscount.value) : "")
 
   const subtotal = getSubtotal()
@@ -84,72 +81,72 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Diskon Total Transaksi</DialogTitle>
-      </DialogHeader>
+      <Modal.CloseTrigger />
+      <Modal.Header>
+        <Modal.Heading>Diskon Total Transaksi</Modal.Heading>
+      </Modal.Header>
 
-        {/* Transaction-level discount */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Diskon</Label>
+      <Modal.Body>
+        {/* Jenis dan nilai berdampingan; judul bloknya ditulis sekali, kolomnya
+            sendiri diberi `aria-label` supaya tidak ada `<label>` menggantung. */}
+        <div className="flex flex-col gap-2">
+          <p className="font-medium text-foreground">Diskon</p>
           <div className="flex items-center gap-2">
-            <Select value={txnDiscType} onValueChange={(v) => handleToggleType(v as "fixed" | "percentage")}>
-              <SelectTrigger className="h-9 w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fixed">Nominal (Rp)</SelectItem>
-                <SelectItem value="percentage">Persen (%)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="text"
-              inputMode="numeric"
-              className="h-9 flex-1 text-right tabular-nums"
-              placeholder={txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
-              value={formatTxnDisplay(txnRaw)}
-              onChange={(e) => handleTxnChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onOpenChange(false)
-              }}
-              autoFocus
+            <OptionSelect
+              aria-label="Jenis diskon"
+              variant="secondary"
+              options={DISCOUNT_TYPES}
+              value={txnDiscType}
+              onChange={(key) => handleToggleType(key as "fixed" | "percentage")}
             />
+            <TextField
+              aria-label="Nilai diskon"
+              autoFocus
+              className="flex-1"
+              variant="secondary"
+              value={formatTxnDisplay(txnRaw)}
+              onChange={handleTxnChange}
+            >
+              <Input
+                className="text-right tabular-nums"
+                inputMode="numeric"
+                placeholder={txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onOpenChange(false)
+                }}
+              />
+            </TextField>
           </div>
         </div>
 
-        <Separator />
+        <SummaryList
+          items={[
+            { label: "Subtotal", value: formatRupiah(subtotal) },
+            ...(itemDiscountsTotal > 0
+              ? [{ label: "Diskon Per Item", value: `-${formatRupiah(itemDiscountsTotal)}` }]
+              : []),
+            ...(totalDiscount > 0
+              ? [
+                  {
+                    label: "Total Diskon",
+                    value: `-${formatRupiah(totalDiscount)}`,
+                    tone: "danger" as const,
+                  },
+                ]
+              : []),
+            { label: "Total Akhir", value: formatRupiah(finalTotal), tone: "strong" },
+          ]}
+        />
+      </Modal.Body>
 
-        {/* Summary */}
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{formatRupiah(subtotal)}</span>
-          </div>
-          {itemDiscountsTotal > 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>Diskon Per Item</span>
-              <span className="tabular-nums">-{formatRupiah(itemDiscountsTotal)}</span>
-            </div>
-          )}
-          {totalDiscount > 0 && (
-            <div className="flex justify-between text-destructive">
-              <span>Total Diskon</span>
-              <span className="tabular-nums">-{formatRupiah(totalDiscount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold">
-            <span>Total Akhir</span>
-            <span className="tabular-nums">{formatRupiah(finalTotal)}</span>
-          </div>
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          {transactionDiscount && (
-            <Button variant="outline" onClick={handleReset}>
-              Reset
-            </Button>
-          )}
-          <Button onClick={() => onOpenChange(false)}>Selesai</Button>
-        </DialogFooter>
-      </>
+      <Modal.Footer>
+        {transactionDiscount && (
+          <Button variant="tertiary" onPress={handleReset}>
+            Reset
+          </Button>
+        )}
+        <Button slot="close">Selesai</Button>
+      </Modal.Footer>
+    </>
   )
 }

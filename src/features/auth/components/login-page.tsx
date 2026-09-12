@@ -1,99 +1,89 @@
-import { useState } from "react"
-import { Store } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
+import { useRef, useState } from "react"
+import { Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
+import { AuthCard, AuthScreen } from "@/components/auth-card"
+import { PendingButton } from "@/components/pending-button"
 import { useLogin } from "@/features/auth/hooks/use-auth"
 import { PinInput } from "@/features/auth/components/pin-input"
 
+/**
+ * Bentuk kartunya mengikuti `login-demo.tsx` resmi HeroUI lewat `AuthCard`.
+ * Yang tersisa di sini hanya formulir dan rantai keyboardnya. Kolom isiannya
+ * `variant="secondary"` — DESIGN.md §4.
+ */
 export function LoginPage() {
   const [username, setUsername] = useState("")
   const [pin, setPin] = useState("")
+  const pinRef = useRef<HTMLInputElement>(null)
   const loginMutation = useLogin()
 
   const t = id.auth
+  const canSubmit = Boolean(username.trim()) && Boolean(pin.trim())
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const submit = () => {
+    if (!canSubmit || loginMutation.isPending) return
+    loginMutation.mutate({ username: username.trim(), pin })
+  }
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!username.trim() || !pin.trim()) return
-    loginMutation.mutate({ input: { username: username.trim(), pin } })
+    submit()
   }
 
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
-      <div className="w-full max-w-sm md:max-w-4xl">
-        <Card className="overflow-hidden p-0">
-          <CardContent className="grid p-0 md:grid-cols-2">
-            <form className="p-6 md:p-8" onSubmit={handleSubmit}>
-              <FieldGroup>
-                <div className="flex items-center gap-2 self-center">
-                  <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                    <Store className="size-4" />
-                  </div>
-                  <span className="font-medium">{id.app.name}</span>
-                </div>
-                <div className="flex flex-col items-center gap-2 text-center">
-                  <h1 className="text-2xl font-bold">{t.loginTitle}</h1>
-                  <p className="text-sm text-balance text-muted-foreground">
-                    {t.loginSubtitle}
-                  </p>
-                </div>
-                <Field>
-                  <FieldLabel htmlFor="username">{t.username}</FieldLabel>
-                  <Input
-                    id="username"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder={t.username}
-                    disabled={loginMutation.isPending}
-                    autoFocus
-                    required
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="pin">{t.pin}</FieldLabel>
-                  <PinInput
-                    id="pin"
-                    value={pin}
-                    onChange={setPin}
-                    placeholder={t.pin}
-                    disabled={loginMutation.isPending}
-                  />
-                </Field>
-                <Field>
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={
-                      loginMutation.isPending ||
-                      !username.trim() ||
-                      !pin.trim()
-                    }
-                  >
-                    {loginMutation.isPending
-                      ? id.common.loading
-                      : t.loginButton}
-                  </Button>
-                </Field>
-              </FieldGroup>
-            </form>
-            <div className="relative hidden bg-muted md:block">
-              <img
-                src="/onboarding-bg.jpg"
-                alt="Toko Sembako"
-                className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <AuthScreen>
+      <AuthCard title={t.loginTitle}>
+        <Form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <TextField
+            autoFocus
+            fullWidth
+            isDisabled={loginMutation.isPending}
+            type="text"
+            value={username}
+            variant="secondary"
+            onChange={setUsername}
+          >
+            <Label>{t.username}</Label>
+            {/*
+              Enter di sini turun ke PIN, tidak mengirim formulir. Kasir masuk
+              dengan dua tangan di papan ketik dan tidak pernah menekan Tab;
+              tanpa ini Enter tidak melakukan apa-apa, karena tombol kirim masih
+              nonaktif selama PIN kosong dan browser menolak mengirimkan formulir
+              lewat tombol yang nonaktif.
+            */}
+            <Input
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return
+                event.preventDefault()
+                pinRef.current?.focus()
+              }}
+            />
+          </TextField>
+          {/*
+            Enter di PIN memanggil `submit` langsung, tidak menumpang pengiriman
+            implisit milik browser. Perilaku implisit itu punya syarat yang mudah
+            luput — harus ada tombol submit yang tidak nonaktif — dan menekan
+            Enter adalah cara utama kasir masuk, bukan jalan pintas.
+          */}
+          <PinInput
+            inputRef={pinRef}
+            isDisabled={loginMutation.isPending}
+            label={t.pin}
+            value={pin}
+            variant="secondary"
+            onChange={setPin}
+            onEnter={submit}
+          />
+          <PendingButton
+            fullWidth
+            isDisabled={!canSubmit}
+            isPending={loginMutation.isPending}
+            type="submit"
+          >
+            {t.loginButton}
+          </PendingButton>
+        </Form>
+      </AuthCard>
+    </AuthScreen>
   )
 }

@@ -1,17 +1,15 @@
 import { useState, useEffect, type ElementType } from "react"
 import { AlertTriangle, Barcode, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { ToggleButton } from "@heroui/react"
+
+import { OptionSelect } from "@/components/option-select"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { useCategories } from "../hooks/use-categories"
 import type { ProductQuickFilter } from "../types"
+
+/** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
+const ALL = "all"
 
 interface ProductSearchProps {
   onSearchChange: (query: string) => void
@@ -39,6 +37,7 @@ export function ProductSearch({
   onQuickFilterChange,
 }: ProductSearchProps) {
   const [searchInput, setSearchInput] = useState("")
+  const [categoryKey, setCategoryKey] = useState<string>(ALL)
   const { data: categories } = useCategories()
 
   useEffect(() => {
@@ -48,53 +47,55 @@ export function ProductSearch({
     return () => clearTimeout(timer)
   }, [searchInput, onSearchChange])
 
+  const categoryOptions = [
+    { key: ALL, label: id.products.allCategories },
+    ...(categories ?? []).map((cat) => ({ key: String(cat.id), label: cat.name })),
+  ]
+
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={id.products.search}
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select
-          onValueChange={(value) => {
-            onCategoryChange(value === "all" ? null : Number(value))
+        <SearchInput
+          aria-label={id.products.search}
+          className="max-w-sm flex-1"
+          placeholder={id.products.search}
+          value={searchInput}
+          onChange={setSearchInput}
+        />
+
+        <OptionSelect
+          aria-label={id.products.allCategories}
+          className="w-full lg:w-[200px]"
+          options={categoryOptions}
+          value={categoryKey}
+          onChange={(value) => {
+            const key = value ?? ALL
+            setCategoryKey(key)
+            onCategoryChange(key === ALL ? null : Number(key))
           }}
-        >
-          <SelectTrigger className="w-full lg:w-[200px]">
-            <SelectValue placeholder={id.products.allCategories} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{id.products.allCategories}</SelectItem>
-            {categories?.map((cat) => (
-              <SelectItem key={cat.id} value={String(cat.id)}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
 
+      {/* Filter cepat. `ToggleButton` dipakai satu per satu, bukan lewat
+          `ToggleButtonGroup`: grup menggabungkan kelimanya jadi satu titik Tab
+          dengan navigasi panah, sedangkan di sini tiap tombol tetap punya titik
+          Tab-nya sendiri seperti sebelumnya. Yang bertambah cuma `aria-pressed`. */}
       <div className="flex flex-wrap gap-2">
         {QUICK_FILTERS.map((filter) => {
           const Icon = filter.icon
-          const isActive = quickFilter === filter.value
 
           return (
-            <Button
+            <ToggleButton
               key={filter.value}
-              type="button"
-              variant={isActive ? "default" : "outline"}
+              isSelected={quickFilter === filter.value}
               size="sm"
-              onClick={() => onQuickFilterChange(filter.value)}
+              // Filter ini saling meniadakan, jadi menekan yang sedang aktif
+              // memilih ulang nilai yang sama alih-alih mematikannya.
+              onChange={() => onQuickFilterChange(filter.value)}
             >
-              <Icon className="mr-1.5 h-3.5 w-3.5" />
+              <Icon />
               {filter.label}
-            </Button>
+            </ToggleButton>
           )
         })}
       </div>

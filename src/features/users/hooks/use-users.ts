@@ -1,20 +1,24 @@
-import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
 import { useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { createUser, listUsers, setUserActive, updateUser } from "@/lib/api/users"
+import { queryKeys } from "@/lib/api/query-keys"
+import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
 import type { User } from "@/features/auth/types"
-import type { CreateUserInput, UpdateUserInput, ToggleUserActiveInput } from "../types"
+import type { CreateUserInput, ToggleUserActiveInput, UpdateUserInput } from "../types"
 
-export function useUsers(callerId: number) {
-  return useTauriQuery<User[]>("list_users", { callerId })
+/** The list is admin-only on the server; there is no caller id to pass any more. */
+export function useUsers() {
+  return useApiQuery<User[]>(queryKeys.users.list, listUsers)
 }
 
 export function useCreateUser() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<User, { input: CreateUserInput; callerId: number }>("create_user", {
+  return useApiMutation<User, CreateUserInput>(createUser, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["list_users"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
       toast.success(id.users.createSuccess)
     },
     onError: (error) => {
@@ -26,9 +30,9 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<User, { input: UpdateUserInput; callerId: number }>("update_user", {
+  return useApiMutation<User, UpdateUserInput>(updateUser, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["list_users"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
       toast.success(id.users.updateSuccess)
     },
     onError: (error) => {
@@ -40,31 +44,18 @@ export function useUpdateUser() {
 export function useToggleUserActive() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<User, ToggleUserActiveInput>("toggle_user_active", {
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["list_users"] })
-      toast.success(
-        variables.isActive
-          ? id.users.activateSuccess
-          : id.users.deactivateSuccess
-      )
-    },
-    onError: (error) => {
-      toast.error(error.message)
-    },
-  })
-}
-
-export function useChangePin() {
-  return useTauriMutation<void, { userId: number; currentPin: string; newPin: string }>(
-    "change_user_pin",
+  return useApiMutation<User, ToggleUserActiveInput>(
+    ({ userId, isActive }) => setUserActive(userId, isActive),
     {
-      onSuccess: () => {
-        toast.success(id.profile.pinChanged)
+      onSuccess: (_data, variables) => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+        toast.success(variables.isActive ? id.users.activateSuccess : id.users.deactivateSuccess)
       },
       onError: (error) => {
         toast.error(error.message)
       },
-    }
+    },
   )
 }
+
+export { useChangeOwnPin as useChangePin } from "@/features/auth/hooks/use-auth"

@@ -1,6 +1,8 @@
 import { useQueryClient, keepPreviousData } from "@tanstack/react-query"
-import { toast } from "sonner"
-import { useTauriQuery, useTauriMutation } from "@/hooks/use-tauri-command"
+import { toast } from "@/lib/toast"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { createProduct, deleteProduct, searchProducts, updateProduct } from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import type {
   PaginatedProducts,
@@ -11,19 +13,29 @@ import type {
 } from "../types"
 
 export function useSearchProducts(params: SearchProductsParams) {
-  return useTauriQuery<PaginatedProducts>(
-    "search_products",
-    { params },
-    { placeholderData: keepPreviousData }
+  return useApiQuery<PaginatedProducts>(
+    queryKeys.products.search(params),
+    () => searchProducts(params),
+    { placeholderData: keepPreviousData },
   )
+}
+
+/**
+ * Writing a product moves both lists a screen can be showing: the catalogue and
+ * the cashier's shortcut grid, which orders itself by what sells. Invalidating
+ * `products.all` covers both, which is the right blast radius here — unlike the
+ * per-scan selection tracking, which touches only the shortcuts.
+ */
+function invalidateProducts(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
 }
 
 export function useCreateProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Product, { input: CreateProductInput; callerId: number }>("create_product", {
+  return useApiMutation<Product, CreateProductInput>(createProduct, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
+      invalidateProducts(queryClient)
       toast.success(id.products.createSuccess)
     },
     onError: (error) => {
@@ -35,9 +47,9 @@ export function useCreateProduct() {
 export function useUpdateProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<Product, { input: UpdateProductInput; callerId: number }>("update_product", {
+  return useApiMutation<Product, UpdateProductInput>(updateProduct, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
+      invalidateProducts(queryClient)
       toast.success(id.products.updateSuccess)
     },
     onError: (error) => {
@@ -49,9 +61,9 @@ export function useUpdateProduct() {
 export function useDeleteProduct() {
   const queryClient = useQueryClient()
 
-  return useTauriMutation<null, { id: number; callerId: number }>("delete_product", {
+  return useApiMutation<void, number>(deleteProduct, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["search_products"] })
+      invalidateProducts(queryClient)
       toast.success(id.products.deleteSuccess)
     },
     onError: (error) => {

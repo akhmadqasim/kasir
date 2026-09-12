@@ -1,22 +1,23 @@
-import { useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
-import { invoke } from "@tauri-apps/api/core"
+import { useState } from "react"
+import type { FormEvent } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+  Form,
+  Input,
+  Label,
+  Modal,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react"
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
-import { cn } from "@/lib/utils"
+
+import { PendingButton } from "@/components/pending-button"
+import { id } from "@/i18n/id"
+import { formatRupiah } from "@/lib/format"
+import { toast } from "@/lib/toast"
+import { createCashFlow } from "@/lib/api/shifts"
 import { useShiftStore } from "../hooks/use-shift-store"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import type { CashFlow } from "../types"
+import { groupDigits, toDigits } from "../utils"
 
 interface CashFlowDialogProps {
   open: boolean
@@ -24,62 +25,43 @@ interface CashFlowDialogProps {
 }
 
 export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
+  return (
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label="Uang Masuk / Keluar">
+          {/* React Aria unmounts the dialog as it closes, so every field below
+              starts empty on the next open without an effect to reset them. */}
+          <CashFlowForm onOpenChange={onOpenChange} />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  )
+}
+
+function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const [flowType, setFlowType] = useState<"in" | "out" | "">("")
   const [amount, setAmount] = useState("")
-  const [displayAmount, setDisplayAmount] = useState("")
   const [description, setDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const amountRef = useRef<HTMLInputElement>(null)
   const activeShift = useShiftStore((s) => s.activeShift)
-  const user = useAuthStore((s) => s.user)
-
-  useEffect(() => {
-    if (open) {
-      setFlowType("")
-      setAmount("")
-      setDisplayAmount("")
-      setDescription("")
-      setTimeout(() => amountRef.current?.focus(), 100)
-    }
-  }, [open])
-
-  const formatNumber = (num: number): string =>
-    new Intl.NumberFormat("id-ID").format(num)
-
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "")
-    if (raw === "") {
-      setAmount("")
-      setDisplayAmount("")
-      return
-    }
-    const num = Number(raw)
-    setAmount(String(num))
-    setDisplayAmount(formatNumber(num))
-  }
 
   const numericAmount = Number(amount) || 0
   const canSubmit =
-    flowType !== "" &&
-    numericAmount > 0 &&
-    description.trim().length > 0 &&
-    !isSubmitting
+    flowType !== "" && numericAmount > 0 && description.trim().length > 0 && !isSubmitting
 
-  const handleSubmit = async () => {
-    if (!canSubmit || !activeShift || !user) return
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!canSubmit || !activeShift) return
     setIsSubmitting(true)
     try {
-      await invoke<CashFlow>("create_cash_flow", {
-        input: {
-          shiftId: activeShift.id,
-          userId: user.id,
-          flowType,
-          amount: numericAmount,
-          description: description.trim(),
-        },
+      await createCashFlow({
+        shiftId: activeShift.id,
+        flowType,
+        amount: numericAmount,
+        description: description.trim(),
       })
       const label = flowType === "in" ? "Uang masuk" : "Uang keluar"
-      toast.success(`${label} Rp ${formatNumber(numericAmount)} tercatat`)
+      toast.success(`${label} ${formatRupiah(numericAmount)} tercatat`)
       onOpenChange(false)
     } catch (err) {
       toast.error(`Gagal mencatat: ${err}`)
@@ -88,97 +70,74 @@ export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && canSubmit) {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" onKeyDown={handleKeyDown}>
-        <DialogHeader>
-          <DialogTitle>Uang Masuk / Keluar</DialogTitle>
-          <DialogDescription>
-            Catat arus kas masuk atau keluar
-          </DialogDescription>
-        </DialogHeader>
+    // validationBehavior="aria" — see the note in `open-shift-dialog.tsx`.
+    <Form validationBehavior="aria" onSubmit={handleSubmit}>
+      <Modal.CloseTrigger />
+      <Modal.Header>
+        <Modal.Heading>Uang Masuk / Keluar</Modal.Heading>
+      </Modal.Header>
 
-        <div className="space-y-4">
-          <div>
-            <Label className="mb-2 block">Jenis</Label>
-            <div className="grid w-full grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  "justify-center gap-1.5",
-                  flowType === "in" &&
-                    "border-green-600 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500 dark:bg-green-950/40 dark:text-green-300"
-                )}
-                onClick={() => setFlowType("in")}
-              >
-                <ArrowDownCircle className="h-4 w-4 text-green-600" />
-                Uang Masuk
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  "justify-center gap-1.5",
-                  flowType === "out" &&
-                    "border-red-500 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500 dark:bg-red-950/40 dark:text-red-300"
-                )}
-                onClick={() => setFlowType("out")}
-              >
-                <ArrowUpCircle className="h-4 w-4 text-red-500" />
-                Uang Keluar
-              </Button>
-            </div>
-            {flowType === "" ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Pilih jenis arus kas terlebih dahulu.
-              </p>
-            ) : null}
-          </div>
-
-          <div>
-            <Label htmlFor="cf-amount">Nominal</Label>
-            <Input
-              ref={amountRef}
-              id="cf-amount"
-              type="text"
-              inputMode="numeric"
-              className="mt-1 !h-12 !text-lg !font-bold text-right tabular-nums"
-              placeholder="0"
-              value={displayAmount}
-              onChange={handleAmountChange}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="cf-desc">Keterangan</Label>
-            <Input
-              id="cf-desc"
-              className="mt-1"
-              placeholder="Contoh: Bayar supplier"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+      <Modal.Body>
+        <div className="flex flex-col gap-2">
+          <Label>Jenis</Label>
+          {/* `ToggleButtonGroup` pilihan tunggal, seperti contoh "Selection Mode"
+              di dokumentasinya — React Aria merendernya sebagai radiogroup, jadi
+              pembaca layar tahu ini satu pilihan dari dua. Warna terpilihnya
+              bawaan komponen; arah uangnya sudah dibawa ikon dan labelnya. */}
+          <ToggleButtonGroup
+            aria-label="Jenis"
+            disallowEmptySelection
+            fullWidth
+            isDisabled={isSubmitting}
+            selectedKeys={flowType ? [flowType] : []}
+            selectionMode="single"
+            onSelectionChange={(keys) => {
+              const [picked] = keys
+              if (picked === "in" || picked === "out") setFlowType(picked)
+            }}
+          >
+            <ToggleButton id="in">
+              <ArrowDownCircle className="text-success" />
+              Uang Masuk
+            </ToggleButton>
+            <ToggleButton id="out">
+              <ToggleButtonGroup.Separator />
+              <ArrowUpCircle className="text-danger" />
+              Uang Keluar
+            </ToggleButton>
+          </ToggleButtonGroup>
         </div>
 
-        <DialogFooter>
-          <Button
-            className="h-12 w-full text-lg font-semibold"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-          >
-            {isSubmitting ? "Menyimpan..." : "Simpan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <TextField
+          autoFocus
+          fullWidth
+          isDisabled={isSubmitting}
+          value={groupDigits(amount)}
+          variant="secondary"
+          onChange={(value) => setAmount(toDigits(value))}
+        >
+          <Label>Nominal</Label>
+          <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
+        </TextField>
+
+        <TextField
+          fullWidth
+          isDisabled={isSubmitting}
+          value={description}
+          variant="secondary"
+          onChange={setDescription}
+        >
+          <Label>Keterangan</Label>
+          <Input placeholder="Contoh: Bayar supplier" />
+        </TextField>
+      </Modal.Body>
+
+      <Modal.Footer>
+        <PendingButton fullWidth isDisabled={!canSubmit} isPending={isSubmitting} type="submit">
+          {id.common.save}
+        </PendingButton>
+      </Modal.Footer>
+    </Form>
   )
 }

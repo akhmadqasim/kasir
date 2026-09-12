@@ -8,24 +8,44 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | [Tauri v2](https://v2.tauri.app/) (Rust backend + webview frontend) |
-| Frontend | React 18 + TypeScript |
-| UI Components | [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS |
-| State Management | Zustand |
-| Database | SQLite via `rusqlite` (Rust-side) |
-| ORM/Query | SQLite with raw SQL in Rust, exposed via Tauri commands |
+| Framework | [Tauri v2](https://v2.tauri.app/) — Rust backend runs an embedded axum HTTP API; the window loads `http://127.0.0.1:<port>`. No Tauri IPC commands. |
+| Frontend | React 19 + TypeScript |
+| UI Components | [HeroUI v3](https://www.heroui.com/) + Tailwind CSS v4 (only `src/components/ui/chart.tsx` remains from shadcn/ui, as a recharts wrapper) |
+| State Management | Zustand + TanStack Query |
+| Database | SQLite via `sea-orm` (`sqlx-sqlite` backend); `rusqlite` for the backup reader |
+| ORM/Query | sea-orm entities + `sea-query`; migrations via a custom runner in `db/migrations.rs` |
 | Receipt Printing | ESC/POS protocol via serial/USB |
 | Barcode | EAN-13 (standard 2D retail Indonesia) |
 | i18n | Indonesian (primary), English (secondary, later) |
 | Package Manager | Bun |
+
+## Build & Release
+
+- Development: `bun run tauri dev`. Production build: `bun run tauri build`.
+- Releases are built **locally and published to GitHub Releases — there is no CI/CD**
+  (private repo → Windows CI minutes are costly; local build is free). Use the script:
+
+  ```powershell
+  pwsh scripts/release.ps1 -Version X.Y.Z            # bump 3 version files, build, tag, push, gh release
+  pwsh scripts/release.ps1 -Version X.Y.Z -NoPublish # build only
+  ```
+
+  It keeps `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
+  versions in sync, produces the Windows MSI + NSIS installers under
+  `src-tauri/target/release/bundle/`, and only commits/tags/publishes if the build
+  succeeds. Installers are currently **unsigned**.
+- **Build gotcha:** on high-core / low-free-RAM machines, cargo's default job count
+  can OOM `rustc` (`STATUS_STACK_BUFFER_OVERRUN` / `rust_oom`). Use `CARGO_BUILD_JOBS=2`
+  (the release script defaults to `-Jobs 2`). Note `cargo` lives at `~/.cargo/bin`, not
+  always on the Git-Bash PATH.
 
 ## Architecture
 
 ```
 src/                    # Frontend (React + TypeScript)
 ├── app/                # App entry, router, providers
-├── components/         # Reusable UI components (shadcn-based)
-│   ├── ui/             # shadcn/ui primitives
+├── components/         # Reusable UI components (HeroUI-based)
+│   ├── ui/             # chart.tsx — the one non-HeroUI wrapper (recharts needs it)
 │   └── ...             # Domain components
 ├── features/           # Feature modules (co-located logic + UI)
 │   ├── auth/           # Login, session, role management
@@ -40,27 +60,20 @@ src/                    # Frontend (React + TypeScript)
 │   └── settings/       # App settings
 ├── hooks/              # Shared React hooks
 ├── lib/                # Utilities, constants, types
+│   └── api/            # fetch client (client.ts) + one typed module per resource
 ├── i18n/               # Internationalization (id, en)
-└── styles/             # Global styles, Tailwind config
+└── index.css           # Global styles, Tailwind entry point
 
 src-tauri/              # Backend (Rust)
 ├── src/
-│   ├── main.rs         # Tauri entry point
-│   ├── db/             # Database setup, migrations, queries
-│   │   ├── mod.rs
-│   │   ├── migrations/ # SQL migration files
-│   │   └── models/     # Rust structs matching DB tables
-│   ├── commands/       # Tauri IPC commands (exposed to frontend)
-│   │   ├── auth.rs
-│   │   ├── products.rs
-│   │   ├── transactions.rs
-│   │   ├── refunds.rs
-│   │   ├── stock.rs
-│   │   ├── reports.rs
-│   │   ├── receipt.rs
-│   │   └── settings.rs
+│   ├── main.rs         # Tauri entry point — starts the axum server, then the window
+│   ├── domain/         # Core types (Actor, business entities) — no tauri/axum here
+│   ├── entity/         # sea-orm entities
+│   ├── services/       # Business logic + DB queries, built on sea-orm entities
+│   ├── http/           # axum router, routes/, session, CSRF, idempotency
+│   ├── db/             # DB setup + migration runner (db/migrations.rs)
 │   ├── printing/       # ESC/POS thermal printer driver
-│   └── utils/          # Shared Rust utilities
+│   └── utils/          # Shared Rust utilities (error types, logging, paths)
 ├── migrations/         # SQL migration files
 ├── Cargo.toml
 └── tauri.conf.json
@@ -156,7 +169,7 @@ refunds (
   type TEXT NOT NULL CHECK(type IN ('refund', 'exchange')),
   total_refund_amount REAL NOT NULL,    -- Total nilai barang yang diretur
   total_exchange_amount REAL DEFAULT 0, -- Total nilai barang pengganti (exchange)
-  difference_amount REAL DEFAULT 0,     -- Selisih (+ pelanggan bayar, - toko kembalikan)
+  difference_amount REAL DEFAULT 0,     -- total_refund_amount - total_exchange_amount (+ toko kembalikan, - pelanggan bayar)
   payment_method TEXT CHECK(payment_method IN ('cash', 'qris', 'ewallet', 'transfer')),
   reason TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -251,9 +264,9 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 
 ### Exchange (Tukar Barang)
 - Pelanggan return barang lama → pilih barang baru
-- Kalkulator selisih harga otomatis
-- Selisih positif → pelanggan bayar
-- Selisih negatif → toko kembalikan uang
+- Kalkulator selisih harga otomatis: `difference_amount = total_refund_amount - total_exchange_amount`
+- Selisih positif → nilai barang retur lebih besar, toko kembalikan uang ke pelanggan
+- Selisih negatif → nilai barang pengganti lebih besar, pelanggan bayar selisihnya
 - Bisa tukar barang sama (administrasi, misal rusak ganti baru)
 - Maksimal 7 hari setelah pembelian
 
@@ -290,6 +303,13 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 
 ## Coding Conventions
 
+> **UI work: read [`DESIGN.md`](DESIGN.md) first.** It is the binding reference for design
+> tokens, component variants, layout patterns, Indonesian copy and number formats, and the
+> per-feature file structure. The rules below cover the rest of the codebase.
+>
+> The HeroUI v3 MCP server is configured in `.mcp.json` (`list_components`,
+> `get_component_docs`, `get_theme_variables`) — use it instead of guessing a component's API.
+
 ### General
 - Bahasa kode: **English** (variable names, functions, comments)
 - Bahasa UI: **Indonesian** (labels, messages, placeholders)
@@ -302,19 +322,20 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 ### Frontend (React + TypeScript)
 - Functional components only
 - Feature-based folder structure (co-locate related files)
-- shadcn/ui untuk semua base components
-- Tailwind CSS untuk styling (no CSS modules, no styled-components)
+- HeroUI v3 untuk semua base components — satu pengecualian: `components/ui/chart.tsx`, wrapper manual untuk recharts
+- Tailwind CSS v4 untuk styling (no CSS modules, no styled-components)
 - Zustand stores per-feature
-- React Query / TanStack Query untuk async state dari Tauri commands
+- React Query / TanStack Query untuk async state dari HTTP API (`src/lib/api/`) — tidak ada Tauri command, semua panggilan lewat `fetch`
 - File naming: `kebab-case.tsx` untuk components, `use-kebab-case.ts` untuk hooks
 - Export: named exports (no default exports, kecuali pages)
 
 ### Backend (Rust)
-- Tauri commands as the API layer
-- All DB queries in `db/` module
+- axum HTTP routes di `src-tauri/src/http/routes/` sebagai API layer — tidak ada Tauri command, tidak ada `invoke`
+- Identitas selalu dari session cookie server-side (`http::session`), tidak pernah dari isi request
+- DB queries ada di `services/`, dibangun di atas `sea-orm` entities (`entity/`) dan raw SQL lewat `sea_orm::Statement` bila perlu
 - Use `serde` for serialization
 - Proper error types with `thiserror`
-- Return `Result<T, E>` from all commands
+- Return `Result<T, AppError>` from all services/handlers
 
 ### Database
 - Migration-based schema changes (numbered SQL files)
@@ -345,3 +366,10 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 - Session timeout setelah inactivity
 - SQLite database di-encrypt (opsional, later)
 - No sensitive data in frontend state beyond current session
+
+### Known open issues (from DB audit — not yet fixed)
+
+- **PPOB secrets stored insecurely.** Mitra Indogrosir access/refresh tokens are
+  stored in plaintext (`services/ppob/auth.rs`) and PPOB credentials use a
+  reversible hardcoded-XOR (`obfuscate`/`deobfuscate` in `domain/settings.rs`).
+  Needs an OS keychain (Windows Credential Manager / Stronghold).

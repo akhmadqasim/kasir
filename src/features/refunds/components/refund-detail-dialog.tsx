@@ -1,242 +1,179 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
-import { formatRupiah } from "@/lib/format"
+import { Button, Modal, Skeleton, Table } from "@heroui/react"
+
+import { StatusBadge } from "@/components/status-badge"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
+import { useApiQuery } from "@/hooks/use-api"
+import { getRefundDetail } from "@/lib/api/refunds"
+import { queryKeys } from "@/lib/api/query-keys"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
+import { refundConditionBadge, refundTypeLabel } from "../labels"
 import type { RefundDetailResult } from "../types"
-
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  return dateFormatter.format(new Date(dateStr.replace(" ", "T") + "Z"))
-}
-
-const CONDITION_CONFIG: Record<string, { label: string; className: string }> = {
-  good: {
-    label: id.refund.conditionGood,
-    className: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
-  },
-  damaged: {
-    label: id.refund.conditionDamaged,
-    className: "",
-  },
-  expired: {
-    label: id.refund.conditionExpired,
-    className: "bg-yellow-50 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
-  },
-}
-
-function getDifferenceColor(amount: number): string {
-  if (amount > 0) return "text-green-600 dark:text-green-400"
-  if (amount < 0) return "text-red-600 dark:text-red-400"
-  return "text-muted-foreground"
-}
 
 interface RefundDetailDialogProps {
   refundId: number | null
   onClose: () => void
 }
 
+/** Selisih tukar barang: positif toko mengembalikan uang, negatif pelanggan menambah bayar. */
+function differenceTone(amount: number): SummaryItem["tone"] {
+  if (amount > 0) return "success"
+  if (amount < 0) return "danger"
+  return "default"
+}
+
 export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProps) {
-  const { data: detail, isLoading } = useTauriQuery<RefundDetailResult>(
-    "get_refund_detail",
-    { refundId },
-    { enabled: !!refundId }
+  const { data: detail, isLoading } = useApiQuery<RefundDetailResult>(
+    queryKeys.refunds.detail(refundId ?? 0),
+    () => getRefundDetail(refundId!),
+    { enabled: !!refundId },
   )
 
   const isExchange = detail?.refund.refund_type === "exchange"
 
-  return (
-    <Dialog open={!!refundId} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{id.refund.detail}</DialogTitle>
-          <DialogDescription>
-            {detail?.refund.refund_number ?? ""}
-          </DialogDescription>
-        </DialogHeader>
+  const headerItems: SummaryItem[] = detail
+    ? [
+        { label: id.refund.refundNumber, value: detail.refund.refund_number, tone: "mono" },
+        { label: id.refund.type, value: refundTypeLabel(detail.refund.refund_type) },
+        { label: id.refund.transactionReceipt, value: detail.transaction_receipt, tone: "mono" },
+        { label: id.refund.cashier, value: detail.cashier_name },
+        { label: id.transactions.date, value: formatDateTime(detail.refund.created_at) },
+        ...(detail.refund.reason ? [{ label: id.refund.reason, value: detail.refund.reason }] : []),
+      ]
+    : []
 
-        {isLoading || !detail ? (
-          <div className="space-y-3">
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-3/4" />
-            <Skeleton className="h-5 w-1/2" />
-          </div>
-        ) : (
-          <div className="-mx-4 max-h-[50vh] overflow-y-auto px-4">
-            <div className="space-y-4">
-              {/* Header info */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-muted-foreground">{id.refund.refundNumber}</p>
-                  <p className="font-mono font-medium">{detail.refund.refund_number}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{id.refund.type}</p>
-                  {detail.refund.refund_type === "exchange" ? (
-                    <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                      {id.refund.typeExchange}
-                    </Badge>
-                  ) : (
-                    <Badge variant="default">
-                      {id.refund.typeRefund}
-                    </Badge>
-                  )}
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{id.refund.transactionReceipt}</p>
-                  <p className="font-mono">{detail.transaction_receipt}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{id.refund.cashier}</p>
-                  <p>{detail.cashier_name}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{id.transactions.date}</p>
-                  <p>{formatDate(detail.refund.created_at)}</p>
-                </div>
-                {detail.refund.reason && (
-                  <div>
-                    <p className="text-muted-foreground">{id.refund.reason}</p>
-                    <p>{detail.refund.reason}</p>
-                  </div>
-                )}
+  const summaryItems: SummaryItem[] = detail
+    ? [
+        {
+          label: id.refund.totalRefund,
+          value: formatRupiah(detail.refund.total_refund_amount),
+          tone: "strong",
+        },
+        ...(isExchange
+          ? [
+              {
+                label: id.refund.totalExchange,
+                value: formatRupiah(detail.refund.total_exchange_amount ?? 0),
+              },
+              {
+                label: id.refund.difference,
+                value: formatRupiah(detail.refund.difference_amount ?? 0),
+                tone: differenceTone(detail.refund.difference_amount ?? 0),
+              },
+            ]
+          : []),
+      ]
+    : []
+
+  return (
+    <Modal.Backdrop isOpen={!!refundId} onOpenChange={(open) => !open && onClose()}>
+      <Modal.Container scroll="inside" size="lg">
+        <Modal.Dialog aria-label={id.refund.detail}>
+          <Modal.CloseTrigger />
+          <Modal.Header>
+            <Modal.Heading>{id.refund.detail}</Modal.Heading>
+          </Modal.Header>
+
+          {isLoading || !detail ? (
+            <Modal.Body>
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-3/4" />
+              <Skeleton className="h-5 w-1/2" />
+            </Modal.Body>
+          ) : (
+            <Modal.Body>
+              <SummaryList items={headerItems} layout="grid" />
+
+              {/* Bagian dipisah ruang, bukan garis — DESIGN.md §5.7. */}
+              <div className="flex flex-col gap-2">
+                <p className="font-medium text-foreground">{id.refund.returnedItems}</p>
+                <Table variant="secondary">
+                  <Table.ScrollContainer>
+                    <Table.Content aria-label={id.refund.returnedItems} className="tabular-nums">
+                      <Table.Header>
+                        <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
+                        <Table.Column className="text-center">Qty</Table.Column>
+                        <Table.Column className="text-right">{id.refund.price}</Table.Column>
+                        <Table.Column className="text-right">{id.refund.subtotal}</Table.Column>
+                        <Table.Column>{id.refund.condition}</Table.Column>
+                      </Table.Header>
+                      <Table.Body>
+                        {detail.items.map((item) => {
+                          const condition = refundConditionBadge(item.condition)
+                          return (
+                            <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
+                              <Table.Cell>{item.product_name}</Table.Cell>
+                              <Table.Cell className="text-center">{item.quantity}</Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.product_price)}
+                              </Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.subtotal)}
+                              </Table.Cell>
+                              <Table.Cell>
+                                {condition ? (
+                                  <StatusBadge status={condition.variant}>
+                                    {condition.label}
+                                  </StatusBadge>
+                                ) : (
+                                  "—"
+                                )}
+                              </Table.Cell>
+                            </Table.Row>
+                          )
+                        })}
+                      </Table.Body>
+                    </Table.Content>
+                  </Table.ScrollContainer>
+                </Table>
               </div>
 
-              <Separator />
-
-              {/* Returned items */}
-              <div>
-                <h4 className="mb-2 text-sm font-medium">{id.refund.returnedItems}</h4>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{id.refund.productName}</TableHead>
-                        <TableHead className="text-center">Qty</TableHead>
-                        <TableHead className="text-right">{id.refund.price}</TableHead>
-                        <TableHead className="text-right">{id.refund.subtotal}</TableHead>
-                        <TableHead>{id.refund.condition}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detail.items.map((item) => {
-                        const conditionCfg = CONDITION_CONFIG[item.condition ?? ""] ?? null
-                        return (
-                          <TableRow key={item.id}>
-                            <TableCell className="text-sm">{item.product_name}</TableCell>
-                            <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatRupiah(item.product_price)}</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatRupiah(item.subtotal)}</TableCell>
-                            <TableCell>
-                              {conditionCfg ? (
-                                <Badge
-                                  variant={item.condition === "damaged" ? "destructive" : "default"}
-                                  className={conditionCfg.className}
-                                >
-                                  {conditionCfg.label}
-                                </Badge>
-                              ) : (
-                                "—"
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
+              {isExchange && detail.exchange_items.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="font-medium text-foreground">{id.refund.replacementItems}</p>
+                  <Table variant="secondary">
+                    <Table.ScrollContainer>
+                      <Table.Content
+                        aria-label={id.refund.replacementItems}
+                        className="tabular-nums"
+                      >
+                        <Table.Header>
+                          <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
+                          <Table.Column className="text-center">Qty</Table.Column>
+                          <Table.Column className="text-right">{id.refund.price}</Table.Column>
+                          <Table.Column className="text-right">{id.refund.subtotal}</Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {detail.exchange_items.map((item) => (
+                            <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
+                              <Table.Cell>{item.product_name}</Table.Cell>
+                              <Table.Cell className="text-center">{item.quantity}</Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.product_price)}
+                              </Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.subtotal)}
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
                   </Table>
                 </div>
-              </div>
-
-              {/* Exchange items (only for exchange type) */}
-              {isExchange && detail.exchange_items.length > 0 && (
-                <>
-                  <Separator />
-                  <div>
-                    <h4 className="mb-2 text-sm font-medium">{id.refund.replacementItems}</h4>
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{id.refund.productName}</TableHead>
-                            <TableHead className="text-center">Qty</TableHead>
-                            <TableHead className="text-right">{id.refund.price}</TableHead>
-                            <TableHead className="text-right">{id.refund.subtotal}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {detail.exchange_items.map((item) => (
-                            <TableRow key={item.id}>
-                              <TableCell className="text-sm">{item.product_name}</TableCell>
-                              <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
-                              <TableCell className="text-right tabular-nums">{formatRupiah(item.product_price)}</TableCell>
-                              <TableCell className="text-right tabular-nums">{formatRupiah(item.subtotal)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                </>
               )}
 
-              <Separator />
+              <SummaryList items={summaryItems} />
+            </Modal.Body>
+          )}
 
-              {/* Summary */}
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between font-semibold">
-                  <span>{id.refund.totalRefund}</span>
-                  <span className="tabular-nums">{formatRupiah(detail.refund.total_refund_amount)}</span>
-                </div>
-                {isExchange && (
-                  <>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>{id.refund.totalExchange}</span>
-                      <span className="tabular-nums">{formatRupiah(detail.refund.total_exchange_amount ?? 0)}</span>
-                    </div>
-                    <div className={`flex justify-between font-semibold ${getDifferenceColor(detail.refund.difference_amount ?? 0)}`}>
-                      <span>{id.refund.difference}</span>
-                      <span className="tabular-nums">{formatRupiah(detail.refund.difference_amount ?? 0)}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">{id.refund.cancel}</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              {id.refund.cancel}
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }

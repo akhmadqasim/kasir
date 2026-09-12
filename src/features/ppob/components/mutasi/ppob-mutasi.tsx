@@ -1,50 +1,32 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  ArrowLeft,
-  ArrowDownCircle,
-  ArrowUpCircle,
-  Search,
-  RefreshCw,
-  Loader2,
-  CalendarIcon,
-} from "lucide-react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import type { DateRange } from "react-day-picker"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
+import { ArrowDownCircle, ArrowUpCircle, Search, RefreshCw } from "lucide-react"
+import { Button, Modal, Separator, Skeleton, Spinner, Table } from "@heroui/react"
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
+import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { SummaryList } from "@/components/summary-list"
+import { DateRangePicker } from "@/components/date-range-picker"
+import type { DateRange } from "@/lib/date-range"
 import { id as i18n } from "@/i18n/id"
 import { usePpobMutasi, usePpobSaldo } from "../../hooks"
-import { getDefaultDateRange, normalizeStatus, formatRupiah, formatDateTime } from "../history/history-utils"
+import { formatRupiah, toLocalDateString } from "@/lib/format"
+import {
+  getDefaultDateRange,
+  getDefaultDateRangeDates,
+  isWithinLocalDateRange,
+  normalizeStatus,
+  parseMutasiDate,
+  formatDateTime,
+} from "../history/history-utils"
 import type { MutasiItem } from "../../types"
 
 const TYPE_FILTER_OPTIONS = [
-  { value: "all", label: i18n.ppob.mutasiAll },
-  { value: "in", label: i18n.ppob.mutasiIn },
-  { value: "out", label: i18n.ppob.mutasiOut },
+  { key: "all", label: i18n.ppob.mutasiAll },
+  { key: "in", label: i18n.ppob.mutasiIn },
+  { key: "out", label: i18n.ppob.mutasiOut },
 ] as const
 
 const DISPLAY_LABELS: Record<string, string> = {
@@ -105,25 +87,62 @@ const DISPLAY_LABELS: Record<string, string> = {
 
 // Fields to hide from detail view (verbose/internal)
 const HIDDEN_KEYS = new Set([
-  "device_id", "inquiry_id", "plu", "igr_plu", "plu_igr", "margin",
-  "receipt_text", "invoice_url", "invoice_string",
-  "id", "max_adjustment", "advice_id", "ref_id",
-  "amount_base_price", "complaint", "uid", "user_id", "flag_member",
-  "member_id", "flag_topup", "topup_type", "type_topup",
+  "device_id",
+  "inquiry_id",
+  "plu",
+  "igr_plu",
+  "plu_igr",
+  "margin",
+  "receipt_text",
+  "invoice_url",
+  "invoice_string",
+  "id",
+  "max_adjustment",
+  "advice_id",
+  "ref_id",
+  "amount_base_price",
+  "complaint",
+  "uid",
+  "user_id",
+  "flag_member",
+  "member_id",
+  "flag_topup",
+  "topup_type",
+  "type_topup",
 ])
 
 // Fields to show first (priority order)
 const PRIORITY_KEYS = [
-  "created_at", "formatted_date",
-  "product_name", "plu_desc", "igr_desc", "description",
-  "target", "raw_paymentcode", "customer_no", "phone_number",
-  "total", "amount", "sell_price",
-  "amount_fee", "admin_fee", "fee",
-  "base_price", "vendor_price", "profit",
-  "token_number", "serial_number", "kwh",
-  "no_ref", "trxid", "trx_id",
-  "provider", "merchant", "denom",
-  "payment_code", "status",
+  "created_at",
+  "formatted_date",
+  "product_name",
+  "plu_desc",
+  "igr_desc",
+  "description",
+  "target",
+  "raw_paymentcode",
+  "customer_no",
+  "phone_number",
+  "total",
+  "amount",
+  "sell_price",
+  "amount_fee",
+  "admin_fee",
+  "fee",
+  "base_price",
+  "vendor_price",
+  "profit",
+  "token_number",
+  "serial_number",
+  "kwh",
+  "no_ref",
+  "trxid",
+  "trx_id",
+  "provider",
+  "merchant",
+  "denom",
+  "payment_code",
+  "status",
 ]
 
 function formatRawValue(key: string, value: unknown): string | null {
@@ -133,7 +152,19 @@ function formatRawValue(key: string, value: unknown): string | null {
   const str = String(value)
   if (str === "-" || str === "0" || str === "0.0" || str.trim() === "") return null
 
-  const numKeys = ["total", "amount", "amount_fee", "admin_fee", "fee", "sell_price", "base_price", "vendor_price", "profit", "nominal", "topup_amount"]
+  const numKeys = [
+    "total",
+    "amount",
+    "amount_fee",
+    "admin_fee",
+    "fee",
+    "sell_price",
+    "base_price",
+    "vendor_price",
+    "profit",
+    "nominal",
+    "topup_amount",
+  ]
   if (numKeys.includes(key) && !isNaN(Number(value))) {
     return formatRupiah(Number(value))
   }
@@ -141,7 +172,11 @@ function formatRawValue(key: string, value: unknown): string | null {
   return str
 }
 
-function MutasiDetailDialog({ item, open, onOpenChange }: {
+function MutasiDetailDialog({
+  item,
+  open,
+  onOpenChange,
+}: {
   item: MutasiItem
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -159,7 +194,8 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
     seenKeys.add(key)
     const formatted = formatRawValue(key, val)
     if (!formatted) return
-    const label = DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    const label =
+      DISPLAY_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     // Deduplicate by label — keep only first occurrence of each label
     if (seenLabels.has(label)) return
     seenLabels.add(label)
@@ -175,108 +211,161 @@ function MutasiDetailDialog({ item, open, onOpenChange }: {
     addRow(key, val)
   }
 
+  const heading = isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {isIn ? (
-              <ArrowDownCircle className="h-5 w-5 text-green-600" />
-            ) : (
-              <ArrowUpCircle className="h-5 w-5 text-red-600" />
-            )}
-            {isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment}
-          </DialogTitle>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label={heading}>
+          <Modal.CloseTrigger />
+          <Modal.Header>
+            <Modal.Icon
+              className={
+                isIn
+                  ? "bg-success-soft text-success-soft-foreground"
+                  : "bg-danger-soft text-danger-soft-foreground"
+              }
+            >
+              {isIn ? <ArrowDownCircle className="size-5" /> : <ArrowUpCircle className="size-5" />}
+            </Modal.Icon>
+            <Modal.Heading>{heading}</Modal.Heading>
+          </Modal.Header>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className={`text-lg font-bold ${isIn ? "text-green-600" : "text-red-600"}`}>
-              {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
-            </span>
-            {(() => {
-              const ns = normalizeStatus(item.status)
-              if (ns === "sukses") return <StatusBadge status="success">SUKSES</StatusBadge>
-              if (ns === "gagal") return <StatusBadge status="error">GAGAL</StatusBadge>
-              if (ns === "proses") return <StatusBadge status="warning">PROSES</StatusBadge>
-              return <Badge variant="outline">{(item.status ?? "-").toUpperCase()}</Badge>
-            })()}
-          </div>
+          <Modal.Body>
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xl font-semibold tracking-tight tabular-nums ${isIn ? "text-success" : "text-danger"}`}
+              >
+                {isIn ? "+" : "-"}
+                {item.amount != null ? formatRupiah(item.amount) : "-"}
+              </span>
+              <MutasiStatusBadge status={item.status} />
+            </div>
 
-          <Separator />
+            <Separator />
 
-          <div className="max-h-[400px] overflow-y-auto space-y-1 pr-1">
-            {detailRows.map((row) => (
-              <div key={row.label} className="grid grid-cols-[120px_1fr] gap-2 text-sm py-0.5">
-                <span className="text-muted-foreground text-xs">{row.label}</span>
-                <span className="font-medium break-words">{row.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+            {/* The container's default `scroll="inside"` already caps the dialog
+                height and scrolls the body, so no scroll box of its own here. */}
+            <SummaryList items={detailRows} layout="grid" />
+          </Modal.Body>
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              Tutup
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
-function MutasiRow({ item, onClick }: { item: MutasiItem; onClick: () => void }) {
-  const isIn = item.mutationType === "in"
-  const status = normalizeStatus(item.status)
+/** Status vendor yang tidak dikenal ditampilkan apa adanya, bukan disembunyikan. */
+function MutasiStatusBadge({ status, size }: { status: string | null; size?: "sm" }) {
+  switch (normalizeStatus(status)) {
+    case "sukses":
+      return (
+        <StatusBadge status="success" size={size}>
+          Sukses
+        </StatusBadge>
+      )
+    case "gagal":
+      return (
+        <StatusBadge status="error" size={size}>
+          Gagal
+        </StatusBadge>
+      )
+    case "proses":
+      return (
+        <StatusBadge status="warning" size={size}>
+          Proses
+        </StatusBadge>
+      )
+    default:
+      return (
+        <StatusBadge status="neutral" size={size}>
+          {status ?? "-"}
+        </StatusBadge>
+      )
+  }
+}
 
-  const statusBadge = {
-    sukses: <StatusBadge status="success" className="text-xs">Sukses</StatusBadge>,
-    gagal: <StatusBadge status="error" className="text-xs">Gagal</StatusBadge>,
-    proses: <StatusBadge status="warning" className="text-xs">Proses</StatusBadge>,
-    unknown: <Badge variant="outline" className="text-xs">{item.status ?? "-"}</Badge>,
-  }[status]
-
+/**
+ * Mutasi sebagai tabel, sebangun dengan riwayat transaksi (DESIGN.md §5.4):
+ * arah dibaca dari ikon *dan* tanda pada nominalnya, bukan warna saja.
+ */
+function MutasiTable({
+  items,
+  onSelect,
+}: {
+  items: MutasiItem[]
+  onSelect: (item: MutasiItem) => void
+}) {
   return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 cursor-pointer"
-      onClick={onClick}
-    >
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-        isIn
-          ? "bg-green-100 dark:bg-green-950"
-          : "bg-red-100 dark:bg-red-950"
-      }`}>
-        {isIn ? (
-          <ArrowDownCircle className="h-5 w-5 text-green-600" />
-        ) : (
-          <ArrowUpCircle className="h-5 w-5 text-red-600" />
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">
-            {item.description ?? (isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment)}
-          </span>
-          {statusBadge}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{formatDateTime(item.createdAt)}</span>
-          {item.reference && (
-            <>
-              <span>·</span>
-              <span className="truncate">{item.reference}</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="text-right shrink-0">
-        <p className={`text-sm font-semibold ${
-          isIn ? "text-green-600" : "text-red-600"
-        }`}>
-          {isIn ? "+" : "-"}{item.amount != null ? formatRupiah(item.amount) : "-"}
-        </p>
-        {item.paymentMethod && (
-          <p className="text-xs text-muted-foreground">{item.paymentMethod}</p>
-        )}
-      </div>
-    </button>
+    <Table variant="secondary">
+      <Table.ScrollContainer>
+        <Table.Content aria-label="Mutasi saldo Mitra">
+          <Table.Header>
+            <Table.Column id="date">Tanggal</Table.Column>
+            <Table.Column isRowHeader id="description">
+              Keterangan
+            </Table.Column>
+            <Table.Column id="reference">Referensi</Table.Column>
+            <Table.Column id="status">Status</Table.Column>
+            <Table.Column className="text-right" id="amount">
+              Nominal
+            </Table.Column>
+          </Table.Header>
+          <Table.Body renderEmptyState={() => <NoData />}>
+            {items.map((item, index) => {
+              const isIn = item.mutationType === "in"
+              const description =
+                item.description ?? (isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment)
+              return (
+                <Table.Row
+                  key={item.id ?? index}
+                  id={item.id ?? `mutasi-${index}`}
+                  textValue={description}
+                  onAction={() => onSelect(item)}
+                >
+                  <Table.Cell className="whitespace-nowrap text-muted">
+                    {formatDateTime(item.createdAt)}
+                  </Table.Cell>
+                  <Table.Cell className="max-w-64 truncate">
+                    <div className="flex items-center gap-2">
+                      {isIn ? (
+                        <ArrowDownCircle aria-hidden="true" className="size-4 text-success" />
+                      ) : (
+                        <ArrowUpCircle aria-hidden="true" className="size-4 text-danger" />
+                      )}
+                      <span className="truncate">{description}</span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell className="max-w-48 truncate font-mono text-muted">
+                    {item.reference ?? "-"}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <MutasiStatusBadge size="sm" status={item.status} />
+                  </Table.Cell>
+                  <Table.Cell
+                    className={`whitespace-nowrap text-right font-medium tabular-nums ${
+                      isIn ? "text-success" : "text-danger"
+                    }`}
+                  >
+                    {isIn ? "+" : "-"}
+                    {item.amount != null ? formatRupiah(item.amount) : "-"}
+                    {item.paymentMethod && (
+                      <span className="block text-xs font-normal text-muted">
+                        {item.paymentMethod}
+                      </span>
+                    )}
+                  </Table.Cell>
+                </Table.Row>
+              )
+            })}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
   )
 }
 
@@ -287,25 +376,52 @@ export function PpobMutasi() {
 
   const [typeFilter, setTypeFilter] = useState("all")
   const [selectedItem, setSelectedItem] = useState<MutasiItem | null>(null)
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(defaults.start),
-    to: new Date(defaults.end),
-  })
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRangeDates)
 
-  const startDate = dateRange?.from?.toISOString().slice(0, 10) ?? defaults.start
-  const endDate = dateRange?.to?.toISOString().slice(0, 10) ?? defaults.end
+  // The picker holds local dates; `toISOString()` here would send yesterday.
+  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start
+  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : defaults.end
 
   const { data: items, isLoading, error, refetch, isFetching } = usePpobMutasi(startDate, endDate)
 
+  /**
+   * Topups are not date-filtered by the backend and cannot be.
+   *
+   * `ppob_get_mutasi` sends the range to `history-payment`, but the vendor's
+   * `topup/history` takes only a `device_id` — the OpenAPI contract has no date
+   * parameters at all — so it always answers with the account's whole topup
+   * history. Every `in` row therefore has to be narrowed here, or "Total Masuk"
+   * reports every topup ever made regardless of the range on screen.
+   */
+  const { dateFilteredItems, undatedIn } = useMemo(() => {
+    if (!items) return { dateFilteredItems: [], undatedIn: 0 }
+
+    const kept = []
+    let undated = 0
+    for (const item of items) {
+      if (item.mutationType !== "in") {
+        kept.push(item)
+        continue
+      }
+      if (isWithinLocalDateRange(item.createdAt, startDate, endDate)) {
+        kept.push(item)
+      } else if (!parseMutasiDate(item.createdAt)) {
+        // Cannot be placed in or out of the range. Keep it visible and say so
+        // rather than dropping money off the screen without a word.
+        kept.push(item)
+        undated++
+      }
+    }
+    return { dateFilteredItems: kept, undatedIn: undated }
+  }, [items, startDate, endDate])
+
   const filteredItems = useMemo(() => {
-    if (!items) return []
-    if (typeFilter === "all") return items
-    return items.filter((item) => item.mutationType === typeFilter)
-  }, [items, typeFilter])
+    if (typeFilter === "all") return dateFilteredItems
+    return dateFilteredItems.filter((item) => item.mutationType === typeFilter)
+  }, [dateFilteredItems, typeFilter])
 
   const summary = useMemo(() => {
-    if (!items) return { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 }
-    return items.reduce(
+    return dateFilteredItems.reduce(
       (acc, item) => {
         const amount = item.amount ?? 0
         const isSuccess = normalizeStatus(item.status) === "sukses"
@@ -318,147 +434,89 @@ export function PpobMutasi() {
         }
         return acc
       },
-      { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 }
+      { totalIn: 0, totalOut: 0, countIn: 0, countOut: 0 },
     )
-  }, [items])
+  }, [dateFilteredItems])
 
   return (
-    <div className="space-y-5 p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight">{i18n.ppob.mutasiTitle}</h1>
-        <div className="ml-auto">
+    <div className="flex flex-col gap-6">
+      <SubpageHeader
+        actions={
+          // Tombol ikon `sm tertiary` seperti aksi navbar lain (DESIGN.md §5.1);
+          // render-prop `isPending` adalah idiom dokumentasi Button untuk ikon
+          // yang berganti spinner.
           <Button
-            variant="outline"
+            aria-label={i18n.common.reload}
+            isIconOnly
+            isPending={isFetching}
             size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
+            variant="tertiary"
+            onPress={() => refetch()}
           >
-            {isFetching ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Refresh
+            {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
           </Button>
-        </div>
+        }
+        title={i18n.ppob.mutasiTitle}
+        onBack={() => navigate("/ppob")}
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label={i18n.ppob.saldo} value={saldoData ? formatRupiah(saldoData.saldo) : "-"} />
+        <StatCard
+          label={`Total Masuk (${summary.countIn} trx)`}
+          tone="success"
+          value={`+${formatRupiah(summary.totalIn)}`}
+        >
+          {undatedIn > 0 && (
+            <p className="text-xs text-muted">
+              Termasuk {undatedIn} topup tanpa tanggal yang tidak bisa disaring
+            </p>
+          )}
+        </StatCard>
+        <StatCard
+          label={`Total Keluar (${summary.countOut} trx)`}
+          tone="danger"
+          value={`-${formatRupiah(summary.totalOut)}`}
+        />
       </div>
 
-      {/* Saldo + Summary Cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">{i18n.ppob.saldo}</p>
-          <p className="text-xl font-bold">
-            {saldoData ? formatRupiah(saldoData.saldo) : "-"}
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Total Masuk ({summary.countIn} trx)</p>
-          <p className="text-xl font-bold text-green-600">
-            +{formatRupiah(summary.totalIn)}
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Total Keluar ({summary.countOut} trx)</p>
-          <p className="text-xl font-bold text-red-600">
-            -{formatRupiah(summary.totalOut)}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <DateRangePicker value={dateRange} onChange={setDateRange} align="start" />
+
+        <OptionSelect
+          aria-label="Filter jenis mutasi"
+          className="w-36"
+          options={TYPE_FILTER_OPTIONS}
+          value={typeFilter}
+          onChange={(value) => setTypeFilter(value ?? "all")}
+        />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              data-empty={!dateRange?.from}
-              className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                    {" - "}
-                    {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                  </>
-                ) : (
-                  format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                )
-              ) : (
-                <span>Pilih tanggal</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={setDateRange}
-              numberOfMonths={2}
-              locale={idLocale}
-            />
-          </PopoverContent>
-        </Popover>
-
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TYPE_FILTER_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* List */}
       {isLoading ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-destructive font-medium mb-1">Gagal memuat mutasi</p>
-          <p className="text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : "Terjadi kesalahan"}
-          </p>
-        </div>
+        <NoData title="Gagal memuat mutasi" tone="danger">
+          {error instanceof Error ? error.message : i18n.common.error}
+        </NoData>
       ) : filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Search className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="font-medium mb-1">{i18n.ppob.mutasiNoData}</p>
-          <p className="text-sm text-muted-foreground">
-            Tidak ditemukan mutasi pada rentang tanggal yang dipilih
-          </p>
-        </div>
+        <NoData icon={<Search />} title={i18n.ppob.mutasiNoData}>
+          Tidak ditemukan mutasi pada rentang tanggal yang dipilih
+        </NoData>
       ) : (
-        <div className="space-y-2">
-          {filteredItems.map((item, index) => (
-            <MutasiRow
-              key={item.id ?? index}
-              item={item}
-              onClick={() => setSelectedItem(item)}
-            />
-          ))}
-        </div>
+        <MutasiTable items={filteredItems} onSelect={setSelectedItem} />
       )}
 
       {selectedItem && (
         <MutasiDetailDialog
           item={selectedItem}
           open={!!selectedItem}
-          onOpenChange={(open) => { if (!open) setSelectedItem(null) }}
+          onOpenChange={(open) => {
+            if (!open) setSelectedItem(null)
+          }}
         />
       )}
     </div>

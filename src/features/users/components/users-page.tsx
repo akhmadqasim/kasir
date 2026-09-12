@@ -1,35 +1,22 @@
 import { useState, useMemo } from "react"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { PlusIcon, PencilIcon, UserXIcon, UserCheckIcon, SearchIcon } from "lucide-react"
+import { PlusIcon, PencilIcon, UserXIcon, UserCheckIcon } from "lucide-react"
+import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
+
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
+import { StatusBadge } from "@/components/status-badge"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useUsers, useToggleUserActive } from "../hooks/use-users"
 import { UserFormDialog } from "./user-form-dialog"
 import type { User } from "@/features/auth/types"
 
+const COLUMN_COUNT = 6
+
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { data: users, isLoading } = useUsers(currentUser!.id)
+  const { data: users, isLoading, isError, error } = useUsers()
   const toggleActive = useToggleUserActive()
 
   const [search, setSearch] = useState("")
@@ -45,7 +32,7 @@ export function UsersPage() {
       (u) =>
         u.username.toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q)
+        u.role.toLowerCase().includes(q),
     )
   }, [users, search])
 
@@ -65,7 +52,6 @@ export function UsersPage() {
       toggleActive.mutate({
         userId: user.id,
         isActive: true,
-        currentUserId: currentUser?.id ?? 0,
       })
     } else {
       // Confirm deactivation
@@ -79,128 +65,141 @@ export function UsersPage() {
       {
         userId: deactivateUser.id,
         isActive: false,
-        currentUserId: currentUser.id,
       },
-      { onSettled: () => setDeactivateUser(null) }
+      { onSettled: () => setDeactivateUser(null) },
     )
   }
 
+  const renderEmptyState = () =>
+    isError ? (
+      <NoData
+        title={`Gagal memuat daftar pengguna: ${error?.message ?? id.common.error}`}
+        tone="danger"
+      />
+    ) : (
+      <NoData title={search ? "Tidak ada hasil" : id.users.noUsers} />
+    )
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.users.title}</h1>
-        <Button onClick={handleAdd}>
-          <PlusIcon className="mr-2 h-4 w-4" />
+    // DESIGN.md §5.1: judul dari navbar, aksi lewat `NavbarActions`.
+    <div className="flex flex-col gap-4">
+      <NavbarActions>
+        <Button isDisabled={isError} size="sm" onPress={handleAdd}>
+          <PlusIcon />
           {id.users.addUser}
         </Button>
-      </div>
+      </NavbarActions>
 
-      <div className="relative">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={id.users.searchPlaceholder}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12">No</TableHead>
-              <TableHead>{id.users.username}</TableHead>
-              <TableHead>{id.users.fullName}</TableHead>
-              <TableHead>{id.users.role}</TableHead>
-              <TableHead>{id.users.status}</TableHead>
-              <TableHead className="text-right">{id.users.actions}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  Memuat...
-                </TableCell>
-              </TableRow>
-            ) : filteredUsers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  {search ? "Tidak ada hasil" : id.users.noUsers}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredUsers.map((user, index) => (
-                <TableRow key={user.id} className={!user.is_active ? "opacity-50" : ""}>
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell className="font-medium">{user.username}</TableCell>
-                  <TableCell>{user.full_name}</TableCell>
-                  <TableCell>
-                    <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-                      {user.role === "admin" ? id.users.admin : id.users.kasir}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.is_active ? "default" : "outline"}>
-                      {user.is_active ? id.users.active : id.users.inactive}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(user)}
-                        title={id.users.edit}
-                      >
-                        <PencilIcon className="h-4 w-4" />
-                      </Button>
-                      {user.id !== currentUser?.id && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleToggleActive(user)}
-                          title={user.is_active ? id.users.deactivate : id.users.activate}
-                        >
-                          {user.is_active ? (
-                            <UserXIcon className="h-4 w-4 text-destructive" />
-                          ) : (
-                            <UserCheckIcon className="h-4 w-4 text-green-600" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <UserFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        user={editingUser}
+      <SearchInput
+        aria-label={id.users.searchPlaceholder}
+        className="max-w-sm"
+        placeholder={id.users.searchPlaceholder}
+        value={search}
+        onChange={setSearch}
       />
 
-      <AlertDialog open={!!deactivateUser} onOpenChange={(v) => !v && setDeactivateUser(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{id.users.deactivate}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {id.users.deactivateConfirm}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{id.users.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeactivate}>
-              {id.users.deactivate}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Table variant="secondary">
+        <Table.ScrollContainer>
+          <Table.Content aria-label={id.users.title}>
+            <Table.Header>
+              <Table.Column className="w-12">No</Table.Column>
+              <Table.Column isRowHeader>{id.users.username}</Table.Column>
+              <Table.Column>{id.users.fullName}</Table.Column>
+              <Table.Column>{id.users.role}</Table.Column>
+              <Table.Column>{id.users.status}</Table.Column>
+              <Table.Column className="text-right">{id.users.actions}</Table.Column>
+            </Table.Header>
+            <Table.Body renderEmptyState={renderEmptyState}>
+              {isLoading
+                ? Array.from({ length: 3 }).map((_, rowIndex) => (
+                    <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
+                      {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                        <Table.Cell key={cellIndex}>
+                          <Skeleton className="h-5 w-full" />
+                        </Table.Cell>
+                      ))}
+                    </Table.Row>
+                  ))
+                : filteredUsers.map((user, index) => (
+                    <Table.Row
+                      key={user.id}
+                      id={user.id}
+                      className={user.is_active ? undefined : "opacity-50"}
+                      textValue={user.username}
+                    >
+                      <Table.Cell>{index + 1}</Table.Cell>
+                      <Table.Cell className="font-medium">{user.username}</Table.Cell>
+                      <Table.Cell>{user.full_name}</Table.Cell>
+                      {/* Peran adalah kategori, bukan status: teks polos (DESIGN.md §5.4). */}
+                      <Table.Cell>
+                        {user.role === "admin" ? id.users.admin : id.users.kasir}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <StatusBadge status={user.is_active ? "success" : "neutral"}>
+                          {user.is_active ? id.users.active : id.users.inactive}
+                        </StatusBadge>
+                      </Table.Cell>
+                      <Table.Cell className="text-right">
+                        {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
+                            `tertiary` untuk aksi biasa, `danger-soft` untuk yang
+                            merusak (DESIGN.md §5.4). */}
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            aria-label={`${id.users.edit} ${user.username}`}
+                            isIconOnly
+                            size="sm"
+                            variant="tertiary"
+                            onPress={() => handleEdit(user)}
+                          >
+                            <PencilIcon />
+                          </Button>
+                          {user.id !== currentUser?.id && (
+                            <Button
+                              aria-label={`${user.is_active ? id.users.deactivate : id.users.activate} ${user.username}`}
+                              isIconOnly
+                              size="sm"
+                              variant={user.is_active ? "danger-soft" : "tertiary"}
+                              onPress={() => handleToggleActive(user)}
+                            >
+                              {user.is_active ? <UserXIcon /> : <UserCheckIcon />}
+                            </Button>
+                          )}
+                        </div>
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
+
+      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />
+
+      <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
+        isOpen={!!deactivateUser}
+        onOpenChange={(open) => !open && setDeactivateUser(null)}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label={id.users.deactivate}>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{id.users.deactivate}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{id.users.deactivateConfirm}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary">
+                {id.users.cancel}
+              </Button>
+              <Button variant="danger" onPress={confirmDeactivate}>
+                {id.users.deactivate}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   )
 }

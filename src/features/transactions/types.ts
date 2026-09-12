@@ -36,6 +36,14 @@ export interface PaginatedTransactions {
   total_pages: number
 }
 
+/**
+ * One sold line, mirroring `entity::transaction_items::Model`.
+ *
+ * This is the only declaration of the shape — `features/cashier/types.ts`
+ * re-exports it. Two hand-written copies had already drifted apart (`net_subtotal`
+ * missing from both, `ppob_flag_id` missing from this one), which is exactly how a
+ * backend column ends up rendered on one screen and ignored on the next.
+ */
 export interface TransactionItem {
   id: number
   transaction_id: number
@@ -46,12 +54,20 @@ export interface TransactionItem {
   quantity: number
   subtotal: number
   item_discount: number
+  /**
+   * Rupiah actually paid for this line: `subtotal` minus `item_discount`, minus
+   * this line's share of the transaction-level discount. Summing it over a
+   * transaction gives `total_amount`, so it — not `product_price * quantity` —
+   * is what a line must display and what a refund must pay back.
+   */
+  net_subtotal: number
   service_type: string | null
   service_ref: string | null
   ppob_product_id: number | null
   ppob_product_code: string | null
   ppob_inquiry_id: string | null
   ppob_payment_code: string | null
+  ppob_flag_id: string | null
   ppob_status: string | null
   ppob_message: string | null
   ppob_serial_number: string | null

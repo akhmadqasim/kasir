@@ -1,53 +1,56 @@
-import { Badge } from "@/components/ui/badge"
-import { StatusBadge as SharedStatusBadge } from "@/components/status-badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Separator } from "@/components/ui/separator"
 import { useState } from "react"
+import { Button, Modal, Separator, Table } from "@heroui/react"
+
+import { NoData } from "@/components/no-data"
+import { StatusBadge } from "@/components/status-badge"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
+import { formatRupiah } from "@/lib/format"
 import type { HistoryPaymentItem } from "../../types"
 import {
   detectServiceType,
   normalizeStatus,
-  formatRupiah,
   formatDateTime,
   buildDescription,
   getNominal,
 } from "./history-utils"
 
 function PpobStatusBadge({ status }: { status: string | null }) {
-  const normalized = normalizeStatus(status)
-  switch (normalized) {
+  switch (normalizeStatus(status)) {
     case "sukses":
-      return <SharedStatusBadge status="success" className="text-xs">Sukses</SharedStatusBadge>
+      return (
+        <StatusBadge status="success" size="sm">
+          Sukses
+        </StatusBadge>
+      )
     case "gagal":
-      return <SharedStatusBadge status="error" className="text-xs">Gagal</SharedStatusBadge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Gagal
+        </StatusBadge>
+      )
     case "proses":
-      return <SharedStatusBadge status="warning" className="text-xs">Proses</SharedStatusBadge>
+      return (
+        <StatusBadge status="warning" size="sm">
+          Proses
+        </StatusBadge>
+      )
     default:
-      return <Badge variant="outline" className="text-xs">{status ?? "-"}</Badge>
+      return (
+        <StatusBadge status="neutral" size="sm">
+          {status ?? "-"}
+        </StatusBadge>
+      )
   }
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
-  if (!value || value === "-") return null
-  return (
-    <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={mono ? "font-mono" : ""}>{value}</span>
-    </div>
-  )
+/** Baris rincian hanya digambar bila vendor memang mengisi nilainya. */
+function detailItem(
+  label: string,
+  value: string | null | undefined,
+  tone?: SummaryItem["tone"],
+): SummaryItem[] {
+  if (!value || value === "-") return []
+  return [{ label, value, tone }]
 }
 
 function TransactionDetailDialog({
@@ -57,83 +60,84 @@ function TransactionDetailDialog({
   item: HistoryPaymentItem | null
   onClose: () => void
 }) {
-  if (!item) return null
+  const service = item ? detectServiceType(item) : null
+  const nominal = item ? getNominal(item) : null
+  const profit =
+    item && item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
 
-  const service = detectServiceType(item)
-  const Icon = service.icon
-  const nominal = getNominal(item)
-  const profit = item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
+  const referenceItems: SummaryItem[] = item
+    ? [
+        ...detailItem("No. Transaksi", item.trxId, "mono"),
+        ...detailItem("No. Pelanggan", item.customerNo, "mono"),
+        ...detailItem("No. Referensi", item.noRef, "mono"),
+        ...detailItem("Kode Bayar", item.paymentCode, "mono"),
+        ...detailItem("Token/SN", item.tokenNumber ?? item.serialNumber, "mono"),
+        ...detailItem("Provider", item.provider),
+        ...detailItem("Denom", item.denom),
+        ...detailItem("Keterangan", item.igrDesc),
+      ]
+    : []
+
+  const priceItems: SummaryItem[] = item
+    ? [
+        ...(item.basePrice != null ? detailItem("Harga Modal", formatRupiah(item.basePrice)) : []),
+        ...(nominal != null ? detailItem("Harga Jual", formatRupiah(nominal), "strong") : []),
+        ...(item.adminFee != null && item.adminFee > 0
+          ? detailItem("Biaya Admin", formatRupiah(item.adminFee))
+          : []),
+        ...(profit != null
+          ? detailItem(
+              "Profit",
+              `${profit >= 0 ? "+" : ""}${formatRupiah(profit)}`,
+              profit >= 0 ? "success" : "danger",
+            )
+          : []),
+      ]
+    : []
 
   return (
-    <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>Detail Transaksi</DialogTitle>
-        </DialogHeader>
+    <Modal.Backdrop isOpen={!!item} onOpenChange={(open) => !open && onClose()}>
+      <Modal.Container size="sm">
+        <Modal.Dialog aria-label="Detail Transaksi">
+          <Modal.CloseTrigger />
+          <Modal.Header>
+            {/* Ikon layanan di tempat `Modal.Icon`, warnanya dari token `--service-*`. */}
+            {service ? (
+              <Modal.Icon className={`${service.bg} ${service.text}`}>
+                <service.icon className="size-5" />
+              </Modal.Icon>
+            ) : null}
+            <Modal.Heading>Detail Transaksi</Modal.Heading>
+          </Modal.Header>
+          {item && service && (
+            <Modal.Body>
+              <div className="flex items-center justify-between gap-2">
+                <p>
+                  <span className="font-medium text-foreground">{service.label}</span>
+                  <span aria-hidden="true"> · </span>
+                  {formatDateTime(item.createdAt)}
+                </p>
+                <PpobStatusBadge status={item.status} />
+              </div>
 
-        {/* Header: service info + status */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${service.bg}`}>
-              <Icon className={`h-5 w-5 ${service.text}`} />
-            </div>
-            <div>
-              <p className="font-semibold">{service.label}</p>
-              <p className="text-sm text-muted-foreground">{formatDateTime(item.createdAt)}</p>
-            </div>
-          </div>
-          <PpobStatusBadge status={item.status} />
-        </div>
+              <SummaryList
+                items={[{ label: "Deskripsi", value: buildDescription(item) }, ...referenceItems]}
+                layout="grid"
+              />
 
-        <Separator />
+              <Separator />
 
-        {/* Description */}
-        <div className="text-sm">
-          <p className="text-muted-foreground mb-1">Deskripsi</p>
-          <p className="font-medium">{buildDescription(item)}</p>
-        </div>
-
-        <Separator />
-
-        {/* Detail fields */}
-        <div className="space-y-1">
-          <DetailRow label="No. Transaksi" value={item.trxId} mono />
-          <DetailRow label="No. Pelanggan" value={item.customerNo} mono />
-          <DetailRow label="No. Referensi" value={item.noRef} mono />
-          <DetailRow label="Kode Bayar" value={item.paymentCode} mono />
-          <DetailRow label="Token/SN" value={item.tokenNumber ?? item.serialNumber} mono />
-          <DetailRow label="Provider" value={item.provider} />
-          <DetailRow label="Denom" value={item.denom} />
-          <DetailRow label="Keterangan" value={item.igrDesc} />
-        </div>
-
-        <Separator />
-
-        {/* Financial summary */}
-        <div className="space-y-1">
-          {item.basePrice != null && (
-            <DetailRow label="Harga Modal" value={formatRupiah(item.basePrice)} />
+              <SummaryList items={priceItems} layout="grid" />
+            </Modal.Body>
           )}
-          {nominal != null && (
-            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-              <span className="text-muted-foreground text-xs">Harga Jual</span>
-              <span className="font-semibold">{formatRupiah(nominal)}</span>
-            </div>
-          )}
-          {item.adminFee != null && item.adminFee > 0 && (
-            <DetailRow label="Biaya Admin" value={formatRupiah(item.adminFee)} />
-          )}
-          {profit != null && (
-            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-              <span className="text-muted-foreground text-xs">Profit</span>
-              <span className={profit >= 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
-                {profit >= 0 ? "+" : ""}{formatRupiah(profit)}
-              </span>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+          <Modal.Footer>
+            <Button slot="close" variant="tertiary">
+              Tutup
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -146,69 +150,60 @@ export function HistoryTable({ items }: HistoryTableProps) {
 
   return (
     <>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Layanan</TableHead>
-              <TableHead>Tanggal</TableHead>
-              <TableHead>Deskripsi</TableHead>
-              <TableHead>Nominal</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
-                  Tidak ada transaksi ditemukan
-                </TableCell>
-              </TableRow>
-            ) : (
-              items.map((item, idx) => {
+      <Table variant="secondary">
+        <Table.ScrollContainer>
+          <Table.Content aria-label="Riwayat transaksi PPOB">
+            <Table.Header>
+              <Table.Column isRowHeader id="service">
+                Layanan
+              </Table.Column>
+              <Table.Column id="date">Tanggal</Table.Column>
+              <Table.Column id="description">Deskripsi</Table.Column>
+              <Table.Column className="text-right" id="amount">
+                Nominal
+              </Table.Column>
+              <Table.Column id="status">Status</Table.Column>
+            </Table.Header>
+            <Table.Body renderEmptyState={() => <NoData />}>
+              {items.map((item, idx) => {
                 const rowId = item.trxId ?? `item-${idx}`
                 const service = detectServiceType(item)
-                const Icon = service.icon
                 const nominal = getNominal(item)
 
                 return (
-                  <TableRow
+                  <Table.Row
                     key={rowId}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setSelectedItem(item)}
+                    id={rowId}
+                    textValue={service.label}
+                    onAction={() => setSelectedItem(item)}
                   >
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${service.bg}`}>
-                          <Icon className={`h-4 w-4 ${service.text}`} />
-                        </div>
-                        <span className="font-semibold text-sm">{service.label}</span>
+                    <Table.Cell>
+                      {/* Ikon berwarna token `--service-*` (DESIGN.md §3.2) di
+                          samping teksnya — bukan bulatan latar per baris. */}
+                      <div className="flex items-center gap-2">
+                        <service.icon aria-hidden="true" className={`size-4 ${service.text}`} />
+                        <span>{service.label}</span>
                       </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-muted">
                       {formatDateTime(item.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <p className="truncate">{buildDescription(item)}</p>
-                    </TableCell>
-                    <TableCell className="font-semibold whitespace-nowrap">
+                    </Table.Cell>
+                    <Table.Cell className="max-w-64 truncate">{buildDescription(item)}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-right font-medium tabular-nums">
                       {nominal != null ? formatRupiah(nominal) : "-"}
-                    </TableCell>
-                    <TableCell>
+                    </Table.Cell>
+                    <Table.Cell>
                       <PpobStatusBadge status={item.status} />
-                    </TableCell>
-                  </TableRow>
+                    </Table.Cell>
+                  </Table.Row>
                 )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              })}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
-      <TransactionDetailDialog
-        item={selectedItem}
-        onClose={() => setSelectedItem(null)}
-      />
+      <TransactionDetailDialog item={selectedItem} onClose={() => setSelectedItem(null)} />
     </>
   )
 }

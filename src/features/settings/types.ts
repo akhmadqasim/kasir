@@ -36,13 +36,37 @@ export interface PpobMarkup {
   custom_prices: Record<string, number>
 }
 
+/**
+ * PPOB settings as the server is willing to send them.
+ *
+ * The password and the PIN are deliberately missing. `GET /api/settings` used
+ * to hand a shop's payment-gateway credentials to anyone who could call it,
+ * which on a LAN is anyone who can reach the port. What comes back now is
+ * `has_credentials` — whether both are stored — and nothing else.
+ */
 export interface PpobSettings {
   enabled: boolean
   phone_number: string
-  password: string
   device_id: string
-  pin: string
+  has_credentials: boolean
   markup: PpobMarkup
+}
+
+/** What `PUT /api/settings` accepts for PPOB: everything except the secrets. */
+export interface UpdatePpobSettingsInput {
+  enabled: boolean
+  phone_number: string
+  device_id: string
+  markup: PpobMarkup
+}
+
+/**
+ * The only way to change the credentials, through `PUT /api/settings/ppob/credentials`.
+ * Saving markup settings therefore cannot blank them by omission.
+ */
+export interface UpdatePpobCredentialsInput {
+  password: string
+  pin: string
 }
 
 export interface BackupSettings {
@@ -69,6 +93,20 @@ export interface AppSettings {
   security: SecuritySettings
   ppob: PpobSettings
   backup: BackupSettings
+}
+
+export interface UpdateAppSettingsInput {
+  sales: SalesSettings
+  security: SecuritySettings
+  ppob: UpdatePpobSettingsInput
+  backup: BackupSettings
+}
+
+export interface UpdateStoreInfoInput {
+  name: string
+  address?: string | null
+  phone?: string | null
+  email?: string | null
 }
 
 export interface StoreInfo {

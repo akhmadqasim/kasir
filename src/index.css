@@ -1,15 +1,31 @@
+/* Tailwind first, then HeroUI — this order is required by @heroui/styles.
+ *
+ * `@heroui/styles` already pulls in `tw-animate-css`, so this file does not
+ * import it separately. `shadcn/tailwind.css` is gone: everything it shipped
+ * (accordion keyframes, `data-open` / `data-closed` / `data-selected` custom
+ * variants, `no-scrollbar`) turned out to have zero uses in `src/`, so the
+ * import was carrying a dependency for nothing.
+ *
+ * The `dark` custom variant comes from HeroUI — its definition matches both
+ * `.dark` and `[data-theme="dark"]`, on the element itself and on descendants,
+ * which is what the theme switch on <html> needs.
+ */
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "@heroui/styles";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
-
 @layer base {
+  /* Tailwind v4 mewarnai border dengan `currentColor`; ini mengembalikannya ke
+     warna tepi tema, seperti yang diharapkan komponen HeroUI. Aturan
+     `outline-ring/50` yang dulu menemani baris ini sudah dilepas: itu konvensi
+     shadcn, dan setiap komponen HeroUI menggambar cincin fokusnya sendiri
+     lewat `status-focused`. */
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
-  html, body, #root {
+  html,
+  body,
+  #root {
     @apply h-full;
   }
   body {
@@ -21,113 +37,237 @@
   }
 }
 
+/* Cetak: lepaskan tinggi tetap dan pemotongan milik shell aplikasi.
+ *
+ * Layarnya sengaja tidak pernah menggulung di tingkat dokumen — `body` memakai
+ * `overflow-hidden`, shell-nya setinggi `100svh`, dan isi halaman menggulung di
+ * dalam pembungkus `overflow-auto` di `app-layout`. Saat mencetak, ketiganya
+ * memotong keluaran tepat satu layar: laporan tutup kasir yang lebih panjang
+ * dari viewport kehilangan sisanya, dan itu sudah terjadi sejak sebelum migrasi
+ * HeroUI.
+ *
+ * Aturan ini hanya berlaku di `@media print`, jadi tampilan di layar tidak
+ * tersentuh. Komponen tetap boleh memakai `print:` untuk urusannya sendiri —
+ * `shift-close-report` mematikan mask `ScrollShadow` dengan cara itu.
+ */
+@media print {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Pembungkus shell memotong lewat `overflow-hidden` dan tinggi inline
+     `calc(100svh / zoom)`; keduanya hanya bisa dilepas dari sini karena tinggi
+     itu inline style. Selektor `data-slot` sengaja dipakai supaya aturannya
+     tidak ikut melepas `truncate` di dalam laporan. */
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-inset"] {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Navigasi bukan bagian dari laporan. */
+  [data-slot="sidebar"] {
+    display: none !important;
+  }
+}
+
+/* Token tema — palet resmi HeroUI v3.
+ *
+ * Blok ini sengaja tidak dibungkus `@layer` supaya menang atas deklarasi
+ * `@layer base` bawaan `@heroui/styles`.
+ *
+ * Yang ditulis di sini hanya nilai yang memang kami pilih berbeda dari bawaan
+ * HeroUI: hue netralnya (253.83, sehingga permukaannya sewarna dengan aksen
+ * birunya alih-alih abu-abu keunguan bawaan). Sisanya — `--radius` dan seluruh
+ * skalanya, `--spacing`, warna `*-hover` dan `*-soft`, bayangan, lebar cincin
+ * fokus — adalah bawaan HeroUI dan tidak perlu diulang.
+ */
+:root,
+.light,
+[data-theme="light"] {
+  /* Kanvas */
+  --background: oklch(97.02% 0.0015 253.83);
+  --foreground: oklch(21.03% 0.0015 253.83);
+  --muted: oklch(55.17% 0.003 253.83);
+  --border: oklch(90% 0.0015 253.83);
+  --separator: oklch(92% 0.0015 253.83);
+  --scrollbar: oklch(87.1% 0.0015 253.83);
+
+  /* Permukaan bertingkat */
+  --surface: oklch(100% 0.0008 253.83);
+  --surface-foreground: oklch(21.03% 0.0015 253.83);
+  --surface-secondary: oklch(95.24% 0.0012 253.83);
+  --surface-secondary-foreground: oklch(21.03% 0.0015 253.83);
+  --surface-tertiary: oklch(93.73% 0.0012 253.83);
+  --surface-tertiary-foreground: oklch(21.03% 0.0015 253.83);
+  --overlay: oklch(100% 0.0004 253.83);
+  --overlay-foreground: oklch(21.03% 0.0015 253.83);
+
+  /* Netral interaktif: latar hover, chip diam, wadah tab */
+  --default: oklch(94% 0.0015 253.83);
+  --default-foreground: oklch(21.03% 0.0059 253.83);
+  --segment: oklch(100% 0.0015 253.83);
+  --segment-foreground: oklch(21.03% 0.0015 253.83);
+
+  /* Warna makna */
+  --accent: oklch(62.04% 0.195 253.83);
+  --accent-foreground: oklch(99.11% 0 0);
+  --success: oklch(73.29% 0.1941 150.81);
+  --success-foreground: oklch(21.03% 0.0059 150.81);
+  --warning: oklch(78.19% 0.159 72.33);
+  --warning-foreground: oklch(21.03% 0.0059 72.33);
+  --danger: oklch(65.32% 0.2335 25.74);
+  --danger-foreground: oklch(99.11% 0 0);
+  --focus: var(--accent);
+
+  /* Kolom isian */
+  --field-background: oklch(100% 0.0008 253.83);
+  --field-foreground: oklch(21.03% 0.0015 253.83);
+  --field-placeholder: oklch(55.17% 0.003 253.83);
+  --field-border: transparent;
+
+  /* `--radius` sengaja TIDAK ditulis. HeroUI menurunkan seluruh skala dari
+     satu angka itu — `--radius-3xl: calc(var(--radius) * 3)` — dan kartunya
+     memakai `min(32px, var(--radius-3xl))`. Dengan 0.75rem yang pernah dipakai
+     di sini, sudut kartu jadi 32px dan baris menu 24px; template dashboard
+     HeroUI memakai bawaan 0.5rem, yang memberi 24px dan 16px. Perbedaan
+     itulah yang membuat tampilannya terasa "beda" meski paletnya sama. */
+}
+
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: oklch(12% 0.0015 253.83);
+  --foreground: oklch(99.11% 0.0015 253.83);
+  --muted: oklch(70.5% 0.003 253.83);
+  --border: oklch(28% 0.0015 253.83);
+  --separator: oklch(25% 0.0015 253.83);
+  --scrollbar: oklch(70.5% 0.0015 253.83);
+
+  --surface: oklch(21.03% 0.003 253.83);
+  --surface-foreground: oklch(99.11% 0.0015 253.83);
+  --surface-secondary: oklch(25.7% 0.0023 253.83);
+  --surface-secondary-foreground: oklch(99.11% 0.0015 253.83);
+  --surface-tertiary: oklch(27.21% 0.0023 253.83);
+  --surface-tertiary-foreground: oklch(99.11% 0.0015 253.83);
+  --overlay: oklch(21.03% 0.003 253.83);
+  --overlay-foreground: oklch(99.11% 0.0015 253.83);
+
+  --default: oklch(27.4% 0.0015 253.83);
+  --default-foreground: oklch(99.11% 0 0);
+  --segment: oklch(39.64% 0.0015 253.83);
+  --segment-foreground: oklch(99.11% 0.0015 253.83);
+
+  --accent: oklch(62.04% 0.195 253.83);
+  --accent-foreground: oklch(99.11% 0 0);
+  --success: oklch(73.29% 0.1941 150.81);
+  --success-foreground: oklch(21.03% 0.0059 150.81);
+  --warning: oklch(82.03% 0.1392 76.34);
+  --warning-foreground: oklch(21.03% 0.0059 76.34);
+  --danger: oklch(59.4% 0.1973 24.63);
+  --danger-foreground: oklch(99.11% 0 0);
+  --focus: var(--accent);
+
+  --field-background: oklch(21.03% 0.003 253.83);
+  --field-foreground: oklch(99.11% 0.0015 253.83);
+  --field-placeholder: oklch(70.5% 0.003 253.83);
+  --field-border: transparent;
+}
+
+/* Warna grafik, satu-satunya token di luar palet HeroUI yang masih dibutuhkan.
+ *
+ * Dibaca langsung oleh recharts lewat `components/ui/chart.tsx`, selalu sebagai
+ * `var(--chart-N)` dan tidak pernah sebagai kelas Tailwind — itu sebabnya tidak
+ * ada jembatan `@theme` untuknya.
+ *
+ * Bukan gradasi satu warna: grafik metode pembayaran menggambar sampai lima
+ * garis sekaligus, dan lima tingkat biru yang berdekatan tidak terbedakan
+ * begitu garisnya bersinggungan. Seri pertama memakai aksen dan sisanya
+ * memutari roda warna pada lightness yang setara, supaya tidak ada satu garis
+ * pun yang tampak lebih penting dari yang lain. Dua terakhir dipinjam dari
+ * `--warning` dan `--success` agar paletnya tetap satu bahasa.
+ */
 :root {
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
+  --chart-1: var(--accent);
+  --chart-2: oklch(70% 0.14 195);
+  --chart-3: oklch(62% 0.19 295);
+  --chart-4: oklch(78.19% 0.159 72.33);
+  --chart-5: oklch(73.29% 0.1941 150.81);
 }
 
-.dark {
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+/* Warna pengenal layanan PPOB.
+ *
+ * Sembilan layanan tampil berdampingan dalam satu kisi, dan kasir mengenalinya
+ * dari warna sebelum sempat membaca labelnya — jadi warnanya memang informasi,
+ * bukan hiasan, dan tidak bisa diseragamkan jadi satu aksen.
+ *
+ * Sebelumnya ini palet Tailwind mentah (`bg-blue-500`, `bg-blue-100
+ * dark:bg-blue-950`) dengan varian gelap ditulis tangan satu per satu. Di sini
+ * lightness-nya dipilih pada pita yang sama, 60-75%, sehingga satu nilai
+ * terbaca di atas `--background` terang maupun gelap dan tidak ada lagi
+ * `dark:` yang bisa lupa diperbarui. Latar redupnya cukup ditulis
+ * `bg-[var(--service-pulsa)]/15` di komponen, mengikuti cara HeroUI membuat
+ * varian `-soft`-nya sendiri.
+ */
+:root {
+  --service-pulsa: oklch(62% 0.19 254);
+  --service-data: oklch(62% 0.19 300);
+  --service-pln: oklch(75% 0.16 85);
+  --service-pdam: oklch(70% 0.13 210);
+  --service-bpjs: oklch(62% 0.21 25);
+  --service-pp: oklch(68% 0.17 150);
+  --service-transfer: oklch(70% 0.16 55);
+  --service-emoney: oklch(66% 0.2 350);
+  --service-voucher: oklch(60% 0.19 275);
 }
 
+/* Satu-satunya nama yang masih perlu dijembatani ke utilitas Tailwind. Skala
+ * radius, warna, dan spasi seluruhnya datang dari `@heroui/styles`.
+ */
 @theme inline {
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: 'Geist Variable', sans-serif;
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans: "Geist Variable", sans-serif;
+}
+
+/* Penyesuaian komponen, lewat jalur yang disediakan dokumentasi HeroUI
+ * (`@layer components` + kelas BEM-nya).
+ *
+ * Kartu: bawaan `.card` memakai `min(32px, var(--radius-3xl))`, yaitu 24px
+ * pada `--radius` 0.5rem. Template dashboard HeroUI Pro menimpanya ke 16px
+ * (`rounded-2xl`) pada setiap kartu, dan itulah sudut yang membuat kartunya
+ * terasa lebih rapat dengan baris menu 16px di sebelahnya. Ditulis sekali di
+ * sini, bukan sebagai `className` di puluhan `<Card>`.
+ */
+@layer components {
+  .card {
+    border-radius: var(--radius-2xl);
+  }
+
+  /* Surface: bawaan `.surface` HeroUI hanya memberi latar dan warna teks, tanpa
+     sudut sama sekali, jadi setiap pemakainya terpaksa menulis radiusnya
+     sendiri. Dari 22 pemakaian, 15 menulis `rounded-2xl` dan 6 menulis
+     `rounded-xl` — bukan karena sengaja berbeda, melainkan karena ditulis
+     agent yang berbeda. Sudutnya disamakan dengan `.card` di sini supaya panel
+     sekunder di dalam kartu sebangun dengan kartu yang memuatnya. */
+  .surface {
+    border-radius: var(--radius-2xl);
+  }
+
+  /* Body dialog: isinya hampir selalu lebih dari satu anak (kalimat penjelas
+     lalu kolom isian, atau beberapa kolom isian), dan tiap dialog menulis
+     jaraknya sendiri — 13 memakai `flex flex-col gap-4`, 2 `gap-3`, 3
+     `space-y-*`. Bawaan `.modal__body` dan `.alert-dialog__body` tidak
+     menetapkan `display`, jadi menjadikannya kolom flex tidak bentrok dengan
+     `min-h-0 flex-1` (sifat sebagai anak flex) maupun `overflow-y-auto` pada
+     `--scroll-inside`. Body yang isinya satu anak tidak terpengaruh: `gap`
+     baru bekerja di antara dua anak. */
+  .modal__body,
+  .alert-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 4);
+  }
 }

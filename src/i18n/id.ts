@@ -20,7 +20,6 @@ export const id = {
     pin: "PIN",
     loginButton: "Masuk",
     loginTitle: "Masuk ke POS",
-    loginSubtitle: "Masukkan username dan PIN Anda",
     sessionExpired: "Sesi berakhir, silakan login kembali",
   },
   cashier: {
@@ -132,6 +131,8 @@ export const id = {
     success: "Berhasil",
     confirm: "Konfirmasi",
     back: "Kembali",
+    reload: "Muat ulang",
+    close: "Tutup",
   },
   transactions: {
     title: "Riwayat Transaksi",
@@ -295,7 +296,8 @@ export const id = {
     importDatabase: "Import Database",
     importDatabaseDesc: "Restore database dari file backup. Aplikasi akan restart setelah import.",
     importSuccess: "Database berhasil diimport. Silakan restart aplikasi.",
-    importConfirm: "Yakin ingin menimpa database saat ini? Data yang ada akan diganti dengan backup.",
+    importConfirm:
+      "Yakin ingin menimpa database saat ini? Data yang ada akan diganti dengan backup.",
     databaseSize: "Ukuran Database",
     databasePath: "Lokasi Database",
     // General
@@ -434,10 +436,11 @@ export const id = {
     basePrice: "Harga Modal",
     margin: "Margin",
     confirm: "Konfirmasi Pembelian",
-    process: "Proses",
-    processing: "Memproses...",
     success: "Transaksi berhasil",
     failed: "Transaksi gagal",
+    notAvailable: "Belum tersedia",
+    merchantNotFound: "Merchant tidak ditemukan",
+    bankNotFound: "Bank tidak ditemukan",
     notConfigured: "Mitra Indogrosir belum dikonfigurasi",
     configureInSettings: "Atur kredensial Mitra di Pengaturan → Mitra Indogrosir",
     // Settings

@@ -1,0 +1,23 @@
+//! All business logic, independent of any transport.
+//!
+//! Every function here has the shape `(&DatabaseConnection, Actor, Input) ->
+//! Result<Output, AppError>`; the `Actor` is omitted where the operation needs
+//! no identity. Modules in here must never import the `tauri` or `axum` crates —
+//! that is what lets `cargo test --lib` exercise the rules without a running app.
+
+pub mod auth;
+pub mod backup;
+pub mod categories;
+pub mod dashboard;
+pub mod guard;
+pub mod logging;
+pub mod onboarding;
+pub mod ppob;
+pub mod products;
+pub mod receipt;
+pub mod refunds;
+pub mod reports;
+pub mod settings;
+pub mod shifts;
+pub mod stock;
+pub mod transactions;

@@ -1,4 +1,4 @@
-/// Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
+//! Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
 
 /// All data needed to generate a receipt
 pub struct ReceiptData {
@@ -196,7 +196,11 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
             bold: false,
         });
         lines.push(ReceiptTextLine {
-            text: two_col_text("Diskon", &format!("-{}", format_rupiah(data.discount_amount)), cpl),
+            text: two_col_text(
+                "Diskon",
+                &format!("-{}", format_rupiah(data.discount_amount)),
+                cpl,
+            ),
             bold: false,
         });
     }

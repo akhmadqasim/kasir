@@ -1,11 +1,17 @@
-mod commands;
 mod db;
+mod domain;
 pub mod entity;
+mod http;
 mod printing;
+mod services;
+#[cfg(test)]
+mod test_support;
 mod utils;
 
 use std::fs;
 use std::sync::Arc;
+
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,36 +31,56 @@ pub fn run() {
     }
 
     let db_path = utils::paths::get_db_path();
-    utils::logging::log_startup(&format!("Opening database at {}", db_path.display()));
 
-    let database = match tauri::async_runtime::block_on(db::setup_database(
-        db_path.to_str().unwrap_or(""),
-    )) {
-        Ok(db) => {
-            utils::logging::log_startup("Database initialized successfully");
-            db
-        }
+    // Install a restore staged by `restore_backup`. This MUST happen before
+    // `setup_database`: it is the only point in the process where nothing holds
+    // `kasir.db` open, so it is the only point where swapping the file cannot
+    // race SQLite's page cache or leave a stale `-wal` behind. A failure here is
+    // logged and the app continues on the database it already had.
+    match services::backup::apply_pending_restore(&db_path) {
+        Ok(true) => utils::logging::log_startup("Applied pending database restore"),
+        Ok(false) => {}
         Err(e) => {
-            let msg = format!(
-                "Failed to initialize database at {}: {}",
-                db_path.display(),
-                e
-            );
+            let msg = format!("Pending restore not applied: {}", e);
             utils::logging::log_error(&msg);
             eprintln!("{}", msg);
-            panic!("{}", msg);
         }
-    };
+    }
 
-    let mitra_client = Arc::new(Mutex::new(commands::ppob::MitraClient::new()));
+    utils::logging::log_startup(&format!("Opening database at {}", db_path.display()));
 
-    let backup_scheduler = Arc::new(Mutex::new(commands::backup::BackupScheduler::new()));
+    let database =
+        match tauri::async_runtime::block_on(db::setup_database(db_path.to_str().unwrap_or(""))) {
+            Ok(db) => {
+                utils::logging::log_startup("Database initialized successfully");
+                db
+            }
+            Err(e) => {
+                let msg = format!(
+                    "Failed to initialize database at {}: {}",
+                    db_path.display(),
+                    e
+                );
+                utils::logging::log_error(&msg);
+                eprintln!("{}", msg);
+                panic!("{}", msg);
+            }
+        };
+
+    let mitra_client = Arc::new(Mutex::new(services::ppob::MitraClient::new()));
+
+    let backup_scheduler = Arc::new(Mutex::new(services::backup::BackupScheduler::new()));
+
+    // The HTTP server is started before the Tauri builder because the window's
+    // URL depends on the port it actually got, and the port is only known once
+    // the listener is bound. There is no longer a window path that does not
+    // need it: the frontend speaks nothing but `fetch` to `/api`.
+    let http_server = start_http_server(&database, &mitra_client, &backup_scheduler);
+    let http_port = http_server.port;
 
     let backup_scheduler_clone = backup_scheduler.clone();
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init());
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
     #[cfg(debug_assertions)]
     {
@@ -62,132 +88,88 @@ pub fn run() {
     }
 
     builder
-        .setup(move |_app| {
+        .setup(move |app| {
             // Start backup scheduler inside setup where tokio runtime is available
-            commands::backup::start_backup_scheduler(backup_scheduler_clone);
+            tauri::async_runtime::spawn(services::backup::run_scheduler(backup_scheduler_clone));
+            build_main_window(app, http_port)?;
             Ok(())
         })
         .manage(database)
         .manage(mitra_client)
         .manage(backup_scheduler)
-        .invoke_handler(tauri::generate_handler![
-            commands::auth::login,
-            commands::auth::get_current_user,
-            commands::auth::list_users,
-            commands::auth::create_user,
-            commands::auth::update_user,
-            commands::auth::toggle_user_active,
-            commands::settings::get_store_info,
-            commands::settings::update_store_info,
-            commands::settings::get_app_settings,
-            commands::settings::update_app_settings,
-            commands::settings::change_user_pin,
-            commands::settings::export_database,
-            commands::settings::import_database,
-            commands::settings::get_database_info,
-            commands::onboarding::check_onboarding_status,
-            commands::onboarding::complete_onboarding,
-            commands::products::search_products,
-            commands::products::get_product_by_barcode,
-            commands::products::create_product,
-            commands::products::update_product,
-            commands::products::delete_product,
-            commands::products::get_popular_products,
-            commands::products::track_product_selection,
-            commands::products::toggle_product_pin,
-            commands::products::bulk_create_products,
-            commands::products::save_template_file,
-            commands::categories::list_categories,
-            commands::categories::create_category,
-            commands::categories::update_category,
-            commands::categories::delete_category,
-            commands::transactions::checkout_transaction,
-            commands::transactions::create_transaction,
-            commands::transactions::retry_ppob_fulfillment,
-            commands::transactions::get_next_receipt_number,
-            commands::transactions::list_transactions,
-            commands::transactions::get_transaction_detail,
-            commands::transactions::delete_transaction,
-            commands::transactions::update_payment_method,
-            commands::receipt::list_printers,
-            commands::receipt::print_receipt,
-            commands::receipt::test_print,
-            commands::receipt::update_printer_settings,
-            commands::receipt::get_printer_settings_cmd,
-            commands::receipt::get_receipt_data,
-            commands::refunds::create_refund,
-            commands::refunds::get_refund_detail,
-            commands::refunds::list_refunds,
-            commands::dashboard::get_dashboard_summary,
-            commands::dashboard::get_daily_revenue,
-            commands::dashboard::get_payment_method_stats,
-            commands::dashboard::get_top_products,
-            commands::dashboard::get_low_stock_products,
-            commands::dashboard::get_recent_transactions,
-            commands::dashboard::get_weekly_stats,
-            commands::ppob::menu::ppob_login,
-            commands::ppob::menu::ppob_get_saldo,
-            commands::ppob::menu::ppob_get_menu,
-            commands::ppob::menu::ppob_get_providers,
-            commands::ppob::menu::ppob_get_pulsa_details,
-            commands::ppob::menu::ppob_get_pulsa_price_list,
-            commands::ppob::menu::ppob_get_data_price_list,
-            commands::ppob::menu::ppob_get_pln_denom,
-            commands::ppob::menu::ppob_get_pdam_products,
-            commands::ppob::menu::ppob_get_emoney_denom,
-            commands::ppob::menu::ppob_get_pp_sub_menu,
-            commands::ppob::menu::ppob_get_transfer_channels,
-            commands::ppob::menu::ppob_get_voucher_groups,
-            commands::ppob::inquiry::ppob_pln_inquiry,
-            commands::ppob::inquiry::ppob_pdam_inquiry,
-            commands::ppob::inquiry::ppob_bpjs_inquiry,
-            commands::ppob::inquiry::ppob_pp_inquiry,
-            commands::ppob::inquiry::ppob_transfer_inquiry,
-            commands::ppob::inquiry::ppob_emoney_inquiry,
-            commands::ppob::inquiry::ppob_pulsa_purchase,
-            commands::ppob::payment::ppob_confirm_payment,
-            commands::ppob::payment::ppob_get_receipt_data,
-            commands::ppob::history::ppob_get_history,
-            commands::ppob::history::ppob_get_history_detail,
-            commands::ppob::history::ppob_get_mutasi,
-            commands::ppob::notifications::ppob_get_notifications,
-            commands::ppob::notifications::ppob_mark_all_read,
-            commands::ppob::notifications::ppob_mark_notification_read,
-            commands::backup::create_backup,
-            commands::backup::get_backup_status,
-            commands::backup::list_backups,
-            commands::backup::restore_backup,
-            commands::backup::delete_backup,
-            commands::reports::report_sales_daily,
-            commands::reports::report_sales_monthly,
-            commands::reports::report_sales_period,
-            commands::reports::report_sales_receipt,
-            commands::reports::report_payment_methods,
-            commands::reports::report_product_sales,
-            commands::reports::report_popular_products,
-            commands::reports::report_returns,
-            commands::reports::report_current_stock,
-            commands::reports::report_losses,
-            commands::reports::report_cash_flows,
-            commands::shifts::open_shift,
-            commands::shifts::get_active_shift,
-            commands::shifts::close_shift,
-            commands::shifts::get_shift_summary,
-            commands::shifts::create_cash_flow,
-            commands::shifts::list_cash_flows,
-            commands::shifts::delete_cash_flow,
-            commands::stock::list_stock_writeoffs,
-            commands::stock::create_stock_writeoff,
-            commands::stock::approve_stock_writeoff,
-            commands::stock::reject_stock_writeoff,
-            commands::stock::delete_stock_writeoff,
-            commands::stock::get_stock_writeoff_detail,
-            commands::logging::write_log_entry,
-            commands::logging::get_log_dir,
-            commands::logging::get_data_dir,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 
+    http_server.shutdown();
+
     utils::logging::log_startup("App shutdown");
+}
+
+/// Bind the embedded HTTP server. The window has nothing to load without it,
+/// so this always runs — there is no longer an opt-in flag.
+///
+/// A failure here aborts the launch on purpose: carrying on would produce a
+/// window pointed at a server that is not there, which is a much harder thing
+/// to notice than a refusal to start.
+fn start_http_server(
+    database: &sea_orm::DatabaseConnection,
+    mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
+    backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
+) -> http::ServerHandle {
+    // Pay for the login timing-equaliser's one-off bcrypt hash now, so the first
+    // login attempt against an unknown username is not the request that pays it.
+    services::auth::warm_password_verifier();
+
+    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env())
+        .sharing(mitra_client.clone(), backup_scheduler.clone());
+    match tauri::async_runtime::block_on(http::start(state)) {
+        Ok(server) => server,
+        Err(e) => {
+            let msg = format!("Failed to start the HTTP server: {e}");
+            utils::logging::log_error(&msg);
+            eprintln!("{}", msg);
+            panic!("{}", msg);
+        }
+    }
+}
+
+/// Create the one window the app has, pointed at the embedded server.
+///
+/// It is built here rather than declared in `tauri.conf.json` because its URL
+/// contains the port the server just bound, which no static config can know
+/// ahead of time — the default port is tried first, but a busy machine walks
+/// up to the next one.
+///
+/// In a debug build the window loads the Vite dev server from `devUrl`
+/// instead. The embedded server only ever serves the `dist/` that was compiled
+/// into the binary, so pointing the window there during development meant a
+/// saved `.tsx` never showed up until `bun run build` and a Rust rebuild. Vite
+/// proxies `/api` to the same server, so sessions and CSRF behave exactly as
+/// they do in the browser, and `KASIR_ALLOWED_ORIGINS` already covers 5173.
+fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
+    let origin = window_origin(app, http_port);
+    utils::logging::log_startup(&format!("Window will load {origin}"));
+    let url = WebviewUrl::External(origin.parse().expect("a bound port makes a valid URL"));
+
+    WebviewWindowBuilder::new(app, "main", url)
+        .title("POS Toko Sembako")
+        .inner_size(1280.0, 800.0)
+        .resizable(true)
+        .fullscreen(false)
+        .build()?;
+
+    Ok(())
+}
+
+/// Debug: Vite's `devUrl` from `tauri.conf.json` when it is configured, so
+/// the window hot-reloads with the browser. Release: always the embedded server.
+fn window_origin(app: &tauri::App, http_port: u16) -> String {
+    #[cfg(debug_assertions)]
+    if let Some(dev_url) = &app.config().build.dev_url {
+        return dev_url.to_string().trim_end_matches('/').to_string();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = app;
+
+    format!("http://127.0.0.1:{http_port}")
 }

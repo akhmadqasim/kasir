@@ -1,6 +1,12 @@
+/**
+ * One returned line. The product is deliberately absent: the backend derives it
+ * from `transaction_item_id`, which it checks against the lines of the
+ * transaction being refunded. A client-chosen `product_id` used to let a refund
+ * restore stock for an item that was never sold, so `create_refund` now ignores
+ * the field entirely.
+ */
 export interface RefundItemInput {
   transaction_item_id: number
-  product_id: number
   quantity: number
   condition: "good" | "damaged" | "expired"
 }
@@ -10,12 +16,25 @@ export interface ExchangeItemInput {
   quantity: number
 }
 
+/**
+ * The cashier is not named here. Whoever's session sends this is the cashier the
+ * refund is booked against — the old command took a `user_id` from the payload
+ * and believed it.
+ */
 export interface CreateRefundInput {
   transaction_id: number
-  user_id: number
   reason?: string
   items: RefundItemInput[]
   exchange_items?: ExchangeItemInput[]
+}
+
+/** Filters for the refund list. Sent as query parameters, named as the server names them. */
+export interface ListRefundsInput {
+  page?: number
+  per_page?: number
+  refund_type?: string
+  date_from?: string
+  date_to?: string
 }
 
 export interface RefundModel {
@@ -29,6 +48,13 @@ export interface RefundModel {
   difference_amount: number | null
   payment_method: string | null
   reason: string | null
+  /**
+   * The shift whose drawer the money came out of — the shift open when the
+   * return was taken, not the one that rang up the sale. `null` for returns
+   * recorded with no shift open, and for historical rows the backfill could not
+   * place.
+   */
+  shift_id: number | null
   created_at: string | null
 }
 

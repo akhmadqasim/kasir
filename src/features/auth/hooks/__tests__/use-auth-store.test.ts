@@ -1,8 +1,21 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
-import { useAuthStore } from "../use-auth-store"
+import { beforeEach, describe, expect, it } from "vitest"
+
+import { handleSessionExpired, useAuthStore } from "../use-auth-store"
 import type { User } from "../../types"
 
-// ── Helpers ──────────────────────────────────────────────────────────
+/**
+ * The store stopped being the identity and became a cache of it.
+ *
+ * The tests it used to have were about a client-side session: an eight-hour
+ * timeout, a `lastActivity` stamp, a `checkTimeout` that logged the user out.
+ * All three are gone, and not because they were wrong — because the server owns
+ * session expiry now, with a sliding deadline set by
+ * `security.session_timeout_minutes`. A second timer here could only disagree
+ * with it, and the one that disagreed would be this one.
+ *
+ * What is left to test is what the route guard reads: the cached user appears,
+ * disappears, and never comes back on its own.
+ */
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -21,262 +34,88 @@ function store() {
   return useAuthStore.getState()
 }
 
-// ── Reset store between tests ────────────────────────────────────────
-
 beforeEach(() => {
-  useAuthStore.setState({
-    user: null,
-    lastActivity: Date.now(),
-  })
-  vi.useRealTimers()
+  useAuthStore.setState({ user: null, isResolved: false })
 })
 
-afterEach(() => {
-  vi.useRealTimers()
-})
-
-// =====================================================================
-// login
-// =====================================================================
-
-describe("login", () => {
-  it("sets user on login", () => {
+describe("setUser", () => {
+  it("menyimpan pengguna yang dijawab /auth/me", () => {
     const user = makeUser()
-    store().login(user)
 
-    expect(store().user).toEqual(user)
-  })
-
-  it("sets isAuthenticated to true after login", () => {
-    store().login(makeUser())
-    expect(store().isAuthenticated()).toBe(true)
-  })
-
-  it("updates lastActivity on login", () => {
-    const before = Date.now()
-    store().login(makeUser())
-    const after = Date.now()
-
-    expect(store().lastActivity).toBeGreaterThanOrEqual(before)
-    expect(store().lastActivity).toBeLessThanOrEqual(after)
-  })
-
-  it("stores admin user with correct role", () => {
-    store().login(makeUser({ role: "admin" }))
-    expect(store().user?.role).toBe("admin")
-  })
-
-  it("stores kasir user with correct role", () => {
-    store().login(makeUser({ role: "kasir", username: "kasir1" }))
-    expect(store().user?.role).toBe("kasir")
-    expect(store().user?.username).toBe("kasir1")
-  })
-
-  it("replaces previous user on re-login", () => {
-    store().login(makeUser({ id: 1, username: "user1" }))
-    store().login(makeUser({ id: 2, username: "user2" }))
-
-    expect(store().user?.id).toBe(2)
-    expect(store().user?.username).toBe("user2")
-  })
-})
-
-// =====================================================================
-// logout
-// =====================================================================
-
-describe("logout", () => {
-  it("clears user on logout", () => {
-    store().login(makeUser())
-    store().logout()
-
-    expect(store().user).toBeNull()
-  })
-
-  it("sets isAuthenticated to false after logout", () => {
-    store().login(makeUser())
-    store().logout()
-
-    expect(store().isAuthenticated()).toBe(false)
-  })
-
-  it("resets lastActivity to 0 on logout", () => {
-    store().login(makeUser())
-    store().logout()
-
-    expect(store().lastActivity).toBe(0)
-  })
-
-  it("is idempotent — logging out twice doesn't error", () => {
-    store().logout()
-    store().logout()
-    expect(store().user).toBeNull()
-    expect(store().isAuthenticated()).toBe(false)
-  })
-})
-
-// =====================================================================
-// isAuthenticated
-// =====================================================================
-
-describe("isAuthenticated", () => {
-  it("returns false when no user is logged in", () => {
-    expect(store().isAuthenticated()).toBe(false)
-  })
-
-  it("returns true when user is logged in", () => {
-    store().login(makeUser())
-    expect(store().isAuthenticated()).toBe(true)
-  })
-
-  it("returns false after logout", () => {
-    store().login(makeUser())
-    store().logout()
-    expect(store().isAuthenticated()).toBe(false)
-  })
-})
-
-// =====================================================================
-// updateActivity
-// =====================================================================
-
-describe("updateActivity", () => {
-  it("updates lastActivity timestamp", () => {
-    const before = Date.now()
-    store().updateActivity()
-    const after = Date.now()
-
-    expect(store().lastActivity).toBeGreaterThanOrEqual(before)
-    expect(store().lastActivity).toBeLessThanOrEqual(after)
-  })
-
-  it("refreshes activity after some delay", () => {
-    vi.useFakeTimers()
-    const initialTime = Date.now()
-    useAuthStore.setState({ lastActivity: initialTime })
-
-    vi.advanceTimersByTime(5000)
-    store().updateActivity()
-
-    expect(store().lastActivity).toBeGreaterThan(initialTime)
-  })
-})
-
-// =====================================================================
-// checkTimeout
-// =====================================================================
-
-describe("checkTimeout", () => {
-  it("returns false when session is fresh", () => {
-    store().login(makeUser())
-    expect(store().checkTimeout()).toBe(false)
-    expect(store().user).not.toBeNull()
-  })
-
-  it("returns false when within timeout window", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    // Advance 7 hours (under 8-hour limit)
-    vi.advanceTimersByTime(7 * 60 * 60 * 1000)
-
-    expect(store().checkTimeout()).toBe(false)
-    expect(store().user).not.toBeNull()
-  })
-
-  it("returns true and clears user when session has expired (8 hours)", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    // Advance past 8-hour limit
-    vi.advanceTimersByTime(8 * 60 * 60 * 1000 + 1)
-
-    expect(store().checkTimeout()).toBe(true)
-    expect(store().user).toBeNull()
-    expect(store().lastActivity).toBe(0)
-  })
-
-  it("returns true exactly at 8-hour boundary + 1ms", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    vi.advanceTimersByTime(8 * 60 * 60 * 1000 + 1)
-    expect(store().checkTimeout()).toBe(true)
-  })
-
-  it("returns false exactly at 8-hour boundary", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    // Exactly 8 hours — elapsed === timeout, not > timeout
-    vi.advanceTimersByTime(8 * 60 * 60 * 1000)
-    expect(store().checkTimeout()).toBe(false)
-  })
-
-  it("accepts custom timeout parameter", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    const customTimeout = 60 * 1000 // 1 minute
-    vi.advanceTimersByTime(61 * 1000)
-
-    expect(store().checkTimeout(customTimeout)).toBe(true)
-    expect(store().user).toBeNull()
-  })
-
-  it("custom timeout — within window returns false", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    const customTimeout = 60 * 1000 // 1 minute
-    vi.advanceTimersByTime(30 * 1000)
-
-    expect(store().checkTimeout(customTimeout)).toBe(false)
-    expect(store().user).not.toBeNull()
-  })
-
-  it("activity update resets the timeout window", () => {
-    vi.useFakeTimers()
-    store().login(makeUser())
-
-    // Advance 7 hours
-    vi.advanceTimersByTime(7 * 60 * 60 * 1000)
-    store().updateActivity()
-
-    // Advance another 7 hours (14 total, but only 7 since last activity)
-    vi.advanceTimersByTime(7 * 60 * 60 * 1000)
-
-    expect(store().checkTimeout()).toBe(false)
-    expect(store().user).not.toBeNull()
-  })
-})
-
-// =====================================================================
-// Edge cases
-// =====================================================================
-
-describe("edge cases", () => {
-  it("initial state has no user", () => {
-    useAuthStore.setState({ user: null, lastActivity: 0 })
-    expect(store().user).toBeNull()
-    expect(store().isAuthenticated()).toBe(false)
-  })
-
-  it("login after logout works correctly", () => {
-    const user = makeUser()
-    store().login(user)
-    store().logout()
-    store().login(user)
+    store().setUser(user)
 
     expect(store().user).toEqual(user)
     expect(store().isAuthenticated()).toBe(true)
   })
 
-  it("checkTimeout on logged-out state with lastActivity=0", () => {
-    vi.useFakeTimers()
-    useAuthStore.setState({ user: null, lastActivity: 0 })
+  it("menandai sesi sudah terjawab meskipun jawabannya kosong", () => {
+    expect(store().isResolved).toBe(false)
 
-    // With lastActivity = 0, elapsed = Date.now() which is huge
-    expect(store().checkTimeout()).toBe(true)
+    store().setUser(null)
+
+    expect(store().user).toBeNull()
+    expect(store().isResolved).toBe(true)
+    expect(store().isAuthenticated()).toBe(false)
+  })
+
+  it("mengganti pengguna sebelumnya saat kasir lain login di terminal yang sama", () => {
+    store().setUser(makeUser())
+
+    store().setUser(makeUser({ id: 2, username: "kasir01", role: "kasir" }))
+
+    expect(store().user).toMatchObject({ id: 2, role: "kasir" })
+  })
+})
+
+describe("clearUser", () => {
+  it("mengosongkan cache tanpa menunggu jawaban baru", () => {
+    store().setUser(makeUser())
+
+    store().clearUser()
+
+    expect(store().user).toBeNull()
+    expect(store().isAuthenticated()).toBe(false)
+    expect(store().isResolved).toBe(true)
+  })
+})
+
+describe("handleSessionExpired", () => {
+  it("mengosongkan pengguna saat ada 401 di tengah pemakaian", () => {
+    store().setUser(makeUser())
+
+    handleSessionExpired()
+
+    expect(store().user).toBeNull()
+  })
+
+  /**
+   * The guard renders the login screen the moment the user goes away, so this
+   * runs for every request that 401s at once. Doing nothing when there is
+   * already nobody is what keeps a burst of failures from becoming a burst of
+   * state updates on a screen that has already moved on.
+   */
+  it("tidak berbuat apa-apa ketika memang belum ada yang login", () => {
+    store().setUser(null)
+    const before = useAuthStore.getState()
+
+    handleSessionExpired()
+
+    expect(useAuthStore.getState()).toBe(before)
+  })
+})
+
+describe("identitas tidak lagi disimpan di localStorage", () => {
+  /**
+   * The whole point of the change. The store used to persist the `User`,
+   * including `role`, so anyone at the till could open devtools, write
+   * `"admin"`, and every route guard and hidden button believed it.
+   */
+  it("tidak menulis apa pun ke localStorage saat pengguna diset", () => {
+    localStorage.clear()
+
+    store().setUser(makeUser())
+
+    expect(localStorage.getItem("kasir-auth")).toBeNull()
+    expect(localStorage.length).toBe(0)
   })
 })

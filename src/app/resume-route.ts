@@ -4,6 +4,8 @@ type UserRole = User["role"]
 
 export const LAST_ROUTE_STORAGE_KEY = "kasir-last-route"
 
+// `/start` no longer exists as a route, but an older release stored it, so keep
+// rejecting it rather than letting a stale localStorage value resume onto a 404.
 const NON_RESUMABLE_PATHS = new Set(["/", "/start", "/login", "/onboarding"])
 const RESUMABLE_PREFIXES = [
   "/cashier",
@@ -18,9 +20,21 @@ const RESUMABLE_PREFIXES = [
   "/ppob",
   "/close-shift",
 ]
-const ADMIN_ONLY_PREFIXES = ["/users"]
+/**
+ * Routes a cashier may not open, mirroring the backend's `require_role(.., "admin")`:
+ * every mutation behind these screens is admin-only — user CRUD in `auth.rs`, product
+ * and category CRUD in `products.rs`/`categories.rs`, and store info, app settings,
+ * database export/import and backups in `settings.rs`/`backup.rs`. Read-only commands a
+ * cashier does need (`search_products`, `get_product_by_barcode`) live on other screens.
+ */
+const ADMIN_ONLY_PREFIXES = ["/users", "/products", "/settings"]
 
-function matchesPath(pathname: string, prefix: string) {
+/**
+ * True when `pathname` is `prefix` itself or a route nested under it. Both the route
+ * guards here and the sidebar highlight need this: a nested screen still belongs to
+ * the menu entry it was opened from.
+ */
+export function isPathWithin(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
 }
 
@@ -38,25 +52,23 @@ export function getDefaultRouteForRole(role: UserRole) {
 export function isResumableRoute(pathname: string | null | undefined) {
   const normalized = normalizePathname(pathname)
   if (!normalized || NON_RESUMABLE_PATHS.has(normalized)) return false
-  return RESUMABLE_PREFIXES.some((prefix) => matchesPath(normalized, prefix))
+  return RESUMABLE_PREFIXES.some((prefix) => isPathWithin(normalized, prefix))
 }
 
-export function isRouteAllowedForRole(
-  pathname: string | null | undefined,
-  role: UserRole
-) {
+export function isAdminOnlyRoute(pathname: string | null | undefined) {
+  const normalized = normalizePathname(pathname)
+  if (!normalized) return false
+  return ADMIN_ONLY_PREFIXES.some((prefix) => isPathWithin(normalized, prefix))
+}
+
+export function isRouteAllowedForRole(pathname: string | null | undefined, role: UserRole) {
   const normalized = normalizePathname(pathname)
   if (!normalized || !isResumableRoute(normalized)) return false
-  if (role !== "admin" && ADMIN_ONLY_PREFIXES.some((prefix) => matchesPath(normalized, prefix))) {
-    return false
-  }
+  if (role !== "admin" && isAdminOnlyRoute(normalized)) return false
   return true
 }
 
-export function resolveResumeRoute(
-  role: UserRole,
-  storedRoute: string | null | undefined
-) {
+export function resolveResumeRoute(role: UserRole, storedRoute: string | null | undefined) {
   return isRouteAllowedForRole(storedRoute, role)
     ? normalizePathname(storedRoute)!
     : getDefaultRouteForRole(role)
@@ -72,7 +84,7 @@ export function readStoredResumeRoute(storage: Pick<Storage, "getItem"> = localS
 
 export function storeResumeRoute(
   pathname: string,
-  storage: Pick<Storage, "setItem"> = localStorage
+  storage: Pick<Storage, "setItem"> = localStorage,
 ) {
   const normalized = normalizePathname(pathname)
   if (!normalized || !isResumableRoute(normalized)) return

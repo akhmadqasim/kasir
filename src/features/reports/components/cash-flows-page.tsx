@@ -1,179 +1,76 @@
-import { useState } from "react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { type DateRange } from "react-day-picker"
-import { ArrowDownCircle, ArrowUpCircle, CalendarIcon } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { formatRupiah } from "@/lib/format"
+import { Table } from "@heroui/react"
+
+import { DateRangePicker } from "@/components/date-range-picker"
+import { StatCard } from "@/components/stat-card"
+import { formatDayDate, formatRupiah } from "@/lib/format"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useCashFlows } from "../hooks/use-reports"
+import { ReportPage, ReportTable } from "./report-shell"
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
-function getDefaultRange(): DateRange {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  return { from, to }
-}
+const TITLE = "Uang Masuk / Keluar"
+const COLUMN_COUNT = 5
 
 export function CashFlowsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultRange)
-
-  const startDate = dateRange?.from ? toDateStr(dateRange.from) : ""
-  const endDate = dateRange?.to ? toDateStr(dateRange.to) : startDate
-  const { data, isLoading } = useCashFlows(startDate, endDate)
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
+  const { data, isLoading, error } = useCashFlows(startDate, endDate)
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Uang Masuk / Keluar</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      filters={
         <div className="ml-auto">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                data-empty={!dateRange?.from}
-                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-              >
-                <CalendarIcon />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" - "}
-                      {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                  )
-                ) : (
-                  <span>Pilih tanggal</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                locale={idLocale}
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
         </div>
-      </div>
-
+      }
+    >
       {data && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Uang Masuk
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-green-600">{formatRupiah(data.totalIn)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Uang Keluar
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-red-600">{formatRupiah(data.totalOut)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Saldo Bersih
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${data.netTotal >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatRupiah(data.netTotal)}
-              </p>
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard label="Total Uang Masuk" tone="success" value={formatRupiah(data.totalIn)} />
+          <StatCard label="Total Uang Keluar" tone="danger" value={formatRupiah(data.totalOut)} />
+          <StatCard
+            label="Saldo Bersih"
+            tone={data.netTotal >= 0 ? "success" : "danger"}
+            value={formatRupiah(data.netTotal)}
+          />
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tanggal</TableHead>
-              <TableHead>Kasir</TableHead>
-              <TableHead>Jenis</TableHead>
-              <TableHead>Keterangan</TableHead>
-              <TableHead className="text-right">Nominal</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.items.length ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              data.items.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleDateString("id-ID", {
-                      weekday: "short",
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </TableCell>
-                  <TableCell>{row.cashierName}</TableCell>
-                  <TableCell>
-                    <Badge variant={row.flowType === "in" ? "secondary" : "destructive"}>
-                      <span className="flex items-center gap-1.5">
-                        {row.flowType === "in" ? (
-                          <ArrowDownCircle className="h-3.5 w-3.5" />
-                        ) : (
-                          <ArrowUpCircle className="h-3.5 w-3.5" />
-                        )}
-                        {row.flowType === "in" ? "Uang Masuk" : "Uang Keluar"}
-                      </span>
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-[320px] whitespace-normal break-words text-sm text-muted-foreground">
-                    {row.description}
-                  </TableCell>
-                  <TableCell className={`text-right font-medium tabular-nums ${row.flowType === "in" ? "text-green-600" : "text-red-600"}`}>
-                    {row.flowType === "in" ? "+" : "-"}
-                    {formatRupiah(row.amount)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        columns={
+          <>
+            <Table.Column isRowHeader>Tanggal</Table.Column>
+            <Table.Column>Kasir</Table.Column>
+            <Table.Column>Jenis</Table.Column>
+            <Table.Column>Keterangan</Table.Column>
+            <Table.Column className="text-right">Nominal</Table.Column>
+          </>
+        }
+      >
+        {(data?.items ?? []).map((row) => {
+          const isIn = row.flowType === "in"
+          return (
+            <Table.Row key={row.id} id={row.id} textValue={formatDayDate(row.createdAt)}>
+              <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+              <Table.Cell>{row.cashierName}</Table.Cell>
+              {/* Teks, bukan lencana: jenis bukan status, dan arahnya sudah dibaca
+                  dari tanda serta warna nominal di ujung baris (DESIGN.md §5.4). */}
+              <Table.Cell>{isIn ? "Uang Masuk" : "Uang Keluar"}</Table.Cell>
+              <Table.Cell className="max-w-[320px] whitespace-normal break-words text-muted">
+                {row.description}
+              </Table.Cell>
+              <Table.Cell
+                className={`text-right font-medium ${isIn ? "text-success" : "text-danger"}`}
+              >
+                {isIn ? "+" : "-"}
+                {formatRupiah(row.amount)}
+              </Table.Cell>
+            </Table.Row>
+          )
+        })}
+      </ReportTable>
+    </ReportPage>
   )
 }

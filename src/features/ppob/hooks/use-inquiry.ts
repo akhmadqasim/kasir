@@ -1,65 +1,34 @@
-import { useTauriMutation } from "@/hooks/use-tauri-command"
-import type { InquiryResult, PaymentResult } from "../types"
+import { useApiMutation } from "@/hooks/use-api"
+import {
+  bpjsInquiry,
+  emoneyInquiry,
+  pdamInquiry,
+  plnInquiry,
+  type BpjsInquiryInput,
+  type EmoneyInquiryInput,
+  type PdamInquiryInput,
+  type PlnInquiryInput,
+} from "@/lib/api/ppob"
+import type { InquiryResult } from "../types"
+
+/**
+ * "What does this customer owe?" — a read upstream, but a `POST` here because it
+ * carries a body and the provider bills for it. Repeating one costs a query,
+ * not money, which is why none of these takes an idempotency key.
+ */
 
 export function usePlnInquiry() {
-  return useTauriMutation<InquiryResult, {
-    customerId: string
-    paymentCode: string
-    flagId: string
-    amount: number
-  }>("ppob_pln_inquiry")
+  return useApiMutation<InquiryResult, PlnInquiryInput>(plnInquiry)
 }
 
 export function usePdamInquiry() {
-  return useTauriMutation<InquiryResult, {
-    customerId: string
-    productId: number
-    paymentCode: string
-  }>("ppob_pdam_inquiry")
+  return useApiMutation<InquiryResult, PdamInquiryInput>(pdamInquiry)
 }
 
 export function useBpjsInquiry() {
-  return useTauriMutation<InquiryResult, {
-    customerId: string
-    phoneNumber: string
-    paymentCode: string
-    bpjsType: string
-    period: string
-  }>("ppob_bpjs_inquiry")
-}
-
-export function usePpInquiry() {
-  return useTauriMutation<InquiryResult, {
-    customerId: string
-    paymentPointGroupId: number
-    productCode?: string
-  }>("ppob_pp_inquiry")
-}
-
-export function useTransferInquiry() {
-  return useTauriMutation<InquiryResult, {
-    channelId: string
-    nomorRekening: string
-    amount: number
-    channelName: string
-    deskripsi: string
-    namaPengirim: string
-    notelpPengirim: string
-  }>("ppob_transfer_inquiry")
+  return useApiMutation<InquiryResult, BpjsInquiryInput>(bpjsInquiry)
 }
 
 export function useEmoneyInquiry() {
-  return useTauriMutation<InquiryResult, {
-    customerId: string
-    productCode: string
-  }>("ppob_emoney_inquiry")
-}
-
-export function usePulsaPurchase() {
-  return useTauriMutation<PaymentResult, {
-    phoneNumber: string
-    productCode: string
-    productId: number
-    productType: string
-  }>("ppob_pulsa_purchase")
+  return useApiMutation<InquiryResult, EmoneyInquiryInput>(emoneyInquiry)
 }

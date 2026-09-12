@@ -1,45 +1,32 @@
 import { useState } from "react"
-import { Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Pin } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import { useDeleteProduct } from "../hooks/use-products"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { Pencil, Trash2, Pin } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
-import { cn } from "@/lib/utils"
-import type { Product, Category } from "../types"
+import { AlertDialog, Button, Skeleton, Table, Tooltip } from "@heroui/react"
+import type { SortDescriptor } from "@heroui/react"
 
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-})
+import { toast } from "@/lib/toast"
+import { NoData } from "@/components/no-data"
+import { StatusBadge } from "@/components/status-badge"
+import { TablePagination } from "@/components/table-pagination"
+import { id } from "@/i18n/id"
+import { formatRupiah } from "@/lib/format"
+import { useDeleteProduct } from "../hooks/use-products"
+import { useApiQuery } from "@/hooks/use-api"
+import { getPopularProducts, toggleProductPin } from "@/lib/api/products"
+import { queryKeys } from "@/lib/api/query-keys"
+import { cn } from "@/lib/utils"
+import type { Product, Category, ShortcutProduct } from "../types"
+
+/** How many shortcut rows to read when deciding which products show a filled pin. */
+const SHORTCUT_LIMIT = 50
+
+const COLUMN_COUNT = 6
 
 interface ProductTableProps {
   products: Product[]
   categories: Category[]
+  /** Baris `Skeleton` menggantikan isi selama pencarian pertama berjalan. */
+  isLoading?: boolean
   page: number
   totalPages: number
   onPageChange: (page: number) => void
@@ -49,44 +36,10 @@ interface ProductTableProps {
   onSortChange: (column: string) => void
 }
 
-function SortableHeader({
-  label,
-  column,
-  sortBy,
-  sortOrder,
-  onSort,
-  className,
-}: {
-  label: string
-  column: string
-  sortBy?: string
-  sortOrder?: "asc" | "desc"
-  onSort: (column: string) => void
-  className?: string
-}) {
-  const isActive = sortBy === column
-  return (
-    <TableHead className={className}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-3 h-8 gap-1"
-        onClick={() => onSort(column)}
-      >
-        {label}
-        {isActive ? (
-          sortOrder === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
-        ) : (
-          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
-        )}
-      </Button>
-    </TableHead>
-  )
-}
-
 export function ProductTable({
   products,
   categories,
+  isLoading = false,
   page,
   totalPages,
   onPageChange,
@@ -96,24 +49,22 @@ export function ProductTable({
   onSortChange,
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
-  const user = useAuthStore((s) => s.user)
   const deleteProduct = useDeleteProduct()
   const queryClient = useQueryClient()
 
-  // Fetch pinned product IDs
-  const { data: shortcuts } = useTauriQuery<Array<{ id: number; product_id: number; is_pinned: boolean }>>(
-    "get_popular_products",
-    { limit: 50 }
+  // Which products are pinned to the cashier's shortcut grid. The server
+  // flattens the product into the row, so `id` here is the product's own id.
+  const { data: shortcuts } = useApiQuery<ShortcutProduct[]>(
+    queryKeys.products.popular(SHORTCUT_LIMIT),
+    () => getPopularProducts(SHORTCUT_LIMIT),
   )
-  const pinnedIds = new Set(
-    (shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id)
-  )
+  const pinnedIds = new Set((shortcuts ?? []).filter((s) => s.is_pinned).map((s) => s.id))
 
   const handleTogglePin = async (productId: number) => {
     try {
-      const pinned = await invoke<boolean>("toggle_product_pin", { productId })
+      const pinned = await toggleProductPin(productId)
       toast.success(pinned ? "Produk di-pin ke shortcut" : "Pin shortcut dihapus")
-      queryClient.invalidateQueries({ queryKey: ["get_popular_products"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
     } catch {
       toast.error("Gagal mengubah pin")
     }
@@ -123,19 +74,24 @@ export function ProductTable({
 
   const getStockBadge = (product: Product) => {
     if (product.stock < 0) {
-      return <Badge variant="destructive">Stok Minus</Badge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Stok Minus
+        </StatusBadge>
+      )
     }
     if (product.stock === 0) {
-      return <Badge variant="destructive">Stok Habis</Badge>
+      return (
+        <StatusBadge status="error" size="sm">
+          Stok Habis
+        </StatusBadge>
+      )
     }
     if (product.stock <= product.min_stock) {
       return (
-        <Badge
-          variant="outline"
-          className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50"
-        >
+        <StatusBadge status="warning" size="sm">
           {id.products.lowStock}
-        </Badge>
+        </StatusBadge>
       )
     }
     return null
@@ -143,147 +99,186 @@ export function ProductTable({
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteProduct.mutate({ id: deleteTarget.id, callerId: user!.id }, {
+    deleteProduct.mutate(deleteTarget.id, {
       onSettled: () => setDeleteTarget(null),
     })
   }
 
+  // React Aria hanya mengenal dua arah, sedangkan layar ini bersiklus tiga
+  // langkah: naik, turun, lalu kembali tanpa urutan. Arah yang dihitung React
+  // Aria dibuang dan induknya yang memutuskan langkah berikutnya, persis seperti
+  // sebelum pindah ke `Table`.
+  const sortDescriptor: SortDescriptor = {
+    column: sortBy ?? "",
+    direction: sortOrder === "desc" ? "descending" : "ascending",
+  }
+
+  const renderEmptyState = () => <NoData title={id.products.noProducts} />
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableHeader label={id.products.name} column="name" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} />
-              <TableHead>{id.products.barcode}</TableHead>
-              <TableHead>{id.products.category}</TableHead>
-              <SortableHeader label={id.products.sellPrice} column="sell_price" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
-              <SortableHeader label={id.products.stock} column="stock" sortBy={sortBy} sortOrder={sortOrder} onSort={onSortChange} className="text-right" />
-              <TableHead className="text-right">{id.products.action}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {products.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  {id.products.noProducts}
-                </TableCell>
-              </TableRow>
-            ) : (
-              products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">
-                    <div className="space-y-1">
-                      <div>{product.name}</div>
-                      <div className="flex flex-wrap gap-1">
-                        {!product.barcode?.trim() && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Tanpa Barcode
-                          </Badge>
-                        )}
-                        {!product.category_id && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Tanpa Kategori
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {product.barcode?.trim() || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <span className={cn(!product.category_id && "text-muted-foreground")}>
-                      {product.category_id ? categoryMap.get(product.category_id) || "—" : "Tanpa kategori"}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {rupiahFormatter.format(product.sell_price)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className={cn(
-                        "tabular-nums",
-                        product.stock < 0 && "font-semibold text-destructive"
-                      )}>
-                        {product.stock}
-                      </span>
-                      {getStockBadge(product)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleTogglePin(product.id)}
-                        title={pinnedIds.has(product.id) ? "Hapus pin shortcut" : "Pin ke shortcut kasir"}
-                      >
-                        <Pin className={`h-4 w-4 ${pinnedIds.has(product.id) ? "fill-current text-primary" : "text-muted-foreground"}`} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onEdit(product)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteTarget(product)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-sm text-muted-foreground">
-            {id.products.page} {page} {id.products.of} {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => onPageChange(page - 1)}
+    <div className="flex flex-col gap-4">
+      <Table variant="secondary">
+        <Table.ScrollContainer>
+          <Table.Content
+            aria-label={id.products.title}
+            sortDescriptor={sortDescriptor}
+            onSortChange={(descriptor) => onSortChange(String(descriptor.column))}
           >
-            {id.products.prev}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            {id.products.next}
-          </Button>
-        </div>
-      )}
+            <Table.Header>
+              <Table.Column allowsSorting isRowHeader id="name">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.name}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column id="barcode">{id.products.barcode}</Table.Column>
+              <Table.Column id="category">{id.products.category}</Table.Column>
+              <Table.Column allowsSorting className="text-right" id="sell_price">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.sellPrice}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column allowsSorting className="text-right" id="stock">
+                {({ sortDirection }) => (
+                  <Table.SortableColumnHeader sortDirection={sortDirection}>
+                    {id.products.stock}
+                  </Table.SortableColumnHeader>
+                )}
+              </Table.Column>
+              <Table.Column className="text-right" id="actions">
+                {id.products.action}
+              </Table.Column>
+            </Table.Header>
+            <Table.Body renderEmptyState={renderEmptyState}>
+              {isLoading
+                ? Array.from({ length: 5 }).map((_, rowIndex) => (
+                    <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
+                      {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                        <Table.Cell key={cellIndex}>
+                          <Skeleton className="h-5 w-full" />
+                        </Table.Cell>
+                      ))}
+                    </Table.Row>
+                  ))
+                : products.map((product) => (
+                    <Table.Row key={product.id} id={product.id} textValue={product.name}>
+                      {/* Tanpa lencana "Tanpa Barcode" / "Tanpa Kategori": kolom
+                          barcode dan kategori di baris yang sama sudah mengatakannya,
+                          dan kartu ringkasan di atas sudah menghitungnya. */}
+                      <Table.Cell className="font-medium">{product.name}</Table.Cell>
+                      <Table.Cell className="text-muted">
+                        {product.barcode?.trim() || "—"}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <span className={cn(!product.category_id && "text-muted")}>
+                          {product.category_id
+                            ? categoryMap.get(product.category_id) || "—"
+                            : "Tanpa kategori"}
+                        </span>
+                      </Table.Cell>
+                      <Table.Cell className="text-right tabular-nums">
+                        {formatRupiah(product.sell_price)}
+                      </Table.Cell>
+                      <Table.Cell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <span
+                            className={cn(
+                              "tabular-nums",
+                              product.stock < 0 && "font-semibold text-danger",
+                            )}
+                          >
+                            {product.stock}
+                          </span>
+                          {getStockBadge(product)}
+                        </div>
+                      </Table.Cell>
+                      <Table.Cell className="text-right">
+                        {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
+                        `tertiary` untuk aksi biasa, `danger-soft` untuk hapus
+                        (DESIGN.md §5.4). */}
+                        <div className="flex items-center justify-end gap-1">
+                          <PinActionButton
+                            isPinned={pinnedIds.has(product.id)}
+                            onPress={() => handleTogglePin(product.id)}
+                          />
+                          <Button
+                            aria-label={`${id.common.edit} ${product.name}`}
+                            isIconOnly
+                            size="sm"
+                            variant="tertiary"
+                            onPress={() => onEdit(product)}
+                          >
+                            <Pencil />
+                          </Button>
+                          <Button
+                            aria-label={`${id.common.delete} ${product.name}`}
+                            isIconOnly
+                            size="sm"
+                            variant="danger-soft"
+                            onPress={() => setDeleteTarget(product)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{id.common.confirm}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {id.products.deleteConfirm}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{id.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
-              {id.common.delete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <TablePagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+
+      <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
+        isOpen={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label={id.common.confirm}>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>{id.common.confirm}</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{id.products.deleteConfirm}</p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary">
+                {id.common.cancel}
+              </Button>
+              <Button variant="danger" onPress={handleDelete}>
+                {id.common.delete}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
+  )
+}
+
+/**
+ * Pin produk ke shortcut kasir.
+ *
+ * Ikonnya sendiri tidak menjelaskan apa-apa, jadi alasannya dulu dititipkan ke
+ * atribut `title` — hanya terbaca kalau kursor berhenti di atasnya. Tombolnya
+ * aktif, jadi `Tooltip` boleh membungkus `Button` langsung tanpa
+ * `Tooltip.Trigger`: pembungkus itu menambah satu titik Tab yang tidak perlu.
+ */
+function PinActionButton({ isPinned, onPress }: { isPinned: boolean; onPress: () => void }) {
+  const label = isPinned ? "Hapus pin shortcut" : "Pin ke shortcut kasir"
+
+  return (
+    <Tooltip>
+      <Button aria-label={label} isIconOnly size="sm" variant="tertiary" onPress={onPress}>
+        <Pin className={isPinned ? "fill-current text-accent" : undefined} />
+      </Button>
+      <Tooltip.Content>{label}</Tooltip.Content>
+    </Tooltip>
   )
 }

@@ -1,89 +1,91 @@
 import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { Eye, Printer, RotateCcw, Search, X, CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { type DateRange } from "react-day-picker"
-import { toast } from "sonner"
-import { invoke } from "@tauri-apps/api/core"
+import { Eye, Printer, RotateCcw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
+import { Button, Skeleton, Table, Tooltip } from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
+import { SearchInput } from "@/components/search-input"
+import { StatusBadge } from "@/components/status-badge"
+import { TablePagination } from "@/components/table-pagination"
+import { DateRangePicker } from "@/components/date-range-picker"
+import { getTodayRange, type DateRange } from "@/lib/date-range"
+import { useApiQuery } from "@/hooks/use-api"
+import { listTransactions } from "@/lib/api/transactions"
+import { printReceipt } from "@/lib/api/printers"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useDebounce } from "@/hooks/use-debounce"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
+import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { id } from "@/i18n/id"
+import { refundBlockedReason } from "../refund-window"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
-import type { PaginatedTransactions, TransactionListItem } from "../types"
+import type { ListTransactionsInput, PaginatedTransactions, TransactionListItem } from "../types"
 
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
+/** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
+const ALL = "all"
 
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—"
-  const date = new Date(dateStr.replace(" ", "T") + "Z")
-  return dateFormatter.format(date)
-}
+const PAYMENT_METHOD_FILTERS = [
+  { key: ALL, label: id.transactions.allMethods },
+  { key: "cash", label: id.payment.cash },
+  { key: "qris", label: id.payment.qris },
+  { key: "debit", label: id.payment.debit },
+  { key: "ewallet", label: id.payment.ewallet },
+  { key: "transfer", label: id.payment.transfer },
+  { key: "mixed", label: id.payment.mixed },
+] as const
 
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: id.payment.cash,
-  qris: id.payment.qris,
-  debit: id.payment.debit,
-  ewallet: id.payment.ewallet,
-  transfer: id.payment.transfer,
-  mixed: id.payment.mixed,
-}
+const STATUS_FILTERS = [
+  { key: ALL, label: id.transactions.allStatus },
+  { key: "completed", label: id.transactions.completed },
+  { key: "pending_ppob", label: id.transactions.pendingPpob },
+  { key: "ppob_failed", label: id.transactions.ppobFailed },
+  { key: "refunded", label: id.transactions.refunded },
+  { key: "partial_refund", label: id.transactions.partialRefund },
+  { key: "deleted", label: id.transactions.deleted },
+] as const
 
-const STATUS_VARIANTS: Record<string, "default" | "destructive" | "secondary"> = {
-  completed: "default",
-  pending_ppob: "secondary",
-  ppob_failed: "destructive",
-  refunded: "destructive",
-  partial_refund: "secondary",
-  deleted: "destructive",
-}
+const COLUMN_COUNT = 9
 
-const STATUS_CLASSNAMES: Record<string, string> = {
-  completed: "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300",
-  pending_ppob: "bg-amber-50 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  deleted: "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300",
-}
+/**
+ * The refund entry point for one row.
+ *
+ * A disabled button swallows pointer events, so the tooltip has to hang off a
+ * wrapper: without it the cashier sees a dead button and no reason for it.
+ * HeroUI's `Tooltip.Trigger` renders that wrapper as `div[role=button]
+ * [tabindex=0]`, which is what finally makes the reason reachable by keyboard —
+ * the old `<span>` wrapper was invisible to anyone not using a mouse.
+ */
+function RefundActionButton({
+  blockedReason,
+  onPress,
+}: {
+  blockedReason: string | null
+  onPress: () => void
+}) {
+  const button = (
+    <Button
+      aria-label={blockedReason ?? id.refund.title}
+      isDisabled={blockedReason !== null}
+      isIconOnly
+      size="sm"
+      variant="tertiary"
+      onPress={onPress}
+    >
+      <RotateCcw />
+    </Button>
+  )
 
-const STATUS_LABELS: Record<string, string> = {
-  completed: id.transactions.completed,
-  pending_ppob: id.transactions.pendingPpob,
-  ppob_failed: id.transactions.ppobFailed,
-  refunded: id.transactions.refunded,
-  partial_refund: id.transactions.partialRefund,
-  deleted: id.transactions.deleted,
+  if (!blockedReason) return button
+
+  return (
+    <Tooltip>
+      <Tooltip.Trigger className="inline-flex">{button}</Tooltip.Trigger>
+      <Tooltip.Content>{blockedReason}</Tooltip.Content>
+    </Tooltip>
+  )
 }
 
 function getTransactionDescription(txn: TransactionListItem): string {
@@ -102,10 +104,6 @@ function getTransactionDescription(txn: TransactionListItem): string {
   return "—"
 }
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
 export function TransactionsPage() {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
@@ -113,38 +111,36 @@ export function TransactionsPage() {
   const debouncedSearch = useDebounce(search, 300)
   const [paymentMethod, setPaymentMethod] = useState("")
   const [status, setStatus] = useState("")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date(),
-  })
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailTxn, setDetailTxn] = useState<TransactionListItem | null>(null)
 
-  const queryArgs = useMemo(() => ({
-    input: {
+  const queryParams = useMemo<ListTransactionsInput>(
+    () => ({
       page,
       per_page: 50,
       search: debouncedSearch || undefined,
       payment_method: paymentMethod || undefined,
       status: status || undefined,
-      date_from: dateRange?.from ? toDateStr(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toDateStr(dateRange.to) : undefined,
-    },
-  }), [page, debouncedSearch, paymentMethod, status, dateRange])
-
-  const { data, isLoading, error } = useTauriQuery<PaginatedTransactions>(
-    "list_transactions",
-    queryArgs,
-    {
-      placeholderData: keepPreviousData,
-    }
+      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
+      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
+    }),
+    [page, debouncedSearch, paymentMethod, status, dateRange],
   )
 
+  const { data, isLoading, error } = useApiQuery<PaginatedTransactions>(
+    queryKeys.transactions.list(queryParams),
+    () => listTransactions(queryParams),
+    { placeholderData: keepPreviousData },
+  )
+
+  // Printing happens on the server: the thermal printer is plugged into the till
+  // the server runs on, so this produces paper there whichever device pressed it.
   const handlePrint = useCallback(async (transactionId: number) => {
     try {
-      await invoke("print_receipt", { transactionId })
+      await printReceipt(transactionId)
       toast.success("Struk dicetak")
     } catch (e) {
-      toast.error(`Gagal cetak: ${e}`)
+      toast.error(`Gagal cetak: ${e instanceof Error ? e.message : e}`)
     }
   }, [])
 
@@ -152,256 +148,198 @@ export function TransactionsPage() {
     setSearch("")
     setPaymentMethod("")
     setStatus("")
-    setDateRange({ from: new Date(), to: new Date() })
+    setDateRange(getTodayRange())
     setPage(1)
   }, [])
 
-  const today = toDateStr(new Date())
-  const hasFilters = search || paymentMethod || status ||
-    (dateRange?.from && toDateStr(dateRange.from) !== today) ||
-    (dateRange?.to && toDateStr(dateRange.to) !== today)
+  const today = toLocalDateString(new Date())
+  const hasFilters =
+    search ||
+    paymentMethod ||
+    status ||
+    (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
+    (dateRange?.to && toLocalDateString(dateRange.to) !== today)
+
+  const transactions = data?.data ?? []
+
+  const renderEmptyState = () =>
+    error ? (
+      <NoData title={`Error: ${error.message}`} tone="danger" />
+    ) : (
+      <NoData title={id.transactions.noTransactions} />
+    )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">{id.transactions.title}</h1>
-
+    // DESIGN.md §5.1
+    <div className="flex h-full flex-col gap-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={id.transactions.searchPlaceholder}
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="pl-9"
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          aria-label={id.transactions.searchPlaceholder}
+          placeholder={id.transactions.searchPlaceholder}
+          className="w-64"
+          value={search}
+          onChange={(value) => {
+            setSearch(value)
+            setPage(1)
+          }}
+        />
 
-        <Select value={paymentMethod} onValueChange={(v) => { setPaymentMethod(v === "all" ? "" : v); setPage(1) }}>
-          <SelectTrigger className="w-full max-w-48">
-            <SelectValue placeholder={id.transactions.allMethods} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{id.transactions.allMethods}</SelectItem>
-            <SelectItem value="cash">{id.payment.cash}</SelectItem>
-            <SelectItem value="qris">{id.payment.qris}</SelectItem>
-            <SelectItem value="debit">{id.payment.debit}</SelectItem>
-            <SelectItem value="ewallet">{id.payment.ewallet}</SelectItem>
-            <SelectItem value="transfer">{id.payment.transfer}</SelectItem>
-            <SelectItem value="mixed">{id.payment.mixed}</SelectItem>
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          aria-label={id.transactions.allMethods}
+          className="w-48"
+          placeholder={id.transactions.allMethods}
+          options={PAYMENT_METHOD_FILTERS}
+          value={paymentMethod || ALL}
+          onChange={(key) => {
+            setPaymentMethod(key === ALL || key === null ? "" : key)
+            setPage(1)
+          }}
+        />
 
-        <Select value={status} onValueChange={(v) => { setStatus(v === "all" ? "" : v); setPage(1) }}>
-          <SelectTrigger className="w-full max-w-48">
-            <SelectValue placeholder={id.transactions.allStatus} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{id.transactions.allStatus}</SelectItem>
-            <SelectItem value="completed">{id.transactions.completed}</SelectItem>
-            <SelectItem value="pending_ppob">{id.transactions.pendingPpob}</SelectItem>
-            <SelectItem value="ppob_failed">{id.transactions.ppobFailed}</SelectItem>
-            <SelectItem value="refunded">{id.transactions.refunded}</SelectItem>
-            <SelectItem value="partial_refund">{id.transactions.partialRefund}</SelectItem>
-            <SelectItem value="deleted">{id.transactions.deleted}</SelectItem>
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          aria-label={id.transactions.allStatus}
+          className="w-48"
+          placeholder={id.transactions.allStatus}
+          options={STATUS_FILTERS}
+          value={status || ALL}
+          onChange={(key) => {
+            setStatus(key === ALL || key === null ? "" : key)
+            setPage(1)
+          }}
+        />
 
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={resetFilters}>
-            <X className="mr-1 h-4 w-4" />
+          <Button size="sm" variant="tertiary" onPress={resetFilters}>
+            <X />
             {id.transactions.resetFilter}
           </Button>
         )}
 
         <div className="ml-auto">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                data-empty={!dateRange?.from}
-                className="justify-start px-2.5 font-normal data-[empty=true]:text-muted-foreground"
-              >
-                <CalendarIcon />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd MMM yyyy", { locale: idLocale })}
-                      {" - "}
-                      {format(dateRange.to, "dd MMM yyyy", { locale: idLocale })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd MMM yyyy", { locale: idLocale })
-                  )
-                ) : (
-                  <span>Pilih tanggal</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={(range) => { setDateRange(range); setPage(1) }}
-                numberOfMonths={2}
-                locale={idLocale}
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePicker
+            value={dateRange}
+            onChange={(range) => {
+              setDateRange(range)
+              setPage(1)
+            }}
+            align="start"
+          />
         </div>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table className="min-w-[1180px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{id.transactions.receiptNumber}</TableHead>
-              <TableHead>{id.transactions.cashier}</TableHead>
-              <TableHead>{id.transactions.date}</TableHead>
-              <TableHead className="text-center">{id.transactions.items}</TableHead>
-              <TableHead>{id.transactions.paymentMethod}</TableHead>
-              <TableHead>{id.transactions.description}</TableHead>
-              <TableHead>{id.transactions.status}</TableHead>
-              <TableHead className="text-right">{id.transactions.totalAmount}</TableHead>
-              <TableHead className="text-right w-24" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((_, j) => (
-                    <TableCell key={j}>
-                      <Skeleton className="h-5 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : error ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-destructive">
-                  Error: {error.message}
-                </TableCell>
-              </TableRow>
-            ) : !data?.data?.length ? (
-              <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
-                  {id.transactions.noTransactions}
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.data.map((txn) => (
-                <TableRow
-                  key={txn.id}
-                  className={`cursor-pointer ${txn.status === "deleted" ? "opacity-50" : ""}`}
-                  onClick={() => setDetailTxn(txn)}
-                >
-                  <TableCell className="font-mono text-sm">
-                    <div className="space-y-1">
-                      <p>{txn.receipt_number}</p>
-                      {txn.ppob_message && (
-                        <p className="max-w-48 truncate text-xs text-muted-foreground">
-                          {txn.ppob_message}
-                        </p>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{txn.cashier_name}</TableCell>
-                  <TableCell className="text-sm">{formatDate(txn.created_at)}</TableCell>
-                  <TableCell className="text-center">{txn.item_count}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {PAYMENT_LABELS[txn.payment_method] || txn.payment_method}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-64 whitespace-normal">
-                    <p className="break-words text-sm text-muted-foreground">
-                      {getTransactionDescription(txn)}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={STATUS_VARIANTS[txn.status] || "secondary"}
-                      className={STATUS_CLASSNAMES[txn.status]}
-                    >
-                      {STATUS_LABELS[txn.status] || txn.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {formatRupiah(txn.total_amount)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => { e.stopPropagation(); setDetailTxn(txn) }}
-                        title={id.transactions.detail}
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content
+              aria-label={id.transactions.title}
+              className="min-w-[1180px] tabular-nums"
+            >
+              <Table.Header>
+                <Table.Column isRowHeader>{id.transactions.receiptNumber}</Table.Column>
+                <Table.Column>{id.transactions.cashier}</Table.Column>
+                <Table.Column>{id.transactions.date}</Table.Column>
+                <Table.Column className="text-center">{id.transactions.items}</Table.Column>
+                <Table.Column>{id.transactions.paymentMethod}</Table.Column>
+                <Table.Column>{id.transactions.description}</Table.Column>
+                <Table.Column>{id.transactions.status}</Table.Column>
+                <Table.Column className="text-right">{id.transactions.totalAmount}</Table.Column>
+                <Table.Column className="w-24 text-right">
+                  <span className="sr-only">Aksi</span>
+                </Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={renderEmptyState}>
+                {isLoading
+                  ? Array.from({ length: 5 }).map((_, rowIndex) => (
+                      <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
+                        {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                          <Table.Cell key={cellIndex}>
+                            <Skeleton className="h-5 w-full" />
+                          </Table.Cell>
+                        ))}
+                      </Table.Row>
+                    ))
+                  : transactions.map((txn) => (
+                      <Table.Row
+                        key={txn.id}
+                        id={txn.id}
+                        className={txn.status === "deleted" ? "opacity-50" : undefined}
+                        textValue={txn.receipt_number}
+                        onAction={() => setDetailTxn(txn)}
                       >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {!txn.has_ppob && txn.status !== "refunded" && txn.status !== "deleted" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/refund/${txn.id}`) }}
-                          title={id.refund.title}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={txn.has_ppob && txn.status !== "completed" && txn.status !== "deleted"}
-                        onClick={(e) => { e.stopPropagation(); handlePrint(txn.id) }}
-                        title={id.transactions.printReceipt}
-                      >
-                        <Printer className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
+                        <Table.Cell className="font-mono">
+                          <div className="space-y-1">
+                            <p>{txn.receipt_number}</p>
+                            {txn.ppob_message && (
+                              <p className="max-w-48 truncate text-xs text-muted">
+                                {txn.ppob_message}
+                              </p>
+                            )}
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell>{txn.cashier_name}</Table.Cell>
+                        <Table.Cell>{formatDateTime(txn.created_at)}</Table.Cell>
+                        <Table.Cell className="text-center">{txn.item_count}</Table.Cell>
+                        {/* Teks, bukan `Chip`: lencana disimpan untuk kolom Status. */}
+                        <Table.Cell>{paymentMethodLabel(txn.payment_method)}</Table.Cell>
+                        <Table.Cell className="max-w-64 whitespace-normal">
+                          <p className="break-words text-muted">{getTransactionDescription(txn)}</p>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <StatusBadge status={transactionStatusVariant(txn.status)}>
+                            {transactionStatusLabel(txn.status)}
+                          </StatusBadge>
+                        </Table.Cell>
+                        <Table.Cell className="text-right font-medium">
+                          {formatRupiah(txn.total_amount)}
+                        </Table.Cell>
+                        <Table.Cell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              aria-label={id.transactions.detail}
+                              isIconOnly
+                              size="sm"
+                              variant="tertiary"
+                              onPress={() => setDetailTxn(txn)}
+                            >
+                              <Eye />
+                            </Button>
+                            {!txn.has_ppob &&
+                              txn.status !== "refunded" &&
+                              txn.status !== "deleted" && (
+                                <RefundActionButton
+                                  blockedReason={refundBlockedReason(txn.created_at)}
+                                  onPress={() => navigate(`/refund/${txn.id}`)}
+                                />
+                              )}
+                            <Button
+                              aria-label={id.transactions.printReceipt}
+                              isDisabled={
+                                txn.has_ppob &&
+                                txn.status !== "completed" &&
+                                txn.status !== "deleted"
+                              }
+                              isIconOnly
+                              size="sm"
+                              variant="tertiary"
+                              onPress={() => handlePrint(txn.id)}
+                            >
+                              <Printer />
+                            </Button>
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
         </Table>
       </div>
 
-      {/* Pagination */}
-      {data && data.total_pages > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-sm text-muted-foreground">
-            {id.transactions.page} {data.page} {id.transactions.of} {data.total_pages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            {id.transactions.prev}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= data.total_pages}
-            onClick={() => setPage(page + 1)}
-          >
-            {id.transactions.next}
-          </Button>
-        </div>
-      )}
+      <TablePagination page={page} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
 
-      <TransactionDetailDialog
-        transaction={detailTxn}
-        onClose={() => setDetailTxn(null)}
-      />
+      <TransactionDetailDialog transaction={detailTxn} onClose={() => setDetailTxn(null)} />
     </div>
   )
 }

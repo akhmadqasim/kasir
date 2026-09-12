@@ -1,49 +1,34 @@
-import * as React from "react"
-import { NavLink, useLocation } from "react-router-dom"
+import { useLocation } from "react-router-dom"
 
 import {
   SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
+  SidebarLabel,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
+  SidebarMenuLink,
+} from "@/components/layout/sidebar"
+import { isPathWithin } from "@/app/resume-route"
+import type { NavItem } from "@/app/navigation"
 
-export function NavSecondary({
-  items,
-  ...props
-}: {
-  items: {
-    title: string
-    url: string
-    icon: React.ReactNode
-  }[]
-} & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
+export function NavSecondary({ items, className }: { items: NavItem[]; className?: string }) {
   const location = useLocation()
 
   return (
-    <SidebarGroup {...props}>
-      <SidebarGroupLabel>Admin</SidebarGroupLabel>
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {items.map((item) => (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton
-                asChild
-                size="sm"
-                tooltip={item.title}
-                isActive={location.pathname === item.url}
-              >
-                <NavLink to={item.url}>
-                  {item.icon}
-                  <span>{item.title}</span>
-                </NavLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
-      </SidebarGroupContent>
+    <SidebarGroup className={className}>
+      <SidebarMenu>
+        {items.map((item) => (
+          <SidebarMenuItem key={item.title}>
+            <SidebarMenuLink
+              to={item.url}
+              tooltip={item.title}
+              isActive={isPathWithin(location.pathname, item.url)}
+            >
+              {item.icon}
+              <SidebarLabel className="truncate">{item.title}</SidebarLabel>
+            </SidebarMenuLink>
+          </SidebarMenuItem>
+        ))}
+      </SidebarMenu>
     </SidebarGroup>
   )
 }

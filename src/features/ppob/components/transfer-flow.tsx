@@ -1,18 +1,26 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Button,
+  Card,
+  Description,
+  Input,
+  Label,
+  ListBox,
+  Skeleton,
+  Surface,
+  TextField,
+} from "@heroui/react"
+
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
+import { formatRupiah } from "@/lib/format"
 import { useTransferChannels } from "../hooks"
 import type { TransferChannelGroup, TransferChannelDetail } from "../types"
-
-function formatRupiah(value: number): string {
-  return `Rp ${value.toLocaleString("id-ID")}`
-}
+import { FlowColumns } from "./flow-columns"
+import { ConfirmCard } from "./quick-access/confirm-card"
 
 export function TransferFlow() {
   const navigate = useNavigate()
@@ -46,245 +54,233 @@ export function TransferFlow() {
     senderName.trim().length > 0 &&
     senderPhone.length >= 8
 
+  const resetChannel = () => {
+    setSelectedChannel(null)
+    setSelectedDetail(null)
+  }
+
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/ppob")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{id.ppob.transfer}</h1>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <SubpageHeader title={id.ppob.transfer} onBack={() => navigate("/ppob")} />
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-8 space-y-6">
-          {/* Bank Selection */}
-          {!selectedChannel && (
-            <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={id.ppob.searchBank}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-16" />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                  {filtered.map((ch) => (
-                    <Card
-                      key={ch.channel}
-                      className="cursor-pointer transition-colors hover:bg-accent"
-                      onClick={() => {
-                        setSelectedChannel(ch)
-                        if (ch.details.length === 1) {
-                          setSelectedDetail(ch.details[0])
-                        }
-                      }}
-                    >
-                      <CardContent className="py-4">
-                        <p className="font-medium">{ch.channel}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {ch.details.length} {ch.details.length === 1 ? "tipe" : "tipe"} transfer
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Channel Detail Selection (if multiple) */}
-          {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
+      <FlowColumns
+        aside={
+          selectedChannel && selectedDetail && isFormValid ? (
+            <ConfirmCard
+              footer={
+                // Transfer belum tersambung ke backend; tombolnya tetap ada
+                // supaya bentuk kartunya sama dengan flow lain.
+                <Button fullWidth isDisabled size="lg">
+                  {id.ppob.notAvailable}
+                </Button>
+              }
+              items={[
+                { label: id.ppob.selectBank, value: selectedChannel.channel },
+                { label: id.ppob.accountNumber, value: accountNumber, tone: "mono" },
+                { label: id.ppob.amount, value: formatRupiah(amountNum) },
+                ...(description ? [{ label: id.ppob.description, value: description }] : []),
+                { label: id.ppob.senderName, value: senderName },
+                { label: id.ppob.senderPhone, value: senderPhone, tone: "mono" },
+              ]}
+              title={id.ppob.confirm}
+              totals={[
+                { label: id.ppob.fee, value: formatRupiah(fee) },
+                { label: id.ppob.totalPayment, value: formatRupiah(total), tone: "strong" },
+              ]}
+            />
+          ) : channels ? (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">{selectedChannel.channel}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {selectedChannel.details.map((detail) => (
-                  <Card
-                    key={detail.channelId}
-                    className="cursor-pointer transition-colors hover:bg-accent"
-                    onClick={() => setSelectedDetail(detail)}
-                  >
-                    <CardContent className="py-3 flex justify-between items-center">
-                      <span className="font-medium">{detail.transferType}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {id.ppob.fee}: {formatRupiah(detail.fee)}
-                      </span>
-                    </CardContent>
-                  </Card>
+              <Card.Content>
+                <NoData title="Pilih produk untuk melihat konfirmasi" />
+              </Card.Content>
+            </Card>
+          ) : null
+        }
+      >
+        {/* Bank Selection */}
+        {!selectedChannel && (
+          <>
+            <SearchInput
+              aria-label={id.ppob.searchBank}
+              className="max-w-sm"
+              placeholder={id.ppob.searchBank}
+              value={search}
+              onChange={setSearch}
+            />
+
+            {isLoading ? (
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16" />
                 ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setSelectedChannel(null)
-                    setSelectedDetail(null)
+              </div>
+            ) : filtered.length === 0 ? (
+              <NoData title={id.ppob.bankNotFound} />
+            ) : (
+              // Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
+              // membingkainya, `onAction` memilih.
+              <Surface className="max-h-[60vh] overflow-y-auto">
+                <ListBox
+                  aria-label={id.ppob.selectBank}
+                  className="p-2"
+                  selectionMode="none"
+                  onAction={(key) => {
+                    const ch = filtered.find((candidate) => candidate.channel === key)
+                    if (!ch) return
+                    setSelectedChannel(ch)
+                    if (ch.details.length === 1) {
+                      setSelectedDetail(ch.details[0])
+                    }
                   }}
                 >
-                  Ganti Bank
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+                  {filtered.map((ch) => (
+                    <ListBox.Item key={ch.channel} id={ch.channel} textValue={ch.channel}>
+                      <div className="flex min-w-0 flex-col">
+                        <Label>{ch.channel}</Label>
+                        <Description>{ch.details.length} tipe transfer</Description>
+                      </div>
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Surface>
+            )}
+          </>
+        )}
 
-          {/* Transfer Form */}
-          {selectedChannel && selectedDetail && (
-            <Card>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{selectedChannel.channel}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedDetail.transferType} — {id.ppob.fee}: {formatRupiah(selectedDetail.fee)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedChannel(null)
-                      setSelectedDetail(null)
-                      setAccountNumber("")
-                      setAmount("")
-                      setDescription("")
-                      setSenderName("")
-                      setSenderPhone("")
-                    }}
+        {/* Channel Detail Selection (if multiple) */}
+        {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
+          <Card>
+            <Card.Header>
+              <Card.Title>{selectedChannel.channel}</Card.Title>
+            </Card.Header>
+            <Card.Content>
+              <ListBox
+                aria-label="Tipe transfer"
+                selectionMode="none"
+                onAction={(key) => {
+                  const detail = selectedChannel.details.find(
+                    (candidate) => candidate.channelId === key,
+                  )
+                  if (detail) setSelectedDetail(detail)
+                }}
+              >
+                {selectedChannel.details.map((detail) => (
+                  <ListBox.Item
+                    key={detail.channelId}
+                    id={detail.channelId}
+                    textValue={detail.transferType}
                   >
-                    Ganti
-                  </Button>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-base">{id.ppob.accountNumber}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.accountNumberPlaceholder}
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
-                      className="font-mono text-xl md:text-xl h-12"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-base">{id.ppob.amount}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.amountPlaceholder}
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
-                      className="font-mono text-xl md:text-xl h-12"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>{id.ppob.description}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.descriptionPlaceholder}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>{id.ppob.senderName}</Label>
-                    <Input
-                      type="text"
-                      placeholder={id.ppob.senderNamePlaceholder}
-                      value={senderName}
-                      onChange={(e) => setSenderName(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>{id.ppob.senderPhone}</Label>
-                    <Input
-                      type="tel"
-                      placeholder={id.ppob.senderPhonePlaceholder}
-                      value={senderPhone}
-                      onChange={(e) => setSenderPhone(e.target.value.replace(/\D/g, ""))}
-                      className="font-mono"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div className="col-span-4">
-          <div className="sticky top-6">
-            {selectedChannel && selectedDetail && isFormValid ? (
-              <Card className="border-primary">
-                <CardHeader>
-                  <CardTitle className="text-lg">{id.ppob.confirm}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectBank}</span>
-                    <span className="font-medium">{selectedChannel.channel}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.accountNumber}</span>
-                    <span className="font-mono text-base font-medium">{accountNumber}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.amount}</span>
-                    <span className="font-medium">{formatRupiah(amountNum)}</span>
-                  </div>
-                  {description && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">{id.ppob.description}</span>
-                      <span>{description}</span>
+                    <div className="flex min-w-0 flex-col">
+                      <Label>{detail.transferType}</Label>
+                      <Description className="tabular-nums">
+                        {id.ppob.fee}: {formatRupiah(detail.fee)}
+                      </Description>
                     </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.senderName}</span>
-                    <span>{senderName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.senderPhone}</span>
-                    <span className="font-mono text-base font-medium">{senderPhone}</span>
-                  </div>
-                  <div className="border-t pt-3 mt-3 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{id.ppob.fee}</span>
-                      <span>{formatRupiah(fee)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">{id.ppob.totalPayment}</span>
-                      <span className="text-lg font-bold">{formatRupiah(total)}</span>
-                    </div>
-                  </div>
-                  <Button className="w-full mt-4" size="lg" disabled>
-                    {id.ppob.process} (Coming Soon)
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : channels ? (
-              <div className="text-sm text-muted-foreground text-center py-8">
-                Pilih produk untuk melihat konfirmasi
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Card.Content>
+            <Card.Footer>
+              <Button size="sm" variant="tertiary" onPress={resetChannel}>
+                Ganti Bank
+              </Button>
+            </Card.Footer>
+          </Card>
+        )}
+
+        {/* Transfer Form */}
+        {selectedChannel && selectedDetail && (
+          <Card>
+            <Card.Header className="flex-row items-start justify-between gap-2">
+              <div className="min-w-0">
+                <Card.Title>{selectedChannel.channel}</Card.Title>
+                <Card.Description>
+                  {selectedDetail.transferType} — {id.ppob.fee}: {formatRupiah(selectedDetail.fee)}
+                </Card.Description>
               </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+              <Button
+                size="sm"
+                variant="tertiary"
+                onPress={() => {
+                  resetChannel()
+                  setAccountNumber("")
+                  setAmount("")
+                  setDescription("")
+                  setSenderName("")
+                  setSenderPhone("")
+                }}
+              >
+                Ganti
+              </Button>
+            </Card.Header>
+            <Card.Content>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  fullWidth
+                  value={accountNumber}
+                  variant="secondary"
+                  onChange={(value) => setAccountNumber(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.accountNumber}</Label>
+                  <Input
+                    className="tabular-nums"
+                    inputMode="numeric"
+                    placeholder={id.ppob.accountNumberPlaceholder}
+                  />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={amount}
+                  variant="secondary"
+                  onChange={(value) => setAmount(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.amount}</Label>
+                  <Input
+                    className="text-right tabular-nums"
+                    inputMode="numeric"
+                    placeholder={id.ppob.amountPlaceholder}
+                  />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={description}
+                  variant="secondary"
+                  onChange={setDescription}
+                >
+                  <Label>{id.ppob.description}</Label>
+                  <Input placeholder={id.ppob.descriptionPlaceholder} />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={senderName}
+                  variant="secondary"
+                  onChange={setSenderName}
+                >
+                  <Label>{id.ppob.senderName}</Label>
+                  <Input placeholder={id.ppob.senderNamePlaceholder} />
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  value={senderPhone}
+                  variant="secondary"
+                  onChange={(value) => setSenderPhone(value.replace(/\D/g, ""))}
+                >
+                  <Label>{id.ppob.senderPhone}</Label>
+                  <Input
+                    className="tabular-nums"
+                    inputMode="tel"
+                    placeholder={id.ppob.senderPhonePlaceholder}
+                  />
+                </TextField>
+              </div>
+            </Card.Content>
+          </Card>
+        )}
+      </FlowColumns>
     </div>
   )
 }

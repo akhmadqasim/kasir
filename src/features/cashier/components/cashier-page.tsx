@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
+import { Button, Surface } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useCartStore } from "../hooks/use-cart-store"
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { useCartStore } from "@/stores/cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { CartPanel } from "./cart-panel"
@@ -13,11 +14,13 @@ import type { TransactionResult } from "../types"
 
 export function CashierPage() {
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
+  // The shift dialog is not a state of its own: it is open whenever there is no
+  // shift and the cashier has not waved it away. Deriving it means it can never
+  // be left open over a shift that has since been opened, and it drops the effect
+  // that used to push it open on every render where `needsShift` was true.
+  const [shiftDialogDismissed, setShiftDialogDismissed] = useState(false)
   const [productSearchFocusKey, setProductSearchFocusKey] = useState(0)
-  const [successResult, setSuccessResult] = useState<TransactionResult | null>(
-    null
-  )
+  const [successResult, setSuccessResult] = useState<TransactionResult | null>(null)
   const clear = useCartStore((s) => s.clear)
   const hasItems = useCartStore((s) => s.items.length > 0)
   const user = useAuthStore((s) => s.user)
@@ -27,22 +30,30 @@ export function CashierPage() {
   // Fetch active shift on mount / user change
   useEffect(() => {
     if (user) {
-      fetchActiveShift(user.id)
+      fetchActiveShift()
     }
   }, [user, fetchActiveShift])
 
   const needsShift = !activeShift
+  const shiftDialogOpen = needsShift && !shiftDialogDismissed
+  // Dialog milik halaman ini menutupi CartPanel, jadi shortcut-nya harus mati.
+  const pageDialogOpen = paymentOpen || successResult !== null || shiftDialogOpen
 
-  useEffect(() => {
-    if (needsShift) {
-      setShiftDialogOpen(true)
-    }
-  }, [needsShift])
-
-  const handlePaymentSuccess = useCallback((result: TransactionResult) => {
-    setPaymentOpen(false)
-    setSuccessResult(result)
+  const handleShiftDialogOpenChange = useCallback((open: boolean) => {
+    setShiftDialogDismissed(!open)
   }, [])
+
+  const handlePaymentSuccess = useCallback(
+    (result: TransactionResult) => {
+      setPaymentOpen(false)
+      setSuccessResult(result)
+      // Barang sudah dibayar. Struk dirender dari `result`, bukan dari keranjang,
+      // jadi keranjang (dan salinannya di localStorage) harus langsung kosong
+      // supaya tidak bisa ditagih dua kali.
+      clear()
+    },
+    [clear],
+  )
 
   const requestProductSearchFocus = useCallback(() => {
     setProductSearchFocusKey((prev) => prev + 1)
@@ -59,12 +70,15 @@ export function CashierPage() {
     setPaymentOpen(true)
   }, [needsShift])
 
-  const handlePaymentOpenChange = useCallback((open: boolean) => {
-    setPaymentOpen(open)
-    if (!open) {
-      requestProductSearchFocus()
-    }
-  }, [requestProductSearchFocus])
+  const handlePaymentOpenChange = useCallback(
+    (open: boolean) => {
+      setPaymentOpen(open)
+      if (!open) {
+        requestProductSearchFocus()
+      }
+    },
+    [requestProductSearchFocus],
+  )
 
   // F4 shortcut to open payment dialog
   useEffect(() => {
@@ -80,41 +94,34 @@ export function CashierPage() {
 
   return (
     <>
-      {/* Banner when no shift */}
+      {/* DESIGN.md §5.7 */}
       {needsShift && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/30">
-          <div className="flex items-center gap-2">
-            <DoorOpen className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-              Shift belum dibuka — buka shift untuk mulai transaksi
-            </span>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/50"
-            onClick={() => setShiftDialogOpen(true)}
-          >
-            <DoorOpen className="mr-1 h-4 w-4" />
+        <NavbarActions>
+          <Button size="sm" onPress={() => setShiftDialogDismissed(false)}>
+            <DoorOpen />
             Buka Kasir
           </Button>
-        </div>
+        </NavbarActions>
       )}
 
+      {/* Dua panel `Surface` di atas kanvas, bukan `div` yang diberi `bg-surface`
+          sendiri: kolom isian di dalamnya lalu memakai `variant="secondary"`,
+          seperti contoh "In Surface" HeroUI. */}
       <div className="flex h-full flex-col gap-4 lg:grid lg:grid-cols-10">
         {/* Cart (top when stacked, left when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-4 lg:flex-none">
+        <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden border lg:col-span-4 lg:flex-none">
           <CartPanel
             onPay={openPayment}
             disabled={needsShift}
+            shortcutsDisabled={pageDialogOpen}
             onRequestProductSearchFocus={requestProductSearchFocus}
           />
-        </div>
+        </Surface>
 
         {/* Product Search (bottom when stacked, right when side-by-side) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card lg:col-span-6 lg:flex-none">
+        <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden border lg:col-span-6 lg:flex-none">
           <ProductSearchPanel focusKey={productSearchFocusKey} />
-        </div>
+        </Surface>
       </div>
 
       <PaymentDialog
@@ -129,10 +136,7 @@ export function CashierPage() {
         onNewTransaction={handleNewTransaction}
       />
 
-      <OpenShiftDialog
-        open={shiftDialogOpen}
-        onOpenChange={setShiftDialogOpen}
-      />
+      <OpenShiftDialog open={shiftDialogOpen} onOpenChange={handleShiftDialogOpenChange} />
     </>
   )
 }

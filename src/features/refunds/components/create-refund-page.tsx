@@ -1,39 +1,39 @@
-import { useState, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { ArrowLeft, Search, Trash2, Plus, Minus } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Trash2, Plus, Minus } from "lucide-react"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
+  Alert,
+  Button,
+  Checkbox,
+  Label,
+  NumberField,
+  ScrollShadow,
+  Separator,
+  Skeleton,
+  Surface,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useTauriQuery } from "@/hooks/use-tauri-command"
-import { useDebounce } from "@/hooks/use-debounce"
+  TextArea,
+  TextField,
+} from "@heroui/react"
+
+import { InfoPanel } from "@/components/info-panel"
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
+import { ProductAutocomplete } from "@/components/product-autocomplete"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useAuthStore } from "@/features/auth"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
+import { paymentMethodLabel } from "@/lib/labels"
 import { id } from "@/i18n/id"
+import {
+  isDiscountedLine,
+  lineDiscountAmount,
+  netAmountForQuantity,
+  netLineAmount,
+  netUnitAmount,
+} from "@/features/transactions/line-amounts"
 import type { TransactionItem } from "@/features/transactions/types"
-import type { PaginatedProducts } from "@/features/products/types"
 import {
   useRefundForm,
   CONDITION_LABELS,
@@ -41,17 +41,35 @@ import {
   type RefundItemState,
 } from "../hooks/use-refund-form"
 
+const CONDITION_OPTIONS: { key: Condition; label: string }[] = [
+  { key: "good", label: CONDITION_LABELS.good },
+  { key: "damaged", label: CONDITION_LABELS.damaged },
+  { key: "expired", label: CONDITION_LABELS.expired },
+]
+
+const ACTION_OPTIONS = [
+  { key: "refund", label: id.refund.actionRefund },
+  { key: "exchange", label: id.refund.actionExchange },
+] as const
+
+/** Kelas kedua panel halaman: permukaan bertepi yang mengisi tinggi layar. */
+const PANEL_CLASS = "flex min-h-0 flex-1 flex-col overflow-hidden border lg:flex-none"
+
+/**
+ * Susunan halaman sama dengan layar kasir: dua `Surface` bertumpuk di layar
+ * sempit, berdampingan 4:6 dari `lg` ke atas.
+ */
+const PAGE_CLASS = "flex h-full flex-col gap-4 lg:grid lg:grid-cols-10"
+
 export function CreateRefundPage() {
   const { transactionId } = useParams<{ transactionId: string }>()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchFocused, setSearchFocused] = useState(false)
-  const debouncedSearch = useDebounce(searchQuery, 300)
-
   const {
     detail,
+    refundableItems,
+    nonRefundableItems,
     isLoading,
     itemStates,
     actionType,
@@ -62,6 +80,8 @@ export function CreateRefundPage() {
     totalRefund,
     totalExchange,
     difference,
+    hasEarlierRefund,
+    blockedReason,
     setReason,
     setActionType,
     updateItem,
@@ -75,79 +95,103 @@ export function CreateRefundPage() {
     onSuccess: () => navigate(-1),
   })
 
-  const searchArgs = useMemo(() => ({
-    params: { query: debouncedSearch, page: 1, per_page: 5 },
-  }), [debouncedSearch])
-
-  const { data: searchResults } = useTauriQuery<PaginatedProducts>(
-    "search_products",
-    searchArgs,
-    { enabled: actionType === "exchange" && debouncedSearch.length >= 2 }
-  )
+  // Rute `/refund/:id` tidak ada di menu, jadi judulnya dipasang sendiri — DESIGN.md §5.1.
+  const navbar = <SubpageHeader title={id.refund.title} onBack={() => navigate(-1)} />
 
   if (isLoading || !detail) {
     return (
-      <div className="grid h-full grid-cols-10 gap-4">
-        <div className="col-span-4 flex flex-col gap-4 overflow-hidden rounded-xl border bg-card p-4">
-          <Skeleton className="h-8 w-48" />
+      <div className={PAGE_CLASS}>
+        {navbar}
+        <Surface className={`${PANEL_CLASS} gap-4 p-4 lg:col-span-4`}>
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
-        </div>
-        <div className="col-span-6 flex flex-col gap-4 overflow-hidden rounded-xl border bg-card p-4">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-10 w-full" />
+        </Surface>
+        <Surface className={`${PANEL_CLASS} gap-4 p-4 lg:col-span-6`}>
+          <Skeleton className="h-10 w-56" />
           <Skeleton className="h-48 w-full" />
-        </div>
+        </Surface>
       </div>
     )
   }
 
+  const summaryItems: SummaryItem[] = [
+    { label: id.refund.totalRefund, value: formatRupiah(totalRefund) },
+    ...(actionType === "exchange"
+      ? [
+          { label: id.refund.totalExchange, value: formatRupiah(totalExchange) },
+          {
+            label: id.refund.difference,
+            value: formatRupiah(Math.abs(difference)),
+            tone: difference > 0 ? "success" : difference < 0 ? "danger" : "strong",
+          } satisfies SummaryItem,
+        ]
+      : []),
+  ]
+
   return (
-    <div className="grid h-full grid-cols-10 gap-4">
-      {/* Left column: Transaction info + return items */}
-      <div className="col-span-4 flex flex-col overflow-hidden rounded-xl border bg-card">
-        {/* Header */}
-        <div className="flex items-center gap-3 border-b px-4 py-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={() => navigate(-1)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-lg font-semibold">{id.refund.title}</h1>
+    <div className={PAGE_CLASS}>
+      {navbar}
+
+      {/* Kolom kiri: info transaksi + barang yang diretur */}
+      <Surface className={`${PANEL_CLASS} lg:col-span-4`}>
+        <div className="flex flex-col gap-3 p-4">
+          <InfoPanel>
+            <SummaryList
+              items={[
+                {
+                  label: id.transactions.receiptNumber,
+                  value: detail.transaction.receipt_number,
+                  tone: "mono",
+                },
+                {
+                  label: id.transactions.date,
+                  value: formatDateTime(detail.transaction.created_at),
+                },
+                {
+                  label: id.transactions.paymentMethod,
+                  value: paymentMethodLabel(detail.transaction.payment_method),
+                },
+                {
+                  label: id.transactions.totalAmount,
+                  value: formatRupiah(detail.transaction.total_amount),
+                  tone: "strong",
+                },
+              ]}
+            />
+          </InfoPanel>
+
+          {blockedReason && (
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Description>{blockedReason}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
+          {hasEarlierRefund && (
+            <Alert status="warning">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Description>
+                  Sebagian transaksi ini sudah pernah diretur. Jumlah maksimum di bawah masih
+                  memakai jumlah pembelian — sisa yang benar akan ditampilkan kalau jumlahnya
+                  kelebihan.
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
         </div>
 
-        {/* Transaction info */}
-        <div className="border-b px-4 py-3">
-          <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{detail.transaction.receipt_number}</span>
-              <Badge variant="outline" className="text-xs">
-                {detail.transaction.payment_method.toUpperCase()}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {format(new Date(detail.transaction.created_at!), "dd MMM yyyy HH:mm", { locale: idLocale })}
-            </p>
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-xs text-muted-foreground">Total</span>
-              <span className="text-sm font-semibold tabular-nums">
-                {formatRupiah(detail.transaction.total_amount)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <Separator />
 
-        {/* Return items list */}
-        <div className="px-4 pt-3 pb-1">
-          <Label className="text-sm font-medium">{id.refund.refundItems}</Label>
-        </div>
-        <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
-          <div className="space-y-3 pt-2">
-            {detail.items.map((item) => (
+        <p className="px-4 pt-3 text-sm font-medium">{id.refund.refundItems}</p>
+        <ScrollShadow className="min-h-0 flex-1 px-4 pb-4">
+          <div className="flex flex-col gap-3 pt-2">
+            {refundableItems.length === 0 && (
+              <NoData title="Tidak ada barang fisik yang bisa diretur pada transaksi ini." />
+            )}
+            {refundableItems.map((item) => (
               <RefundItemCard
                 key={item.id}
                 item={item}
@@ -155,247 +199,195 @@ export function CreateRefundPage() {
                 onUpdate={(updates) => updateItem(item.id, updates)}
               />
             ))}
+            {nonRefundableItems.length > 0 && (
+              <InfoPanel className="flex flex-col gap-1 text-muted">
+                <p className="font-medium">Tidak bisa diretur (layanan PPOB)</p>
+                <ul className="flex flex-col gap-0.5">
+                  {nonRefundableItems.map((item) => (
+                    <li key={item.id}>
+                      {item.product_name} × {item.quantity}
+                    </li>
+                  ))}
+                </ul>
+              </InfoPanel>
+            )}
           </div>
-        </ScrollArea>
-      </div>
+        </ScrollShadow>
+      </Surface>
 
-      {/* Right column: Action type + exchange + summary */}
-      <div className="col-span-6 flex flex-col overflow-hidden rounded-xl border bg-card">
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-6 p-4">
-            {/* Action type selector */}
-            <div className="grid gap-2">
-              <Label className="text-sm font-medium">{id.refund.actionType}</Label>
-              <Select
-                value={actionType}
-                onValueChange={(v) => {
-                  setActionType(v as "refund" | "exchange")
-                  if (v !== "exchange") {
-                    setSearchQuery("")
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full max-w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="refund">{id.refund.actionRefund}</SelectItem>
-                  <SelectItem value="exchange">{id.refund.actionExchange}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Kolom kanan: tipe aksi + barang pengganti + ringkasan */}
+      <Surface className={`${PANEL_CLASS} lg:col-span-6`}>
+        <ScrollShadow className="min-h-0 flex-1">
+          <div className="flex flex-col gap-6 p-4">
+            {/* Pemilih tipe aksi */}
+            <OptionSelect
+              className="max-w-56"
+              label={id.refund.actionType}
+              options={ACTION_OPTIONS}
+              value={actionType}
+              variant="secondary"
+              onChange={(key) => setActionType(key === "exchange" ? "exchange" : "refund")}
+            />
 
-            {/* Exchange section */}
+            {/* Bagian tukar barang */}
             {actionType === "exchange" && (
-              <div className="space-y-4">
-                <Separator />
-                <Label className="text-sm font-medium">{id.refund.exchangeItems}</Label>
+              <div className="flex flex-col gap-4">
+                {/* Pencarian produk — produk terpilih langsung masuk tabel di bawah,
+                    jadi kolomnya selalu melaporkan pilihan kosong. */}
+                <ProductAutocomplete
+                  label={id.refund.exchangeItems}
+                  placeholder={id.refund.addExchangeItem}
+                  searchPlaceholder={id.refund.searchProduct}
+                  perPage={5}
+                  value={null}
+                  onSelect={(product) => {
+                    if (product) addExchangeItem(product)
+                  }}
+                  renderDetail={(product) =>
+                    `Stok: ${product.stock} ${product.unit} · ${formatRupiah(product.sell_price)}`
+                  }
+                />
 
-                {/* Product search */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder={id.refund.searchProduct}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onFocus={() => setSearchFocused(true)}
-                    onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
-                    className="pl-9"
-                  />
-                  {searchFocused && searchResults && searchResults.data.length > 0 && searchQuery.length >= 2 && (
-                    <div className="absolute z-10 mt-1 w-full rounded-lg border bg-popover shadow-md">
-                      {searchResults.data.map((product) => (
-                        <button
-                          key={product.id}
-                          type="button"
-                          onClick={() => {
-                            addExchangeItem(product)
-                            setSearchQuery("")
-                          }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-                        >
-                          <div className="grid gap-0.5">
-                            <span className="font-medium">{product.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              Stok: {product.stock} {product.unit}
-                            </span>
-                          </div>
-                          <span className="tabular-nums font-medium whitespace-nowrap">
-                            {formatRupiah(product.sell_price)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Exchange items table */}
+                {/* Tabel barang pengganti */}
                 {exchangeItems.length > 0 && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{id.refund.productName}</TableHead>
-                        <TableHead className="w-[120px] text-center">Qty</TableHead>
-                        <TableHead className="w-[110px] text-right">{id.refund.subtotal}</TableHead>
-                        <TableHead className="w-[40px]" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {exchangeItems.map((item) => (
-                        <TableRow key={item.product_id}>
-                          <TableCell className="whitespace-normal">
-                            <div className="min-w-0">
-                              <p className="font-medium leading-snug">{item.product_name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatRupiah(item.sell_price)} / {item.unit}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => updateExchangeQty(item.product_id, item.quantity - 1)}
-                                disabled={item.quantity <= 1}
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="w-8 text-center font-medium tabular-nums">
-                                {item.quantity}
-                              </span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => updateExchangeQty(item.product_id, item.quantity + 1)}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {formatRupiah(item.sell_price * item.quantity)}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeExchangeItem(item.product_id)}
+                  <Table variant="secondary">
+                    <Table.ScrollContainer>
+                      <Table.Content aria-label={id.refund.exchangeItems} className="tabular-nums">
+                        <Table.Header>
+                          <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
+                          <Table.Column className="w-36 text-center">Qty</Table.Column>
+                          <Table.Column className="w-28 text-right">
+                            {id.refund.subtotal}
+                          </Table.Column>
+                          <Table.Column className="w-14">
+                            <span className="sr-only">Aksi</span>
+                          </Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {exchangeItems.map((item) => (
+                            <Table.Row
+                              key={item.product_id}
+                              id={item.product_id}
+                              textValue={item.product_name}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
+                              <Table.Cell className="whitespace-normal">
+                                <div className="min-w-0">
+                                  <p className="font-medium leading-snug">{item.product_name}</p>
+                                  <p className="text-xs text-muted">
+                                    {formatRupiah(item.sell_price)} / {item.unit}
+                                  </p>
+                                </div>
+                              </Table.Cell>
+                              <Table.Cell>
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    aria-label="Kurangi jumlah"
+                                    isDisabled={item.quantity <= 1}
+                                    isIconOnly
+                                    size="sm"
+                                    variant="tertiary"
+                                    onPress={() =>
+                                      updateExchangeQty(item.product_id, item.quantity - 1)
+                                    }
+                                  >
+                                    <Minus />
+                                  </Button>
+                                  <span className="w-8 text-center font-medium">
+                                    {item.quantity}
+                                  </span>
+                                  <Button
+                                    aria-label="Tambah jumlah"
+                                    isIconOnly
+                                    size="sm"
+                                    variant="tertiary"
+                                    onPress={() =>
+                                      updateExchangeQty(item.product_id, item.quantity + 1)
+                                    }
+                                  >
+                                    <Plus />
+                                  </Button>
+                                </div>
+                              </Table.Cell>
+                              <Table.Cell className="text-right font-medium">
+                                {formatRupiah(item.sell_price * item.quantity)}
+                              </Table.Cell>
+                              <Table.Cell>
+                                <Button
+                                  aria-label={`Hapus ${item.product_name}`}
+                                  isIconOnly
+                                  size="sm"
+                                  variant="danger"
+                                  onPress={() => removeExchangeItem(item.product_id)}
+                                >
+                                  <Trash2 />
+                                </Button>
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
                   </Table>
                 )}
               </div>
             )}
 
-            {/* Reason */}
-            <div className="space-y-4">
-              <Separator />
-              <div className="grid gap-2">
-                <Label htmlFor="refund-reason">{id.refund.reason}</Label>
-                <Textarea
-                  id="refund-reason"
-                  placeholder={id.refund.reasonPlaceholder}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </div>
+            {/* Alasan */}
+            <TextField fullWidth value={reason} variant="secondary" onChange={setReason}>
+              <Label>{id.refund.reason}</Label>
+              <TextArea placeholder={id.refund.reasonPlaceholder} rows={3} />
+            </TextField>
 
-            {/* Info notes */}
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">• {id.refund.stockRestoredNote}</p>
-              <p className="text-xs text-muted-foreground">• {id.refund.stockWriteoffNote}</p>
-            </div>
+            {/* Catatan */}
+            <ul className="flex list-disc flex-col gap-1 ps-4 text-xs text-muted">
+              <li>{id.refund.stockRestoredNote}</li>
+              <li>{id.refund.stockWriteoffNote}</li>
+            </ul>
           </div>
-        </ScrollArea>
+        </ScrollShadow>
 
-        {/* Summary + action (pinned to bottom) */}
-        <div className="mt-auto border-t p-4 space-y-4">
-          <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{id.refund.totalRefund}</span>
-              <span className="text-sm font-medium tabular-nums">
-                {formatRupiah(totalRefund)}
-              </span>
-            </div>
-
+        {/* Ringkasan + aksi, ditambatkan di bawah. Angkanya ukuran bawaan:
+            DESIGN.md §3.4 tidak punya peran "selisih retur", dan yang membedakan
+            arah uangnya adalah warna plus kalimat di bawahnya. */}
+        <Separator />
+        <div className="flex flex-col gap-4 p-4">
+          <InfoPanel className="flex flex-col gap-2">
+            <SummaryList items={summaryItems} />
             {actionType === "exchange" && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">{id.refund.totalExchange}</span>
-                  <span className="text-sm font-medium tabular-nums">
-                    {formatRupiah(totalExchange)}
-                  </span>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{id.refund.difference}</span>
-                  <div className="text-right">
-                    <span className={`text-xl font-bold tabular-nums ${difference >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatRupiah(Math.abs(difference))}
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      {difference >= 0 ? id.refund.differenceStoreReturns : id.refund.differenceCustomerPays}
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {actionType === "refund" && totalRefund > 0 && (
-              <div className="flex items-center justify-between pt-1 border-t">
-                <span className="text-sm font-medium">{id.refund.totalRefund}</span>
-                <span className="text-xl font-bold tabular-nums text-green-600">
-                  {formatRupiah(totalRefund)}
-                </span>
-              </div>
-            )}
-
-            {selectedItems.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {selectedItems.length} item diretur
-                {actionType === "exchange" && exchangeItems.length > 0 && `, ${exchangeItems.length} item pengganti`}
+              <p className="text-xs text-muted">
+                {difference >= 0
+                  ? id.refund.differenceStoreReturns
+                  : id.refund.differenceCustomerPays}
               </p>
             )}
-          </div>
+            {selectedItems.length > 0 && (
+              <p className="text-xs text-muted">
+                {selectedItems.length} item diretur
+                {actionType === "exchange" &&
+                  exchangeItems.length > 0 &&
+                  `, ${exchangeItems.length} item pengganti`}
+              </p>
+            )}
+          </InfoPanel>
 
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate(-1)}
-              disabled={isSubmitting}
-            >
+          <div className="flex justify-end gap-2">
+            <Button isDisabled={isSubmitting} variant="tertiary" onPress={() => navigate(-1)}>
               {id.refund.cancel}
             </Button>
-            <Button
-              className="flex-1"
-              onClick={handleSubmit}
-              disabled={
-                isSubmitting ||
+            <PendingButton
+              isDisabled={
+                blockedReason !== null ||
                 selectedItems.length === 0 ||
                 (actionType === "exchange" && exchangeItems.length === 0)
               }
+              isPending={isSubmitting}
+              onPress={handleSubmit}
             >
-              {isSubmitting
-                ? "Memproses..."
-                : actionType === "exchange"
-                  ? id.refund.confirmExchange
-                  : id.refund.confirmRefund}
-            </Button>
+              {actionType === "exchange" ? id.refund.confirmExchange : id.refund.confirmRefund}
+            </PendingButton>
           </div>
         </div>
-      </div>
+      </Surface>
     </div>
   )
 }
@@ -411,75 +403,81 @@ function RefundItemCard({
 }) {
   if (!state) return null
 
-  const itemId = `refund-item-${item.id}`
+  const isFullyRefunded = state.maxQty <= 0
 
   return (
-    <Label
-      htmlFor={itemId}
-      className="flex cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
-    >
+    // Permukaan bertingkat di dalam panel; kotak centangnya sendiri yang
+    // menandai baris terpilih, bukan garis tepi warna merek tambahan.
+    <Surface className="p-3" variant="secondary">
       <Checkbox
-        id={itemId}
-        checked={state.checked}
-        onCheckedChange={(checked) => onUpdate({ checked: checked === true })}
-        className="mt-0.5"
-      />
-
-      <div className="grid flex-1 gap-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="grid gap-0.5">
-            <span className="text-sm font-medium leading-none">{item.product_name}</span>
-            <span className="text-xs text-muted-foreground">
-              {formatRupiah(item.product_price)} × {item.quantity} = {formatRupiah(item.subtotal)}
+        isDisabled={isFullyRefunded}
+        isSelected={state.checked}
+        variant="secondary"
+        onChange={(isSelected) => onUpdate({ checked: isSelected })}
+      >
+        {/* Labelnya dua-tiga baris, jadi kontrolnya rata atas. */}
+        <Checkbox.Content className="items-start">
+          <Checkbox.Control>
+            <Checkbox.Indicator />
+          </Checkbox.Control>
+          <div className="grid flex-1 gap-0.5 text-left">
+            <span>{item.product_name}</span>
+            <span className="text-xs text-muted">
+              {formatRupiah(netUnitAmount(item))} × {item.quantity} ={" "}
+              {formatRupiah(netLineAmount(item))}
             </span>
+            {isDiscountedLine(item) && (
+              <span className="text-xs text-muted">
+                Harga daftar {formatRupiah(item.product_price)}, sudah dipotong diskon{" "}
+                {formatRupiah(lineDiscountAmount(item))}
+              </span>
+            )}
+            {isFullyRefunded && (
+              <span className="text-xs text-muted">Sudah diretur seluruhnya</span>
+            )}
           </div>
           {state.checked && (
-            <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
-              {formatRupiah(item.product_price * state.quantity)}
+            <span className="tabular-nums whitespace-nowrap">
+              {formatRupiah(netAmountForQuantity(item, state.quantity))}
             </span>
           )}
+        </Checkbox.Content>
+      </Checkbox>
+
+      {state.checked && (
+        // `ps-7` menyejajarkan kolom isian dengan teks label di sebelah kotak centang.
+        <div className="mt-3 flex flex-wrap items-end gap-4 ps-7">
+          <NumberField
+            className="w-32"
+            maxValue={state.maxQty}
+            minValue={1}
+            value={state.quantity}
+            variant="secondary"
+            onChange={(quantity) => {
+              if (quantity === undefined || Number.isNaN(quantity)) return
+              onUpdate({ quantity })
+            }}
+          >
+            <Label>
+              {id.refund.refundQty} (maks. {state.maxQty})
+            </Label>
+            <NumberField.Group>
+              <NumberField.DecrementButton />
+              <NumberField.Input className="text-center tabular-nums" />
+              <NumberField.IncrementButton />
+            </NumberField.Group>
+          </NumberField>
+
+          <OptionSelect
+            className="w-36"
+            label={id.refund.condition}
+            options={CONDITION_OPTIONS}
+            value={state.condition}
+            variant="secondary"
+            onChange={(key) => onUpdate({ condition: key as Condition })}
+          />
         </div>
-
-        {state.checked && (
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`qty-${item.id}`} className="text-xs text-muted-foreground">
-                {id.refund.refundQty}
-              </Label>
-              <Input
-                id={`qty-${item.id}`}
-                type="number"
-                min={1}
-                max={state.maxQty}
-                value={state.quantity}
-                onPointerDown={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const val = Math.max(1, Math.min(state.maxQty, Number(e.target.value) || 1))
-                  onUpdate({ quantity: val })
-                }}
-                className="w-20 h-8 text-center"
-              />
-            </div>
-
-            <div className="grid gap-1.5">
-              <Label className="text-xs text-muted-foreground">{id.refund.condition}</Label>
-              <Select
-                value={state.condition}
-                onValueChange={(v) => onUpdate({ condition: v as Condition })}
-              >
-                <SelectTrigger className="w-full max-w-32 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="good">{CONDITION_LABELS.good}</SelectItem>
-                  <SelectItem value="damaged">{CONDITION_LABELS.damaged}</SelectItem>
-                  <SelectItem value="expired">{CONDITION_LABELS.expired}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        )}
-      </div>
-    </Label>
+      )}
+    </Surface>
   )
 }

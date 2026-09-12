@@ -1,8 +1,11 @@
 import { useMemo, useState, useCallback } from "react"
 import { Plus, Tags, Upload } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@heroui/react"
+
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { StatCard } from "@/components/stat-card"
 import { id } from "@/i18n/id"
+import { formatNumber } from "@/lib/format"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import { ProductSearch } from "./product-search"
@@ -27,11 +30,13 @@ export function ProductsPage() {
   const effectiveSortBy =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "stock"
-      : sortBy ?? "created_at"
+      : (sortBy ?? "created_at")
   const effectiveSortOrder =
     !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
       ? "asc"
-      : sortBy ? sortOrder : "desc"
+      : sortBy
+        ? sortOrder
+        : "desc"
 
   const { data: productsData, isLoading } = useSearchProducts({
     query: searchQuery || undefined,
@@ -44,13 +49,15 @@ export function ProductsPage() {
   })
 
   const { data: categories } = useCategories()
-  const products = productsData?.data ?? []
+  // `?? []` membuat array baru tiap render, jadi memo di bawahnya tidak pernah
+  // menyimpan apa pun. Kunci identitasnya di sini.
+  const products = useMemo(() => productsData?.data ?? [], [productsData])
 
   const reviewSummary = useMemo(() => {
     const noBarcode = products.filter((product) => !product.barcode?.trim()).length
     const negativeStock = products.filter((product) => product.stock < 0).length
     const lowStock = products.filter(
-      (product) => product.stock >= 0 && product.stock <= product.min_stock
+      (product) => product.stock >= 0 && product.stock <= product.min_stock,
     ).length
 
     return { noBarcode, negativeStock, lowStock }
@@ -71,17 +78,20 @@ export function ProductsPage() {
     setPage(1)
   }, [])
 
-  const handleSortChange = useCallback((column: string) => {
-    if (sortBy !== column) {
-      setSortBy(column)
-      setSortOrder("asc")
-    } else if (sortOrder === "asc") {
-      setSortOrder("desc")
-    } else {
-      setSortBy(undefined)
-      setSortOrder("asc")
-    }
-  }, [sortBy, sortOrder])
+  const handleSortChange = useCallback(
+    (column: string) => {
+      if (sortBy !== column) {
+        setSortBy(column)
+        setSortOrder("asc")
+      } else if (sortOrder === "asc") {
+        setSortOrder("desc")
+      } else {
+        setSortBy(undefined)
+        setSortOrder("asc")
+      }
+    },
+    [sortBy, sortOrder],
+  )
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product)
@@ -94,24 +104,22 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.products.title}</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import
-          </Button>
-          <Button variant="outline" onClick={() => setCategoryManagerOpen(true)}>
-            <Tags className="mr-2 h-4 w-4" />
-            {id.products.manageCategories}
-          </Button>
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {id.products.add}
-          </Button>
-        </div>
-      </div>
+    // DESIGN.md §5.1: judul dari navbar, aksi lewat `NavbarActions`, satu `primary`.
+    <div className="flex flex-col gap-6">
+      <NavbarActions>
+        <Button size="sm" variant="tertiary" onPress={() => setImportOpen(true)}>
+          <Upload />
+          Import
+        </Button>
+        <Button size="sm" variant="tertiary" onPress={() => setCategoryManagerOpen(true)}>
+          <Tags />
+          {id.products.manageCategories}
+        </Button>
+        <Button size="sm" onPress={() => setFormOpen(true)}>
+          <Plus />
+          {id.products.add}
+        </Button>
+      </NavbarActions>
 
       <ProductSearch
         onSearchChange={handleSearchChange}
@@ -120,44 +128,33 @@ export function ProductsPage() {
         onQuickFilterChange={handleQuickFilterChange}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.lowStock}</div>
-            <p className="text-sm text-muted-foreground">Stok rendah pada hasil saat ini</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.negativeStock}</div>
-            <p className="text-sm text-muted-foreground">Stok minus pada hasil saat ini</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold tabular-nums">{reviewSummary.noBarcode}</div>
-            <p className="text-sm text-muted-foreground">Tanpa barcode pada hasil saat ini</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Stok rendah pada hasil saat ini"
+          value={formatNumber(reviewSummary.lowStock)}
+        />
+        <StatCard
+          label="Stok minus pada hasil saat ini"
+          value={formatNumber(reviewSummary.negativeStock)}
+        />
+        <StatCard
+          label="Tanpa barcode pada hasil saat ini"
+          value={formatNumber(reviewSummary.noBarcode)}
+        />
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">{id.common.loading}</p>
-        </div>
-      ) : (
-        <ProductTable
-          products={products}
-          categories={categories ?? []}
-          page={productsData?.page ?? 1}
-          totalPages={productsData?.total_pages ?? 1}
-          onPageChange={setPage}
-          onEdit={handleEdit}
-          sortBy={effectiveSortBy}
-          sortOrder={effectiveSortOrder}
-          onSortChange={handleSortChange}
-        />
-      )}
+      <ProductTable
+        products={products}
+        categories={categories ?? []}
+        isLoading={isLoading}
+        page={productsData?.page ?? 1}
+        totalPages={productsData?.total_pages ?? 1}
+        onPageChange={setPage}
+        onEdit={handleEdit}
+        sortBy={effectiveSortBy}
+        sortOrder={effectiveSortOrder}
+        onSortChange={handleSortChange}
+      />
 
       <ProductFormDialog
         open={formOpen}
@@ -166,15 +163,9 @@ export function ProductsPage() {
         onCreateSuccess={() => setPage(1)}
       />
 
-      <CategoryManager
-        open={categoryManagerOpen}
-        onOpenChange={setCategoryManagerOpen}
-      />
+      <CategoryManager open={categoryManagerOpen} onOpenChange={setCategoryManagerOpen} />
 
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-      />
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
 }

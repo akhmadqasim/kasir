@@ -1,35 +1,17 @@
 import { useState, useCallback } from "react"
 import { Plus, Check, X, Trash2 } from "lucide-react"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { StatusBadge, ColorBadge } from "@/components/status-badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
+
+import { InfoPanel } from "@/components/info-panel"
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
+import { StatusBadge, type StatusVariant } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
+import { TablePagination } from "@/components/table-pagination"
 import { id } from "@/i18n/id"
-import { formatRupiah } from "@/lib/format"
+import { formatDateTime, formatRupiah } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import {
   useListWriteoffs,
@@ -40,19 +22,21 @@ import {
 import { WriteoffFormDialog } from "./writeoff-form-dialog"
 import type { StockWriteoff } from "../types"
 
+const ALL = "all"
+
 const STATUS_OPTIONS = [
-  { value: "all", label: "Semua Status" },
-  { value: "pending", label: "Menunggu" },
-  { value: "approved", label: "Disetujui" },
-  { value: "rejected", label: "Ditolak" },
+  { key: ALL, label: "Semua Status" },
+  { key: "pending", label: "Menunggu" },
+  { key: "approved", label: "Disetujui" },
+  { key: "rejected", label: "Ditolak" },
 ] as const
 
 const REASON_OPTIONS = [
-  { value: "all", label: "Semua Alasan" },
-  { value: "damaged", label: "Rusak" },
-  { value: "expired", label: "Kadaluarsa" },
-  { value: "lost", label: "Hilang" },
-  { value: "other", label: "Lainnya" },
+  { key: ALL, label: "Semua Alasan" },
+  { key: "damaged", label: "Rusak" },
+  { key: "expired", label: "Kadaluarsa" },
+  { key: "lost", label: "Hilang" },
+  { key: "other", label: "Lainnya" },
 ] as const
 
 const REASON_LABELS: Record<string, string> = {
@@ -68,45 +52,20 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: "Ditolak",
 }
 
-function ReasonBadge({ reason }: { reason: string }) {
-  switch (reason) {
-    case "damaged":
-      return <Badge variant="destructive">Rusak</Badge>
-    case "expired":
-      return <ColorBadge color="orange">Kadaluarsa</ColorBadge>
-    case "lost":
-      return <Badge variant="outline">Hilang</Badge>
-    default:
-      return <Badge variant="secondary">{REASON_LABELS[reason] ?? reason}</Badge>
-  }
+const STATUS_VARIANTS: Record<string, StatusVariant> = {
+  pending: "warning",
+  approved: "success",
+  rejected: "error",
 }
+
+const COLUMN_COUNT = 9
 
 function WriteoffStatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "pending":
-      return <StatusBadge status="warning">Menunggu</StatusBadge>
-    case "approved":
-      return <StatusBadge status="success">Disetujui</StatusBadge>
-    case "rejected":
-      return <StatusBadge status="error">Ditolak</StatusBadge>
-    default:
-      return <Badge variant="secondary">{STATUS_LABELS[status] ?? status}</Badge>
-  }
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return dateStr
-  }
+  return (
+    <StatusBadge status={STATUS_VARIANTS[status] ?? "neutral"}>
+      {STATUS_LABELS[status] ?? status}
+    </StatusBadge>
+  )
 }
 
 type ConfirmAction = {
@@ -120,8 +79,8 @@ export function StockWriteoffPage() {
 
   // Filters & pagination
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [reasonFilter, setReasonFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState(ALL)
+  const [reasonFilter, setReasonFilter] = useState(ALL)
   const [formOpen, setFormOpen] = useState(false)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
 
@@ -129,8 +88,8 @@ export function StockWriteoffPage() {
   const { data, isLoading } = useListWriteoffs({
     page,
     perPage: 50,
-    status: statusFilter === "all" ? undefined : statusFilter,
-    reason: reasonFilter === "all" ? undefined : reasonFilter,
+    status: statusFilter === ALL ? undefined : statusFilter,
+    reason: reasonFilter === ALL ? undefined : reasonFilter,
   })
 
   // Mutations
@@ -138,10 +97,13 @@ export function StockWriteoffPage() {
   const rejectWriteoff = useRejectWriteoff()
   const deleteWriteoff = useDeleteWriteoff()
 
-  const handleFilterChange = useCallback((setter: (v: string) => void) => (value: string) => {
-    setter(value)
-    setPage(1)
-  }, [])
+  const handleFilterChange = useCallback(
+    (setter: (v: string) => void) => (value: string) => {
+      setter(value)
+      setPage(1)
+    },
+    [],
+  )
 
   const handleConfirm = () => {
     if (!confirmAction || !user) return
@@ -151,22 +113,13 @@ export function StockWriteoffPage() {
 
     switch (type) {
       case "approve":
-        approveWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        approveWriteoff.mutate(writeoff.id, { onSettled })
         break
       case "reject":
-        rejectWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        rejectWriteoff.mutate(writeoff.id, { onSettled })
         break
       case "delete":
-        deleteWriteoff.mutate(
-          { writeoffId: writeoff.id, callerId: user.id },
-          { onSettled }
-        )
+        deleteWriteoff.mutate(writeoff.id, { onSettled })
         break
     }
   }
@@ -174,181 +127,182 @@ export function StockWriteoffPage() {
   const writeoffs = data?.items ?? []
   const totalPages = data?.totalPages ?? 1
 
+  // Stock moves when a write-off is *created*, not when it is approved:
+  // `create_stock_writeoff` decrements it in the same transaction as the insert,
+  // `approve_stock_writeoff` only flips the status, and `reject`/`delete` put the
+  // stock back — except for refund-originated rows, which never deducted any.
+  const isFromRefund = confirmAction?.writeoff.refundId != null
   const confirmMessages: Record<string, { title: string; description: string }> = {
     approve: {
       title: "Setujui Write-off",
-      description: "Yakin ingin menyetujui write-off ini? Stok akan dikurangi secara permanen.",
+      description:
+        "Stok sudah dikurangi sejak write-off ini dibuat. Menyetujui hanya mengesahkan kerugiannya, stok tidak berubah lagi.",
     },
     reject: {
       title: "Tolak Write-off",
-      description: "Yakin ingin menolak write-off ini? Stok akan dikembalikan.",
+      description: isFromRefund
+        ? "Write-off ini berasal dari refund, jadi stoknya tidak pernah dikurangi dan tidak akan dikembalikan. Kerugiannya dibatalkan."
+        : "Stok yang dikurangi saat write-off ini dibuat akan dikembalikan.",
     },
     delete: {
       title: "Hapus Write-off",
-      description: "Yakin ingin menghapus write-off ini? Data akan dihapus permanen.",
+      description:
+        "Data write-off dihapus permanen dan stok yang dikurangi saat pembuatan dikembalikan.",
     },
   }
 
-  const isPending = approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
+  const isPending =
+    approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{id.nav.stock}</h1>
-        <Button onClick={() => setFormOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
+    <div className="flex flex-col gap-6">
+      <NavbarActions>
+        <Button size="sm" onPress={() => setFormOpen(true)}>
+          <Plus />
           Buat Write-off
         </Button>
-      </div>
+      </NavbarActions>
 
       {/* Filter Bar */}
-      <div className="flex items-center gap-3">
-        <Select value={statusFilter} onValueChange={handleFilterChange(setStatusFilter)}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex items-center gap-2">
+        <OptionSelect
+          aria-label="Filter status"
+          className="w-44"
+          options={STATUS_OPTIONS}
+          value={statusFilter}
+          onChange={(value) => handleFilterChange(setStatusFilter)(value ?? ALL)}
+        />
 
-        <Select value={reasonFilter} onValueChange={handleFilterChange(setReasonFilter)}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {REASON_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          aria-label="Filter alasan"
+          className="w-44"
+          options={REASON_OPTIONS}
+          value={reasonFilter}
+          onChange={(value) => handleFilterChange(setReasonFilter)(value ?? ALL)}
+        />
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">{id.common.loading}</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>No. WO</TableHead>
-                  <TableHead>Produk</TableHead>
-                  <TableHead>Kasir</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead>Alasan</TableHead>
-                  <TableHead className="text-right">Nilai Kerugian</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {writeoffs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
-                      Tidak ada data write-off
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  writeoffs.map((wo) => (
-                    <TableRow key={wo.id}>
-                      <TableCell className="font-mono text-sm">{wo.writeoffNumber}</TableCell>
-                      <TableCell className="font-medium">{wo.productName}</TableCell>
-                      <TableCell className="text-muted-foreground">{wo.cashierName}</TableCell>
-                      <TableCell className="text-right">{wo.quantity}</TableCell>
-                      <TableCell><ReasonBadge reason={wo.reason} /></TableCell>
-                      <TableCell className="text-right font-medium text-destructive">
-                        {formatRupiah(wo.lossValue)}
-                      </TableCell>
-                      <TableCell><WriteoffStatusBadge status={wo.status} /></TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(wo.createdAt)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <WriteoffActions
-                          writeoff={wo}
-                          isAdmin={isAdmin}
-                          onAction={setConfirmAction}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+      <div className="flex flex-col gap-4">
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label={id.nav.stock}>
+              <Table.Header>
+                <Table.Column isRowHeader>No. WO</Table.Column>
+                <Table.Column>Produk</Table.Column>
+                <Table.Column>Kasir</Table.Column>
+                <Table.Column className="text-right">Qty</Table.Column>
+                <Table.Column>Alasan</Table.Column>
+                <Table.Column className="text-right">Nilai Kerugian</Table.Column>
+                <Table.Column>Status</Table.Column>
+                <Table.Column>Tanggal</Table.Column>
+                <Table.Column className="text-right">Aksi</Table.Column>
+              </Table.Header>
+              <Table.Body renderEmptyState={() => <NoData title="Tidak ada data write-off" />}>
+                {isLoading
+                  ? Array.from({ length: 5 }).map((_, rowIndex) => (
+                      <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
+                        {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                          <Table.Cell key={cellIndex}>
+                            <Skeleton className="h-5 w-full" />
+                          </Table.Cell>
+                        ))}
+                      </Table.Row>
+                    ))
+                  : writeoffs.map((wo) => (
+                      <Table.Row key={wo.id} id={wo.id} textValue={wo.writeoffNumber}>
+                        <Table.Cell className="font-mono">{wo.writeoffNumber}</Table.Cell>
+                        <Table.Cell className="font-medium">{wo.productName}</Table.Cell>
+                        <Table.Cell className="text-muted">{wo.cashierName}</Table.Cell>
+                        <Table.Cell className="text-right tabular-nums">{wo.quantity}</Table.Cell>
+                        {/* Alasan adalah kategori, bukan status: teks polos
+                            (DESIGN.md §5.4). */}
+                        <Table.Cell>{REASON_LABELS[wo.reason] ?? wo.reason}</Table.Cell>
+                        <Table.Cell className="text-right font-medium tabular-nums text-danger">
+                          {formatRupiah(wo.lossValue)}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <WriteoffStatusBadge status={wo.status} />
+                        </Table.Cell>
+                        <Table.Cell className="text-muted">
+                          {formatDateTime(wo.createdAt)}
+                        </Table.Cell>
+                        <Table.Cell className="text-right">
+                          <WriteoffActions
+                            writeoff={wo}
+                            isAdmin={isAdmin}
+                            onAction={setConfirmAction}
+                          />
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-end gap-2">
-              <span className="text-sm text-muted-foreground">
-                Halaman {data?.page ?? 1} dari {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                Sebelumnya
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                Selanjutnya
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+        <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      </div>
 
       {/* Form Dialog */}
       <WriteoffFormDialog open={formOpen} onOpenChange={setFormOpen} />
 
       {/* Confirmation Dialog */}
-      <AlertDialog
-        open={!!confirmAction}
+      <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
+        isOpen={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction ? confirmMessages[confirmAction.type].title : ""}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction ? confirmMessages[confirmAction.type].description : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {confirmAction && (
-            <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
-              <div><span className="text-muted-foreground">No. WO:</span> {confirmAction.writeoff.writeoffNumber}</div>
-              <div><span className="text-muted-foreground">Produk:</span> {confirmAction.writeoff.productName}</div>
-              <div><span className="text-muted-foreground">Qty:</span> {confirmAction.writeoff.quantity}</div>
-              <div><span className="text-muted-foreground">Kerugian:</span> {formatRupiah(confirmAction.writeoff.lossValue)}</div>
-            </div>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>{id.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirm} disabled={isPending}>
-              {isPending ? id.common.loading : id.common.confirm}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog
+            aria-label={confirmAction ? confirmMessages[confirmAction.type].title : "Konfirmasi"}
+          >
+            <AlertDialog.Header>
+              <AlertDialog.Icon status={confirmAction?.type === "approve" ? "warning" : "danger"} />
+              <AlertDialog.Heading>
+                {confirmAction ? confirmMessages[confirmAction.type].title : ""}
+              </AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>{confirmAction ? confirmMessages[confirmAction.type].description : ""}</p>
+              {confirmAction && (
+                <InfoPanel>
+                  <SummaryList
+                    layout="grid"
+                    items={[
+                      {
+                        label: "No. WO",
+                        value: confirmAction.writeoff.writeoffNumber,
+                        tone: "mono",
+                      },
+                      { label: "Produk", value: confirmAction.writeoff.productName },
+                      { label: "Qty", value: String(confirmAction.writeoff.quantity) },
+                      {
+                        label: "Kerugian",
+                        value: formatRupiah(confirmAction.writeoff.lossValue),
+                        tone: "danger",
+                      },
+                    ]}
+                  />
+                </InfoPanel>
+              )}
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button isDisabled={isPending} slot="close" variant="tertiary">
+                {id.common.cancel}
+              </Button>
+              {/* Setujui memajukan pekerjaan (primary); tolak dan hapus membuang
+                  data, jadi mengikuti warna ikon di atasnya. */}
+              <PendingButton
+                isPending={isPending}
+                variant={confirmAction?.type === "approve" ? "primary" : "danger"}
+                onPress={handleConfirm}
+              >
+                {id.common.confirm}
+              </PendingButton>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   )
 }
@@ -363,39 +317,46 @@ function WriteoffActions({
   onAction: (action: ConfirmAction) => void
 }) {
   if (writeoff.status !== "pending") {
-    return <span className="text-sm text-muted-foreground">—</span>
+    return <span className="text-muted">—</span>
   }
 
+  // Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI: `tertiary` untuk
+  // aksi biasa, `danger-soft` untuk yang merusak. Setujui bukan `primary` —
+  // satu tombol primary per baris berarti sepuluh primary per layar, dan yang
+  // memajukan pekerjaan di halaman ini adalah "Buat Write-off" di navbar.
   return (
     <div className="flex items-center justify-end gap-1">
       {isAdmin && (
         <>
           <Button
-            variant="ghost"
-            size="icon"
-            title="Setujui"
-            onClick={() => onAction({ type: "approve", writeoff })}
+            aria-label={`Setujui ${writeoff.writeoffNumber}`}
+            isIconOnly
+            size="sm"
+            variant="tertiary"
+            onPress={() => onAction({ type: "approve", writeoff })}
           >
-            <Check className="h-4 w-4 text-green-600" />
+            <Check />
           </Button>
           <Button
-            variant="ghost"
-            size="icon"
-            title="Tolak"
-            onClick={() => onAction({ type: "reject", writeoff })}
+            aria-label={`Tolak ${writeoff.writeoffNumber}`}
+            isIconOnly
+            size="sm"
+            variant="danger-soft"
+            onPress={() => onAction({ type: "reject", writeoff })}
           >
-            <X className="h-4 w-4 text-red-600" />
+            <X />
           </Button>
         </>
       )}
       {isAdmin && !writeoff.refundId && (
         <Button
-          variant="ghost"
-          size="icon"
-          title="Hapus"
-          onClick={() => onAction({ type: "delete", writeoff })}
+          aria-label={`Hapus ${writeoff.writeoffNumber}`}
+          isIconOnly
+          size="sm"
+          variant="danger-soft"
+          onPress={() => onAction({ type: "delete", writeoff })}
         >
-          <Trash2 className="h-4 w-4 text-destructive" />
+          <Trash2 />
         </Button>
       )}
     </div>

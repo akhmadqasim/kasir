@@ -1,29 +1,33 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Save, Loader2, RefreshCw } from "lucide-react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { useQueryClient } from "@tanstack/react-query"
+import { Save, RefreshCw } from "lucide-react"
 import {
+  Button,
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
+  Description,
+  Fieldset,
+  Input,
+  InputGroup,
+  Label,
+  NumberField,
+  Switch,
+  TextField,
+} from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import {
+  getAppSettings,
+  toUpdateAppSettingsInput,
+  updateAppSettings,
+  updatePpobCredentials,
+} from "@/lib/api/settings"
+import { openPpobSession } from "@/lib/api/ppob"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { PpobSaldoResponse } from "@/features/ppob/types"
 import type { AppSettings, PpobMarkup, PpobMarkupConfig } from "../types"
 import { PpobCustomPrices } from "./ppob-custom-prices"
 
@@ -50,9 +54,13 @@ const MARKUP_SERVICES: { key: MarkupServiceKey; label: string }[] = [
   { key: "emoney", label: "E-Money" },
 ]
 
+const MARKUP_TYPES = [
+  { key: "fixed", label: "Nominal (Rp)" },
+  { key: "percentage", label: "Persentase (%)" },
+] as const
+
 export function PpobSettingsTab() {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
   const [enabled, setEnabled] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState("")
   const [password, setPassword] = useState("")
@@ -61,19 +69,22 @@ export function PpobSettingsTab() {
   const [markup, setMarkup] = useState<PpobMarkup>(DEFAULT_MARKUP)
   const [initialized, setInitialized] = useState(false)
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettings>("get_app_settings"),
-  })
+  const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
+
+  /**
+   * The password and the PIN are never sent back by the server, so the two
+   * fields below start empty every time and mean "leave what is stored alone".
+   * `has_credentials` is all this screen can know about them — enough to say
+   * whether any are stored, which is the only question an admin actually asks.
+   */
+  const hasStoredCredentials = settingsQuery.data?.ppob.has_credentials ?? false
 
   if (settingsQuery.data && !initialized) {
     const { ppob } = settingsQuery.data
     if (ppob) {
       setEnabled(ppob.enabled)
       setPhoneNumber(ppob.phone_number)
-      setPassword(ppob.password)
       setDeviceId(ppob.device_id)
-      setPin(ppob.pin)
       if (ppob.markup) {
         setMarkup({ ...DEFAULT_MARKUP, ...ppob.markup })
       }
@@ -81,243 +92,284 @@ export function PpobSettingsTab() {
     setInitialized(true)
   }
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
+  const saveMutation = useApiMutation<void, void>(
+    async () => {
+      // The server rewrites all four blocks at once, so posting hardcoded
+      // defaults for the blocks this tab does not own would silently reset them.
       const currentSettings = settingsQuery.data
-      return invoke("update_app_settings", {
-        settings: {
-          sales: currentSettings?.sales ?? {
-            allow_negative_stock: true,
-            default_payment_method: "cash",
-          },
-          security: currentSettings?.security ?? {
-            session_timeout_minutes: 30,
-          },
-          backup: currentSettings?.backup ?? {
-            interval_hours: 3,
-            retention_days: 90,
-          },
-          ppob: {
-            enabled,
-            phone_number: phoneNumber,
-            password,
-            device_id: deviceId,
-            pin,
-            markup,
-          },
-        },
-        callerId: user!.id,
-      })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["app-settings"] })
-      queryClient.invalidateQueries({ queryKey: ["ppob_get_saldo"] })
-      toast.success(id.ppob.settingsSaved)
-    },
-    onError: (error) => {
-      toast.error(String(error))
-    },
-  })
+      if (!currentSettings) {
+        throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
+      }
 
-  const testMutation = useMutation({
-    mutationFn: () => invoke("ppob_login"),
-    onSuccess: (data: unknown) => {
-      const result = data as { saldo: number; username: string }
-      toast.success(`${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`)
+      // Credentials travel on their own request, and only when both were typed.
+      // `PUT /api/settings` cannot carry them at all, which is what stops a
+      // markup change from blanking a password by omission — the failure mode
+      // the old single-blob save had every time this form loaded before the
+      // query resolved.
+      const wantsCredentialChange = password.length > 0 || pin.length > 0
+      if (wantsCredentialChange && (password.length === 0 || pin.length === 0)) {
+        throw new Error("Isi password dan PIN sekaligus untuk menggantinya")
+      }
+
+      await updateAppSettings({
+        ...toUpdateAppSettingsInput(currentSettings),
+        ppob: {
+          enabled,
+          phone_number: phoneNumber,
+          device_id: deviceId,
+          markup,
+        },
+      })
+
+      if (wantsCredentialChange) {
+        await updatePpobCredentials({ password, pin })
+      }
+    },
+    {
+      onSuccess: () => {
+        setPassword("")
+        setPin("")
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
+        // New credentials mean a different upstream account, so the cached
+        // balance is no longer about the same shop.
+        queryClient.invalidateQueries({ queryKey: queryKeys.ppob.all })
+        toast.success(id.ppob.settingsSaved)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    },
+  )
+
+  const isReady = settingsQuery.isSuccess && initialized
+
+  const testMutation = useApiMutation<PpobSaldoResponse, void>(openPpobSession, {
+    onSuccess: (result) => {
+      toast.success(
+        `${id.ppob.testConnectionSuccess}: ${result.username} (Saldo: Rp ${result.saldo.toLocaleString("id-ID")})`,
+      )
     },
     onError: (error) => {
-      toast.error(`${id.ppob.testConnectionFailed}: ${String(error)}`)
+      toast.error(`${id.ppob.testConnectionFailed}: ${error.message}`)
     },
   })
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Card 1: Koneksi */}
       <Card>
-        <CardHeader>
-          <CardTitle>{id.ppob.settingsTitle}</CardTitle>
-          <CardDescription>
+        <Card.Header>
+          <Card.Title>{id.ppob.settingsTitle}</Card.Title>
+          <Card.Description>
             Konfigurasi koneksi ke Mitra Indogrosir untuk layanan PPOB
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{id.ppob.enabled}</Label>
-              <p className="text-xs text-muted-foreground">
-                {id.ppob.enabledDesc}
-              </p>
-            </div>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
-          </div>
+          </Card.Description>
+        </Card.Header>
+        <Card.Content className="gap-6">
+          {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
+              label di kanannya, keterangan di bawah. */}
+          <Switch isSelected={enabled} onChange={setEnabled}>
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              {id.ppob.enabled}
+            </Switch.Content>
+            <Description>{id.ppob.enabledDesc}</Description>
+          </Switch>
 
-          <Separator />
-
-          <div className="space-y-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-4">
+            <TextField
+              fullWidth
+              isDisabled={!enabled}
+              type="tel"
+              value={phoneNumber}
+              variant="secondary"
+              onChange={setPhoneNumber}
+            >
               <Label>{id.ppob.mitraPhone}</Label>
-              <Input
-                type="tel"
-                placeholder={id.ppob.mitraPhonePlaceholder}
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                disabled={!enabled}
-              />
-            </div>
+              <Input placeholder={id.ppob.mitraPhonePlaceholder} />
+            </TextField>
 
-            <div className="space-y-2">
+            <TextField
+              fullWidth
+              isDisabled={!enabled}
+              type="password"
+              value={password}
+              variant="secondary"
+              onChange={setPassword}
+            >
               <Label>{id.ppob.mitraPassword}</Label>
               <Input
-                type="password"
-                placeholder={id.ppob.mitraPasswordPlaceholder}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={!enabled}
+                placeholder={
+                  hasStoredCredentials
+                    ? "Tersimpan — isi hanya jika ingin mengganti"
+                    : id.ppob.mitraPasswordPlaceholder
+                }
               />
-            </div>
+            </TextField>
 
-            <div className="space-y-2">
+            {/* Tombol generate di dalam kolomnya, contoh "Copy Button Suffix"
+                dari dokumentasi InputGroup — bukan tombol terpisah yang harus
+                disejajarkan tangan ke dasar kolom. */}
+            <TextField
+              fullWidth
+              isDisabled={!enabled}
+              value={deviceId}
+              variant="secondary"
+              onChange={setDeviceId}
+            >
               <Label>{id.ppob.mitraDeviceId}</Label>
-              <div className="flex gap-2">
-                <Input
-                  type="text"
-                  placeholder={id.ppob.mitraDeviceIdPlaceholder}
-                  value={deviceId}
-                  onChange={(e) => setDeviceId(e.target.value)}
-                  disabled={!enabled}
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={!enabled}
-                  onClick={() => setDeviceId(crypto.randomUUID())}
-                  title="Generate Device ID"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
+              <InputGroup fullWidth variant="secondary">
+                <InputGroup.Input placeholder={id.ppob.mitraDeviceIdPlaceholder} />
+                <InputGroup.Suffix className="pe-0">
+                  <Button
+                    aria-label="Generate Device ID"
+                    isDisabled={!enabled}
+                    isIconOnly
+                    size="sm"
+                    type="button"
+                    variant="tertiary"
+                    onPress={() => setDeviceId(crypto.randomUUID())}
+                  >
+                    <RefreshCw />
+                  </Button>
+                </InputGroup.Suffix>
+              </InputGroup>
+              <Description>
                 Masukkan device ID dari HP atau klik tombol generate untuk membuat ID baru
-              </p>
-            </div>
+              </Description>
+            </TextField>
 
-            <div className="space-y-2">
+            <TextField
+              fullWidth
+              isDisabled={!enabled}
+              type="password"
+              value={pin}
+              variant="secondary"
+              onChange={setPin}
+            >
               <Label>{id.ppob.mitraPin}</Label>
               <Input
-                type="password"
-                placeholder={id.ppob.mitraPinPlaceholder}
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                disabled={!enabled}
+                placeholder={
+                  hasStoredCredentials
+                    ? "Tersimpan — isi hanya jika ingin mengganti"
+                    : id.ppob.mitraPinPlaceholder
+                }
               />
-            </div>
-          </div>
+            </TextField>
 
-          <div className="flex gap-2">
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {saveMutation.isPending ? "Menyimpan..." : id.common.save}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => testMutation.mutate()}
-              disabled={testMutation.isPending || !enabled || !phoneNumber}
-            >
-              {testMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              {id.ppob.testConnection}
-            </Button>
+            <p className="text-sm text-muted">
+              {hasStoredCredentials
+                ? "Password dan PIN sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan keduanya untuk mempertahankannya, atau isi keduanya sekaligus untuk mengganti."
+                : "Password dan PIN belum tersimpan. Isi keduanya untuk mengaktifkan layanan PPOB."}
+            </p>
           </div>
-        </CardContent>
+        </Card.Content>
+        {/* Dua tombol Simpan (di sini dan di kartu Markup) memanggil mutasi yang
+            sama; test menghitung keduanya. Menyatukannya adalah keputusan pemilik. */}
+        <Card.Footer className="gap-2">
+          <PendingButton
+            isDisabled={!isReady}
+            isPending={saveMutation.isPending}
+            onPress={() => saveMutation.mutate(undefined)}
+          >
+            <Save />
+            {id.common.save}
+          </PendingButton>
+          <PendingButton
+            isDisabled={!enabled || !phoneNumber}
+            isPending={testMutation.isPending}
+            variant="secondary"
+            onPress={() => testMutation.mutate(undefined)}
+          >
+            {id.ppob.testConnection}
+          </PendingButton>
+        </Card.Footer>
       </Card>
 
       {/* Card 2: Markup & Harga Jual */}
       <Card>
-        <CardHeader>
-          <CardTitle>Markup & Harga Jual</CardTitle>
-          <CardDescription>
+        <Card.Header>
+          <Card.Title>Markup & Harga Jual</Card.Title>
+          <Card.Description>
             Atur margin keuntungan untuk setiap jenis layanan PPOB
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <div className="space-y-0.5">
-              <Label className="text-base">Markup per Layanan</Label>
-              <p className="text-xs text-muted-foreground">
-                Harga jual = harga modal + markup
-              </p>
-            </div>
-
-            <div className="grid gap-3">
+          </Card.Description>
+        </Card.Header>
+        <Card.Content className="gap-6">
+          {/* Dua kelompok isian dalam satu kartu: `Fieldset` memberi legenda dan
+              keterangannya bentuk yang sama tanpa judul kartu kedua. */}
+          <Fieldset>
+            <Fieldset.Legend>Markup per Layanan</Fieldset.Legend>
+            <Description>Harga jual = harga modal + markup</Description>
+            <Fieldset.Group>
               {MARKUP_SERVICES.map(({ key, label }) => {
                 const config = markup[key]
                 return (
-                  <div key={key} className="flex items-center gap-3">
+                  <div key={key} className="flex items-center gap-2">
                     <span className="w-20 text-sm font-medium">{label}</span>
-                    <Select
+                    <OptionSelect
+                      aria-label={`Tipe markup ${label}`}
+                      className="w-32"
+                      isDisabled={!enabled}
+                      options={MARKUP_TYPES}
                       value={config.type}
-                      onValueChange={(val: "fixed" | "percentage") => {
-                        setMarkup((prev) => ({
-                          ...prev,
-                          [key]: { ...prev[key], type: val },
-                        }))
+                      variant="secondary"
+                      onChange={(value) => {
+                        if (value === null) return
+                        const type = value === "percentage" ? "percentage" : "fixed"
+                        setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], type } }))
                       }}
-                      disabled={!enabled}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="fixed">Nominal (Rp)</SelectItem>
-                        <SelectItem value="percentage">Persentase (%)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder={config.type === "fixed" ? "cth: 2000" : "cth: 5"}
-                      value={config.value > 0 ? config.value : ""}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0
-                        setMarkup((prev) => ({
-                          ...prev,
-                          [key]: { ...prev[key], value: val },
-                        }))
-                      }}
-                      disabled={!enabled}
-                      className="w-28 tabular-nums"
                     />
-                    <span className="text-xs text-muted-foreground">
+                    {/* Grouping stays off for the same reason as the custom prices
+                        below: without an I18nProvider the parse locale follows the
+                        webview, and a grouped value would not survive a re-read. */}
+                    <NumberField
+                      aria-label={`Nilai markup ${label}`}
+                      className="w-28"
+                      formatOptions={{ useGrouping: false, maximumFractionDigits: 2 }}
+                      isDisabled={!enabled}
+                      minValue={0}
+                      value={config.value > 0 ? config.value : Number.NaN}
+                      variant="secondary"
+                      onChange={(value) => {
+                        const next = value === undefined || Number.isNaN(value) ? 0 : value
+                        setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], value: next } }))
+                      }}
+                    >
+                      <NumberField.Group>
+                        <NumberField.Input
+                          className="text-right tabular-nums"
+                          placeholder={config.type === "fixed" ? "cth: 2000" : "cth: 5"}
+                        />
+                      </NumberField.Group>
+                    </NumberField>
+                    <span className="text-sm text-muted">
                       {config.type === "fixed" ? "Rp" : "%"}
                     </span>
                   </div>
                 )
               })}
-            </div>
-          </div>
-
-          <Separator />
+            </Fieldset.Group>
+          </Fieldset>
 
           <PpobCustomPrices
             customPrices={markup.custom_prices}
-            onCustomPricesChange={(prices) => setMarkup((prev) => ({ ...prev, custom_prices: prices }))}
+            onCustomPricesChange={(prices) =>
+              setMarkup((prev) => ({ ...prev, custom_prices: prices }))
+            }
             disabled={!enabled}
           />
-
-          <Button
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+        </Card.Content>
+        <Card.Footer>
+          <PendingButton
+            isDisabled={!isReady}
+            isPending={saveMutation.isPending}
+            onPress={() => saveMutation.mutate(undefined)}
           >
-            <Save className="mr-2 h-4 w-4" />
-            {saveMutation.isPending ? "Menyimpan..." : id.common.save}
-          </Button>
-        </CardContent>
+            <Save />
+            {id.common.save}
+          </PendingButton>
+        </Card.Footer>
       </Card>
     </div>
   )

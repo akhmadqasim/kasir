@@ -1,29 +1,26 @@
 import { useState } from "react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table } from "@heroui/react"
+
+import { OptionSelect } from "@/components/option-select"
+import { StatCard } from "@/components/stat-card"
+import { formatNumber, formatRupiah } from "@/lib/format"
 import { useSalesMonthly } from "../hooks/use-reports"
-import { formatRupiah } from "@/lib/format"
+import { ReportPage, ReportTable } from "./report-shell"
+
+const TITLE = "Penjualan per Bulan"
+const COLUMN_COUNT = 5
+/** Tahun yang bisa dipilih, dihitung mundur dari tahun berjalan. */
+const YEAR_CHOICES = 5
 
 export function SalesMonthlyPage() {
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
-  const { data, isLoading } = useSalesMonthly(year)
+  const { data, isLoading, error } = useSalesMonthly(year)
+
+  const years = Array.from({ length: YEAR_CHOICES }, (_, i) => currentYear - i)
+  const yearOptions = years.map((option) => ({ key: String(option), label: String(option) }))
 
   const totals = data?.reduce(
     (acc, row) => ({
@@ -32,86 +29,66 @@ export function SalesMonthlyPage() {
       cost: acc.cost + row.totalCost,
       profit: acc.profit + row.grossProfit,
     }),
-    { transactions: 0, revenue: 0, cost: 0, profit: 0 }
+    { transactions: 0, revenue: 0, cost: 0, profit: 0 },
   )
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">Penjualan per Bulan</h1>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <ReportPage
+      filters={
         <div className="ml-auto">
-          <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: 5 }, (_, i) => currentYear - i).map((y) => (
-                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <OptionSelect
+            aria-label="Tahun laporan"
+            className="w-32"
+            options={yearOptions}
+            value={String(year)}
+            onChange={(key) => setYear(Number(key ?? currentYear))}
+          />
         </div>
-      </div>
-
+      }
+    >
       {totals && (
-        <div className="grid grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Transaksi</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{totals.transactions}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Pendapatan</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.revenue)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Modal</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{formatRupiah(totals.cost)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Laba Kotor</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-green-600">{formatRupiah(totals.profit)}</p></CardContent>
-          </Card>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Total Transaksi" value={formatNumber(totals.transactions)} />
+          <StatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
+          <StatCard label="Total Modal" value={formatRupiah(totals.cost)} />
+          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Bulan</TableHead>
-              <TableHead className="text-right">Transaksi</TableHead>
-              <TableHead className="text-right">Pendapatan</TableHead>
-              <TableHead className="text-right">Modal</TableHead>
-              <TableHead className="text-right">Laba Kotor</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Memuat data...</TableCell>
-              </TableRow>
-            ) : !data?.length ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Tidak ada data</TableCell>
-              </TableRow>
-            ) : (
-              data.map((row) => {
-                const monthDate = new Date(`${row.month}-01`)
-                return (
-                  <TableRow key={row.month}>
-                    <TableCell className="font-medium">{format(monthDate, "MMMM yyyy", { locale: idLocale })}</TableCell>
-                    <TableCell className="text-right">{row.transactionCount}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(row.totalRevenue)}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(row.totalCost)}</TableCell>
-                    <TableCell className="text-right font-medium text-green-600">{formatRupiah(row.grossProfit)}</TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <ReportTable
+        label={TITLE}
+        columnCount={COLUMN_COUNT}
+        isLoading={isLoading}
+        error={error}
+        columns={
+          <>
+            <Table.Column isRowHeader>Bulan</Table.Column>
+            <Table.Column className="text-right">Transaksi</Table.Column>
+            <Table.Column className="text-right">Pendapatan</Table.Column>
+            <Table.Column className="text-right">Modal</Table.Column>
+            <Table.Column className="text-right">Laba Kotor</Table.Column>
+          </>
+        }
+      >
+        {(data ?? []).map((row) => {
+          const monthLabel = format(new Date(`${row.month}-01`), "MMMM yyyy", {
+            locale: idLocale,
+          })
+          return (
+            <Table.Row key={row.month} id={row.month} textValue={monthLabel}>
+              <Table.Cell className="font-medium">{monthLabel}</Table.Cell>
+              <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
+              <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
+              <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
+              <Table.Cell
+                className={`text-right font-medium ${row.grossProfit < 0 ? "text-danger" : "text-success"}`}
+              >
+                {formatRupiah(row.grossProfit)}
+              </Table.Cell>
+            </Table.Row>
+          )
+        })}
+      </ReportTable>
+    </ReportPage>
   )
 }

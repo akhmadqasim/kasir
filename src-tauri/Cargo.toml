@@ -1,6 +1,6 @@
 [package]
 name = "kasir"
-version = "0.4.0"
+version = "0.5.0"
 description = "POS Toko Sembako"
 authors = ["you"]
 edition = "2021"
@@ -24,11 +24,26 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
-tauri-plugin-dialog = "2.6.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 flate2 = "1.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.10"
+# Embedded HTTP server. `rand`/`sha2`/`hex` mint and hash session tokens,
+# `cookie` builds the `Set-Cookie` attributes, `rust-embed` compiles `dist/`
+# into the binary. All five were already in `Cargo.lock` as transitive
+# dependencies, so none of them adds anything new to the build.
+axum = { version = "0.8", features = ["multipart"] }
+tower-http = { version = "0.6", features = ["compression-gzip"] }
+rand = "0.9"
+sha2 = "0.10"
+hex = "0.4"
+cookie = "0.18"
+rust-embed = { version = "8", features = ["mime-guess"] }
+tokio-util = { version = "0.7.18", features = ["io"] }
+
+[dev-dependencies]
+# `ServiceExt::oneshot`, which drives the router in tests without a listener.
+tower = { version = "0.5", features = ["util"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_Security"] }

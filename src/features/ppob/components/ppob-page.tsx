@@ -1,16 +1,10 @@
 import { Routes, Route, useNavigate } from "react-router-dom"
-import {
-  RefreshCw,
-  History,
-  ArrowUpDown,
-  Bell,
-} from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Button, Card } from "@heroui/react"
+import { History, ArrowUpDown, Bell } from "lucide-react"
+
+import { NavbarActions } from "@/components/layout/app-navbar"
 import { id } from "@/i18n/id"
-import { usePpobSaldo } from "../hooks"
-import { PPOB_SERVICES, PPOB_SERVICE_COLORS } from "../constants"
+import { PPOB_SERVICES } from "../constants"
 import { PulsaFlow } from "./pulsa-flow"
 import { DataFlow } from "./data-flow"
 import { PlnFlow } from "./pln-flow"
@@ -20,100 +14,64 @@ import { PpFlow } from "./pp-flow"
 import { TransferFlow } from "./transfer-flow"
 import { EmoneyFlow } from "./emoney-flow"
 import { VoucherFlow } from "./voucher-flow"
+import { SaldoCard } from "./saldo-card"
+import { ServiceGrid } from "./service-grid"
 import { PpobHistory } from "./history"
 import { PpobMutasi } from "./mutasi"
 import { PpobNotifications } from "./notifications"
 
-function SaldoCard() {
-  const { data, isLoading, error, refetch } = usePpobSaldo()
-
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-between py-4">
-          <div>
-            <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
-            <p className="text-sm text-destructive">{id.ppob.notConfigured}</p>
-            <p className="text-xs text-muted-foreground">{id.ppob.configureInSettings}</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardContent className="flex items-center justify-between py-4">
-        <div>
-          <p className="text-sm text-muted-foreground">{id.ppob.saldo}</p>
-          {isLoading ? (
-            <Skeleton className="h-8 w-48" />
-          ) : (
-            <>
-              <p className="text-2xl font-bold">
-                Rp {data?.saldo.toLocaleString("id-ID") ?? "0"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {id.ppob.connectionInfo}: {data?.username}
-              </p>
-            </>
-          )}
-        </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-function ServiceGrid() {
-  const navigate = useNavigate()
-
-  return (
-    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-      {PPOB_SERVICES.map((svc) => (
-        <button
-          key={svc.key}
-          className="flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => navigate(svc.path)}
-        >
-          <svc.icon className={`h-7 w-7 ${PPOB_SERVICE_COLORS[svc.key].text}`} />
-          <span className="text-sm font-medium text-center">{svc.label}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
+/**
+ * Judul "Mitra Indogrosir" sudah digambar navbar dari daftar navigasi; yang
+ * naik dari halaman ini hanya tiga jalan pintasnya, sebagai tombol ikon `sm
+ * tertiary` (DESIGN.md §5.1).
+ */
 function PpobHome() {
   const navigate = useNavigate()
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{id.ppob.title}</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate("notifications")}>
-            <Bell className="mr-2 h-4 w-4" />
-            {id.ppob.notifications}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("mutasi")}>
-            <ArrowUpDown className="mr-2 h-4 w-4" />
-            {id.ppob.mutasi}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("history")}>
-            <History className="mr-2 h-4 w-4" />
-            {id.ppob.history}
-          </Button>
-        </div>
+    <>
+      <NavbarActions>
+        <Button
+          isIconOnly
+          aria-label={id.ppob.notifications}
+          size="sm"
+          variant="tertiary"
+          onPress={() => navigate("notifications")}
+        >
+          <Bell />
+        </Button>
+        <Button
+          isIconOnly
+          aria-label={id.ppob.mutasi}
+          size="sm"
+          variant="tertiary"
+          onPress={() => navigate("mutasi")}
+        >
+          <ArrowUpDown />
+        </Button>
+        <Button
+          isIconOnly
+          aria-label={id.ppob.history}
+          size="sm"
+          variant="tertiary"
+          onPress={() => navigate("history")}
+        >
+          <History />
+        </Button>
+      </NavbarActions>
+
+      <div className="flex flex-col gap-6">
+        <SaldoCard />
+        <Card>
+          <Card.Header>
+            <Card.Title>{id.ppob.selectService}</Card.Title>
+          </Card.Header>
+          <Card.Content>
+            <ServiceGrid services={PPOB_SERVICES} onSelect={(service) => navigate(service.path)} />
+          </Card.Content>
+        </Card>
       </div>
-      <SaldoCard />
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">{id.ppob.selectService}</h2>
-        <ServiceGrid />
-      </div>
-    </div>
+    </>
   )
 }
 

@@ -1,36 +1,39 @@
 import { useState } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Button,
+  ComboBox,
+  EmptyState,
+  FieldError,
+  Form,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  TextField,
+} from "@heroui/react"
+
+import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { formatRupiah } from "@/lib/format"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import type { Product, CreateProductInput, UpdateProductInput } from "../types"
 
-const UNITS = ["pcs", "kg", "liter", "pack", "box", "karton", "lusin", "dus"]
+const UNITS = ["pcs", "kg", "liter", "pack", "box", "karton", "lusin", "dus"].map((unit) => ({
+  key: unit,
+  label: unit,
+}))
+
+/**
+ * Nilai sentinel `ComboBox`: React Aria memakai `null` untuk "tidak ada pilihan",
+ * dan `null` tidak bisa dipakai sebagai `id` item. Baris "Tanpa kategori"
+ * menggantikan tombol silang milik combobox lama — sekarang bisa dicapai dengan
+ * panah, bukan cuma dengan mouse, dan produk tanpa kategori menyebut keadaannya
+ * alih-alih terlihat seperti kolom yang belum diisi.
+ */
+const NO_CATEGORY = "none"
 
 interface ProductFormDialogProps {
   open: boolean
@@ -46,15 +49,22 @@ export function ProductFormDialog({
   onCreateSuccess,
 }: ProductFormDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <ProductFormBody
-          product={product}
-          onOpenChange={onOpenChange}
-          onCreateSuccess={onCreateSuccess}
-        />
-      </DialogContent>
-    </Dialog>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container scroll="inside" size="lg">
+        <Modal.Dialog aria-label={product ? id.common.edit : id.products.add}>
+          <Modal.CloseTrigger />
+          {/* React Aria melepas dialognya saat ditutup, bukan menahannya sampai
+              animasi keluar selesai, jadi state di bawah selalu lahir kosong.
+              Membuka ulang untuk produk lain tidak lagi bisa menampilkan nilai
+              produk sebelumnya di atas id yang baru. */}
+          <ProductFormBody
+            product={product}
+            onOpenChange={onOpenChange}
+            onCreateSuccess={onCreateSuccess}
+          />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
@@ -117,13 +127,12 @@ function ProductFormBody({
   onCreateSuccess?: () => void
 }) {
   const isEditing = !!product
-  const user = useAuthStore((s) => s.user)
   const { data: categories } = useCategories()
   const createProduct = useCreateProduct()
   const updateProduct = useUpdateProduct()
 
   const [form, setForm] = useState<FormState>(() =>
-    product ? buildFormFromProduct(product) : emptyForm
+    product ? buildFormFromProduct(product) : emptyForm,
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -152,7 +161,8 @@ function ProductFormBody({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!form.name.trim()) newErrors.name = "Nama produk wajib diisi"
-    if (!form.sellPrice || Number(form.sellPrice) <= 0) newErrors.sellPrice = "Harga jual harus lebih dari 0"
+    if (!form.sellPrice || Number(form.sellPrice) <= 0)
+      newErrors.sellPrice = "Harga jual harus lebih dari 0"
     if (!form.buyPrice || Number(form.buyPrice) < 0) newErrors.buyPrice = "Harga modal tidak valid"
     if (form.stock === "" || Number(form.stock) < 0) newErrors.stock = "Stok tidak boleh negatif"
     setErrors(newErrors)
@@ -178,219 +188,215 @@ function ProductFormBody({
 
     if (isEditing && product) {
       const updateInput: UpdateProductInput = { ...input, id: product.id }
-      updateProduct.mutate(
-        { input: updateInput, callerId: user!.id },
-        { onSuccess: () => onOpenChange(false) }
-      )
+      updateProduct.mutate(updateInput, { onSuccess: () => onOpenChange(false) })
     } else {
-      createProduct.mutate(
-        { input, callerId: user!.id },
-        {
-          onSuccess: () => {
-            onCreateSuccess?.()
-            onOpenChange(false)
-          },
-        }
-      )
+      createProduct.mutate(input, {
+        onSuccess: () => {
+          onCreateSuccess?.()
+          onOpenChange(false)
+        },
+      })
     }
   }
 
   const isPending = createProduct.isPending || updateProduct.isPending
-  const actualMargin = Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
-    ? ((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice) * 100).toFixed(1)
-    : null
+  const actualMargin =
+    Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
+      ? (((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice)) * 100).toFixed(
+          1,
+        )
+      : null
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>
-          {isEditing ? id.common.edit : id.products.add}
-          </DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">{id.products.name} *</Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setForm((prev) => ({
-                    ...prev,
-                    name: val,
-                    ...(!prev.skuManual ? { sku: generateSku(val) } : {}),
-                  }))
+    // validationBehavior="aria" menahan validasi di komponen ini. Dengan default
+    // React Aria ("native") kolom yang `isInvalid` memanggil setCustomValidity,
+    // dan browser lalu memblokir tiap submit berikutnya — termasuk submit yang
+    // justru akan membersihkan errornya.
+    <Form
+      className="flex min-h-0 flex-1 flex-col"
+      validationBehavior="aria"
+      onSubmit={handleSubmit}
+    >
+      <Modal.Header>
+        <Modal.Heading>{isEditing ? id.common.edit : id.products.add}</Modal.Heading>
+      </Modal.Header>
+
+      <Modal.Body>
+        <TextField
+          fullWidth
+          isInvalid={Boolean(errors.name)}
+          value={form.name}
+          variant="secondary"
+          onChange={(value) =>
+            setForm((prev) => ({
+              ...prev,
+              name: value,
+              ...(!prev.skuManual ? { sku: generateSku(value) } : {}),
+            }))
+          }
+        >
+          <Label>{id.products.name} *</Label>
+          <Input />
+          <FieldError>{errors.name}</FieldError>
+        </TextField>
+
+        <div className="grid grid-cols-2 gap-4">
+          <TextField
+            fullWidth
+            value={form.barcode}
+            variant="secondary"
+            onChange={(value) => updateField("barcode", value)}
+          >
+            <Label>{id.products.barcode}</Label>
+            <Input />
+          </TextField>
+
+          <TextField
+            fullWidth
+            value={form.sku}
+            variant="secondary"
+            onChange={(value) => setForm((prev) => ({ ...prev, sku: value, skuManual: true }))}
+          >
+            <Label>
+              {id.products.sku}
+              {!form.skuManual && <span className="ml-1.5 text-xs text-muted">(otomatis)</span>}
+            </Label>
+            <Input placeholder="AUTO" />
+          </TextField>
+        </div>
+
+        <CategoryComboBox
+          categories={categories ?? []}
+          value={form.categoryId}
+          onValueChange={(value) => updateField("categoryId", value)}
+        />
+
+        <div className="grid grid-cols-3 gap-4">
+          <TextField
+            fullWidth
+            isInvalid={Boolean(errors.stock)}
+            type="number"
+            value={form.stock}
+            variant="secondary"
+            onChange={(value) => updateField("stock", value)}
+          >
+            <Label>{id.products.stock} *</Label>
+            <Input min="0" placeholder="0" />
+            <FieldError>{errors.stock}</FieldError>
+          </TextField>
+
+          <OptionSelect
+            fullWidth
+            label={`${id.products.unit} *`}
+            options={UNITS}
+            value={form.unit}
+            variant="secondary"
+            onChange={(value) => updateField("unit", value ?? "")}
+          />
+
+          <TextField
+            fullWidth
+            type="number"
+            value={form.minStock}
+            variant="secondary"
+            onChange={(value) => updateField("minStock", value)}
+          >
+            <Label>{id.products.minStock}</Label>
+            <Input min="0" placeholder="0" />
+          </TextField>
+        </div>
+
+        {/* Perhitungan Harga. Ketiga kolomnya tetap `TextField type="number"`
+            dan bukan `NumberField`: nilainya saling menghitung ulang tiap
+            ketukan, dan `NumberField` memformat isinya menurut locale — angka
+            yang baru setengah diketik akan dirapikan di tengah pengetikan. */}
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted">Perhitungan Harga</p>
+          <InfoPanel>
+            <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2">
+              <TextField
+                fullWidth
+                isInvalid={Boolean(errors.buyPrice)}
+                type="number"
+                value={form.buyPrice}
+                variant="secondary"
+                onChange={(value) => {
+                  updateField("buyPrice", value)
+                  recalcSellPrice(Number(value), Number(form.margin))
                 }}
-                placeholder={id.products.name}
-              />
-              {errors.name && <p className="text-sm font-medium text-destructive">{errors.name}</p>}
-            </div>
+              >
+                <Label>{id.products.buyPrice} *</Label>
+                <Input min="0" placeholder="0" />
+                <FieldError>{errors.buyPrice}</FieldError>
+              </TextField>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="barcode">{id.products.barcode}</Label>
-                <Input
-                  id="barcode"
-                  value={form.barcode}
-                  onChange={(e) => updateField("barcode", e.target.value)}
-                  placeholder={id.products.barcode}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sku" className="flex items-center gap-1.5">
-                  {id.products.sku}
-                  {!form.skuManual && (
-                    <span className="text-xs text-muted-foreground">(otomatis)</span>
-                  )}
-                </Label>
-                <Input
-                  id="sku"
-                  value={form.sku}
-                  onChange={(e) => setForm((prev) => ({ ...prev, sku: e.target.value, skuManual: true }))}
-                  placeholder="AUTO"
-                  className={!form.skuManual ? "text-muted-foreground" : ""}
-                />
-              </div>
-            </div>
+              <span className="pb-2.5 text-base font-medium text-muted">×</span>
 
-            <div className="space-y-2">
-              <Label>{id.products.category}</Label>
-              <CategoryCombobox
-                categories={categories ?? []}
-                value={form.categoryId}
-                onValueChange={(v) => updateField("categoryId", v)}
-              />
-            </div>
+              <TextField
+                className="w-20"
+                type="number"
+                value={form.margin}
+                variant="secondary"
+                onChange={(value) => {
+                  updateField("margin", value)
+                  recalcSellPrice(Number(form.buyPrice), Number(value))
+                }}
+              >
+                <Label>Markup (%)</Label>
+                <Input min="0" placeholder="0" step="any" />
+              </TextField>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="stock">{id.products.stock} *</Label>
-                <Input
-                  id="stock"
-                  type="number"
-                  min="0"
-                  value={form.stock}
-                  onChange={(e) => updateField("stock", e.target.value)}
-                  placeholder="0"
-                />
-                {errors.stock && <p className="text-sm font-medium text-destructive">{errors.stock}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label>{id.products.unit} *</Label>
-                <Select value={form.unit} onValueChange={(v) => updateField("unit", v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {UNITS.map((u) => (
-                      <SelectItem key={u} value={u}>
-                        {u}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="minStock">{id.products.minStock}</Label>
-                <Input
-                  id="minStock"
-                  type="number"
-                  min="0"
-                  value={form.minStock}
-                  onChange={(e) => updateField("minStock", e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-            </div>
+              <span className="pb-2.5 text-base font-medium text-muted">=</span>
 
-            {/* Perhitungan Harga */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Perhitungan Harga
-              </Label>
-              <div className="rounded-lg border p-3">
-                <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="buyPrice" className="text-xs">{id.products.buyPrice} *</Label>
-                    <Input
-                      id="buyPrice"
-                      type="number"
-                      min="0"
-                      value={form.buyPrice}
-                      onChange={(e) => {
-                        updateField("buyPrice", e.target.value)
-                        recalcSellPrice(Number(e.target.value), Number(form.margin))
-                      }}
-                      placeholder="0"
-                    />
-                  </div>
-                  <span className="pb-2.5 text-base font-medium text-muted-foreground">×</span>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="margin" className="text-xs">Markup (%)</Label>
-                    <Input
-                      id="margin"
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={form.margin}
-                      onChange={(e) => {
-                        updateField("margin", e.target.value)
-                        recalcSellPrice(Number(form.buyPrice), Number(e.target.value))
-                      }}
-                      placeholder="0"
-                      className="w-20"
-                    />
-                  </div>
-                  <span className="pb-2.5 text-base font-medium text-muted-foreground">=</span>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="sellPrice" className="text-xs">{id.products.sellPrice} *</Label>
-                    <Input
-                      id="sellPrice"
-                      type="number"
-                      min="0"
-                      value={form.sellPrice}
-                      onChange={(e) => {
-                        updateField("sellPrice", e.target.value)
-                        recalcMargin(Number(form.buyPrice), Number(e.target.value))
-                      }}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                {(errors.buyPrice || errors.sellPrice) && (
-                  <div className="mt-2 space-y-1">
-                    {errors.buyPrice && <p className="text-xs font-medium text-destructive">{errors.buyPrice}</p>}
-                    {errors.sellPrice && <p className="text-xs font-medium text-destructive">{errors.sellPrice}</p>}
-                  </div>
-                )}
-                {actualMargin && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Margin aktual:</span>
-                    <span className="font-semibold text-foreground">{actualMargin}%</span>
-                    <span>
-                      (Rp {(Number(form.sellPrice) - Number(form.buyPrice)).toLocaleString("id-ID")} / item)
-                    </span>
-                  </div>
-                )}
-              </div>
+              <TextField
+                fullWidth
+                isInvalid={Boolean(errors.sellPrice)}
+                type="number"
+                value={form.sellPrice}
+                variant="secondary"
+                onChange={(value) => {
+                  updateField("sellPrice", value)
+                  recalcMargin(Number(form.buyPrice), Number(value))
+                }}
+              >
+                <Label>{id.products.sellPrice} *</Label>
+                <Input min="0" placeholder="0" />
+                <FieldError>{errors.sellPrice}</FieldError>
+              </TextField>
             </div>
-          </div>
+            {actualMargin && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted">
+                <span>Margin aktual:</span>
+                <span className="font-semibold text-foreground">{actualMargin}%</span>
+                <span>({formatRupiah(Number(form.sellPrice) - Number(form.buyPrice))} / item)</span>
+              </div>
+            )}
+          </InfoPanel>
+        </div>
+      </Modal.Body>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {id.common.cancel}
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? id.common.loading : id.common.save}
-            </Button>
-          </DialogFooter>
-        </form>
-      </>
+      <Modal.Footer>
+        <Button slot="close" type="button" variant="tertiary">
+          {id.common.cancel}
+        </Button>
+        <PendingButton isPending={isPending} type="submit">
+          {id.common.save}
+        </PendingButton>
+      </Modal.Footer>
+    </Form>
   )
 }
 
-function CategoryCombobox({
+/**
+ * Pemilih kategori: ketik untuk menyaring, panah untuk memilih.
+ *
+ * Kategori baru tetap tidak bisa dibuat dari sini — `create_product` hanya
+ * menerima `category_id`, dan combobox lama juga mengembalikan teks yang tidak
+ * cocok ke nama kategori terpilih begitu kolomnya kehilangan fokus. Karena itu
+ * `allowsCustomValue` sengaja tidak dipasang: nama asing hanya akan tersimpan
+ * sebagai produk tanpa kategori tanpa memberi tahu kasirnya.
+ */
+function CategoryComboBox({
   categories,
   value,
   onValueChange,
@@ -399,26 +405,42 @@ function CategoryCombobox({
   value: string
   onValueChange: (value: string) => void
 }) {
-  const selectedCategory = categories.find((c) => String(c.id) === value) ?? null
-
   return (
-    <Combobox
-      items={categories}
-      itemToStringValue={(cat) => cat.name}
-      value={selectedCategory}
-      onValueChange={(cat) => onValueChange(cat ? String(cat.id) : "")}
+    <ComboBox
+      allowsEmptyCollection
+      fullWidth
+      variant="secondary"
+      // Sentinelnya harus benar-benar jadi kunci terpilih, bukan dipetakan balik
+      // ke `null`: React Aria menutup popover lewat perubahan `selectedKey`, jadi
+      // kunci yang tak pernah sampai membuat daftarnya menggantung terbuka.
+      value={value || NO_CATEGORY}
+      onChange={(key) => {
+        const picked = Array.isArray(key) ? key[0] : key
+        onValueChange(picked == null || picked === NO_CATEGORY ? "" : String(picked))
+      }}
     >
-      <ComboboxInput placeholder="Pilih kategori..." showClear={!!value} />
-      <ComboboxContent>
-        <ComboboxEmpty>Kategori tidak ditemukan</ComboboxEmpty>
-        <ComboboxList>
-          {(cat) => (
-            <ComboboxItem key={cat.id} value={cat}>
-              {cat.name}
-            </ComboboxItem>
-          )}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
+      <Label>{id.products.category}</Label>
+      <ComboBox.InputGroup>
+        <Input placeholder="Pilih kategori..." />
+        <ComboBox.Trigger />
+      </ComboBox.InputGroup>
+      <ComboBox.Popover>
+        <ListBox
+          aria-label={id.products.category}
+          renderEmptyState={() => <EmptyState>Kategori tidak ditemukan</EmptyState>}
+        >
+          <ListBox.Item id={NO_CATEGORY} textValue="Tanpa kategori">
+            <Label>Tanpa kategori</Label>
+            <ListBox.ItemIndicator />
+          </ListBox.Item>
+          {categories.map((category) => (
+            <ListBox.Item key={category.id} id={String(category.id)} textValue={category.name}>
+              <Label>{category.name}</Label>
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </ComboBox.Popover>
+    </ComboBox>
   )
 }

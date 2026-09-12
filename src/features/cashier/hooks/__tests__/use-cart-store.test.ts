@@ -1,9 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { useCartStore } from "../use-cart-store"
+import {
+  MAX_CART_QUANTITY,
+  migrateCartState,
+  useCartStore,
+  type HeldCart,
+} from "@/stores/cart-store"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeProduct(overrides: Partial<{ id: number; name: string; sell_price: number; stock: number; unit: string }> = {}) {
+function makeProduct(
+  overrides: Partial<{
+    id: number
+    name: string
+    sell_price: number
+    stock: number
+    unit: string
+  }> = {},
+) {
   return {
     id: 1,
     name: "Indomie Goreng",
@@ -27,6 +40,7 @@ beforeEach(() => {
     heldCarts: [],
     itemDiscounts: {},
     transactionDiscount: null,
+    checkoutKey: null,
   })
 })
 
@@ -199,6 +213,19 @@ describe("updateQuantity", () => {
     store().addItem(makeProduct())
     store().updateQuantity("nonexistent", 10)
     expect(store().items[0].quantity).toBe(1)
+  })
+
+  it("caps the quantity at the maximum", () => {
+    store().addItem(makeProduct())
+    store().updateQuantity("product-1", 8991002103011)
+    expect(store().items[0].quantity).toBe(MAX_CART_QUANTITY)
+  })
+
+  it("caps the quantity when the same product keeps being scanned", () => {
+    store().addItem(makeProduct())
+    store().updateQuantity("product-1", MAX_CART_QUANTITY)
+    store().addItem(makeProduct())
+    expect(store().items[0].quantity).toBe(MAX_CART_QUANTITY)
   })
 
   it("does not update quantity for PPOB items", () => {
@@ -711,6 +738,117 @@ describe("removeHeldCart", () => {
 })
 
 // =====================================================================
+// Discounts belong to a single cart
+// =====================================================================
+
+describe("discount scoping between carts", () => {
+  it("stores the discounts together with the held cart", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 1000 })
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+
+    store().holdCart("Pelanggan 1")
+
+    const [held] = store().heldCarts
+    expect(held.itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 1000 })
+    expect(held.transactionDiscount).toEqual({ type: "percentage", value: 50 })
+  })
+
+  it("does not leak the held cart discounts to the next customer", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    expect(store().itemDiscounts).toEqual({})
+    expect(store().transactionDiscount).toBeNull()
+
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    expect(store().getCartTotals().total).toBe(10000)
+  })
+
+  it("counts the discount in the held cart total", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+
+    store().holdCart("Pelanggan 1")
+
+    expect(store().heldCarts[0].total).toBe(5000)
+  })
+
+  it("restores the discounts of the recalled cart", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 1000 })
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    const holdId = store().heldCarts[0].id
+    store().recallCart(holdId)
+
+    expect(store().itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 1000 })
+    expect(store().transactionDiscount).toEqual({ type: "percentage", value: 50 })
+    expect(store().getCartTotals().total).toBe(4500)
+  })
+
+  it("keeps each cart's discounts when two carts are swapped", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+    const holdId = store().heldCarts[0].id
+
+    store().addItem(makeProduct({ id: 2, sell_price: 20000 }))
+    store().setTransactionDiscount({ type: "fixed", value: 2000 })
+
+    store().recallCart(holdId)
+
+    // Cart 1 is active again with its own 50% discount
+    expect(store().transactionDiscount).toEqual({ type: "percentage", value: 50 })
+    expect(store().getCartTotals().total).toBe(5000)
+
+    // Cart 2 kept its own fixed discount while held
+    const swapped = store().heldCarts[0]
+    expect(swapped.transactionDiscount).toEqual({ type: "fixed", value: 2000 })
+    expect(swapped.total).toBe(18000)
+  })
+
+  it("keeps held cart discounts when the active cart is cleared", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    store().holdCart("Pelanggan 1")
+
+    store().addItem(makeProduct({ id: 2, sell_price: 20000 }))
+    store().clear()
+
+    expect(store().heldCarts[0].transactionDiscount).toEqual({
+      type: "percentage",
+      value: 50,
+    })
+  })
+
+  it("recalls a legacy held cart that has no stored discounts", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().holdCart("Legacy")
+    const [held] = store().heldCarts
+    useCartStore.setState({
+      heldCarts: [
+        {
+          id: held.id,
+          label: held.label,
+          items: held.items,
+          total: held.total,
+          heldAt: held.heldAt,
+        } as HeldCart,
+      ],
+    })
+
+    store().recallCart(held.id)
+
+    expect(store().items).toHaveLength(1)
+    expect(store().itemDiscounts).toEqual({})
+    expect(store().transactionDiscount).toBeNull()
+  })
+})
+
+// =====================================================================
 // Mixed cart (regular + PPOB)
 // =====================================================================
 
@@ -771,6 +909,190 @@ describe("edge cases", () => {
 
     // 3333 * 33 / 100 = 1099.89 → round → 1100
     const disc = store().getItemDiscountAmount("product-1")
-    expect(disc).toBe(Math.round(3333 * 33 / 100))
+    expect(disc).toBe(Math.round((3333 * 33) / 100))
+  })
+})
+
+describe("persisted cart migration", () => {
+  it("drops PPOB rows whose inquiry has gone stale", () => {
+    const migrated = migrateCartState(
+      {
+        items: [
+          { cart_id: "product-1", product_name: "Beras", quantity: 1 },
+          { cart_id: "ppob-1", product_name: "Token PLN", quantity: 1, is_ppob: true },
+        ],
+        ppobCounter: 1,
+        heldCarts: [],
+        itemDiscounts: {},
+        transactionDiscount: null,
+      },
+      1,
+    )
+
+    expect(migrated.items.map((i) => i.cart_id)).toEqual(["product-1"])
+  })
+
+  it("drops PPOB rows inside held carts too", () => {
+    const migrated = migrateCartState(
+      {
+        items: [],
+        heldCarts: [
+          {
+            id: "hold-1",
+            label: "Pak Budi",
+            items: [{ cart_id: "ppob-1", is_ppob: true }, { cart_id: "product-2" }],
+            itemDiscounts: {},
+            transactionDiscount: null,
+            total: 0,
+            heldAt: 0,
+          },
+        ],
+      },
+      1,
+    )
+
+    expect(migrated.heldCarts[0].items.map((i) => i.cart_id)).toEqual(["product-2"])
+  })
+
+  it("discards pre-v1 global discounts that used to leak between carts", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        itemDiscounts: { "product-1": { type: "percentage", value: 50 } },
+        transactionDiscount: { type: "fixed", value: 5000 },
+      },
+      0,
+    )
+
+    expect(migrated.itemDiscounts).toEqual({})
+    expect(migrated.transactionDiscount).toBeNull()
+  })
+
+  it("keeps discounts once they are already scoped per cart", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        itemDiscounts: { "product-1": { type: "fixed", value: 1000 } },
+        transactionDiscount: null,
+      },
+      1,
+    )
+
+    expect(migrated.itemDiscounts).toEqual({
+      "product-1": { type: "fixed", value: 1000 },
+    })
+  })
+
+  it("tolerates a completely empty persisted payload", () => {
+    const migrated = migrateCartState(undefined, 0)
+
+    expect(migrated.items).toEqual([])
+    expect(migrated.heldCarts).toEqual([])
+    expect(migrated.ppobCounter).toBe(0)
+  })
+})
+
+// =====================================================================
+// checkout key (Idempotency-Key)
+// =====================================================================
+
+/**
+ * The key's lifetime is the whole of what makes it useful.
+ *
+ * Over IPC a checkout either happened or it did not. Over HTTP there is a third
+ * outcome — the sale committed and the reply was lost on shop wifi — and a
+ * retry from that state is indistinguishable from a request that never arrived.
+ * One key per cart, reused by every attempt at that cart, is what lets the
+ * server tell the two apart. A key per retry would defeat it entirely; a key
+ * per cashier session would make the second genuine sale of the day come back
+ * as a replay of the first.
+ */
+describe("checkout key", () => {
+  it("is absent until the first checkout attempt", () => {
+    store().addItem(makeProduct())
+
+    expect(store().checkoutKey).toBeNull()
+  })
+
+  it("keeps the same key across retries of the same cart", () => {
+    store().addItem(makeProduct())
+
+    const first = store().getCheckoutKey()
+
+    expect(store().getCheckoutKey()).toBe(first)
+    expect(store().getCheckoutKey()).toBe(first)
+  })
+
+  /**
+   * A failed attempt releases the key on the server, so correcting the cart and
+   * trying again under the same key is allowed — and is what a cashier does
+   * after "stok tidak cukup".
+   */
+  it("survives the cart being edited after a failed attempt", () => {
+    store().addItem(makeProduct())
+    const key = store().getCheckoutKey()
+
+    store().addItem(makeProduct({ id: 2, name: "Gula Pasir" }))
+    store().updateQuantity(store().items[0].cart_id, 3)
+
+    expect(store().getCheckoutKey()).toBe(key)
+  })
+
+  it("starts a new key once the cart is emptied", () => {
+    store().addItem(makeProduct())
+    const first = store().getCheckoutKey()
+
+    store().clear()
+    store().addItem(makeProduct())
+
+    expect(store().checkoutKey).toBeNull()
+    expect(store().getCheckoutKey()).not.toBe(first)
+  })
+
+  it("starts a new key when the cart is held for another customer", () => {
+    store().addItem(makeProduct())
+    const first = store().getCheckoutKey()
+
+    store().holdCart("Pelanggan A")
+    store().addItem(makeProduct({ id: 2 }))
+
+    expect(store().getCheckoutKey()).not.toBe(first)
+  })
+
+  it("starts a new key when a held cart is recalled", () => {
+    store().addItem(makeProduct())
+    store().holdCart("Pelanggan A")
+    store().addItem(makeProduct({ id: 2 }))
+    const active = store().getCheckoutKey()
+
+    store().recallCart(store().heldCarts[0].id)
+
+    expect(store().getCheckoutKey()).not.toBe(active)
+  })
+
+  /**
+   * A reload in the middle of a checkout is exactly the case the key exists
+   * for: the cart comes back from `localStorage`, and so must the key that
+   * stops it being rung up a second time.
+   */
+  it("is carried through a persisted cart", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "product-1" }],
+        ppobCounter: 0,
+        heldCarts: [],
+        itemDiscounts: {},
+        transactionDiscount: null,
+        checkoutKey: "kunci-tersimpan",
+      },
+      1,
+    )
+
+    expect(migrated.checkoutKey).toBe("kunci-tersimpan")
+  })
+
+  it("defaults to no key for carts persisted before it existed", () => {
+    expect(migrateCartState({ items: [] }, 1).checkoutKey).toBeNull()
+    expect(migrateCartState(undefined, 0).checkoutKey).toBeNull()
   })
 })

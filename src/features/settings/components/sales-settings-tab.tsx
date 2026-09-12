@@ -1,41 +1,25 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+import { Card, Description, Switch } from "@heroui/react"
+
+import { toast } from "@/lib/toast"
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { getAppSettings, toUpdateAppSettingsInput, updateAppSettings } from "@/lib/api/settings"
+import { queryKeys } from "@/lib/api/query-keys"
 import type { AppSettings } from "../types"
 
 export function SalesSettingsTab() {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
 
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState("cash")
   const [initialized, setInitialized] = useState(false)
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: ["app-settings"],
-    queryFn: () => invoke<AppSettings>("get_app_settings"),
-  })
+  const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
 
   if (settingsQuery.data && !initialized) {
     const { sales } = settingsQuery.data
@@ -44,111 +28,82 @@ export function SalesSettingsTab() {
     setInitialized(true)
   }
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const currentSecurity = settingsQuery.data?.security ?? {
-        session_timeout_minutes: 30,
+  const saveMutation = useApiMutation<void, void>(
+    () => {
+      // The server rewrites all four blocks at once, so this tab has to send the
+      // other three back untouched. Saving before the query resolves would post
+      // hardcoded defaults over them.
+      const current = settingsQuery.data
+      if (!current) {
+        return Promise.reject(new Error("Pengaturan belum dimuat, coba lagi sebentar"))
       }
-      const currentPpob = settingsQuery.data?.ppob ?? {
-        enabled: false,
-        phone_number: "",
-        password: "",
-        device_id: "",
-        pin: "",
-        markup: {
-          pulsa: { type: "fixed", value: 0 },
-          data: { type: "fixed", value: 0 },
-          pln: { type: "fixed", value: 0 },
-          pdam: { type: "fixed", value: 0 },
-          bpjs: { type: "fixed", value: 0 },
-          emoney: { type: "fixed", value: 0 },
-          custom_prices: {},
+      return updateAppSettings({
+        ...toUpdateAppSettingsInput(current),
+        sales: {
+          allow_negative_stock: allowNegativeStock,
+          default_payment_method: defaultPaymentMethod,
         },
-      }
-      const currentBackup = settingsQuery.data?.backup ?? {
-        interval_hours: 3,
-        retention_days: 90,
-      }
-      return invoke("update_app_settings", {
-        settings: {
-          sales: {
-            allow_negative_stock: allowNegativeStock,
-            default_payment_method: defaultPaymentMethod,
-          },
-          security: currentSecurity,
-          ppob: currentPpob,
-          backup: currentBackup,
-        },
-        callerId: user!.id,
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["app-settings"] })
-      toast.success(id.settings.salesSettingsSaved)
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
+        toast.success(id.settings.salesSettingsSaved)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
     },
-    onError: (error) => {
-      toast.error(String(error))
-    },
-  })
+  )
+
+  const isReady = settingsQuery.isSuccess && initialized
 
   const paymentOptions = [
-    { value: "cash", label: id.payment.cash },
-    { value: "qris", label: id.payment.qris },
-    { value: "debit", label: id.payment.debit },
-    { value: "ewallet", label: id.payment.ewallet },
-    { value: "transfer", label: id.payment.transfer },
-  ] as const
+    { key: "cash", label: id.payment.cash },
+    { key: "qris", label: id.payment.qris },
+    { key: "debit", label: id.payment.debit },
+    { key: "ewallet", label: id.payment.ewallet },
+    { key: "transfer", label: id.payment.transfer },
+  ]
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{id.settings.tabSales}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label>{id.settings.allowNegativeStock}</Label>
-            <p className="text-xs text-muted-foreground">
-              {id.settings.allowNegativeStockDesc}
-            </p>
-          </div>
-          <Switch
-            checked={allowNegativeStock}
-            onCheckedChange={setAllowNegativeStock}
-          />
-        </div>
+      <Card.Header>
+        <Card.Title>{id.settings.tabSales}</Card.Title>
+      </Card.Header>
+      <Card.Content className="gap-6">
+        {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
+            label di kanannya, keterangan di bawah. Mengklik teksnya ikut
+            menggeser, dan keterangannya tersambung lewat aria-describedby. */}
+        <Switch isSelected={allowNegativeStock} onChange={setAllowNegativeStock}>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+            {id.settings.allowNegativeStock}
+          </Switch.Content>
+          <Description>{id.settings.allowNegativeStockDesc}</Description>
+        </Switch>
 
-        <Separator />
-
-        <div className="space-y-2">
-          <Label>{id.settings.defaultPaymentMethod}</Label>
-          <Select
-            value={defaultPaymentMethod}
-            onValueChange={setDefaultPaymentMethod}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {paymentOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Separator />
-
-        <Button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+        <OptionSelect
+          fullWidth
+          label={id.settings.defaultPaymentMethod}
+          options={paymentOptions}
+          value={defaultPaymentMethod || null}
+          variant="secondary"
+          onChange={(value) => setDefaultPaymentMethod(value ?? "")}
+        />
+      </Card.Content>
+      <Card.Footer>
+        <PendingButton
+          isDisabled={!isReady}
+          isPending={saveMutation.isPending}
+          onPress={() => saveMutation.mutate(undefined)}
         >
-          <Save className="mr-2 h-4 w-4" />
-          {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-        </Button>
-      </CardContent>
+          <Save />
+          Simpan
+        </PendingButton>
+      </Card.Footer>
     </Card>
   )
 }

@@ -1,14 +1,25 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Button,
+  Card,
+  Description,
+  Input,
+  Label,
+  ListBox,
+  Skeleton,
+  Surface,
+  TextField,
+} from "@heroui/react"
+
+import { SubpageHeader } from "@/components/layout/subpage-header"
+import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { usePpobMenu, usePpSubMenu } from "../hooks"
 import type { PpobMenuGroup, PpSubMenuItem } from "../types"
+import { FlowColumns } from "./flow-columns"
+import { ConfirmCard } from "./quick-access/confirm-card"
 
 export function PpFlow() {
   const navigate = useNavigate()
@@ -18,9 +29,7 @@ export function PpFlow() {
   const [paymentCode, setPaymentCode] = useState("")
 
   const { data: groups, isLoading: groupsLoading } = usePpobMenu()
-  const { data: subMenuItems, isLoading: subMenuLoading } = usePpSubMenu(
-    selectedGroup?.id ?? 0
-  )
+  const { data: subMenuItems, isLoading: subMenuLoading } = usePpSubMenu(selectedGroup?.id ?? 0)
 
   const filteredMerchants = useMemo(() => {
     if (!subMenuItems) return []
@@ -28,8 +37,7 @@ export function PpFlow() {
     const q = merchantSearch.toLowerCase()
     return subMenuItems.filter(
       (item) =>
-        item.merchant.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q)
+        item.merchant.toLowerCase().includes(q) || item.description.toLowerCase().includes(q),
     )
   }, [subMenuItems, merchantSearch])
 
@@ -52,167 +60,135 @@ export function PpFlow() {
       : id.ppob.pp
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={handleBack}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{currentTitle}</h1>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <SubpageHeader title={currentTitle} onBack={handleBack} />
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-8 space-y-6">
-          {/* Step 1: Group Selection */}
-          {!selectedGroup && (
-            <>
-              {groupsLoading ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {Array.from({ length: 9 }).map((_, i) => (
-                    <Skeleton key={i} className="h-24" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {groups?.map((group) => (
-                    <Card
-                      key={group.id}
-                      className="cursor-pointer transition-colors hover:bg-accent"
-                      onClick={() => setSelectedGroup(group)}
-                    >
-                      <CardContent className="flex flex-col items-center gap-2 py-6">
-                        {group.pathIcon && (
-                          <img src={group.pathIcon} alt={group.group} className="h-8 w-8" />
-                        )}
-                        <span className="text-sm font-medium text-center">
-                          {group.group}
-                        </span>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Step 2: Merchant Selection */}
-          {selectedGroup && !selectedMerchant && (
-            <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={id.ppob.searchMerchant}
-                  value={merchantSearch}
-                  onChange={(e) => setMerchantSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              {subMenuLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-16" />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                  {filteredMerchants.map((item) => (
-                    <Card
-                      key={item.id}
-                      className={`cursor-pointer transition-colors hover:bg-accent ${
-                        item.isTrouble ? "opacity-50" : ""
-                      }`}
-                      onClick={() => {
-                        if (!item.isTrouble) setSelectedMerchant(item)
-                      }}
-                    >
-                      <CardContent className="py-4 flex items-center gap-3">
-                        {item.pathIcon && (
-                          <img src={item.pathIcon} alt={item.merchant} className="h-8 w-8" />
-                        )}
-                        <div>
-                          <p className="font-medium">{item.merchant}</p>
-                          {item.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {item.description}
-                            </p>
-                          )}
-                          {item.label && (
-                            <p className="text-xs text-muted-foreground">{item.label}</p>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Step 3: Payment Code Input */}
-          {selectedMerchant && (
+      <FlowColumns
+        aside={
+          selectedMerchant && paymentCode.length >= 6 ? (
+            <ConfirmCard
+              footer={
+                // Pembayaran PP belum tersambung ke backend; tombolnya tetap ada
+                // supaya bentuk kartunya sama dengan flow lain.
+                <Button fullWidth isDisabled size="lg">
+                  {id.ppob.notAvailable}
+                </Button>
+              }
+              items={[
+                { label: id.ppob.selectGroup, value: selectedGroup?.group ?? "-" },
+                { label: id.ppob.selectMerchant, value: selectedMerchant.merchant },
+                { label: id.ppob.paymentCode, value: paymentCode, tone: "mono" },
+              ]}
+              title={id.ppob.confirm}
+            />
+          ) : groups ? (
             <Card>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{selectedMerchant.merchant}</p>
-                    {selectedMerchant.description && (
-                      <p className="text-sm text-muted-foreground">
-                        {selectedMerchant.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-base">{id.ppob.paymentCode}</Label>
-                  <Input
-                    type="text"
-                    placeholder={id.ppob.paymentCodePlaceholder}
-                    value={paymentCode}
-                    onChange={(e) => setPaymentCode(e.target.value)}
-                    className="font-mono text-xl md:text-xl h-12"
-                  />
-                </div>
-              </CardContent>
+              <Card.Content>
+                <NoData title="Pilih produk untuk melihat konfirmasi" />
+              </Card.Content>
             </Card>
-          )}
-        </div>
+          ) : null
+        }
+      >
+        {/* Step 1: Group Selection */}
+        {!selectedGroup &&
+          (groupsLoading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {groups?.map((group) => (
+                <Button
+                  key={group.id}
+                  className="h-auto flex-col gap-2 whitespace-normal py-6"
+                  variant="secondary"
+                  onPress={() => setSelectedGroup(group)}
+                >
+                  {group.pathIcon && <img src={group.pathIcon} alt="" className="size-8" />}
+                  <span className="text-center">{group.group}</span>
+                </Button>
+              ))}
+            </div>
+          ))}
 
-        <div className="col-span-4">
-          <div className="sticky top-6">
-            {selectedMerchant && paymentCode.length >= 6 ? (
-              <Card className="border-primary">
-                <CardHeader>
-                  <CardTitle className="text-lg">{id.ppob.confirm}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectGroup}</span>
-                    <span className="font-medium">{selectedGroup?.group}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.selectMerchant}</span>
-                    <span className="font-medium">{selectedMerchant.merchant}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{id.ppob.paymentCode}</span>
-                    <span className="font-mono text-base font-medium">{paymentCode}</span>
-                  </div>
-                  <Button className="w-full mt-4" size="lg" disabled>
-                    {id.ppob.process} (Coming Soon)
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : groups ? (
-              <div className="text-sm text-muted-foreground text-center py-8">
-                Pilih produk untuk melihat konfirmasi
+        {/* Step 2: Merchant Selection */}
+        {selectedGroup && !selectedMerchant && (
+          <>
+            <SearchInput
+              aria-label={id.ppob.searchMerchant}
+              className="max-w-sm"
+              placeholder={id.ppob.searchMerchant}
+              value={merchantSearch}
+              onChange={setMerchantSearch}
+            />
+
+            {subMenuLoading ? (
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16" />
+                ))}
               </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+            ) : filteredMerchants.length === 0 ? (
+              <NoData title={id.ppob.merchantNotFound} />
+            ) : (
+              // Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
+              // membingkainya, `onAction` memilih. Merchant yang bermasalah tetap
+              // terlihat tapi tidak bisa dipilih.
+              <Surface className="max-h-[60vh] overflow-y-auto">
+                <ListBox
+                  aria-label={id.ppob.selectMerchant}
+                  className="p-2"
+                  disabledKeys={filteredMerchants
+                    .filter((item) => item.isTrouble)
+                    .map((item) => item.id)}
+                  selectionMode="none"
+                  onAction={(key) => {
+                    const item = filteredMerchants.find((candidate) => candidate.id === key)
+                    if (item) setSelectedMerchant(item)
+                  }}
+                >
+                  {filteredMerchants.map((item) => (
+                    <ListBox.Item key={item.id} id={item.id} textValue={item.merchant}>
+                      {item.pathIcon && <img src={item.pathIcon} alt="" className="size-8" />}
+                      <div className="flex min-w-0 flex-col">
+                        <Label>{item.merchant}</Label>
+                        {item.description && <Description>{item.description}</Description>}
+                        {item.label && <Description>{item.label}</Description>}
+                      </div>
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Surface>
+            )}
+          </>
+        )}
+
+        {/* Step 3: Payment Code Input */}
+        {selectedMerchant && (
+          <Card>
+            <Card.Header>
+              <Card.Title>{selectedMerchant.merchant}</Card.Title>
+              {selectedMerchant.description && (
+                <Card.Description>{selectedMerchant.description}</Card.Description>
+              )}
+            </Card.Header>
+            <Card.Content>
+              <TextField
+                fullWidth
+                value={paymentCode}
+                variant="secondary"
+                onChange={setPaymentCode}
+              >
+                <Label>{id.ppob.paymentCode}</Label>
+                <Input className="tabular-nums" placeholder={id.ppob.paymentCodePlaceholder} />
+              </TextField>
+            </Card.Content>
+          </Card>
+        )}
+      </FlowColumns>
     </div>
   )
 }

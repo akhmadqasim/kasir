@@ -1,26 +1,18 @@
 import { useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import type { FormEvent } from "react"
+import { Button, FieldError, Form, Input, Label, Modal, TextField } from "@heroui/react"
+
+import { OptionSelect } from "@/components/option-select"
+import { PendingButton } from "@/components/pending-button"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
 import type { User } from "@/features/auth/types"
+
+const ROLE_OPTIONS = [
+  { key: "admin", label: id.users.admin },
+  { key: "kasir", label: id.users.kasir },
+] as const
 
 interface UserFormDialogProps {
   open: boolean
@@ -30,17 +22,29 @@ interface UserFormDialogProps {
 
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <UserFormBody user={user} onOpenChange={onOpenChange} />
-      </DialogContent>
-    </Dialog>
+    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Container scroll="inside" size="sm">
+        <Modal.Dialog aria-label={user ? id.users.editUser : id.users.addUser}>
+          <Modal.CloseTrigger />
+          {/* React Aria unmounts the dialog as it closes rather than keeping it
+              alive through an exit animation, so the state below starts empty on
+              every open — reopening for another user can no longer show the
+              previous one's values against the new id. */}
+          <UserFormBody user={user} onOpenChange={onOpenChange} />
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
-function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange: (open: boolean) => void }) {
+function UserFormBody({
+  user,
+  onOpenChange,
+}: {
+  user?: User | null
+  onOpenChange: (open: boolean) => void
+}) {
   const isEdit = !!user
-  const currentUser = useAuthStore((s) => s.user)
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
 
@@ -74,35 +78,30 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     if (!validate()) return
 
     if (isEdit && user) {
       updateUser.mutate(
         {
-          input: {
-            userId: user.id,
-            username: username.trim(),
-            fullName: fullName.trim(),
-            role,
-            ...(pin ? { newPin: pin } : {}),
-          },
-          callerId: currentUser!.id,
+          userId: user.id,
+          username: username.trim(),
+          fullName: fullName.trim(),
+          role,
+          ...(pin ? { newPin: pin } : {}),
         },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false) },
       )
     } else {
       createUser.mutate(
         {
-          input: {
-            username: username.trim(),
-            fullName: fullName.trim(),
-            role,
-            pin,
-          },
-          callerId: currentUser!.id,
+          username: username.trim(),
+          fullName: fullName.trim(),
+          role,
+          pin,
         },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false) },
       )
     }
   }
@@ -110,97 +109,88 @@ function UserFormBody({ user, onOpenChange }: { user?: User | null; onOpenChange
   const isPending = createUser.isPending || updateUser.isPending
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{isEdit ? id.users.editUser : id.users.addUser}</DialogTitle>
-      </DialogHeader>
+    // validationBehavior="aria" keeps validation in this component. With React
+    // Aria's default ("native") an `isInvalid` field calls setCustomValidity, and
+    // the browser then blocks every later submit — including the one that would
+    // clear the error.
+    <Form
+      className="flex min-h-0 flex-1 flex-col"
+      validationBehavior="aria"
+      onSubmit={handleSubmit}
+    >
+      <Modal.Header>
+        <Modal.Heading>{isEdit ? id.users.editUser : id.users.addUser}</Modal.Heading>
+      </Modal.Header>
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="username">{id.users.username}</Label>
-          <Input
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="contoh: kasir01"
-            disabled={isPending}
-          />
-          {errors.username && (
-            <p className="text-sm font-medium text-destructive">{errors.username}</p>
-          )}
-        </div>
+      <Modal.Body>
+        <TextField
+          fullWidth
+          isDisabled={isPending}
+          isInvalid={Boolean(errors.username)}
+          value={username}
+          variant="secondary"
+          onChange={setUsername}
+        >
+          <Label>{id.users.username}</Label>
+          <Input placeholder="contoh: kasir01" />
+          <FieldError>{errors.username}</FieldError>
+        </TextField>
 
-        <div className="space-y-2">
-          <Label htmlFor="fullName">{id.users.fullName}</Label>
-          <Input
-            id="fullName"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="contoh: Ahmad Kasir"
-            disabled={isPending}
-          />
-          {errors.fullName && (
-            <p className="text-sm font-medium text-destructive">{errors.fullName}</p>
-          )}
-        </div>
+        <TextField
+          fullWidth
+          isDisabled={isPending}
+          isInvalid={Boolean(errors.fullName)}
+          value={fullName}
+          variant="secondary"
+          onChange={setFullName}
+        >
+          <Label>{id.users.fullName}</Label>
+          <Input placeholder="contoh: Ahmad Kasir" />
+          <FieldError>{errors.fullName}</FieldError>
+        </TextField>
 
-        <div className="space-y-2">
-          <Label>{id.users.role}</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as "admin" | "kasir")}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">{id.users.admin}</SelectItem>
-              <SelectItem value="kasir">{id.users.kasir}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <OptionSelect
+          fullWidth
+          isDisabled={isPending}
+          label={id.users.role}
+          options={ROLE_OPTIONS}
+          value={role}
+          variant="secondary"
+          onChange={(value) => setRole(value === "admin" ? "admin" : "kasir")}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="pin">
-            {isEdit ? id.users.resetPin : id.users.pin}
-          </Label>
-          {isEdit && (
-            <p className="text-xs text-muted-foreground">{id.users.resetPinDesc}</p>
-          )}
-          <PinInput
-            id="pin"
-            value={pin}
-            onChange={setPin}
-            placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
-            disabled={isPending}
-          />
-          {errors.pin && (
-            <p className="text-sm font-medium text-destructive">{errors.pin}</p>
-          )}
-        </div>
+        {/* Satu keterangan per kolom: saat mengubah, `description` sudah
+            mengatakan kolomnya boleh kosong, jadi placeholder tidak mengulanginya. */}
+        <PinInput
+          errorMessage={errors.pin}
+          isDisabled={isPending}
+          label={isEdit ? id.users.resetPin : id.users.pin}
+          description={isEdit ? id.users.resetPinDesc : id.onboarding.pinHint}
+          value={pin}
+          variant="secondary"
+          onChange={setPin}
+        />
 
         {(pin || !isEdit) && (
-          <div className="space-y-2">
-            <Label htmlFor="confirmPin">{id.users.confirmPin}</Label>
-            <PinInput
-              id="confirmPin"
-              value={confirmPin}
-              onChange={setConfirmPin}
-              placeholder="Ulangi PIN"
-              disabled={isPending}
-            />
-            {errors.confirmPin && (
-              <p className="text-sm font-medium text-destructive">{errors.confirmPin}</p>
-            )}
-          </div>
+          <PinInput
+            errorMessage={errors.confirmPin}
+            isDisabled={isPending}
+            label={id.users.confirmPin}
+            value={confirmPin}
+            variant="secondary"
+            onChange={setConfirmPin}
+          />
         )}
-      </div>
+      </Modal.Body>
 
-      <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+      <Modal.Footer>
+        <Button isDisabled={isPending} slot="close" type="button" variant="tertiary">
           {id.users.cancel}
         </Button>
-        <Button onClick={handleSubmit} disabled={isPending}>
-          {isPending ? "..." : id.users.save}
-        </Button>
-      </DialogFooter>
-    </>
+        <PendingButton isPending={isPending} type="submit">
+          {id.users.save}
+        </PendingButton>
+      </Modal.Footer>
+    </Form>
   )
 }
