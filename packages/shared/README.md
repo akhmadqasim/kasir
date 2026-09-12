@@ -19,10 +19,10 @@ src/
 ## Where this came from
 
 Everything here was **copied**, not moved, from the desktop's `src/lib/` and
-`src/features/*/types.ts` on the web branch. The desktop still imports its own
+`src/features/*/types.ts`. The desktop still imports its own
 copies.
 
-**TODO (after the web branch merges to `master`):** point `src/lib/api/*`,
+**TODO (next step, separate PR):** point `src/lib/api/*`,
 `src/lib/format.ts`, `src/lib/labels.ts` and the feature `types.ts` files at
 `@kasir/shared`, delete the duplicates, and move the desktop app itself to
 `apps/desktop`. Until then the two copies must be kept in step by hand.
@@ -61,7 +61,7 @@ same-origin with the API and the browser attaches `Origin` itself — script is
 not even allowed to set it. React Native has no page, so a native `fetch`
 sends **no** `Origin` and every write would fail with `code: "csrf"`.
 
-Native `fetch` *is* allowed to set `Origin`, so the mobile client passes it
+Native `fetch` _is_ allowed to set `Origin`, so the mobile client passes it
 through `headers()` as the server's own authority, `http://<host>:<port>`. That
 is the one value the check accepts without `KASIR_ALLOWED_ORIGINS`.
 

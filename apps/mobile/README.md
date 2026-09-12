@@ -106,12 +106,10 @@ The repo root is a Bun workspace (`apps/*`, `packages/*`). Notes:
   Uniwind. `@kasir/shared` is consumed as TypeScript source through the
   workspace symlink.
 - **The desktop stays at the repo root for now.** Moving it to `apps/desktop`
-  happens after the web/HeroUI branch merges, together with pointing the
-  desktop's `src/lib/*` at `@kasir/shared`.
-- **This branch is based on `master`, which still speaks Tauri IPC.** The HTTP
-  API this app calls exists only on the `worktree-web-heroui` branch
-  (`src-tauri/src/http/`). The shared package was copied from that branch's
-  `src/lib/api/`. Until that branch merges, run the desktop from it to test.
+  is a separate step, together with pointing the desktop's `src/lib/*` at
+  `@kasir/shared` (which was copied from `src/lib/api/`, `src/lib/format.ts`,
+  `src/lib/labels.ts` and the feature `types.ts` files — keep the two in step
+  until then).
 
 ## Not done
 
