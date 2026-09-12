@@ -28,7 +28,9 @@
 //! Pure and side-effect free: it takes a [`PpobReceiptData`] and returns lines.
 //! Loading that struct out of the database is `services::receipt`'s job.
 
-use super::receipt::{center_text, columns, format_rupiah, two_col_text, ReceiptTextLine};
+use super::receipt::{
+    center_text, columns, format_rupiah, two_col_text, PrintMode, ReceiptTextLine,
+};
 
 /// A field worth printing: present, and something other than whitespace.
 ///
@@ -145,8 +147,12 @@ impl PpobReceiptData {
 /// the three total lines. No receipt number, no cashier, no heading we wrote, no
 /// rules boxing it in. `paper_width_mm` picks the column count through
 /// [`super::receipt::columns`].
-pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl = columns(paper_width_mm);
+pub fn format_ppob_receipt(
+    data: &PpobReceiptData,
+    paper_width_mm: u8,
+    mode: PrintMode,
+) -> Vec<ReceiptTextLine> {
+    let cpl = columns(paper_width_mm, mode);
     let mut lines = Vec::new();
 
     // Bold is double height on this printer, which is what the app's own
@@ -156,31 +162,120 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
 
     push_token_block(&mut lines, data, cpl);
 
-    let (body, footer) = match non_empty(data.provider_receipt_text.as_deref()) {
-        Some(text) => split_body_footer(unfold_provider_text(text), cpl),
+    let block = non_empty(data.provider_receipt_text.as_deref()).map(|text| match mode {
+        // A raster is as wide as the provider's own wrap, so their slip goes on
+        // the paper the way they wrote it — the broken name, the fused word, the
+        // pipes and all. That is what the Mitra app prints, and the whole point
+        // of the exercise is that a customer cannot tell the two apart.
+        PrintMode::Raster => provider_lines(text),
+        // Text mode is a column narrower and cannot fit their wrap, so there it
+        // is folded back and re-laid out.
+        PrintMode::Text => unfold_provider_text(text),
+    });
+    let (body, footer) = match block {
+        Some(block) => split_body_footer(block, cpl),
         None => (Vec::new(), Vec::new()),
     };
 
     if body.is_empty() {
         push_fallback_body(&mut lines, data, cpl);
+    } else if mode == PrintMode::Raster {
+        lines.extend(
+            body.iter()
+                .flat_map(|line| fit_verbatim(line, cpl))
+                .map(ReceiptTextLine::plain),
+        );
     } else {
         lines.extend(layout_block(&body, repad_width(&body, cpl), cpl));
     }
 
     push_totals(&mut lines, data, cpl);
+    push_footer(&mut lines, footer, mode, cpl);
 
-    // Only the closing prose gets tidied: the pipes flattened and the word the
-    // provider's own wrapper fused put back together. The table above is theirs
-    // and goes out as they wrote it.
+    lines
+}
+
+/// The provider's slip, as they sent it.
+///
+/// The only tidying a raster needs: drop the carriage returns, the blank lines
+/// they open with, and any run of blanks in the middle. Their wrapping stays
+/// theirs — it is already the width of the paper, and re-flowing it would be us
+/// deciding we know their document better than they do.
+fn provider_lines(text: &str) -> Vec<String> {
+    collapse_blanks(
+        text.split('\n')
+            .map(|raw| raw.trim_end_matches('\r').to_string()),
+    )
+}
+
+/// Trim each line, drop the blanks a block opens and closes with, and let no run
+/// of them through. One blank separates; two are wasted paper.
+fn collapse_blanks(lines: impl Iterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+
+    for line in lines {
+        let line = line.trim_end().to_string();
+        if line.is_empty() && out.last().is_none_or(String::is_empty) {
+            continue;
+        }
+        out.push(line);
+    }
+
+    while out.last().is_some_and(String::is_empty) {
+        out.pop();
+    }
+
+    out
+}
+
+/// Get one of the provider's lines onto the paper without rewriting it.
+///
+/// Most of them already fit — they wrapped to the same 32 columns we print in.
+/// The ones that do not are their continuation lines, which carry eighteen
+/// columns of padding on top of a full-width run of text: the footer arrives as
+/// eighteen spaces then `3 Atau hubungi PLN TerdekatDownl`, fifty characters for
+/// thirty-two columns of paper. The padding is the provider's own alignment and
+/// the characters are the customer's, so the padding goes first. Only if that is
+/// still not enough does the line get cut, and then at the column, mid-word,
+/// exactly as this printer would have done it.
+fn fit_verbatim(line: &str, cpl: usize) -> Vec<String> {
+    if line.chars().count() <= cpl {
+        return vec![line.to_string()];
+    }
+
+    let unpadded = line.trim_start();
+    if unpadded.chars().count() <= cpl {
+        return vec![unpadded.to_string()];
+    }
+
+    unpadded
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(cpl)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+/// The provider's closing prose, under our totals.
+fn push_footer(lines: &mut Vec<ReceiptTextLine>, footer: Vec<String>, mode: PrintMode, cpl: usize) {
     for line in footer {
+        if mode == PrintMode::Raster {
+            lines.extend(
+                fit_verbatim(&line, cpl)
+                    .into_iter()
+                    .map(ReceiptTextLine::plain),
+            );
+            continue;
+        }
+
+        // Text mode has a column less than the provider wrapped to, so its
+        // prose is flattened out of the pipes, unglued and re-wrapped.
         for segment in expand_pipe_segments(&line) {
             for row in wrap_words(&unglue_prose(&segment), cpl) {
                 lines.push(ReceiptTextLine::plain(row));
             }
         }
     }
-
-    lines
 }
 
 /// Split the provider's slip where its table of figures ends.
@@ -306,20 +401,7 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
         }
     }
 
-    let mut out: Vec<String> = Vec::new();
-    for line in folded {
-        let line = line.trim_end().to_string();
-        let blank = line.trim().is_empty();
-        if blank && (out.is_empty() || out.last().is_some_and(|last| last.trim().is_empty())) {
-            continue;
-        }
-        out.push(line);
-    }
-    while out.last().is_some_and(|last| last.trim().is_empty()) {
-        out.pop();
-    }
-
-    out
+    collapse_blanks(folded.into_iter())
 }
 
 /// Put back the space the provider lost when it wrapped its own prose.
@@ -841,9 +923,14 @@ mod tests {
     #[test]
     fn every_line_of_every_service_fits_the_paper() {
         for data in all_fixtures() {
-            for paper in [58_u8, 80] {
-                let cpl = columns(paper);
-                for line in format_ppob_receipt(&data, paper) {
+            for (paper, mode) in [
+                (58_u8, PrintMode::Text),
+                (80, PrintMode::Text),
+                (58, PrintMode::Raster),
+                (80, PrintMode::Raster),
+            ] {
+                let cpl = columns(paper, mode);
+                for line in format_ppob_receipt(&data, paper, mode) {
                     let limit = if line.size == LineSize::Double {
                         cpl / 2
                     } else {
@@ -868,7 +955,7 @@ mod tests {
     /// reaching the paper as two lines with a hole in the name.
     #[test]
     fn provider_continuations_are_folded_back_before_rewrapping() {
-        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text));
 
         assert!(text.contains("NAMA            : BUDI SANTOSA"));
         assert!(text.contains("WIJAYA"));
@@ -882,11 +969,65 @@ mod tests {
             .any(|line| line.contains("11002500AAA1A1111AA111AA1111AA11")));
     }
 
+    /// A raster is as wide as the provider's own wrap, so their slip goes on the
+    /// paper exactly as it arrived: the name broken where they broke it, the
+    /// reference in their three pieces, the fused word left fused. That is the
+    /// document the Mitra app prints, and matching it is the point.
+    #[test]
+    fn a_raster_prints_the_providers_slip_verbatim() {
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Raster));
+
+        assert!(text.contains("NAMA            : BUDI SANTOSA W\n                  IJAYA"));
+        assert!(text.contains("NO REF          : 11002500AAA1A1\n                  111AA111AA1111"));
+        // Fifty characters of provider line for thirty-two of paper: their
+        // padding goes, their words stay.
+        assert!(text.contains(
+            "
+3 Atau hubungi PLN TerdekatDownl
+"
+        ));
+        assert!(text.contains("oad PLN Mobile"));
+        assert!(text.contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
+    }
+
+    /// And it gets the whole width to do it in: thirty-two columns on 58mm
+    /// paper, where text mode has to stop at thirty-one.
+    #[test]
+    fn a_raster_uses_the_column_text_mode_has_to_leave_empty() {
+        let raster = format_ppob_receipt(&pdam(), 58, PrintMode::Raster);
+        let text = format_ppob_receipt(&pdam(), 58, PrintMode::Text);
+
+        assert!(raster.iter().any(|line| line.text == "-".repeat(32)));
+        assert!(text.iter().any(|line| line.text == "-".repeat(31)));
+    }
+
+    /// The order is the same whichever way it is printed; only the provider's
+    /// own lines are handled differently.
+    #[test]
+    fn a_raster_struk_reads_in_the_same_order() {
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Raster);
+        let rows: Vec<&str> = lines.iter().map(|line| line.text.trim_end()).collect();
+
+        assert_eq!(rows[0].trim(), "Cahaya513 Mini Mart");
+        assert_eq!(rows[1], "");
+        assert_eq!(rows[2].trim(), "Stroom / Token");
+        assert_eq!(rows[5], "");
+        assert_eq!(rows[6], "STRUK PEMBELIAN LISTRIK PRABAYAR");
+
+        let rule = rows
+            .iter()
+            .position(|row| *row == "-".repeat(32))
+            .expect("totals rule");
+        assert_eq!(rows[rule + 1], two_col_text("Total", "Rp 23.500", 32));
+        assert_eq!(rows[rule + 3], two_col_text("Grand Total", "Rp 25.000", 32));
+        assert!(rows[rule + 4].starts_with("Informasi Hubungi"));
+    }
+
     /// PLN's own text opens with its heading, and it prints as the provider
     /// wrote it — once, in the body, at body weight.
     #[test]
     fn the_providers_own_heading_prints_once_and_unchanged() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
 
         assert_eq!(
             flat(&lines)
@@ -910,7 +1051,7 @@ mod tests {
     #[test]
     fn no_heading_of_ours_is_added_to_a_service_that_sent_none() {
         for data in [pdam(), bpjs(), payment_point()] {
-            let text = text_of(&format_ppob_receipt(&data, 58));
+            let text = text_of(&format_ppob_receipt(&data, 58, PrintMode::Text));
             assert!(
                 !text.contains("STRUK"),
                 "{} got a heading we wrote: {}",
@@ -925,7 +1066,7 @@ mod tests {
     /// spacing around the closing prose does not, and paper costs money.
     #[test]
     fn blank_lines_are_spent_only_where_the_layout_asks_for_them() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
         let rows: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
 
         assert!(rows[1].trim().is_empty(), "blank under the store name");
@@ -939,7 +1080,7 @@ mod tests {
         // A service with no token spends no blank on one: PDAM's body starts
         // immediately, and the blanks it does have are the provider's own,
         // inside its table.
-        let water = format_ppob_receipt(&pdam(), 58);
+        let water = format_ppob_receipt(&pdam(), 58, PrintMode::Text);
         assert!(
             !water[2].text.trim().is_empty(),
             "no token, no blank for it"
@@ -951,7 +1092,7 @@ mod tests {
 
     #[test]
     fn the_token_is_normalised_from_space_groups_and_printed_double_size() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
         let token_rows: Vec<&str> = lines
             .iter()
             .filter(|line| line.size == LineSize::Double)
@@ -969,7 +1110,7 @@ mod tests {
         // Pulsa is here for the other half of it: a real serial, but not PLN, so
         // still no token block.
         for data in [pln_postpaid(), pdam(), payment_point(), pulsa()] {
-            let text = text_of(&format_ppob_receipt(&data, 58));
+            let text = text_of(&format_ppob_receipt(&data, 58, PrintMode::Text));
             assert!(!text.contains("Stroom / Token"), "{}", data.service_type);
         }
     }
@@ -979,7 +1120,9 @@ mod tests {
     /// the paper.
     #[test]
     fn the_payers_phone_number_never_reaches_the_paper() {
-        assert!(!text_of(&format_ppob_receipt(&bpjs(), 58)).contains("08120000001"));
+        assert!(
+            !text_of(&format_ppob_receipt(&bpjs(), 58, PrintMode::Text)).contains("08120000001")
+        );
     }
 
     fn pulsa() -> PpobReceiptData {
@@ -1002,7 +1145,7 @@ mod tests {
     /// channel code is the app talking to itself.
     #[test]
     fn the_pipe_delimited_footer_is_flattened_into_a_sentence() {
-        let text = text_of(&format_ppob_receipt(&pln_postpaid(), 58));
+        let text = text_of(&format_ppob_receipt(&pln_postpaid(), 58, PrintMode::Text));
 
         assert!(!text.contains("MKM"));
         assert!(!text.contains('|'));
@@ -1016,11 +1159,23 @@ mod tests {
     /// that figure, not that figure plus the fee a second time.
     #[test]
     fn the_totals_block_matches_what_the_provider_billed() {
-        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text));
 
-        assert!(text.contains(&two_col_text("Total", "Rp 23.500", columns(58))));
-        assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", columns(58))));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 25.000", columns(58))));
+        assert!(text.contains(&two_col_text(
+            "Total",
+            "Rp 23.500",
+            columns(58, PrintMode::Text)
+        )));
+        assert!(text.contains(&two_col_text(
+            "Biaya Layanan",
+            "Rp 1.500",
+            columns(58, PrintMode::Text)
+        )));
+        assert!(text.contains(&two_col_text(
+            "Grand Total",
+            "Rp 25.000",
+            columns(58, PrintMode::Text)
+        )));
     }
 
     /// A cart-wide discount is shared out over every line, PPOB included, so the
@@ -1030,20 +1185,31 @@ mod tests {
     fn a_line_sold_below_the_provider_total_prints_a_discount_not_a_negative_fee() {
         let mut data = pln_prepaid();
         data.grand_total = 23_000.0;
-        let text = text_of(&format_ppob_receipt(&data, 58));
+        let text = text_of(&format_ppob_receipt(&data, 58, PrintMode::Text));
 
-        assert!(text.contains(&two_col_text("Diskon", "-Rp 500", columns(58))));
+        assert!(text.contains(&two_col_text(
+            "Diskon",
+            "-Rp 500",
+            columns(58, PrintMode::Text)
+        )));
         assert!(!text.contains("Biaya Layanan"));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 23.000", columns(58))));
+        assert!(text.contains(&two_col_text(
+            "Grand Total",
+            "Rp 23.000",
+            columns(58, PrintMode::Text)
+        )));
     }
 
     /// Numbers inside the provider's block are theirs: they mix `69,163` and
     /// `Rp 69.729,00` between services and we are not the ones to correct it.
     #[test]
     fn provider_numbers_are_printed_exactly_as_sent() {
-        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan: 69,163"));
-        assert!(text_of(&format_ppob_receipt(&pln_postpaid(), 58))
-            .contains("RP TAG PLN : Rp 69.729,00"));
+        assert!(text_of(&format_ppob_receipt(&pdam(), 58, PrintMode::Text))
+            .contains("Total Tagihan: 69,163"));
+        assert!(
+            text_of(&format_ppob_receipt(&pln_postpaid(), 58, PrintMode::Text))
+                .contains("RP TAG PLN : Rp 69.729,00")
+        );
     }
 
     /// PDAM pads its labels to nineteen columns for a longest label of thirteen,
@@ -1051,7 +1217,7 @@ mod tests {
     /// Samarinda` in half. Pulling the column in fixes most lines outright.
     #[test]
     fn a_provider_column_wider_than_its_labels_need_is_pulled_in() {
-        let text = text_of(&format_ppob_receipt(&pdam(), 58));
+        let text = text_of(&format_ppob_receipt(&pdam(), 58, PrintMode::Text));
 
         assert!(text.contains("Nama PDAM    : Kota Samarinda"));
         assert!(text.contains("No. Pelanggan: 1100001"));
@@ -1062,7 +1228,7 @@ mod tests {
     /// into a ravine down the right-hand edge of the paper.
     #[test]
     fn a_value_too_long_even_then_moves_to_its_own_lines() {
-        let lines = format_ppob_receipt(&pdam(), 58);
+        let lines = format_ppob_receipt(&pdam(), 58, PrintMode::Text);
         let rows: Vec<&str> = lines
             .iter()
             .map(|line| line.text.as_str())
@@ -1079,7 +1245,7 @@ mod tests {
     /// wrapping under the colon as before.
     #[test]
     fn a_provider_column_that_fits_its_labels_is_left_alone() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
         let rows: Vec<&str> = lines
             .iter()
             .map(|line| line.text.as_str())
@@ -1098,7 +1264,7 @@ mod tests {
     /// bold, which this printer renders double height.
     #[test]
     fn the_store_name_is_all_that_identifies_us() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
 
         assert_eq!(lines[0].text, center_text("Cahaya513 Mini Mart", 31));
         assert!(lines[0].bold);
@@ -1141,7 +1307,7 @@ Cahaya",
     /// rest of the table.
     #[test]
     fn bill_detail_that_follows_no_blank_line_stays_above_the_totals() {
-        let rows: Vec<String> = format_ppob_receipt(&payment_point(), 58)
+        let rows: Vec<String> = format_ppob_receipt(&payment_point(), 58, PrintMode::Text)
             .iter()
             .map(|line| line.text.clone())
             .collect();
@@ -1183,7 +1349,7 @@ Cahaya",
     /// likely to bring back to a counter.
     #[test]
     fn a_pln_prepaid_struk_reads_in_the_mitra_order() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let lines = format_ppob_receipt(&pln_prepaid(), 58, PrintMode::Text);
         let rows: Vec<&str> = lines.iter().map(|line| line.text.trim_end()).collect();
 
         assert_eq!(rows[0].trim(), "Cahaya513 Mini Mart");
@@ -1219,7 +1385,7 @@ Cahaya",
         let mut data = pln_prepaid();
         data.provider_receipt_text = None;
         data.customer_name = Some("BUDI SANTOSA".to_string());
-        let text = text_of(&format_ppob_receipt(&data, 58));
+        let text = text_of(&format_ppob_receipt(&data, 58, PrintMode::Text));
 
         assert!(text.contains("PRODUK      : Token PLN 20.000"));
         assert!(text.contains("NO PELANGGAN: 14300000001"));
@@ -1240,11 +1406,11 @@ Cahaya",
 
     #[test]
     fn eighty_millimetre_paper_uses_the_wider_column_count() {
-        let lines = format_ppob_receipt(&pln_prepaid(), 80);
+        let lines = format_ppob_receipt(&pln_prepaid(), 80, PrintMode::Text);
 
         assert!(lines
             .iter()
-            .any(|line| line.text == "-".repeat(columns(80))));
+            .any(|line| line.text == "-".repeat(columns(80, PrintMode::Text))));
         let token_rows: Vec<&str> = lines
             .iter()
             .filter(|line| line.size == LineSize::Double)
@@ -1305,7 +1471,7 @@ Cahaya",
 /// Rendering captured transactions to disk, so a human can print them and
 /// compare against the Mitra app's own output. Nothing here asserts anything;
 /// it is a tool that happens to be spelled as a test.
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod sample_output {
     use super::tests::text_of;
     use super::*;
@@ -1322,7 +1488,8 @@ mod sample_output {
     #[test]
     #[ignore = "writes sample files from locally captured Mitra fixtures"]
     fn writes_sample_struks_for_the_printer() {
-        use crate::printing::escpos::encode_lines;
+        use crate::printing::escpos::encode_raster;
+        use crate::printing::raster::{render_lines, DOTS_58MM};
 
         let root = std::env::temp_dir().join("ppob");
         let out = root.join("out");
@@ -1336,12 +1503,24 @@ mod sample_output {
                 serde_json::from_str(&json).expect("fixture is valid JSON");
 
             let data = from_history_fixture(&fixture);
-            let lines = format_ppob_receipt(&data, 58);
+            let lines = format_ppob_receipt(&data, 58, PrintMode::Raster);
+            let bitmap = render_lines(&lines, 32, DOTS_58MM).expect("rendered");
+            let bytes = encode_raster(&bitmap);
 
-            std::fs::write(out.join(format!("{name}.bin")), encode_lines(&lines))
-                .expect("write bytes");
+            // `.bin` goes to the printer, `.pbm` is the same dots as a picture
+            // for a human, and `.txt` is what was drawn.
+            std::fs::write(out.join(format!("{name}.bin")), &bytes).expect("write bytes");
+            std::fs::write(out.join(format!("{name}.pbm")), bitmap.to_pbm()).expect("write image");
             std::fs::write(out.join(format!("{name}.txt")), text_of(&lines))
                 .expect("write preview");
+
+            println!(
+                "{name}: {} lines, {}x{} dots, {} bytes",
+                lines.len(),
+                bitmap.width,
+                bitmap.height,
+                bytes.len()
+            );
         }
 
         println!("wrote samples to {}", out.display());

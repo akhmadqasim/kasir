@@ -13,7 +13,8 @@ use crate::entity::{
 };
 use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
 use crate::printing::receipt::{
-    format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
+    columns, format_receipt_text, format_test_page_text, PrintMode, ReceiptData, ReceiptItem,
+    ReceiptTextLine,
 };
 use crate::services::ppob::parsers::{get_num_field, parse_string, response_objects};
 use crate::services::transactions::PPOB_STATUS_SUCCESS;
@@ -58,27 +59,53 @@ fn get_printer_settings(additional_info: &Option<String>) -> PrinterSettings {
                 .get("footer_text")
                 .and_then(|v| v.as_str())
                 .map(String::from),
+            print_mode: v
+                .get("print_mode")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         })
         .unwrap_or(PrinterSettings {
             printer_id: None,
             paper_width: None,
             auto_print: None,
             footer_text: None,
+            print_mode: None,
         })
 }
 
-/// Encode text lines as ESC/POS and send them to the print queue as RAW data,
-/// so the printer renders them with its own built-in font instead of the driver
-/// rasterising a bitmap (which printed thin and stuttered).
-fn send_to_printer(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<(), String> {
+/// Encode the lines and send them to the print queue as RAW data.
+///
+/// In raster mode the text is drawn with GDI and the picture is sent, which is
+/// how the Mitra Indogrosir app prints and what the shop asked us to match; in
+/// text mode the characters go to the printer.s own font engine, which is
+/// faster and much smaller but looks like three fonts on one slip.
+fn send_to_printer(
+    printer_id: &str,
+    lines: &[ReceiptTextLine],
+    paper_width: u8,
+    mode: PrintMode,
+) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let bytes = crate::printing::escpos::encode_lines(lines);
+        use crate::printing::raster::{render_lines, DOTS_58MM, DOTS_80MM};
+
+        let bytes = match mode {
+            PrintMode::Raster => {
+                let dots = if paper_width >= 80 {
+                    DOTS_80MM
+                } else {
+                    DOTS_58MM
+                };
+                let bitmap = render_lines(lines, columns(paper_width, mode), dots)?;
+                crate::printing::escpos::encode_raster(&bitmap)
+            }
+            PrintMode::Text => crate::printing::escpos::encode_lines(lines),
+        };
         crate::printing::windows_printer::send_raw_data(printer_id, &bytes)
     }
     #[cfg(not(windows))]
     {
-        let _ = (printer_id, lines);
+        let _ = (printer_id, lines, paper_width, mode);
         Err("Printing hanya tersedia di Windows".to_string())
     }
 }
@@ -91,6 +118,7 @@ struct PrintTarget {
     printer_id: String,
     paper_width: u8,
     footer_text: Option<String>,
+    mode: PrintMode,
 }
 
 async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> {
@@ -109,6 +137,7 @@ async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> 
         printer_id,
         paper_width: settings.paper_width.unwrap_or(58),
         footer_text: settings.footer_text,
+        mode: PrintMode::from_setting(settings.print_mode.as_deref()),
     })
 }
 
@@ -121,11 +150,16 @@ async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> 
 /// A job that fails does not cancel the ones behind it. The jobs are separate
 /// pieces of paper for separate purposes, and stopping after the first failure
 /// would mean one unlucky struk also costs the customer the second one.
-async fn send_jobs(printer_id: String, jobs: Vec<Vec<ReceiptTextLine>>) -> Result<(), AppError> {
+async fn send_jobs(
+    printer_id: String,
+    jobs: Vec<Vec<ReceiptTextLine>>,
+    paper_width: u8,
+    mode: PrintMode,
+) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || {
         let mut first_error = None;
         for job in &jobs {
-            if let Err(error) = send_to_printer(&printer_id, job) {
+            if let Err(error) = send_to_printer(&printer_id, job, paper_width, mode) {
                 first_error.get_or_insert(error);
             }
         }
@@ -173,6 +207,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         printer_id,
         paper_width,
         footer_text,
+        mode,
     } = print_target(db).await?;
 
     let transaction = transactions::Entity::find_by_id(transaction_id)
@@ -267,7 +302,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         original_total_amount,
     };
 
-    let text_lines = format_receipt_text(&receipt_data, paper_width);
+    let text_lines = format_receipt_text(&receipt_data, paper_width, mode);
 
     eprintln!(
         "[print_receipt] Generated {} text lines for printer '{}'",
@@ -293,10 +328,10 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     let mut jobs = vec![text_lines];
     jobs.extend(fulfilled.into_iter().map(|item| {
         let data = build_ppob_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
-        format_ppob_receipt(&data, paper_width)
+        format_ppob_receipt(&data, paper_width, mode)
     }));
 
-    send_jobs(printer_id, jobs).await
+    send_jobs(printer_id, jobs, paper_width, mode).await
 }
 
 /// The stored provider responses for the given lines, keyed by line.
@@ -348,6 +383,7 @@ pub async fn print_ppob_item(
         store,
         printer_id,
         paper_width,
+        mode,
         ..
     } = print_target(db).await?;
 
@@ -360,9 +396,9 @@ pub async fn print_ppob_item(
         .map(|row| row.data);
 
     let data = build_ppob_receipt_data(&store, &item, blob.as_deref());
-    let lines = format_ppob_receipt(&data, paper_width);
+    let lines = format_ppob_receipt(&data, paper_width, mode);
 
-    send_jobs(printer_id, vec![lines]).await
+    send_jobs(printer_id, vec![lines], paper_width, mode).await
 }
 
 /// First non-empty string the provider offers under any of `keys`, looked for
@@ -488,12 +524,13 @@ pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
         store,
         printer_id,
         paper_width,
+        mode,
         ..
     } = print_target(db).await?;
 
-    let text_lines = format_test_page_text(&store.name, paper_width);
+    let text_lines = format_test_page_text(&store.name, paper_width, mode);
 
-    send_jobs(printer_id, vec![text_lines]).await
+    send_jobs(printer_id, vec![text_lines], paper_width, mode).await
 }
 
 pub async fn update_printer_settings(
@@ -522,6 +559,11 @@ pub async fn update_printer_settings(
     }
     if let Some(footer) = &input.footer_text {
         info["footer_text"] = serde_json::json!(footer);
+    }
+    if let Some(mode) = &input.print_mode {
+        // Normalised on the way in, so an unknown value cannot sit in the
+        // settings looking like it means something.
+        info["print_mode"] = serde_json::json!(PrintMode::from_setting(Some(mode)).as_setting());
     }
 
     let mut active: store_info::ActiveModel = store.into();
@@ -664,6 +706,7 @@ pub async fn printer_settings(
             paper_width: None,
             auto_print: None,
             footer_text: None,
+            print_mode: None,
         });
 
     Ok(PrinterSettingsResponse {
@@ -671,6 +714,12 @@ pub async fn printer_settings(
         paper_width: settings.paper_width,
         auto_print: settings.auto_print,
         footer_text: settings.footer_text,
+        // Absent means the default, and the screen should show which that is.
+        print_mode: Some(
+            PrintMode::from_setting(settings.print_mode.as_deref())
+                .as_setting()
+                .to_string(),
+        ),
     })
 }
 

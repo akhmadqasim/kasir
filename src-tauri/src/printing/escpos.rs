@@ -1,8 +1,11 @@
 //! ESC/POS encoder: turns formatted receipt text lines into raw printer bytes.
 //!
 //! The bytes are sent straight to the printer through the Windows spooler with
-//! datatype "RAW", so the printer renders its own built-in font instead of the
-//! driver rasterising a bitmap. Line width is already handled upstream by
+//! datatype "RAW". Two shapes go down that pipe: `encode_lines` sends characters
+//! for the printer's own font engine to set, and `encode_raster` sends a picture
+//! drawn by `super::raster` — see `receipt::PrintMode` for which and why.
+//!
+//! For the text path, line width is already handled upstream by
 //! `format_receipt_text` / `format_test_page_text` (32 cols for 58mm, 42 for
 //! 80mm), which matches Font A. Weight and size come from one `ESC !` print-mode
 //! byte per line, and the formatter that asks for a double-width line is also
@@ -69,6 +72,12 @@ const FEED_LINES: [u8; 3] = [0x1B, 0x64, 0x06];
 /// GS V 1 — partial cut. Printers with no cutter treat it as an unknown
 /// command and skip it, which is why the feed above has to stand on its own.
 const PARTIAL_CUT: [u8; 3] = [0x1D, 0x56, 0x01];
+/// GS v 0 — print a raster bitmap. The four bytes that follow the mode carry
+/// the width in bytes and the height in rows.
+const RASTER: [u8; 3] = [0x1D, 0x76, 0x30];
+/// Rows per `GS v 0` command. Around 3 KB a stripe on 58mm paper, which this
+/// printer takes without pausing; a whole receipt in one command does not.
+const STRIPE_ROWS: usize = 64;
 
 /// Encode receipt lines as ESC/POS bytes ready for `send_raw_data`.
 pub fn encode_lines(lines: &[ReceiptTextLine]) -> Vec<u8> {
@@ -110,6 +119,44 @@ fn print_mode(line: &ReceiptTextLine) -> u8 {
         (LineSize::Normal, true) => MODE_HEADING,
         (LineSize::Normal, false) => MODE_TEXT,
     }
+}
+
+/// Send a rendered receipt as dots.
+///
+/// `GS v 0` takes a raster and burns it, which is how the Mitra app prints and
+/// the only way to get one uniform face across a whole slip. It also steps
+/// around everything the text engine on this unit turned out to dislike: no
+/// print modes to track, no `GS !`, no 32nd column.
+///
+/// The image goes in stripes rather than as one command. A full receipt is tens
+/// of kilobytes and this printer's buffer is not; sixty-four rows at a time is
+/// about 3 KB, which it swallows without complaint.
+#[cfg(windows)]
+pub fn encode_raster(bitmap: &super::raster::Bitmap1bpp) -> Vec<u8> {
+    let bytes_per_row = bitmap.bytes_per_row() as usize;
+    debug_assert_eq!(bitmap.data.len(), bytes_per_row * bitmap.height as usize);
+
+    let mut out = Vec::with_capacity(INIT.len() + bitmap.data.len() + 64);
+    out.extend_from_slice(&INIT);
+
+    for stripe in bitmap.data.chunks(bytes_per_row * STRIPE_ROWS) {
+        // Measured off the data, not counted down from the height: a header
+        // that promised more rows than follow it would have the printer read
+        // the feed and cut as picture.
+        let rows = stripe.len() / bytes_per_row.max(1);
+
+        // GS v 0 m xL xH yL yH — m = 0 is normal size, x counted in bytes and
+        // y in rows, both little-endian.
+        out.extend_from_slice(&RASTER);
+        out.push(0);
+        out.extend_from_slice(&(bytes_per_row as u16).to_le_bytes());
+        out.extend_from_slice(&(rows as u16).to_le_bytes());
+        out.extend_from_slice(stripe);
+    }
+
+    out.extend_from_slice(&FEED_LINES);
+    out.extend_from_slice(&PARTIAL_CUT);
+    out
 }
 
 /// Append `text` as single-byte ASCII, replacing anything outside 0x20..=0x7E
@@ -307,6 +354,40 @@ mod tests {
         // Skip ESC @ + the text-mode command; drop the reset + feed + cut.
         let text = String::from_utf8_lossy(&bytes[5..bytes.len() - 10]);
         assert_eq!(text, "Kopi ? Rp5.000 ??A?B");
+    }
+
+    /// A raster job opens with `ESC @`, carries one `GS v 0` per stripe of at
+    /// most sixty-four rows, and closes with the feed and cut a text job ends
+    /// with. Each header's row count and byte width have to match the bytes that
+    /// follow it, or the printer reads the next header as picture.
+    #[cfg(windows)]
+    #[test]
+    fn every_stripe_header_declares_its_own_size() {
+        use crate::printing::raster::{render_lines, DOTS_58MM};
+
+        // 100 rows: 24 per line over four lines is 96, plus one more line.
+        let lines: Vec<ReceiptTextLine> = (0..5).map(|_| ReceiptTextLine::plain("X")).collect();
+        let bitmap = render_lines(&lines, 32, DOTS_58MM).expect("rendered");
+        let bytes_per_row = bitmap.bytes_per_row() as usize;
+        let bytes = encode_raster(&bitmap);
+
+        assert_eq!(&bytes[..2], &INIT);
+
+        let mut at = INIT.len();
+        let mut rows_seen = 0_usize;
+        while at + 7 <= bytes.len() && bytes[at..at + 3] == RASTER {
+            assert_eq!(bytes[at + 3], 0, "normal size");
+            let width = u16::from_le_bytes([bytes[at + 4], bytes[at + 5]]) as usize;
+            let rows = u16::from_le_bytes([bytes[at + 6], bytes[at + 7]]) as usize;
+            assert_eq!(width, bytes_per_row);
+            assert!(rows <= STRIPE_ROWS);
+
+            rows_seen += rows;
+            at += 8 + width * rows;
+        }
+
+        assert_eq!(rows_seen, bitmap.height as usize);
+        assert_eq!(&bytes[at..], &[0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]);
     }
 
     #[test]

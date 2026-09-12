@@ -133,21 +133,65 @@ impl ReceiptTextLine {
     }
 }
 
-/// Printable columns for a paper width.
+/// How a receipt reaches the paper.
 ///
-/// Font A on 58mm paper is 32 characters wide and on 80mm 42 — and this returns
-/// one less on purpose. A line that fills the row exactly (32 characters then
-/// a line feed) makes the POS58 (TECH CLA58) on this till reset: its USB
-/// device drops out for about a second, the printer power-cycles and whatever
-/// was left of the job is gone. A 148-byte job of three full-width rules
-/// reproduced it while jobs with 31- and 33-character lines did not, so every
-/// formatter stays one column short of the edge and `"=".repeat(cpl)` never
-/// reaches it.
-pub fn columns(paper_width_mm: u8) -> usize {
-    if paper_width_mm >= 80 {
-        41
-    } else {
-        31
+/// Two different machines, in effect. `Raster` draws the text with GDI and sends
+/// the picture, which is what the Mitra Indogrosir app does and what the shop
+/// asked us to match. `Text` sends characters for the printer's own font engine
+/// to set — faster, a smaller job, and the only thing that works off Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrintMode {
+    #[default]
+    Raster,
+    Text,
+}
+
+impl PrintMode {
+    /// What the settings JSON calls it.
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            Some("text") => Self::Text,
+            _ => Self::Raster,
+        }
+    }
+
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Self::Raster => "raster",
+            Self::Text => "text",
+        }
+    }
+}
+
+/// Width of one character cell when a receipt is drawn rather than typeset.
+///
+/// Font A is twelve dots wide at 203 dpi and the renderer matches it, which is
+/// what lets one set of column counts serve both modes.
+pub const CELL_DOTS: usize = 12;
+
+/// Printable columns for a paper width, in the mode it will be printed in.
+///
+/// Font A on 58mm paper is 32 characters wide and on 80mm 42, and a raster gets
+/// all of them: the cell the renderer draws into is [`CELL_DOTS`] wide, so 32 of
+/// them come to exactly the 384 dots the narrow paper is. The wide paper has
+/// 576 and Font A only ever used 504 of them, so the renderer centres the block
+/// and leaves the difference as a margin either side rather than inventing six
+/// columns the text formatters have never had.
+///
+/// Text mode gets one less, on purpose. A line that fills the row exactly (32
+/// characters then a line feed) makes the POS58 (TECH CLA58) on this till reset:
+/// its USB device drops out for about a second, the printer power-cycles and
+/// whatever was left of the job is gone. A 148-byte job of three full-width
+/// rules reproduced it while jobs with 31- and 33-character lines did not, so in
+/// that mode every formatter stays one column short of the edge and
+/// `"=".repeat(cpl)` never reaches it. A raster has no such opinion — there is
+/// no character engine in it to upset.
+pub fn columns(paper_width_mm: u8, mode: PrintMode) -> usize {
+    let full = if paper_width_mm >= 80 { 42 } else { 32 };
+
+    match mode {
+        PrintMode::Raster => full,
+        PrintMode::Text => full - 1,
     }
 }
 
@@ -218,8 +262,12 @@ pub(super) fn push_sale_details(
 }
 
 /// Generate receipt as text lines for ESC/POS printing
-pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl = columns(paper_width_mm);
+pub fn format_receipt_text(
+    data: &ReceiptData,
+    paper_width_mm: u8,
+    mode: PrintMode,
+) -> Vec<ReceiptTextLine> {
+    let cpl = columns(paper_width_mm, mode);
     let mut lines = Vec::new();
 
     push_store_banner(
@@ -360,8 +408,12 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
 }
 
 /// Generate test page as text lines for ESC/POS printing
-pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl = columns(paper_width_mm);
+pub fn format_test_page_text(
+    store_name: &str,
+    paper_width_mm: u8,
+    mode: PrintMode,
+) -> Vec<ReceiptTextLine> {
+    let cpl = columns(paper_width_mm, mode);
     let mut lines = Vec::new();
 
     lines.push(ReceiptTextLine::bold(center_text("TEST PRINT", cpl)));
@@ -458,7 +510,7 @@ mod tests {
             original_total_amount: 101000.0,
         };
 
-        let lines = format_receipt_text(&data, 58);
+        let lines = format_receipt_text(&data, 58, PrintMode::Text);
         assert!(!lines.is_empty());
 
         let all_text: String = lines

@@ -17,6 +17,8 @@ pub struct PrinterSettings {
     pub paper_width: Option<u8>,
     pub auto_print: Option<bool>,
     pub footer_text: Option<String>,
+    /// `"raster"` (the default) or `"text"`. See `printing::receipt::PrintMode`.
+    pub print_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +27,7 @@ pub struct UpdatePrinterSettingsInput {
     pub paper_width: Option<u8>,
     pub auto_print: Option<bool>,
     pub footer_text: Option<String>,
+    pub print_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +36,7 @@ pub struct PrinterSettingsResponse {
     pub paper_width: Option<u8>,
     pub auto_print: Option<bool>,
     pub footer_text: Option<String>,
+    pub print_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
