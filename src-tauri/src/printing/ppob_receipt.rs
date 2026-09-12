@@ -223,9 +223,25 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
         &format!("Rp {}", format_rupiah(data.total)),
         cpl,
     )));
+    // Our markup on the line. It comes out negative when the sale carried a
+    // cart-wide discount, because that discount is shared out over every line
+    // and PPOB ones are not excluded. `Biaya Layanan  Rp -500` on a slip the
+    // customer takes to PLN reads like a mistake, so a negative figure is
+    // labelled as the discount it actually is.
+    let (fee_label, fee_amount) = if data.service_fee < 0.0 {
+        (
+            "Diskon",
+            format!("-Rp {}", format_rupiah(-data.service_fee)),
+        )
+    } else {
+        (
+            "Biaya Layanan",
+            format!("Rp {}", format_rupiah(data.service_fee)),
+        )
+    };
     lines.push(ReceiptTextLine::plain(two_col_text(
-        "Biaya Layanan",
-        &format!("Rp {}", format_rupiah(data.service_fee)),
+        fee_label,
+        &fee_amount,
         cpl,
     )));
     lines.push(ReceiptTextLine::bold(two_col_text(
@@ -471,6 +487,21 @@ mod tests {
         assert!(text.contains(&two_col_text("Total", "Rp 54.500", 32)));
         assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", 32)));
         assert!(text.contains(&two_col_text("Grand Total", "Rp 56.000", 32)));
+    }
+
+    /// A cart-wide discount is shared out over every line, PPOB included, so
+    /// the shop can end up having sold the line below what the provider charged.
+    /// That is a discount, and the slip the customer takes to PLN has to read
+    /// like one rather than like a negative fee.
+    #[test]
+    fn a_line_sold_below_the_provider_total_prints_a_discount_not_a_negative_fee() {
+        let mut data = pln_prepaid();
+        data.service_fee = -500.0;
+        let text = text_of(&format_ppob_receipt(&data, 58));
+
+        assert!(text.contains(&two_col_text("Diskon", "-Rp 500", 32)));
+        assert!(!text.contains("Biaya Layanan"));
+        assert!(text.contains(&two_col_text("Grand Total", "Rp 54.000", 32)));
     }
 
     #[test]

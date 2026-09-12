@@ -11,7 +11,7 @@ use crate::printing::ppob_receipt::{format_ppob_receipt, PpobReceiptData};
 use crate::printing::receipt::{
     format_receipt_text, format_test_page_text, ReceiptData, ReceiptItem, ReceiptTextLine,
 };
-use crate::services::ppob::parsers::{get_num_field, get_str_field, response_objects};
+use crate::services::ppob::parsers::{get_num_field, parse_string, response_objects};
 use crate::services::transactions::PPOB_STATUS_SUCCESS;
 use crate::utils::AppError;
 
@@ -113,12 +113,22 @@ async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> 
 /// One job per piece of paper. A PPOB struk is cut away from the sale receipt
 /// it belongs to precisely so the customer can take it to PLN without carrying
 /// the shop's own receipt with it.
+///
+/// A job that fails does not cancel the ones behind it. The jobs are separate
+/// pieces of paper for separate purposes, and stopping after the first failure
+/// would mean one unlucky struk also costs the customer the second one.
 async fn send_jobs(printer_id: String, jobs: Vec<Vec<ReceiptTextLine>>) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || {
+        let mut first_error = None;
         for job in &jobs {
-            send_to_printer(&printer_id, job)?;
+            if let Err(error) = send_to_printer(&printer_id, job) {
+                first_error.get_or_insert(error);
+            }
         }
-        Ok::<(), String>(())
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     })
     .await
     .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
@@ -261,9 +271,15 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         printer_id
     );
 
-    // The sale first, then one struk per fulfilled PPOB line. The customer
-    // leaves with the token in their hand whether the cashier pressed print or
-    // the auto-print setting did it for them.
+    // The sale first, then one struk per PPOB line that has come back fulfilled
+    // by the time the paper is cut.
+    //
+    // Auto-print usually finds none of them ready: the cashier screen calls this
+    // the moment the sale commits, while fulfilment is still in flight in a
+    // background task, so the lines are `pending` and are skipped. That is the
+    // right behaviour — a struk with no token on it is worse than no struk — and
+    // it is why the detail dialog has a button of its own. A reprint from there,
+    // or any later print of the sale, picks them up.
     let mut jobs = vec![text_lines];
     jobs.extend(
         items
@@ -336,15 +352,32 @@ pub async fn print_ppob_item(
 /// in the response itself and in every wrapper `response_objects` knows about —
 /// a payment response keeps its status at the top and the struk details one
 /// level down, and which level that is depends on the endpoint.
+///
+/// The emptiness test sits *inside* the search, not after it. Mitra fills a
+/// field it has no value for with `""` as readily as it omits the key, so a
+/// `"receipt_text": ""` at the root would otherwise end the search and hide the
+/// real block one level down.
 fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    response_objects(raw)
-        .find_map(|object| get_str_field(object, keys))
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    response_objects(raw).find_map(|object| {
+        keys.iter().find_map(|key| {
+            parse_string(object.get(*key))
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+    })
 }
 
 fn provider_number(raw: &serde_json::Value, keys: &[&str]) -> Option<f64> {
     response_objects(raw).find_map(|object| get_num_field(object, keys))
+}
+
+/// One of our own columns, treating a blank string as the absence it means.
+fn stored(column: &Option<String>) -> Option<String> {
+    column
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 /// Assemble a PPOB struk from the sold line and the provider blob stored with
@@ -386,8 +419,11 @@ fn build_ppob_receipt_data(
         flag_id: item.ppob_flag_id.clone(),
         product_name: Some(item.product_name.clone()),
         // Our own columns first: they are what the cashier typed and what the
-        // fulfilment actually used, whatever the provider echoed back.
-        customer_id: item.service_ref.clone().or_else(|| {
+        // fulfilment actually used, whatever the provider echoed back. A column
+        // holding `""` counts as absent — `execute_confirm_payment` copies the
+        // provider's empty string into it rather than leaving it NULL, and an
+        // empty column that shadowed the blob would cost the struk its token.
+        customer_id: stored(&item.service_ref).or_else(|| {
             provider_field(
                 &raw,
                 &["customer_no", "customer_id", "idpel", "no_meter", "target"],
@@ -397,9 +433,7 @@ fn build_ppob_receipt_data(
             &raw,
             &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
         ),
-        serial_number: item
-            .ppob_serial_number
-            .clone()
+        serial_number: stored(&item.ppob_serial_number)
             .or_else(|| provider_field(&raw, &["token_number", "serial_number", "token", "sn"])),
         reference_number: provider_field(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
         provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
@@ -645,6 +679,42 @@ mod tests {
         // An empty string is not an answer; the struk leaves the line out.
         assert_eq!(provider_field(&raw, &["note"]), None);
         assert_eq!(provider_field(&raw, &["nothing_like_this"]), None);
+    }
+
+    /// Mitra fills a field it has no value for with `""` as readily as it drops
+    /// the key. An empty one at the root must not end the search and hide the
+    /// real block one level down -- that is the difference between a struk with
+    /// the provider's own text on it and a struk with our reconstruction.
+    #[test]
+    fn an_empty_value_does_not_shadow_a_real_one_deeper_down() {
+        let raw = json!({
+            "receipt_text": "",
+            "serial_number": "   ",
+            "history_payment": {
+                "receipt_text": "NO METER : 45094614059",
+                "token_number": "69915243803067642910"
+            }
+        });
+
+        assert_eq!(
+            provider_field(&raw, &["receipt_text", "invoice_string"]),
+            Some("NO METER : 45094614059".to_string())
+        );
+        assert_eq!(
+            provider_field(&raw, &["token_number", "serial_number"]),
+            Some("69915243803067642910".to_string())
+        );
+    }
+
+    /// A column holding `""` means the same as a column holding NULL.
+    #[test]
+    fn a_blank_column_counts_as_absent() {
+        assert_eq!(stored(&Some("  ".to_string())), None);
+        assert_eq!(stored(&None), None);
+        assert_eq!(
+            stored(&Some(" SN-1 ".to_string())),
+            Some("SN-1".to_string())
+        );
     }
 
     /// An item stored before migration 023 has no blob at all.

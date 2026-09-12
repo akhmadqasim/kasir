@@ -76,9 +76,13 @@ async fn print_receipt(
 /// Reprint the struk for one fulfilled PPOB line.
 ///
 /// The id is a `transaction_items` id, not a transaction's, because the struk
-/// belongs to the line: a cart can hold two PPOB purchases and the customer may
-/// only have lost one of them. Printing the sale receipt already prints these
-/// alongside it, so this route exists for the reprint.
+/// belongs to the line: a cart can hold two PPOB purchases and each carries its
+/// own token.
+///
+/// This is the route that reliably produces one. Printing the sale receipt adds
+/// a struk for every line already fulfilled, but at auto-print time they are
+/// usually still in flight, so the detail dialog calls this once per fulfilled
+/// line afterwards.
 async fn print_ppob_struk(
     State(state): State<AppState>,
     Path(id): Path<i64>,

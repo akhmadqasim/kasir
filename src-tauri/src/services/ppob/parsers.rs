@@ -75,12 +75,16 @@ pub fn extract_f64(val: &Value, keys: &[&str]) -> f64 {
 /// `{"receipt_data": {...}}`, `history-payment/detail` uses `detail`, `data` or
 /// `transaction`, and the `*/payment` endpoints answer flat. Keeping the list in
 /// one place is what stops each reader growing its own half of it.
+///
+/// The order is the one `history-payment/detail` already read in, with
+/// `receipt_data` last: only the payment endpoints send it, and appending it
+/// leaves [`unwrap_response`]'s answer on the history path exactly as it was.
 pub const RESPONSE_WRAPPERS: &[&str] = &[
     "history_payment",
-    "receipt_data",
     "detail",
     "data",
     "transaction",
+    "receipt_data",
 ];
 
 /// The object carrying the actual fields: the first known wrapper present, or

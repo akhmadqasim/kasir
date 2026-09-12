@@ -120,7 +120,8 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
-  const ppobCanPrint = isPpobPrintable(ppobItem?.ppob_status)
+  const ppobPrintableItems =
+    detail?.items.filter((item) => isPpobPrintable(item.ppob_status)) ?? []
   const isDeleted = detail?.transaction.status === "deleted"
   const hasRefundAction =
     !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
@@ -187,12 +188,21 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
     }
   }
 
+  // Satu struk per baris PPOB yang berhasil, bukan hanya baris pertama:
+  // satu keranjang bisa memuat dua pembelian PPOB dan masing-masing punya
+  // token sendiri yang dibawa pelanggan.
   const handlePrintPpobReceipt = async () => {
-    if (!ppobItem) return
+    if (ppobPrintableItems.length === 0) return
     setIsPrintingPpob(true)
     try {
-      await printPpobReceipt(ppobItem.id)
-      toast.success("Struk PPOB dicetak")
+      for (const item of ppobPrintableItems) {
+        await printPpobReceipt(item.id)
+      }
+      toast.success(
+        ppobPrintableItems.length > 1
+          ? `${ppobPrintableItems.length} struk PPOB dicetak`
+          : "Struk PPOB dicetak",
+      )
     } catch (e) {
       toast.error(`Gagal cetak struk PPOB: ${errorMessage(e)}`)
     } finally {
@@ -487,7 +497,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                         Retry PPOB
                       </PendingButton>
                     )}
-                    {ppobCanPrint && (
+                    {ppobPrintableItems.length > 0 && (
                       <PendingButton
                         isPending={isPrintingPpob}
                         variant="secondary"
