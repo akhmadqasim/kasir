@@ -119,10 +119,12 @@ jadi huruf yang diambil dari CDN tidak boleh dipakai.
 Hanya tiga peran yang boleh menimpa ukuran huruf bawaan komponen. Sisanya memakai apa yang
 sudah diberikan HeroUI.
 
+Angkanya dibaca dari computed style template dashboard HeroUI Pro, bukan dipilih.
+
 | Peran | Kelas |
 | --- | --- |
-| Judul halaman | `text-2xl font-semibold tracking-tight` |
-| Angka KPI | `text-3xl font-semibold tracking-tight tabular-nums` |
+| Judul halaman (di navbar) | `text-xl font-semibold` |
+| Angka KPI | `text-2xl font-semibold tracking-tight tabular-nums` |
 | Angka sekunder di kepala grafik | `text-xl font-semibold tracking-tight tabular-nums` |
 
 `Card.Title` (`text-sm font-medium`) dan `Card.Description` (`text-sm text-muted`) dipakai
@@ -142,13 +144,18 @@ Kelipatan 4 px milik Tailwind. Yang dipakai berulang: `gap-2` di dalam satu bari
 lewat `p-5` dan rentetan `mt-*` di dalam satu `div` — itu melawan komponennya, dan
 jaraknya berhenti konsisten begitu ada satu kartu yang lupa disamakan.
 
-`--radius` bernilai `0.75rem` — satu-satunya angka bentuk yang kita tetapkan. Skala
-`--radius-sm..4xl` **tidak** ditulis ulang: dulu ada override di `@theme inline` yang
-mempertahankan rasio shadcn, dan itu sudah dilepas. Sekarang kelengkungan seluruh aplikasi
-berubah dengan mengubah satu angka ini.
+`--radius` **tidak ditetapkan** — bawaan HeroUI, `0.5rem`. Seluruh skala diturunkan dari
+angka itu (`--radius-3xl = radius × 3`), dan `Card` memakai `min(32px, --radius-3xl)`.
+Tema yang pernah disalin ke sini memasang `0.75rem`, yang membuat sudut kartu 32px dan
+baris menu 24px; template dashboard HeroUI memakai bawaannya, 24px dan 16px, dan selisih
+itulah yang membuat tampilannya terasa asing meski paletnya sama. Kartu lalu ditimpa lagi
+ke `--radius-2xl` (16px) lewat `@layer components { .card }`, karena template melakukan
+itu pada setiap kartunya.
 
-Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` sudah memberi `p-4`;
-halaman hanya mengatur `gap` antar bagian.
+Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` memberi `px-6` supaya
+tepi isi sejajar dengan tepi judul di navbar; halaman hanya mengatur `gap` antar bagian.
+Isi dashboard dipusatkan `max-w-7xl`; layar kasir penuh, karena keranjang dan katalog
+butuh lebarnya.
 
 ### 3.6 Ikon
 
@@ -212,21 +219,32 @@ Teks polos di dalam `Chip` **otomatis** dibungkus `Chip.Label` — tulis `<Chip>
 | `stat-card.tsx` | satu kartu KPI; `delta` untuk tren, `note` untuk lencana netral |
 | `inline-stat.tsx` | angka sekunder di kepala kartu grafik |
 | `section-card.tsx` | pembungkus daftar: judul lalu isi; plus `NoData` |
-| `time-range.ts` / `time-range-select.tsx` | pilihan rentang waktu, dipakai bersama |
+| `time-range.ts` / `time-range-menu.tsx` | pilihan rentang waktu, dipakai bersama |
 
 ## 5. Pola
 
 ### 5.1 Susunan halaman
 
 ```
-Kepala halaman   — judul/sapaan, keadaan, satu aksi utama di kanan
-Baris kendali    — tab di kiri, filter dan muat-ulang di kanan
+Navbar (64px)    — tombol lipat sidebar, judul halaman, aksi di kanan; milik AppLayout
+Baris kendali    — tab di kiri; muat-ulang dan pemilih periode (ukuran sm) di kanan
 Isi              — kartu, grafik, tabel
 ```
 
-Aksi cepat naik ke kepala halaman sebagai tombol ikon, bukan turun sebagai kartu berisi
-tombol-tombol besar. Tujuannya sudah ada di sidebar; yang benar-benar ditekan tiap pagi
-hanya satu, dan itu yang tetap berupa tombol bertulisan.
+Navbar dimiliki `AppLayout`, bukan halaman. Judulnya diturunkan dari rute lewat
+`app/navigation.tsx`, sumber yang sama dengan menu sidebar, jadi judul di atas halaman
+tidak bisa berbeda dari label yang membukanya. Halaman yang mau judul lain memasangnya
+lewat `NavbarTitle`, dan aksinya lewat `NavbarActions` — keduanya portal ke slot di
+navbar, dan CSS `:empty` pada slot judul yang menyembunyikan judul bawaan. Tidak ada state
+yang menyinkronkan keduanya. Test yang merender satu halaman memakai `TestNavbar` dari
+`test-utils`; kode produksi tidak punya cabang "kalau tidak ada navbar".
+
+Aksi cepat naik ke navbar sebagai tombol ikon `sm tertiary`, bukan turun sebagai kartu
+berisi tombol-tombol besar. Tujuannya sudah ada di sidebar; yang benar-benar ditekan tiap
+pagi hanya satu, dan itu yang tetap berupa tombol bertulisan.
+
+Tombol lipat sidebar duduk di navbar, bukan di kepala sidebar: kontrol yang mengubah tata
+letak halaman tinggal di halaman, dan di ponsel tombol yang sama membuka drawer.
 
 ### 5.2 Tab
 
@@ -329,7 +347,7 @@ Aturannya:
    tujuh komponen adalah keadaan yang baru saja ditinggalkan, bukan pola.
 2. **Berkas komponen hanya mengekspor komponen.** Konstanta dan fungsi pembantu pindah ke
    berkas `.ts` sendiri — itulah sebabnya `time-range.ts` terpisah dari
-   `time-range-select.tsx`. Aturan `react-refresh/only-export-components` menegakkan ini,
+   `time-range-menu.tsx`. Aturan `react-refresh/only-export-components` menegakkan ini,
    dan alasannya nyata: fast refresh mati untuk seluruh berkas kalau dilanggar.
 3. **Penamaan:** komponen `kebab-case.tsx`, hook `use-kebab-case.ts`, named export
    (bukan default) kecuali untuk halaman.

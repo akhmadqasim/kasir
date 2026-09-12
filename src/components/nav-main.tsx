@@ -13,19 +13,7 @@ import {
 } from "@/components/layout/sidebar"
 import { sidebarMenuButtonClass } from "@/components/layout/sidebar-context"
 import { isPathWithin } from "@/app/resume-route"
-
-type NavSubItem = {
-  group?: string
-  title: string
-  url: string
-}
-
-type NavItem = {
-  title: string
-  url: string
-  icon: React.ReactNode
-  items?: NavSubItem[]
-}
+import type { NavItem, NavSubItem } from "@/app/navigation"
 
 export function NavMain({ items }: { items: NavItem[] }) {
   const location = useLocation()

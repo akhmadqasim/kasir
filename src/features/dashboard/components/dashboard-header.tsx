@@ -1,10 +1,9 @@
-import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Button, Chip } from "@heroui/react"
+import { Button } from "@heroui/react"
 import { DatabaseBackupIcon, HistoryIcon, PackageIcon, ShoppingCartIcon } from "lucide-react"
 
+import { NavbarActions, NavbarTitle } from "@/components/layout/app-navbar"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCreateBackupMutation } from "@/features/settings/hooks/use-backup"
 
 /**
@@ -20,43 +19,31 @@ function greeting(hour: number): string {
 }
 
 /**
- * Baris paling atas dashboard: siapa yang login, keadaan lacinya, dan jalan
- * pintas ke pekerjaan yang benar-benar sering dilakukan.
+ * Isi navbar untuk dashboard: sapaan sebagai judul, jalan pintas sebagai aksi.
  *
+ * Tidak menggambar apa pun di badan halaman — keduanya portal ke navbar milik
+ * `AppLayout`, tempat template dashboard HeroUI menaruh sapaan dan tombolnya.
  * Satu tombol `primary` di seluruh halaman, sesuai aturan HeroUI bahwa varian
- * itu menandai satu aksi utama per konteks. Sisanya `tertiary`: tujuannya sudah
- * ada di sidebar, jadi di sini cukup jadi jalan pintas yang tidak menarik mata.
+ * itu menandai satu aksi utama per konteks. Sisanya `tertiary`: tujuannya
+ * sudah ada di sidebar, jadi di sini cukup jadi jalan pintas.
  */
 export function DashboardHeader() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
-  const activeShift = useShiftStore((s) => s.activeShift)
-  const fetchActiveShift = useShiftStore((s) => s.fetchActiveShift)
   const createBackup = useCreateBackupMutation()
   const isAdmin = user?.role === "admin"
 
-  useEffect(() => {
-    if (user) {
-      void fetchActiveShift()
-    }
-  }, [user, fetchActiveShift])
-
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <h1 className="truncate text-xl font-semibold">
-          {greeting(new Date().getHours())}
-          {user ? `, ${user.full_name}` : ""}
-        </h1>
-        <Chip color={activeShift ? "success" : "default"} size="sm">
-          {activeShift ? "Shift terbuka" : "Shift belum dibuka"}
-        </Chip>
-      </div>
-
-      <div className="flex items-center gap-2">
+    <>
+      <NavbarTitle>
+        {greeting(new Date().getHours())}
+        {user ? `, ${user.full_name}` : ""}
+      </NavbarTitle>
+      <NavbarActions>
         <Button
           isIconOnly
           aria-label="Riwayat Transaksi"
+          size="sm"
           variant="tertiary"
           onPress={() => navigate("/transactions")}
         >
@@ -66,6 +53,7 @@ export function DashboardHeader() {
           <Button
             isIconOnly
             aria-label="Kelola Produk"
+            size="sm"
             variant="tertiary"
             onPress={() => navigate("/products")}
           >
@@ -77,17 +65,18 @@ export function DashboardHeader() {
             isIconOnly
             aria-label="Backup Sekarang"
             isPending={createBackup.isPending}
+            size="sm"
             variant="tertiary"
             onPress={() => createBackup.mutate(undefined)}
           >
             <DatabaseBackupIcon />
           </Button>
         ) : null}
-        <Button onPress={() => navigate("/cashier")}>
+        <Button size="sm" onPress={() => navigate("/cashier")}>
           <ShoppingCartIcon />
           Mulai Penjualan
         </Button>
-      </div>
-    </div>
+      </NavbarActions>
+    </>
   )
 }

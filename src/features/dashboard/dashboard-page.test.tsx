@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import { formatRupiah } from "@/lib/format"
 import type {
   DailyRevenue,
@@ -86,7 +87,9 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <DashboardPage />
+        <TestNavbar>
+          <DashboardPage />
+        </TestNavbar>
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -122,8 +125,6 @@ beforeEach(() => {
     "GET /dashboard/products/top": TOP_PRODUCTS,
     "GET /dashboard/products/low-stock": LOW_STOCK,
     "GET /dashboard/transactions/recent": RECENT,
-    // Kepala halaman menanyakan shift yang sedang terbuka; belum ada satu pun.
-    "GET /shifts/active": null,
   })
   useAuthStore.setState({
     user: {
@@ -177,8 +178,8 @@ describe("halaman dashboard", () => {
     expect(requestedDays("GET /dashboard/revenue/daily")).toEqual([7])
     expect(requestedDays("GET /dashboard/payment-methods/daily")).toEqual([7])
 
-    fireEvent.click(screen.getByRole("button", { name: /Rentang waktu grafik/ }))
-    fireEvent.click(await screen.findByRole("option", { name: "1 Bulan" }))
+    fireEvent.click(screen.getByRole("button", { name: /Ganti rentang waktu/ }))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "1 Bulan" }))
 
     await vi.waitFor(() => {
       expect(requestedDays("GET /dashboard/revenue/daily")).toContain(30)

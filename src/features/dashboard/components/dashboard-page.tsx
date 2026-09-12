@@ -12,7 +12,7 @@ import { RecentTransactionsTable } from "./recent-transactions-table"
 import { RevenueChart } from "./revenue-chart"
 import { SummaryCards } from "./summary-cards"
 import { daysForRange, type TimeRangeKey } from "./time-range"
-import { TimeRangeSelect } from "./time-range-select"
+import { TimeRangeMenu } from "./time-range-menu"
 import { TopProductsTable } from "./top-products-table"
 
 /**
@@ -52,7 +52,9 @@ export function DashboardPage() {
       <DashboardHeader />
 
       <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(key as DashboardTab)}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Baris kendali template: tab di kiri; di kanan tombol muat-ulang lalu
+            pemilih periode, semuanya ukuran `sm`. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Tabs.ListContainer>
             <Tabs.List aria-label="Bagian dashboard">
               {TABS.map((item) => (
@@ -64,11 +66,11 @@ export function DashboardPage() {
             </Tabs.List>
           </Tabs.ListContainer>
 
-          <div className="flex items-center gap-2">
-            {tab === "overview" ? <TimeRangeSelect value={range} onChange={setRange} /> : null}
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               isIconOnly
               aria-label="Muat ulang data"
+              size="sm"
               variant="tertiary"
               onPress={() => {
                 void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
@@ -76,6 +78,7 @@ export function DashboardPage() {
             >
               <RefreshCwIcon />
             </Button>
+            {tab === "overview" ? <TimeRangeMenu value={range} onChange={setRange} /> : null}
           </div>
         </div>
 

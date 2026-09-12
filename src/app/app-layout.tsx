@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react"
 import { Outlet, useLocation } from "react-router-dom"
-import { Button } from "@heroui/react"
-import { Menu, Minus, Plus } from "lucide-react"
+import { Button, Surface } from "@heroui/react"
+import { Minus, Plus } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { AppNavbar } from "@/components/layout/app-navbar"
 import { SidebarInset, SidebarProvider } from "@/components/layout/sidebar"
-import { useSidebar } from "@/components/layout/sidebar-context"
 import { storeResumeRoute } from "./resume-route"
 
 const ZOOM_LEVEL_KEY = "kasir-zoom-level"
@@ -81,49 +81,43 @@ export function AppLayout() {
     <SidebarProvider style={{ height: shellHeight }}>
       <AppSidebar style={{ height: shellHeight }} />
       <SidebarInset>
-        <MobileToolbar
-          zoom={zoom}
-          zoomIn={() => setZoom((z) => stepZoom(z, ZOOM_STEP))}
-          zoomOut={() => setZoom((z) => stepZoom(z, -ZOOM_STEP))}
-          zoomReset={() => setZoom(1.0)}
-        />
-        {/* `print:overflow-visible`: pembungkus ini yang menggulung isi layar,
-            jadi saat mencetak ia juga yang memotong halaman jadi satu viewport. */}
-        <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 pb-16 lg:pb-4 print:overflow-visible">
-          <Outlet />
-        </div>
+        <AppNavbar>
+          <ZoomToolbar
+            zoom={zoom}
+            zoomIn={() => setZoom((z) => stepZoom(z, ZOOM_STEP))}
+            zoomOut={() => setZoom((z) => stepZoom(z, -ZOOM_STEP))}
+            zoomReset={() => setZoom(1.0)}
+          />
+          {/* `print:overflow-visible`: pembungkus ini yang menggulung isi layar,
+              jadi saat mencetak ia juga yang memotong halaman jadi satu viewport.
+              Padding samping 24px menyamakan tepi isi dengan tepi judul di navbar. */}
+          <div className="flex flex-1 flex-col gap-4 overflow-auto px-6 pt-2 pb-16 lg:pb-6 print:overflow-visible">
+            <Outlet />
+          </div>
+        </AppNavbar>
       </SidebarInset>
     </SidebarProvider>
   )
 }
 
-interface MobileToolbarProps {
+interface ZoomToolbarProps {
   zoom: number
   zoomIn: () => void
   zoomOut: () => void
   zoomReset: () => void
 }
 
-function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps) {
-  const { toggleSidebar, isMobile } = useSidebar()
-
+/**
+ * Kontrol zoom untuk layar kecil. Tombol "Buka menu" yang dulu menemaninya
+ * sudah tidak ada: tombol lipat di navbar membuka drawer yang sama di ponsel.
+ */
+function ZoomToolbar({ zoom, zoomIn, zoomOut, zoomReset }: ZoomToolbarProps) {
   return (
-    <div className="fixed right-4 bottom-4 left-4 z-50 flex items-center justify-between lg:hidden">
-      {isMobile ? (
-        <Button
-          isIconOnly
-          aria-label="Buka menu"
-          className="shadow-sm backdrop-blur md:hidden"
-          size="sm"
-          variant="tertiary"
-          onPress={toggleSidebar}
-        >
-          <Menu />
-        </Button>
-      ) : (
-        <div />
-      )}
-      <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+    <div className="fixed right-4 bottom-4 z-50 lg:hidden">
+      <Surface
+        className="flex items-center gap-0.5 rounded-2xl p-1 shadow-surface"
+        variant="default"
+      >
         <Button
           isIconOnly
           aria-label="Perkecil tampilan"
@@ -152,7 +146,7 @@ function MobileToolbar({ zoom, zoomIn, zoomOut, zoomReset }: MobileToolbarProps)
         >
           <Plus />
         </Button>
-      </div>
+      </Surface>
     </div>
   )
 }

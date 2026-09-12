@@ -1,4 +1,3 @@
-import * as React from "react"
 import { useLocation } from "react-router-dom"
 
 import {
@@ -9,12 +8,7 @@ import {
   SidebarMenuLink,
 } from "@/components/layout/sidebar"
 import { isPathWithin } from "@/app/resume-route"
-
-type NavItem = {
-  title: string
-  url: string
-  icon: React.ReactNode
-}
+import type { NavItem } from "@/app/navigation"
 
 export function NavSecondary({ items, className }: { items: NavItem[]; className?: string }) {
   const location = useLocation()
