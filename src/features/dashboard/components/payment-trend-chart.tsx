@@ -10,32 +10,12 @@ import {
 } from "@/components/ui/chart"
 import { id as t } from "@/i18n/id"
 import { formatCompactRupiah, formatRupiah } from "@/lib/format"
-import { paymentMethodLabel } from "@/lib/labels"
+import { METHOD_COLORS, paymentMethodColor as colorFor, paymentMethodLabel } from "@/lib/labels"
+import { NoData } from "@/components/no-data"
 import type { PaymentMethodDaily } from "../types"
 import { usePaymentMethodDaily } from "../hooks/use-dashboard"
+import { longDate, shortDate } from "./chart-dates"
 import { InlineStat } from "./inline-stat"
-
-/**
- * Warna per metode, dipatok bukan dibagikan menurut urutan kemunculan.
- *
- * Kalau warnanya diambil berurutan dari data, satu hari tanpa QRIS akan
- * menggeser seluruh warna dan kasir yang hafal "garis biru itu tunai" membaca
- * grafik yang salah. `mixed` sengaja abu-abu: ia bukan metode yang bisa
- * dipilih, melainkan penanda transaksi yang dibayar dengan beberapa metode.
- */
-const METHOD_COLORS: Record<string, string> = {
-  cash: "var(--chart-1)",
-  qris: "var(--chart-2)",
-  debit: "var(--chart-3)",
-  ewallet: "var(--chart-4)",
-  transfer: "var(--chart-5)",
-  mixed: "var(--muted)",
-}
-
-/** Metode di luar daftar tetap tergambar, memakai warna aksen. */
-function colorFor(method: string): string {
-  return METHOD_COLORS[method] ?? "var(--accent)"
-}
 
 /** Baris panjang dari API menjadi satu baris per tanggal, satu kolom per metode. */
 function pivot(rows: PaymentMethodDaily[]) {
@@ -46,21 +26,6 @@ function pivot(rows: PaymentMethodDaily[]) {
     byDate.set(row.date, existing)
   }
   return [...byDate.values()]
-}
-
-function shortDate(value: string): string {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-    month: "short",
-    day: "numeric",
-  })
-}
-
-function longDate(value: string): string {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
 }
 
 /**
@@ -164,8 +129,8 @@ export function PaymentTrendChart({ days }: { days: number }) {
             </LineChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-[240px] items-center justify-center text-sm text-muted">
-            {t.dashboard.noData}
+          <div className="flex h-[240px] items-center justify-center">
+            <NoData />
           </div>
         )}
       </Card.Content>

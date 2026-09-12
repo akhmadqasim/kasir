@@ -81,7 +81,7 @@ export function SettingsPage() {
         </Tabs.List>
       </Tabs.ListContainer>
       {tabs.map((tab) => (
-        <Tabs.Panel key={tab.key} className="pt-4" id={tab.key}>
+        <Tabs.Panel key={tab.key} id={tab.key}>
           {tab.panel}
         </Tabs.Panel>
       ))}

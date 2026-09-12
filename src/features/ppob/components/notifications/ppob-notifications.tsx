@@ -1,51 +1,41 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Badge, Button, Modal, Pagination, Skeleton, Spinner } from "@heroui/react"
+import {
+  Badge,
+  Button,
+  Description,
+  Label,
+  ListBox,
+  Modal,
+  Skeleton,
+  Spinner,
+  Surface,
+} from "@heroui/react"
 import { RefreshCw, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
+import { TablePagination } from "@/components/table-pagination"
 import { id as i18n } from "@/i18n/id"
 import { usePpobNotifications, usePpobMarkAllRead, usePpobMarkNotificationRead } from "../../hooks"
 import type { NotificationItem } from "../../types"
 
 const ITEMS_PER_PAGE = 20
 
-/** Only drawn inside `Modal.Icon`, whose 40px circle expects a 20px glyph. */
-function CategoryIcon({ category }: { category: string }) {
-  return category.toUpperCase() === "TRANSAKSI" ? (
-    <CreditCard className="size-5 text-accent" />
-  ) : (
-    <Info className="size-5 text-warning" />
-  )
-}
+const isTransaction = (category: string) => category.toUpperCase() === "TRANSAKSI"
+
+/** `inboxId` pernah datang kosong dari vendor; indeksnya jadi cadangan kunci. */
+const rowId = (item: NotificationItem, idx: number) => item.inboxId || `notif-${idx}`
 
 /** Transaksi dan pengumuman dibedakan warnanya, bukan cuma teksnya. */
 function CategoryBadge({ category }: { category: string }) {
   return (
-    <StatusBadge size="sm" status={category.toUpperCase() === "TRANSAKSI" ? "info" : "warning"}>
+    <StatusBadge size="sm" status={isTransaction(category) ? "info" : "warning"}>
       {category}
     </StatusBadge>
   )
-}
-
-/** Halaman pertama, terakhir, halaman aktif dan tetangganya; sisanya jadi elipsis. */
-function getPageNumbers(page: number, totalPages: number): (number | "ellipsis")[] {
-  const pages: (number | "ellipsis")[] = []
-
-  for (let candidate = 1; candidate <= totalPages; candidate++) {
-    const isEdge = candidate === 1 || candidate === totalPages
-    if (!isEdge && Math.abs(candidate - page) > 1) continue
-    const previous = pages[pages.length - 1]
-    if (typeof previous === "number" && candidate - previous > 1) {
-      pages.push("ellipsis")
-    }
-    pages.push(candidate)
-  }
-
-  return pages
 }
 
 function formatDate(dateStr: string | null): string {
@@ -79,8 +69,20 @@ function NotificationDetailDialog({
         <Modal.Dialog aria-label={item.category}>
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Icon className="bg-default text-foreground">
-              <CategoryIcon category={item.category} />
+            {/* Warna ikon mengikuti `CategoryBadge`: info untuk transaksi,
+                warning untuk pengumuman (DESIGN.md §5.7). */}
+            <Modal.Icon
+              className={
+                isTransaction(item.category)
+                  ? "bg-accent-soft text-accent-soft-foreground"
+                  : "bg-warning-soft text-warning-soft-foreground"
+              }
+            >
+              {isTransaction(item.category) ? (
+                <CreditCard className="size-5" />
+              ) : (
+                <Info className="size-5" />
+              )}
             </Modal.Icon>
             <Modal.Heading>{item.category}</Modal.Heading>
           </Modal.Header>
@@ -123,7 +125,6 @@ export function PpobNotifications() {
   const items = data?.items ?? []
   const unreadCount = data?.unreadCount ?? 0
   const totalPages = data?.totalPages ?? 1
-  const totalCount = data?.totalCount ?? 0
 
   const handleItemPress = (item: NotificationItem) => {
     setSelectedItem(item)
@@ -199,81 +200,52 @@ export function PpobNotifications() {
         </NoData>
       ) : (
         <>
-          <div className="flex flex-col gap-2">
-            {items.map((item, idx) => {
-              const isUnread = item.status === "unread"
-              return (
-                <Button
-                  key={item.inboxId || idx}
-                  fullWidth
-                  className={`h-auto flex-col items-start gap-1 p-3 text-left ${
-                    isUnread ? "" : "bg-default/20"
-                  }`}
-                  variant="secondary"
-                  onPress={() => handleItemPress(item)}
-                >
-                  {/* Titik belum-dibaca ditempel ke label kategorinya. */}
-                  {isUnread ? (
-                    <Badge.Anchor>
-                      <CategoryBadge category={item.category} />
-                      <Badge aria-label="Belum dibaca" color="danger" size="sm" />
-                    </Badge.Anchor>
-                  ) : (
-                    <CategoryBadge category={item.category} />
-                  )}
-                  <span
-                    className={`line-clamp-2 text-sm ${isUnread ? "font-medium" : "text-muted"}`}
+          {/* Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
+              membingkainya, `onAction` membuka rinciannya. */}
+          <Surface>
+            <ListBox
+              aria-label={i18n.ppob.notifications}
+              className="p-2"
+              selectionMode="none"
+              onAction={(key) => {
+                const item = items.find((candidate, idx) => rowId(candidate, idx) === key)
+                if (item) handleItemPress(item)
+              }}
+            >
+              {items.map((item, idx) => {
+                const isUnread = item.status === "unread"
+                return (
+                  <ListBox.Item
+                    key={rowId(item, idx)}
+                    id={rowId(item, idx)}
+                    textValue={item.message}
                   >
-                    {item.message}
-                  </span>
-                  <span className="text-xs text-muted">{formatDate(item.createdAt)}</span>
-                </Button>
-              )
-            })}
-          </div>
+                    <div className="flex min-w-0 flex-col items-start gap-1">
+                      {/* Titik belum-dibaca ditempel ke label kategorinya. */}
+                      {isUnread ? (
+                        <Badge.Anchor>
+                          <CategoryBadge category={item.category} />
+                          <Badge aria-label="Belum dibaca" color="danger" size="sm" />
+                        </Badge.Anchor>
+                      ) : (
+                        <CategoryBadge category={item.category} />
+                      )}
+                      <Label className={isUnread ? "line-clamp-2" : "line-clamp-2 text-muted"}>
+                        {item.message}
+                      </Label>
+                      <Description>{formatDate(item.createdAt)}</Description>
+                    </div>
+                  </ListBox.Item>
+                )
+              })}
+            </ListBox>
+          </Surface>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <Pagination className="pt-2" size="sm">
-              <Pagination.Summary>
-                Halaman {currentPage} dari {totalPages} ({totalCount} pemberitahuan)
-              </Pagination.Summary>
-              <Pagination.Content>
-                <Pagination.Item>
-                  <Pagination.Previous
-                    isDisabled={currentPage <= 1}
-                    onPress={() => setCurrentPage((page) => page - 1)}
-                  >
-                    <Pagination.PreviousIcon />
-                  </Pagination.Previous>
-                </Pagination.Item>
-                {getPageNumbers(currentPage, totalPages).map((page, index) =>
-                  page === "ellipsis" ? (
-                    <Pagination.Item key={`ellipsis-${index}`}>
-                      <Pagination.Ellipsis />
-                    </Pagination.Item>
-                  ) : (
-                    <Pagination.Item key={page}>
-                      <Pagination.Link
-                        isActive={page === currentPage}
-                        onPress={() => setCurrentPage(page)}
-                      >
-                        {page}
-                      </Pagination.Link>
-                    </Pagination.Item>
-                  ),
-                )}
-                <Pagination.Item>
-                  <Pagination.Next
-                    isDisabled={currentPage >= totalPages}
-                    onPress={() => setCurrentPage((page) => page + 1)}
-                  >
-                    <Pagination.NextIcon />
-                  </Pagination.Next>
-                </Pagination.Item>
-              </Pagination.Content>
-            </Pagination>
-          )}
+          <TablePagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </>
       )}
 

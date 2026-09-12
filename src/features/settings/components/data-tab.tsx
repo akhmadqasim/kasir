@@ -1,36 +1,13 @@
 import { useRef, useState, type ChangeEvent } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import {
-  Download,
-  Upload,
-  HardDrive,
-  Shield,
-  RefreshCw,
-  Trash2,
-  RotateCcw,
-  Clock,
-  FolderOpen,
-  Settings2,
-  ShieldCheck,
-  ArrowDownToLine,
-} from "lucide-react"
-import {
-  Alert,
-  AlertDialog,
-  Button,
-  Card,
-  Chip,
-  Label,
-  ListBox,
-  Select,
-  Table,
-} from "@heroui/react"
+import { Download, Upload, RefreshCw, Trash2, RotateCcw, ShieldCheck } from "lucide-react"
+import { Alert, AlertDialog, Button, Card, Chip, Table } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
-import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { StatCard } from "@/components/stat-card"
+import { SummaryList } from "@/components/summary-list"
 import { id } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
@@ -67,20 +44,20 @@ import type { AppSettings, BackupInfo, BackupStatus, DatabaseInfo } from "../typ
  */
 
 const INTERVAL_OPTIONS = [
-  { value: "1", label: "1 jam" },
-  { value: "2", label: "2 jam" },
-  { value: "3", label: "3 jam" },
-  { value: "6", label: "6 jam" },
-  { value: "12", label: "12 jam" },
-  { value: "24", label: "24 jam" },
+  { key: "1", label: "1 jam" },
+  { key: "2", label: "2 jam" },
+  { key: "3", label: "3 jam" },
+  { key: "6", label: "6 jam" },
+  { key: "12", label: "12 jam" },
+  { key: "24", label: "24 jam" },
 ]
 
 const RETENTION_OPTIONS = [
-  { value: "30", label: "30 hari" },
-  { value: "60", label: "60 hari" },
-  { value: "90", label: "90 hari" },
-  { value: "180", label: "180 hari" },
-  { value: "365", label: "365 hari" },
+  { key: "30", label: "30 hari" },
+  { key: "60", label: "60 hari" },
+  { key: "90", label: "90 hari" },
+  { key: "180", label: "180 hari" },
+  { key: "365", label: "365 hari" },
 ]
 
 /** Aksi yang menunggu konfirmasi pada satu baris backup. */
@@ -129,60 +106,30 @@ function BackupSettingsInline({
 
   const isDisabled = updateMutation.isPending || !settingsQuery.data
 
+  // Dua kolom pilih biasa dengan `Label`-nya sendiri, bukan sebaris "Interval:"
+  // dan kotak info: susunan kolom isian di kartu pengaturan lain sudah begitu,
+  // dan yang tersimpan otomatis begitu diubah tidak perlu terlihat berbeda.
   return (
-    <InfoPanel className="flex items-center gap-4">
-      <Settings2 className="size-4 shrink-0 text-muted" />
-      <div className="flex items-center gap-2">
-        {/* Teks label dibiarkan sebagai `span` agar barisnya tetap satu baris; nama
-            aksesibilitasnya dibawa `aria-label`, seperti bar filter di layar lain. */}
-        <span className="text-sm whitespace-nowrap">Interval:</span>
-        <Select
-          aria-label="Interval backup otomatis"
-          isDisabled={isDisabled}
-          value={String(intervalHours)}
-          onChange={(value) => value !== null && handleChange("interval_hours", String(value))}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {INTERVAL_OPTIONS.map((opt) => (
-                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                  <Label>{opt.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm whitespace-nowrap">Retensi:</span>
-        <Select
-          aria-label="Retensi backup otomatis"
-          isDisabled={isDisabled}
-          value={String(retentionDays)}
-          onChange={(value) => value !== null && handleChange("retention_days", String(value))}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {RETENTION_OPTIONS.map((opt) => (
-                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                  <Label>{opt.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
-      </div>
-    </InfoPanel>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <OptionSelect
+        fullWidth
+        isDisabled={isDisabled}
+        label="Interval backup otomatis"
+        options={INTERVAL_OPTIONS}
+        value={String(intervalHours)}
+        variant="secondary"
+        onChange={(value) => value !== null && handleChange("interval_hours", value)}
+      />
+      <OptionSelect
+        fullWidth
+        isDisabled={isDisabled}
+        label="Retensi backup"
+        options={RETENTION_OPTIONS}
+        value={String(retentionDays)}
+        variant="secondary"
+        onChange={(value) => value !== null && handleChange("retention_days", value)}
+      />
+    </div>
   )
 }
 
@@ -193,7 +140,6 @@ export function DataTab() {
   /** The chosen upload, held between picking the file and confirming the import. */
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const queryClient = useQueryClient()
-  const exportSectionRef = useRef<HTMLDivElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const dbInfoQuery = useApiQuery<DatabaseInfo>(queryKeys.settings.database, getDatabaseInfo)
@@ -272,7 +218,10 @@ export function DataTab() {
   const isDeletePending = pendingBackup?.action === "delete"
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
+      {/* Pesan saja, tanpa tombol: "Backup Sekarang" sudah ada di kartu backup
+          di bawah, dan tombol yang menggulung ke kartu export hanya mengulang
+          tautan yang tinggal beberapa ratus piksel lagi. */}
       {showSafetyBanner && (
         <Alert status="accent">
           <Alert.Indicator>
@@ -285,49 +234,28 @@ export function DataTab() {
               pindah dari versi debug/portable ke installer, gunakan Export Database lalu Import
               Database.
             </Alert.Description>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <PendingButton
-                isPending={createBackupMutation.isPending}
-                onPress={() => createBackupMutation.mutate(undefined)}
-              >
-                <Shield />
-                Backup Sekarang
-              </PendingButton>
-              <Button
-                variant="secondary"
-                onPress={() =>
-                  exportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-              >
-                <ArrowDownToLine />
-                Ke Export Database
-              </Button>
-            </div>
           </Alert.Content>
         </Alert>
       )}
 
-      {/* Database Info */}
       <Card>
         <Card.Header>
-          <Card.Title className="flex items-center gap-2">
-            <HardDrive className="size-4" />
-            Database
-          </Card.Title>
+          <Card.Title>Database</Card.Title>
         </Card.Header>
-        <Card.Content className="space-y-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted">{id.settings.databaseSize}</span>
-            <span className="font-medium">
-              {dbInfoQuery.data ? formatFileSize(dbInfoQuery.data.size_bytes) : "—"}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted">{id.settings.databasePath}</span>
-            <span className="max-w-[300px] truncate font-mono text-xs">
-              {dbInfoQuery.data?.path ?? "—"}
-            </span>
-          </div>
+        <Card.Content>
+          <SummaryList
+            items={[
+              {
+                label: id.settings.databaseSize,
+                value: dbInfoQuery.data ? formatFileSize(dbInfoQuery.data.size_bytes) : "—",
+              },
+              {
+                label: id.settings.databasePath,
+                value: dbInfoQuery.data?.path ?? "—",
+                tone: "mono",
+              },
+            ]}
+          />
         </Card.Content>
       </Card>
 
@@ -343,40 +271,38 @@ export function DataTab() {
         <StatCard label="Hari Retensi" value={String(status?.settings.retention_days ?? 90)} />
       </div>
 
-      {/* Auto Backup Status & Settings */}
+      {/* Keterangan "setiap N jam, N hari" tidak diulang di kepala kartu: kedua
+          angkanya sudah terbaca di kolom pilihannya dan di kartu KPI di atas. */}
       <Card>
         <Card.Header>
-          <Card.Title className="flex items-center gap-2">
-            <Shield className="size-4" />
-            Backup Otomatis
-          </Card.Title>
-          <Card.Description>
-            Backup otomatis setiap {status?.settings.interval_hours ?? 3} jam. Tersimpan selama{" "}
-            {status?.settings.retention_days ?? 90} hari, file terkompresi (gzip).
-          </Card.Description>
+          <Card.Title>Backup Otomatis</Card.Title>
         </Card.Header>
-        <Card.Content className="space-y-4">
-          {/* Settings */}
+        <Card.Content className="gap-4">
           <BackupSettingsInline
             intervalHours={status?.settings.interval_hours ?? 3}
             retentionDays={status?.settings.retention_days ?? 90}
           />
 
-          {status?.last_backup && (
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <Clock className="size-4" />
-              Backup terakhir: {formatDateTime(status.last_backup.created_at)} —{" "}
-              {formatFileSize(status.last_backup.size_bytes)}
-            </div>
+          {(status?.last_backup || status?.backup_dir) && (
+            <SummaryList
+              layout="grid"
+              items={[
+                ...(status.last_backup
+                  ? [
+                      {
+                        label: "Backup terakhir",
+                        value: `${formatDateTime(status.last_backup.created_at)} — ${formatFileSize(status.last_backup.size_bytes)}`,
+                      },
+                    ]
+                  : []),
+                ...(status.backup_dir
+                  ? [{ label: "Folder", value: status.backup_dir, tone: "mono" as const }]
+                  : []),
+              ]}
+            />
           )}
-
-          {status?.backup_dir && (
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <FolderOpen className="size-4" />
-              <span className="truncate font-mono text-xs">{status.backup_dir}</span>
-            </div>
-          )}
-
+        </Card.Content>
+        <Card.Footer>
           <PendingButton
             isPending={createBackupMutation.isPending}
             variant="secondary"
@@ -385,7 +311,7 @@ export function DataTab() {
             <RefreshCw />
             Backup Sekarang
           </PendingButton>
-        </Card.Content>
+        </Card.Footer>
       </Card>
 
       {/* Backup List */}
@@ -393,10 +319,6 @@ export function DataTab() {
         <Card>
           <Card.Header>
             <Card.Title>Daftar Backup</Card.Title>
-            <Card.Description>
-              {backups.length} backup tersedia. Backup lama otomatis dihapus setelah{" "}
-              {status?.settings.retention_days ?? 90} hari.
-            </Card.Description>
           </Card.Header>
           <Card.Content>
             <Table variant="secondary">
@@ -416,20 +338,23 @@ export function DataTab() {
                       >
                         <Table.Cell>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{backup.filename}</span>
+                            <span className="font-mono">{backup.filename}</span>
                             {i === 0 && <Chip size="sm">Terbaru</Chip>}
                           </div>
                         </Table.Cell>
-                        <Table.Cell className="text-right text-sm">
+                        <Table.Cell className="text-right tabular-nums">
                           {formatFileSize(backup.size_bytes)}
                         </Table.Cell>
                         <Table.Cell className="text-right">
+                          {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI
+                              (DESIGN.md §5.4). Pulihkan juga menimpa database, jadi
+                              sama merusaknya dengan hapus. */}
                           <div className="flex justify-end gap-1">
                             <Button
                               aria-label={`Pulihkan backup ${backup.filename}`}
                               isIconOnly
                               size="sm"
-                              variant="secondary"
+                              variant="danger-soft"
                               onPress={() =>
                                 setPendingBackup({ action: "restore", filename: backup.filename })
                               }
@@ -440,7 +365,7 @@ export function DataTab() {
                               aria-label={`Hapus backup ${backup.filename}`}
                               isIconOnly
                               size="sm"
-                              variant="danger"
+                              variant="danger-soft"
                               onPress={() =>
                                 setPendingBackup({ action: "delete", filename: backup.filename })
                               }
@@ -459,32 +384,35 @@ export function DataTab() {
         </Card>
       )}
 
-      {/* Manual Export */}
+      {/* Aksi kartu di `Card.Footer`, seperti contoh "With Form" di dokumentasi
+          Card. Export memajukan pekerjaan (primary); import hanya membuka pemilih
+          berkas (secondary) — yang menimpa database adalah "Ya, Import" di
+          AlertDialog bawah, dan itu yang `danger`. */}
       <Card>
-        <div ref={exportSectionRef} />
         <Card.Header>
           <Card.Title>{id.settings.exportDatabase}</Card.Title>
           <Card.Description>{id.settings.exportDatabaseDesc}</Card.Description>
         </Card.Header>
-        <Card.Content className="space-y-4">
+        <Card.Content>
           <p className="text-sm text-muted">
             Berkas database diunduh oleh browser ini. Di jendela aplikasi kasir, berkas masuk ke
             folder unduhan PC kasir.
           </p>
+        </Card.Content>
+        <Card.Footer>
           <PendingButton isPending={isExporting} onPress={handleExport}>
             <Download />
             {id.settings.exportDatabase}
           </PendingButton>
-        </Card.Content>
+        </Card.Footer>
       </Card>
 
-      {/* Manual Import */}
       <Card>
         <Card.Header>
           <Card.Title>{id.settings.importDatabase}</Card.Title>
           <Card.Description>{id.settings.importDatabaseDesc}</Card.Description>
         </Card.Header>
-        <Card.Content className="space-y-4">
+        <Card.Content>
           <p className="text-sm text-muted">
             Pilih berkas <code>.db</code> hasil export. Berkasnya diunggah ke PC kasir dan dipasang
             saat aplikasi dijalankan berikutnya.
@@ -498,11 +426,8 @@ export function DataTab() {
             onChange={handleImportFileChosen}
             type="file"
           />
-          {/* `secondary`, bukan `danger`: tombol ini hanya membuka pemilih berkas.
-              Yang menimpa database adalah "Ya, Import" di AlertDialog bawah, dan
-              itu memang `danger`. Mewarnai keduanya merah membuat langkah yang
-              betul-betul merusak tidak lagi menonjol dari langkah menelusuri
-              berkas. */}
+        </Card.Content>
+        <Card.Footer>
           <PendingButton
             isPending={isImporting}
             variant="secondary"
@@ -511,7 +436,7 @@ export function DataTab() {
             <Upload />
             {id.settings.importDatabase}
           </PendingButton>
-        </Card.Content>
+        </Card.Footer>
       </Card>
 
       {/* Satu dialog untuk semua baris backup, bukan sepasang per baris: daftar backup

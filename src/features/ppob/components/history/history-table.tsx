@@ -101,35 +101,29 @@ function TransactionDetailDialog({
         <Modal.Dialog aria-label="Detail Transaksi">
           <Modal.CloseTrigger />
           <Modal.Header>
+            {/* Ikon layanan di tempat `Modal.Icon`, warnanya dari token `--service-*`. */}
+            {service ? (
+              <Modal.Icon className={`${service.bg} ${service.text}`}>
+                <service.icon className="size-5" />
+              </Modal.Icon>
+            ) : null}
             <Modal.Heading>Detail Transaksi</Modal.Heading>
           </Modal.Header>
           {item && service && (
             <Modal.Body>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex size-10 shrink-0 items-center justify-center rounded-full ${service.bg}`}
-                  >
-                    <service.icon className={`size-5 ${service.text}`} />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">{service.label}</p>
-                    <p>{formatDateTime(item.createdAt)}</p>
-                  </div>
-                </div>
+              <div className="flex items-center justify-between gap-2">
+                <p>
+                  <span className="font-medium text-foreground">{service.label}</span>
+                  <span aria-hidden="true"> · </span>
+                  {formatDateTime(item.createdAt)}
+                </p>
                 <PpobStatusBadge status={item.status} />
               </div>
 
-              <Separator />
-
-              <div>
-                <p>Deskripsi</p>
-                <p className="font-medium text-foreground">{buildDescription(item)}</p>
-              </div>
-
-              <Separator />
-
-              <SummaryList items={referenceItems} layout="grid" />
+              <SummaryList
+                items={[{ label: "Deskripsi", value: buildDescription(item) }, ...referenceItems]}
+                layout="grid"
+              />
 
               <Separator />
 
@@ -184,22 +178,18 @@ export function HistoryTable({ items }: HistoryTableProps) {
                     onAction={() => setSelectedItem(item)}
                   >
                     <Table.Cell>
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`flex size-8 shrink-0 items-center justify-center rounded-full ${service.bg}`}
-                        >
-                          <service.icon className={`size-4 ${service.text}`} />
-                        </div>
-                        <span className="text-sm font-semibold">{service.label}</span>
+                      {/* Ikon berwarna token `--service-*` (DESIGN.md §3.2) di
+                          samping teksnya — bukan bulatan latar per baris. */}
+                      <div className="flex items-center gap-2">
+                        <service.icon aria-hidden="true" className={`size-4 ${service.text}`} />
+                        <span>{service.label}</span>
                       </div>
                     </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-sm text-muted">
+                    <Table.Cell className="whitespace-nowrap text-muted">
                       {formatDateTime(item.createdAt)}
                     </Table.Cell>
-                    <Table.Cell className="text-sm">
-                      <p className="truncate">{buildDescription(item)}</p>
-                    </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-right font-semibold tabular-nums">
+                    <Table.Cell className="max-w-64 truncate">{buildDescription(item)}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-right font-medium tabular-nums">
                       {nominal != null ? formatRupiah(nominal) : "-"}
                     </Table.Cell>
                     <Table.Cell>

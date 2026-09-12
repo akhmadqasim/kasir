@@ -220,21 +220,21 @@ export function getDefaultDateRange() {
 }
 
 export const PRODUCT_FILTER_OPTIONS = [
-  { value: "all", label: "Semua Produk" },
-  { value: "pulsa", label: "Pulsa" },
-  { value: "pln", label: "PLN" },
-  { value: "pdam", label: "PDAM" },
-  { value: "bpjs", label: "BPJS" },
-  { value: "pp", label: "Payment Point" },
-  { value: "emoney", label: "E-Money" },
-  { value: "transfer", label: "Transfer" },
+  { key: "all", label: "Semua Produk" },
+  { key: "pulsa", label: "Pulsa" },
+  { key: "pln", label: "PLN" },
+  { key: "pdam", label: "PDAM" },
+  { key: "bpjs", label: "BPJS" },
+  { key: "pp", label: "Payment Point" },
+  { key: "emoney", label: "E-Money" },
+  { key: "transfer", label: "Transfer" },
 ] as const
 
 export const STATUS_FILTER_OPTIONS = [
-  { value: "all", label: "Semua Status" },
-  { value: "sukses", label: "Sukses" },
-  { value: "gagal", label: "Gagal" },
-  { value: "proses", label: "Proses" },
+  { key: "all", label: "Semua Status" },
+  { key: "sukses", label: "Sukses" },
+  { key: "gagal", label: "Gagal" },
+  { key: "proses", label: "Proses" },
 ] as const
 
 export function matchesProductFilter(item: HistoryPaymentItem, filter: string): boolean {

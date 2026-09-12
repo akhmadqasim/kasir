@@ -1,15 +1,14 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowDownCircle, ArrowUpCircle, Search, RefreshCw } from "lucide-react"
-import { Button, Label, ListBox, Modal, Select, Separator, Skeleton } from "@heroui/react"
+import { Button, Modal, Separator, Skeleton, Spinner, Table } from "@heroui/react"
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
-import { PendingButton } from "@/components/pending-button"
+import { OptionSelect } from "@/components/option-select"
 import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
 import { DateRangePicker } from "@/components/date-range-picker"
-import { selectedText } from "@/components/selected-text"
 import type { DateRange } from "@/lib/date-range"
 import { id as i18n } from "@/i18n/id"
 import { usePpobMutasi, usePpobSaldo } from "../../hooks"
@@ -25,9 +24,9 @@ import {
 import type { MutasiItem } from "../../types"
 
 const TYPE_FILTER_OPTIONS = [
-  { value: "all", label: i18n.ppob.mutasiAll },
-  { value: "in", label: i18n.ppob.mutasiIn },
-  { value: "out", label: i18n.ppob.mutasiOut },
+  { key: "all", label: i18n.ppob.mutasiAll },
+  { key: "in", label: i18n.ppob.mutasiIn },
+  { key: "out", label: i18n.ppob.mutasiOut },
 ] as const
 
 const DISPLAY_LABELS: Record<string, string> = {
@@ -290,56 +289,83 @@ function MutasiStatusBadge({ status, size }: { status: string | null; size?: "sm
   }
 }
 
-function MutasiRow({ item, onPress }: { item: MutasiItem; onPress: () => void }) {
-  const isIn = item.mutationType === "in"
-
+/**
+ * Mutasi sebagai tabel, sebangun dengan riwayat transaksi (DESIGN.md §5.4):
+ * arah dibaca dari ikon *dan* tanda pada nominalnya, bukan warna saja.
+ */
+function MutasiTable({
+  items,
+  onSelect,
+}: {
+  items: MutasiItem[]
+  onSelect: (item: MutasiItem) => void
+}) {
   return (
-    <Button
-      fullWidth
-      className="h-auto justify-start gap-3 p-3 text-left"
-      variant="secondary"
-      onPress={onPress}
-    >
-      <span
-        className={`flex size-10 shrink-0 items-center justify-center rounded-full ${
-          isIn ? "bg-success-soft" : "bg-danger-soft"
-        }`}
-      >
-        {isIn ? (
-          <ArrowDownCircle className="size-5 text-success" />
-        ) : (
-          <ArrowUpCircle className="size-5 text-danger" />
-        )}
-      </span>
-
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">
-            {item.description ?? (isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment)}
-          </span>
-          <MutasiStatusBadge size="sm" status={item.status} />
-        </span>
-        <span className="flex items-center gap-2 text-xs text-muted">
-          <span>{formatDateTime(item.createdAt)}</span>
-          {item.reference && (
-            <>
-              <span>·</span>
-              <span className="truncate">{item.reference}</span>
-            </>
-          )}
-        </span>
-      </span>
-
-      <span className="shrink-0 text-right">
-        <span className={`block text-sm font-semibold ${isIn ? "text-success" : "text-danger"}`}>
-          {isIn ? "+" : "-"}
-          {item.amount != null ? formatRupiah(item.amount) : "-"}
-        </span>
-        {item.paymentMethod && (
-          <span className="block text-xs text-muted">{item.paymentMethod}</span>
-        )}
-      </span>
-    </Button>
+    <Table variant="secondary">
+      <Table.ScrollContainer>
+        <Table.Content aria-label="Mutasi saldo Mitra">
+          <Table.Header>
+            <Table.Column id="date">Tanggal</Table.Column>
+            <Table.Column isRowHeader id="description">
+              Keterangan
+            </Table.Column>
+            <Table.Column id="reference">Referensi</Table.Column>
+            <Table.Column id="status">Status</Table.Column>
+            <Table.Column className="text-right" id="amount">
+              Nominal
+            </Table.Column>
+          </Table.Header>
+          <Table.Body renderEmptyState={() => <NoData />}>
+            {items.map((item, index) => {
+              const isIn = item.mutationType === "in"
+              const description =
+                item.description ?? (isIn ? i18n.ppob.mutasiTopup : i18n.ppob.mutasiPayment)
+              return (
+                <Table.Row
+                  key={item.id ?? index}
+                  id={item.id ?? `mutasi-${index}`}
+                  textValue={description}
+                  onAction={() => onSelect(item)}
+                >
+                  <Table.Cell className="whitespace-nowrap text-muted">
+                    {formatDateTime(item.createdAt)}
+                  </Table.Cell>
+                  <Table.Cell className="max-w-64 truncate">
+                    <div className="flex items-center gap-2">
+                      {isIn ? (
+                        <ArrowDownCircle aria-hidden="true" className="size-4 text-success" />
+                      ) : (
+                        <ArrowUpCircle aria-hidden="true" className="size-4 text-danger" />
+                      )}
+                      <span className="truncate">{description}</span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell className="max-w-48 truncate font-mono text-muted">
+                    {item.reference ?? "-"}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <MutasiStatusBadge size="sm" status={item.status} />
+                  </Table.Cell>
+                  <Table.Cell
+                    className={`whitespace-nowrap text-right font-medium tabular-nums ${
+                      isIn ? "text-success" : "text-danger"
+                    }`}
+                  >
+                    {isIn ? "+" : "-"}
+                    {item.amount != null ? formatRupiah(item.amount) : "-"}
+                    {item.paymentMethod && (
+                      <span className="block text-xs font-normal text-muted">
+                        {item.paymentMethod}
+                      </span>
+                    )}
+                  </Table.Cell>
+                </Table.Row>
+              )
+            })}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
   )
 }
 
@@ -416,15 +442,19 @@ export function PpobMutasi() {
     <div className="flex flex-col gap-6">
       <SubpageHeader
         actions={
-          <PendingButton
+          // Tombol ikon `sm tertiary` seperti aksi navbar lain (DESIGN.md §5.1);
+          // render-prop `isPending` adalah idiom dokumentasi Button untuk ikon
+          // yang berganti spinner.
+          <Button
+            aria-label={i18n.common.reload}
+            isIconOnly
             isPending={isFetching}
             size="sm"
             variant="tertiary"
             onPress={() => refetch()}
           >
-            <RefreshCw />
-            Refresh
-          </PendingButton>
+            {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
+          </Button>
         }
         title={i18n.ppob.mutasiTitle}
         onBack={() => navigate("/ppob")}
@@ -450,30 +480,16 @@ export function PpobMutasi() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker value={dateRange} onChange={setDateRange} align="start" />
 
-        <Select
+        <OptionSelect
           aria-label="Filter jenis mutasi"
           className="w-36"
+          options={TYPE_FILTER_OPTIONS}
           value={typeFilter}
-          onChange={(value) => setTypeFilter(String(value))}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {TYPE_FILTER_OPTIONS.map((opt) => (
-                <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                  <Label>{opt.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+          onChange={(value) => setTypeFilter(value ?? "all")}
+        />
       </div>
 
       {isLoading ? (
@@ -491,11 +507,7 @@ export function PpobMutasi() {
           Tidak ditemukan mutasi pada rentang tanggal yang dipilih
         </NoData>
       ) : (
-        <div className="flex flex-col gap-2">
-          {filteredItems.map((item, index) => (
-            <MutasiRow key={item.id ?? index} item={item} onPress={() => setSelectedItem(item)} />
-          ))}
-        </div>
+        <MutasiTable items={filteredItems} onSelect={setSelectedItem} />
       )}
 
       {selectedItem && (

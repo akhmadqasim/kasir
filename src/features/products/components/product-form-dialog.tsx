@@ -2,25 +2,29 @@ import { useState } from "react"
 import {
   Button,
   ComboBox,
+  EmptyState,
   FieldError,
   Form,
   Input,
   Label,
   ListBox,
   Modal,
-  Select,
   TextField,
 } from "@heroui/react"
 
 import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
+import { formatRupiah } from "@/lib/format"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import type { Product, CreateProductInput, UpdateProductInput } from "../types"
 
-const UNITS = ["pcs", "kg", "liter", "pack", "box", "karton", "lusin", "dus"]
+const UNITS = ["pcs", "kg", "liter", "pack", "box", "karton", "lusin", "dus"].map((unit) => ({
+  key: unit,
+  label: unit,
+}))
 
 /**
  * Nilai sentinel `ComboBox`: React Aria memakai `null` untuk "tidak ada pilihan",
@@ -232,7 +236,7 @@ function ProductFormBody({
           }
         >
           <Label>{id.products.name} *</Label>
-          <Input placeholder={id.products.name} />
+          <Input />
           <FieldError>{errors.name}</FieldError>
         </TextField>
 
@@ -244,7 +248,7 @@ function ProductFormBody({
             onChange={(value) => updateField("barcode", value)}
           >
             <Label>{id.products.barcode}</Label>
-            <Input placeholder={id.products.barcode} />
+            <Input />
           </TextField>
 
           <TextField
@@ -281,28 +285,14 @@ function ProductFormBody({
             <FieldError>{errors.stock}</FieldError>
           </TextField>
 
-          <Select
+          <OptionSelect
             fullWidth
+            label={`${id.products.unit} *`}
+            options={UNITS}
             value={form.unit}
             variant="secondary"
-            onChange={(value) => updateField("unit", value === null ? "" : String(value))}
-          >
-            <Label>{id.products.unit} *</Label>
-            <Select.Trigger>
-              <Select.Value>{selectedText}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {UNITS.map((unit) => (
-                  <ListBox.Item key={unit} id={unit} textValue={unit}>
-                    <Label>{unit}</Label>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            onChange={(value) => updateField("unit", value ?? "")}
+          />
 
           <TextField
             fullWidth
@@ -320,12 +310,13 @@ function ProductFormBody({
             dan bukan `NumberField`: nilainya saling menghitung ulang tiap
             ketukan, dan `NumberField` memformat isinya menurut locale — angka
             yang baru setengah diketik akan dirapikan di tengah pengetikan. */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <p className="text-xs text-muted">Perhitungan Harga</p>
           <InfoPanel>
             <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2">
               <TextField
                 fullWidth
+                isInvalid={Boolean(errors.buyPrice)}
                 type="number"
                 value={form.buyPrice}
                 variant="secondary"
@@ -336,6 +327,7 @@ function ProductFormBody({
               >
                 <Label>{id.products.buyPrice} *</Label>
                 <Input min="0" placeholder="0" />
+                <FieldError>{errors.buyPrice}</FieldError>
               </TextField>
 
               <span className="pb-2.5 text-base font-medium text-muted">×</span>
@@ -358,6 +350,7 @@ function ProductFormBody({
 
               <TextField
                 fullWidth
+                isInvalid={Boolean(errors.sellPrice)}
                 type="number"
                 value={form.sellPrice}
                 variant="secondary"
@@ -368,26 +361,14 @@ function ProductFormBody({
               >
                 <Label>{id.products.sellPrice} *</Label>
                 <Input min="0" placeholder="0" />
+                <FieldError>{errors.sellPrice}</FieldError>
               </TextField>
             </div>
-            {(errors.buyPrice || errors.sellPrice) && (
-              <div className="mt-2 space-y-1">
-                {errors.buyPrice && (
-                  <p className="text-xs font-medium text-danger">{errors.buyPrice}</p>
-                )}
-                {errors.sellPrice && (
-                  <p className="text-xs font-medium text-danger">{errors.sellPrice}</p>
-                )}
-              </div>
-            )}
             {actualMargin && (
               <div className="mt-2 flex items-center gap-2 text-xs text-muted">
                 <span>Margin aktual:</span>
                 <span className="font-semibold text-foreground">{actualMargin}%</span>
-                <span>
-                  (Rp {(Number(form.sellPrice) - Number(form.buyPrice)).toLocaleString("id-ID")} /
-                  item)
-                </span>
+                <span>({formatRupiah(Number(form.sellPrice) - Number(form.buyPrice))} / item)</span>
               </div>
             )}
           </InfoPanel>
@@ -446,9 +427,7 @@ function CategoryComboBox({
       <ComboBox.Popover>
         <ListBox
           aria-label={id.products.category}
-          renderEmptyState={() => (
-            <p className="px-3 py-6 text-center text-sm text-muted">Kategori tidak ditemukan</p>
-          )}
+          renderEmptyState={() => <EmptyState>Kategori tidak ditemukan</EmptyState>}
         >
           <ListBox.Item id={NO_CATEGORY} textValue="Tanpa kategori">
             <Label>Tanpa kategori</Label>

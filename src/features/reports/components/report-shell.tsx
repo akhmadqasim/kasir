@@ -59,6 +59,7 @@ interface ReportTableProps {
    * dengan laporan yang memang kosong, dan kasir tidak punya cara membedakannya.
    */
   error?: Error | null
+  /** Kalimat keadaan kosong. Tanpa ini dipakai bawaan `NoData` ("Belum ada data"). */
   emptyMessage?: string
   /** Kelas tambahan untuk `Table.Content`, dipakai tabel lebar untuk menahan lebar minimum. */
   contentClassName?: string
@@ -77,7 +78,7 @@ export function ReportTable({
   columns,
   isLoading,
   error,
-  emptyMessage = "Tidak ada data",
+  emptyMessage,
   contentClassName,
   children,
 }: ReportTableProps) {

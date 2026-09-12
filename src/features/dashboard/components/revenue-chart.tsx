@@ -10,7 +10,9 @@ import {
 } from "@/components/ui/chart"
 import { id as t } from "@/i18n/id"
 import { formatCompactRupiah, formatNumber, formatRupiah } from "@/lib/format"
+import { NoData } from "@/components/no-data"
 import { useDailyRevenue } from "../hooks/use-dashboard"
+import { longDate, shortDate } from "./chart-dates"
 import { InlineStat } from "./inline-stat"
 
 const revenueChartConfig = {
@@ -19,22 +21,6 @@ const revenueChartConfig = {
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig
-
-/** "5 Sep" — cukup untuk sumbu, tanpa tahun yang selalu sama. */
-function shortDate(value: string): string {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-    month: "short",
-    day: "numeric",
-  })
-}
-
-function longDate(value: string): string {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
-}
 
 /**
  * Penjualan bersih per hari, digambar sebagai batang.
@@ -104,8 +90,9 @@ export function RevenueChart({ days }: { days: number }) {
             </BarChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-[240px] items-center justify-center text-sm text-muted">
-            {t.dashboard.noData}
+          // Setinggi grafiknya, supaya kartu tidak melompat saat datanya datang.
+          <div className="flex h-[240px] items-center justify-center">
+            <NoData />
           </div>
         )}
       </Card.Content>

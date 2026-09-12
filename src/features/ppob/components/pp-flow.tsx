@@ -1,9 +1,20 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { Button, Card, Input, Label, SearchField, Skeleton, TextField } from "@heroui/react"
+import {
+  Button,
+  Card,
+  Description,
+  Input,
+  Label,
+  ListBox,
+  Skeleton,
+  Surface,
+  TextField,
+} from "@heroui/react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { usePpobMenu, usePpSubMenu } from "../hooks"
 import type { PpobMenuGroup, PpSubMenuItem } from "../types"
@@ -57,8 +68,10 @@ export function PpFlow() {
           selectedMerchant && paymentCode.length >= 6 ? (
             <ConfirmCard
               footer={
+                // Pembayaran PP belum tersambung ke backend; tombolnya tetap ada
+                // supaya bentuk kartunya sama dengan flow lain.
                 <Button fullWidth isDisabled size="lg">
-                  {id.ppob.process} (Coming Soon)
+                  {id.ppob.notAvailable}
                 </Button>
               }
               items={[
@@ -66,7 +79,7 @@ export function PpFlow() {
                 { label: id.ppob.selectMerchant, value: selectedMerchant.merchant },
                 { label: id.ppob.paymentCode, value: paymentCode, tone: "mono" },
               ]}
-              title={<Card.Title>{id.ppob.confirm}</Card.Title>}
+              title={id.ppob.confirm}
             />
           ) : groups ? (
             <Card>
@@ -104,18 +117,13 @@ export function PpFlow() {
         {/* Step 2: Merchant Selection */}
         {selectedGroup && !selectedMerchant && (
           <>
-            <SearchField
+            <SearchInput
               aria-label={id.ppob.searchMerchant}
               className="max-w-sm"
+              placeholder={id.ppob.searchMerchant}
               value={merchantSearch}
               onChange={setMerchantSearch}
-            >
-              <SearchField.Group>
-                <SearchField.SearchIcon />
-                <SearchField.Input placeholder={id.ppob.searchMerchant} />
-                <SearchField.ClearButton />
-              </SearchField.Group>
-            </SearchField>
+            />
 
             {subMenuLoading ? (
               <div className="flex flex-col gap-2">
@@ -123,28 +131,37 @@ export function PpFlow() {
                   <Skeleton key={i} className="h-16" />
                 ))}
               </div>
+            ) : filteredMerchants.length === 0 ? (
+              <NoData title={id.ppob.merchantNotFound} />
             ) : (
-              <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
-                {filteredMerchants.map((item) => (
-                  <Button
-                    key={item.id}
-                    fullWidth
-                    className="h-auto justify-start gap-3 whitespace-normal px-4 py-4 text-left"
-                    isDisabled={Boolean(item.isTrouble)}
-                    variant="secondary"
-                    onPress={() => setSelectedMerchant(item)}
-                  >
-                    {item.pathIcon && <img src={item.pathIcon} alt="" className="size-8" />}
-                    <span className="min-w-0">
-                      <span className="block">{item.merchant}</span>
-                      {item.description && (
-                        <span className="block text-muted">{item.description}</span>
-                      )}
-                      {item.label && <span className="block text-xs text-muted">{item.label}</span>}
-                    </span>
-                  </Button>
-                ))}
-              </div>
+              // Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
+              // membingkainya, `onAction` memilih. Merchant yang bermasalah tetap
+              // terlihat tapi tidak bisa dipilih.
+              <Surface className="max-h-[60vh] overflow-y-auto">
+                <ListBox
+                  aria-label={id.ppob.selectMerchant}
+                  className="p-2"
+                  disabledKeys={filteredMerchants
+                    .filter((item) => item.isTrouble)
+                    .map((item) => item.id)}
+                  selectionMode="none"
+                  onAction={(key) => {
+                    const item = filteredMerchants.find((candidate) => candidate.id === key)
+                    if (item) setSelectedMerchant(item)
+                  }}
+                >
+                  {filteredMerchants.map((item) => (
+                    <ListBox.Item key={item.id} id={item.id} textValue={item.merchant}>
+                      {item.pathIcon && <img src={item.pathIcon} alt="" className="size-8" />}
+                      <div className="flex min-w-0 flex-col">
+                        <Label>{item.merchant}</Label>
+                        {item.description && <Description>{item.description}</Description>}
+                        {item.label && <Description>{item.label}</Description>}
+                      </div>
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Surface>
             )}
           </>
         )}

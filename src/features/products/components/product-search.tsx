@@ -1,8 +1,9 @@
 import { useState, useEffect, type ElementType } from "react"
 import { AlertTriangle, Barcode, Search } from "lucide-react"
-import { Label, ListBox, SearchField, Select, ToggleButton } from "@heroui/react"
+import { ToggleButton } from "@heroui/react"
 
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { useCategories } from "../hooks/use-categories"
 import type { ProductQuickFilter } from "../types"
@@ -46,52 +47,33 @@ export function ProductSearch({
     return () => clearTimeout(timer)
   }, [searchInput, onSearchChange])
 
+  const categoryOptions = [
+    { key: ALL, label: id.products.allCategories },
+    ...(categories ?? []).map((cat) => ({ key: String(cat.id), label: cat.name })),
+  ]
+
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <SearchField
+        <SearchInput
           aria-label={id.products.search}
           className="max-w-sm flex-1"
+          placeholder={id.products.search}
           value={searchInput}
           onChange={setSearchInput}
-        >
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder={id.products.search} />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
+        />
 
-        <Select
+        <OptionSelect
           aria-label={id.products.allCategories}
           className="w-full lg:w-[200px]"
-          placeholder={id.products.allCategories}
+          options={categoryOptions}
           value={categoryKey}
           onChange={(value) => {
-            const key = value === null ? ALL : String(value)
+            const key = value ?? ALL
             setCategoryKey(key)
             onCategoryChange(key === ALL ? null : Number(key))
           }}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              <ListBox.Item id={ALL} textValue={id.products.allCategories}>
-                <Label>{id.products.allCategories}</Label>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-              {(categories ?? []).map((cat) => (
-                <ListBox.Item key={cat.id} id={String(cat.id)} textValue={cat.name}>
-                  <Label>{cat.name}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
       </div>
 
       {/* Filter cepat. `ToggleButton` dipakai satu per satu, bukan lewat

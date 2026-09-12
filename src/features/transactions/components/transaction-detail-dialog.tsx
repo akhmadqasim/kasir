@@ -8,13 +8,11 @@ import {
   Button,
   Dropdown,
   Label,
-  ListBox,
   Modal,
-  Select,
-  Separator,
   Skeleton,
   Spinner,
   Surface,
+  Table,
   TextArea,
   TextField,
   Tooltip,
@@ -22,8 +20,8 @@ import {
 
 import { toast } from "@/lib/toast"
 import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useApiQuery } from "@/hooks/use-api"
@@ -53,6 +51,11 @@ import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-statu
 import { refundBlockedReason } from "../refund-window"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
+const PAYMENT_METHOD_OPTIONS = SELECTABLE_PAYMENT_METHODS.map((method) => ({
+  key: method,
+  label: paymentMethodLabel(method),
+}))
+
 interface TransactionDetailDialogProps {
   transaction: TransactionListItem | null
   onClose: () => void
@@ -73,7 +76,7 @@ function RefundAction({
   onRefund: () => void
 }) {
   const button = (
-    <Button isDisabled={blockedReason !== null} size="sm" variant="secondary" onPress={onRefund}>
+    <Button isDisabled={blockedReason !== null} variant="secondary" onPress={onRefund}>
       <RotateCcw />
       {id.refund.title}
     </Button>
@@ -266,11 +269,13 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             ) : (
               <>
                 <Modal.Body>
-                  <section className="space-y-2.5">
+                  {/* Bagian dipisah ruang, bukan garis — DESIGN.md §5.7. Judul
+                      bagiannya `text-foreground` karena Body bawaannya muted. */}
+                  <section className="flex flex-col gap-2">
                     {/* Status adalah lencana sungguhan (DESIGN.md §5.4), jadi ia duduk di
                         kepala bagian, bukan dipaksa jadi teks di dalam `SummaryList`. */}
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-semibold">Ringkasan Transaksi</h3>
+                      <p className="font-medium text-foreground">Ringkasan Transaksi</p>
                       <StatusBadge status={transactionStatusVariant(detail.transaction.status)}>
                         {transactionStatusLabel(detail.transaction.status)}
                       </StatusBadge>
@@ -291,61 +296,65 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     />
                   </section>
 
-                  <Separator />
-
-                  <section className="space-y-2.5">
-                    <h3 className="font-semibold">{id.transactions.itemList}</h3>
-                    {/* Bukan `InfoPanel`: barisnya punya padding sendiri supaya garis
-                        `divide-y` menyentuh tepi permukaan. */}
-                    <Surface className="divide-y" variant="secondary">
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2 text-xs text-muted">
-                        <span>Item</span>
-                        <span className="text-right">Subtotal</span>
-                      </div>
-                      {detail.items.map((item) => {
-                        const ppobStatus = ppobStatusConfig(item.ppob_status)
-                        return (
-                          <div
-                            key={item.id}
-                            className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-2.5"
-                          >
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium break-words">{item.product_name}</span>
-                                <span className="text-muted">× {item.quantity}</span>
-                                {ppobStatus && (
-                                  <StatusBadge size="sm" status={ppobStatus.variant}>
-                                    {isPpobInFlight(item.ppob_status) && (
-                                      <Spinner className="size-3" color="current" size="sm" />
+                  {/* `Table` seperti di dialog detail refund, bukan grid yang
+                      menirukan tabel — DESIGN.md §5.4. */}
+                  <section className="flex flex-col gap-2">
+                    <p className="font-medium text-foreground">{id.transactions.itemList}</p>
+                    <Table variant="secondary">
+                      <Table.ScrollContainer>
+                        <Table.Content aria-label={id.transactions.itemList}>
+                          <Table.Header>
+                            <Table.Column isRowHeader>Item</Table.Column>
+                            <Table.Column className="text-center">Qty</Table.Column>
+                            <Table.Column className="text-right">Subtotal</Table.Column>
+                          </Table.Header>
+                          <Table.Body>
+                            {detail.items.map((item) => {
+                              const ppobStatus = ppobStatusConfig(item.ppob_status)
+                              return (
+                                <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
+                                  <Table.Cell className="whitespace-normal">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-medium">{item.product_name}</span>
+                                      {ppobStatus && (
+                                        <StatusBadge size="sm" status={ppobStatus.variant}>
+                                          {isPpobInFlight(item.ppob_status) && (
+                                            <Spinner className="size-3" color="current" size="sm" />
+                                          )}
+                                          {ppobStatus.label}
+                                        </StatusBadge>
+                                      )}
+                                    </div>
+                                    {isDiscountedLine(item) && (
+                                      <p className="text-xs text-danger">
+                                        Diskon -{formatRupiah(lineDiscountAmount(item))}
+                                      </p>
                                     )}
-                                    {ppobStatus.label}
-                                  </StatusBadge>
-                                )}
-                              </div>
-                              {isDiscountedLine(item) && (
-                                <p className="text-xs text-danger">
-                                  Diskon: -{formatRupiah(lineDiscountAmount(item))}
-                                </p>
-                              )}
-                            </div>
-                            <div className="text-right tabular-nums">
-                              {isDiscountedLine(item) && (
-                                <div className="text-xs text-muted line-through">
-                                  {formatRupiah(item.subtotal)}
-                                </div>
-                              )}
-                              <div className="font-medium">{formatRupiah(netLineAmount(item))}</div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </Surface>
+                                  </Table.Cell>
+                                  <Table.Cell className="text-center tabular-nums">
+                                    {item.quantity}
+                                  </Table.Cell>
+                                  <Table.Cell className="text-right tabular-nums">
+                                    {isDiscountedLine(item) && (
+                                      <p className="text-xs text-muted line-through">
+                                        {formatRupiah(item.subtotal)}
+                                      </p>
+                                    )}
+                                    <p className="font-medium">
+                                      {formatRupiah(netLineAmount(item))}
+                                    </p>
+                                  </Table.Cell>
+                                </Table.Row>
+                              )
+                            })}
+                          </Table.Body>
+                        </Table.Content>
+                      </Table.ScrollContainer>
+                    </Table>
                   </section>
 
-                  <Separator />
-
-                  <section className="space-y-2.5">
-                    <h3 className="font-semibold">Ringkasan Pembayaran</h3>
+                  <section className="flex flex-col gap-2">
+                    <p className="font-medium text-foreground">Ringkasan Pembayaran</p>
                     <InfoPanel className="flex flex-col gap-2">
                       <SummaryList items={paymentItems} />
                       {detail.payment_breakdown.length > 1 && (
@@ -365,50 +374,43 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   </section>
 
                   {(detail.transaction.notes || detail.transaction.deleted_reason || ppobItem) && (
-                    <>
-                      <Separator />
-                      <section className="space-y-2.5">
-                        <h3 className="font-semibold">Info Tambahan</h3>
-                        <div className="space-y-2.5">
-                          {detail.transaction.notes && (
-                            <InfoPanel className="flex flex-col gap-2">
-                              <p className="text-xs text-muted">{id.transactions.notes}</p>
-                              <p className="leading-relaxed">{detail.transaction.notes}</p>
-                            </InfoPanel>
+                    <section className="flex flex-col gap-2">
+                      <p className="font-medium text-foreground">Info Tambahan</p>
+                      {detail.transaction.notes && (
+                        <InfoPanel className="flex flex-col gap-1">
+                          <p className="text-xs">{id.transactions.notes}</p>
+                          <p className="text-foreground">{detail.transaction.notes}</p>
+                        </InfoPanel>
+                      )}
+                      {detail.transaction.deleted_reason && (
+                        <Alert status="danger">
+                          <Alert.Indicator />
+                          <Alert.Content>
+                            <Alert.Title>Alasan Penghapusan</Alert.Title>
+                            <Alert.Description>
+                              {detail.transaction.deleted_reason}
+                            </Alert.Description>
+                          </Alert.Content>
+                        </Alert>
+                      )}
+                      {ppobItem && (
+                        <InfoPanel className="flex flex-col gap-1">
+                          <p className="text-xs">Status PPOB</p>
+                          {ppobItem.ppob_message && (
+                            <p className="text-foreground">{ppobItem.ppob_message}</p>
                           )}
-                          {detail.transaction.deleted_reason && (
-                            <Alert status="danger">
-                              <Alert.Indicator />
-                              <Alert.Content>
-                                <Alert.Title>Alasan Penghapusan</Alert.Title>
-                                <Alert.Description>
-                                  {detail.transaction.deleted_reason}
-                                </Alert.Description>
-                              </Alert.Content>
-                            </Alert>
+                          {ppobItem.ppob_serial_number && (
+                            <p className="font-mono text-xs">SN: {ppobItem.ppob_serial_number}</p>
                           )}
-                          {ppobItem && (
-                            <InfoPanel className="flex flex-col gap-2">
-                              <p className="text-xs text-muted">Status PPOB</p>
-                              {ppobItem.ppob_message && (
-                                <p className="leading-relaxed">{ppobItem.ppob_message}</p>
-                              )}
-                              {ppobItem.ppob_serial_number && (
-                                <p className="font-mono text-xs text-muted">
-                                  SN: {ppobItem.ppob_serial_number}
-                                </p>
-                              )}
-                              {isPpobInFlight(ppobItem.ppob_status) && (
-                                <p className="text-xs text-muted">
-                                  Masih diproses ke penyedia. Tunggu hasilnya — retry baru bisa
-                                  dilakukan kalau statusnya gagal.
-                                </p>
-                              )}
-                            </InfoPanel>
+                          {isPpobInFlight(ppobItem.ppob_status) && (
+                            <p className="text-xs">
+                              Masih diproses ke penyedia. Tunggu hasilnya — retry baru bisa
+                              dilakukan kalau statusnya gagal.
+                            </p>
                           )}
-                        </div>
-                      </section>
-                    </>
+                        </InfoPanel>
+                      )}
+                    </section>
                   )}
                 </Modal.Body>
 
@@ -418,7 +420,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 <Modal.Footer className={cn(isAdmin && !isDeleted && "justify-between")}>
                   {isAdmin && !isDeleted && (
                     <Dropdown>
-                      <Button aria-label="Aksi lainnya" isIconOnly size="sm" variant="tertiary">
+                      <Button aria-label="Aksi lainnya" isIconOnly variant="tertiary">
                         <MoreHorizontal />
                       </Button>
                       <Dropdown.Popover>
@@ -458,7 +460,6 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                     {ppobCanRetry && (
                       <PendingButton
                         isPending={isRetrying}
-                        size="sm"
                         variant="secondary"
                         onPress={handleRetryPpob}
                       >
@@ -475,7 +476,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                         }}
                       />
                     )}
-                    <Button size="sm" onPress={handlePrint}>
+                    <Button onPress={handlePrint}>
                       <Printer />
                       {id.transactions.printReceipt}
                     </Button>
@@ -507,12 +508,12 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
             <AlertDialog.Body>
               <p>{id.transactions.deleteConfirm}</p>
               <TextField
-                aria-label={id.transactions.deleteReason}
                 fullWidth
                 value={deleteReason}
                 variant="secondary"
                 onChange={setDeleteReason}
               >
+                <Label>{id.transactions.deleteReason}</Label>
                 <TextArea placeholder={id.transactions.deleteReasonPlaceholder} rows={3} />
               </TextField>
             </AlertDialog.Body>
@@ -555,36 +556,22 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   </Alert.Content>
                 </Alert>
               )}
-              <Select
-                aria-label={id.transactions.paymentMethod}
+              <OptionSelect
                 fullWidth
+                label={id.transactions.paymentMethod}
+                options={PAYMENT_METHOD_OPTIONS}
                 placeholder="Pilih metode pembayaran"
                 value={newPaymentMethod || null}
                 variant="secondary"
-                onChange={(value) => setNewPaymentMethod(value === null ? "" : String(value))}
-              >
-                <Select.Trigger>
-                  <Select.Value>{selectedText}</Select.Value>
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {SELECTABLE_PAYMENT_METHODS.map((method) => (
-                      <ListBox.Item key={method} id={method} textValue={paymentMethodLabel(method)}>
-                        <Label>{paymentMethodLabel(method)}</Label>
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
+                onChange={(key) => setNewPaymentMethod(key ?? "")}
+              />
               <TextField
-                aria-label={id.transactions.editPaymentReason}
                 fullWidth
                 value={editPaymentReason}
                 variant="secondary"
                 onChange={setEditPaymentReason}
               >
+                <Label>{id.transactions.editPaymentReason}</Label>
                 <TextArea placeholder={id.transactions.editPaymentReasonPlaceholder} rows={3} />
               </TextField>
             </Modal.Body>

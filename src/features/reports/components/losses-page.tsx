@@ -1,11 +1,10 @@
-import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah } from "@/lib/format"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useLosses } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -40,11 +39,7 @@ const STATUS_VARIANTS: Record<string, StatusVariant> = {
 }
 
 export function LossesPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
-
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const { data, isLoading, error } = useLosses(startDate, endDate)
 
   return (
@@ -107,7 +102,7 @@ export function LossesPage() {
       >
         {(data?.items ?? []).map((row) => (
           <Table.Row key={row.id} id={row.id} textValue={row.writeoffNumber}>
-            <Table.Cell className="font-mono text-sm">{row.writeoffNumber}</Table.Cell>
+            <Table.Cell className="font-mono">{row.writeoffNumber}</Table.Cell>
             <Table.Cell className="font-medium">{row.productName}</Table.Cell>
             <Table.Cell>{row.cashierName}</Table.Cell>
             <Table.Cell className="text-right">{row.quantity}</Table.Cell>
@@ -119,7 +114,7 @@ export function LossesPage() {
             <Table.Cell className="text-right font-medium text-danger">
               {formatRupiah(row.lossValue)}
             </Table.Cell>
-            <Table.Cell className="max-w-[150px] truncate text-sm text-muted">
+            <Table.Cell className="max-w-[150px] truncate text-muted">
               {row.notes ?? "-"}
             </Table.Cell>
             <Table.Cell>
@@ -127,7 +122,7 @@ export function LossesPage() {
                 {STATUS_LABELS[row.status] ?? row.status}
               </StatusBadge>
             </Table.Cell>
-            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+            <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
           </Table.Row>
         ))}
       </ReportTable>

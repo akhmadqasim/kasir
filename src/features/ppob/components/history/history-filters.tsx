@@ -1,8 +1,8 @@
-import { Button, Label, ListBox, Select } from "@heroui/react"
+import { Button } from "@heroui/react"
 import { X } from "lucide-react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
 import type { DateRange } from "@/lib/date-range"
 import { PRODUCT_FILTER_OPTIONS, STATUS_FILTER_OPTIONS } from "./history-utils"
 
@@ -32,51 +32,21 @@ export function HistoryFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
+      <OptionSelect
         aria-label="Filter produk"
         className="w-full max-w-48"
-        placeholder="Semua Produk"
+        options={PRODUCT_FILTER_OPTIONS}
         value={productFilter}
-        onChange={(value) => onProductFilterChange(String(value))}
-      >
-        <Select.Trigger>
-          <Select.Value>{selectedText}</Select.Value>
-          <Select.Indicator />
-        </Select.Trigger>
-        <Select.Popover>
-          <ListBox>
-            {PRODUCT_FILTER_OPTIONS.map((opt) => (
-              <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                <Label>{opt.label}</Label>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-            ))}
-          </ListBox>
-        </Select.Popover>
-      </Select>
+        onChange={(value) => onProductFilterChange(value ?? "all")}
+      />
 
-      <Select
+      <OptionSelect
         aria-label="Filter status"
         className="w-full max-w-48"
-        placeholder="Semua Status"
+        options={STATUS_FILTER_OPTIONS}
         value={statusFilter}
-        onChange={(value) => onStatusFilterChange(String(value))}
-      >
-        <Select.Trigger>
-          <Select.Value>{selectedText}</Select.Value>
-          <Select.Indicator />
-        </Select.Trigger>
-        <Select.Popover>
-          <ListBox>
-            {STATUS_FILTER_OPTIONS.map((opt) => (
-              <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
-                <Label>{opt.label}</Label>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-            ))}
-          </ListBox>
-        </Select.Popover>
-      </Select>
+        onChange={(value) => onStatusFilterChange(value ?? "all")}
+      />
 
       {hasFilters && (
         <Button size="sm" variant="tertiary" onPress={resetFilters}>

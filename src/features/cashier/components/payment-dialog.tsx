@@ -1,23 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Check, Delete, RotateCcw } from "lucide-react"
+import { Delete, RotateCcw } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
-import {
-  Button,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  TextArea,
-  TextField,
-  ToggleButton,
-} from "@heroui/react"
+import { Button, Input, Label, Modal, TextArea, TextField, ToggleButton } from "@heroui/react"
 import { InfoPanel } from "@/components/info-panel"
 import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
+import { SummaryList } from "@/components/summary-list"
 import { queryKeys } from "@/lib/api/query-keys"
+import { formatNumber } from "@/lib/format"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "@/stores/cart-store"
@@ -61,6 +53,8 @@ const BANK_OPTIONS = [
   "Jago",
   "Neo Bank",
 ] as const
+
+const BANK_SELECT_OPTIONS = BANK_OPTIONS.map((bank) => ({ key: bank, label: bank }))
 
 interface PaymentSplitForm {
   payment_method: string
@@ -188,10 +182,6 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
       setTimeout(() => paymentInputRef.current?.focus(), 100)
     }
   }, [isSingleCashSelection, open])
-
-  const formatNumber = (num: number): string => {
-    return new Intl.NumberFormat("id-ID").format(num)
-  }
 
   const formatAmountDisplay = (raw: string): string => (raw ? formatNumber(Number(raw) || 0) : "")
 
@@ -513,13 +503,14 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
             <Modal.Heading>Pembayaran</Modal.Heading>
           </Modal.Header>
           <Modal.Body>
-            <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.72fr)]">
-              <div className="min-h-0 overflow-y-auto">
+            <div className="grid gap-4 md:grid-cols-[3fr_2fr]">
+              {/* Kiri: total, nominal per metode, catatan, pesan validasi. */}
+              <div className="flex flex-col gap-4">
                 <InfoPanel className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-muted">Total Transaksi</p>
+                    <p className="text-muted">Total</p>
                     {totalDiscount > 0 && (
-                      <p className="text-muted">Diskon: {formatRupiah(totalDiscount)}</p>
+                      <p className="text-muted">Diskon {formatRupiah(totalDiscount)}</p>
                     )}
                   </div>
                   <div className="text-right">
@@ -533,24 +524,25 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                 </InfoPanel>
 
-                <div className="mt-3.5 space-y-2.5">
-                  {selectedPaymentSplits.length > 0 ? (
-                    selectedPaymentSplits.map((split) => {
+                {selectedPaymentSplits.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {selectedPaymentSplits.map((split) => {
                       const amountInputId = `payment-amount-${split.payment_method}`
                       const label =
                         PAYMENT_METHODS.find((method) => method.value === split.payment_method)
                           ?.label ?? split.payment_method
+                      const isActive = activePaymentMethod === split.payment_method
 
                       return (
                         <div
                           key={split.payment_method}
-                          className={cn(
-                            "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-surface p-2.5 sm:grid-cols-[120px_minmax(0,1fr)]",
-                            activePaymentMethod === split.payment_method &&
-                              "border-accent ring-2 ring-accent/20",
-                          )}
+                          className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-2"
                         >
-                          <div className="text-xs text-muted">{label}</div>
+                          {/* Metode aktif — yang diisi keypad — ditandai bobot labelnya,
+                              bukan bingkai dan cincin tambahan di sekeliling kolomnya. */}
+                          <span className={cn(isActive && "font-medium text-foreground")}>
+                            {label}
+                          </span>
                           {/* `Input` telanjang, bukan `TextField`: penjaga scan membaca
                           `event.timeStamp` dari event perubahan dan Enter, dan
                           `TextField` hanya meneruskan nilainya. */}
@@ -575,138 +567,116 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             onKeyDown={(event) => handleKeyDown(event, split.payment_method)}
                           />
                           {split.payment_method === "transfer" && (
-                            <div className="col-span-2 sm:col-start-2 sm:col-span-1">
-                              <Select
-                                fullWidth
-                                variant="secondary"
-                                placeholder="Pilih bank"
-                                value={split.bank_name || null}
-                                onChange={(value) =>
-                                  handleBankNameChange(
-                                    split.payment_method,
-                                    value === null ? "" : String(value),
-                                  )
+                            <OptionSelect
+                              className="col-start-2"
+                              fullWidth
+                              variant="secondary"
+                              placeholder="Pilih bank"
+                              label="Bank"
+                              options={BANK_SELECT_OPTIONS}
+                              value={split.bank_name || null}
+                              onChange={(key) =>
+                                handleBankNameChange(split.payment_method, key ?? "")
+                              }
+                              onOpenChange={(isOpen) => {
+                                if (isOpen) {
+                                  setActivePaymentMethod(split.payment_method)
                                 }
-                                onOpenChange={(isOpen) => {
-                                  if (isOpen) {
-                                    setActivePaymentMethod(split.payment_method)
-                                  }
-                                }}
-                              >
-                                <Label>Bank</Label>
-                                <Select.Trigger>
-                                  <Select.Value>{selectedText}</Select.Value>
-                                  <Select.Indicator />
-                                </Select.Trigger>
-                                <Select.Popover>
-                                  <ListBox>
-                                    {BANK_OPTIONS.map((bank) => (
-                                      <ListBox.Item key={bank} id={bank} textValue={bank}>
-                                        <Label>{bank}</Label>
-                                        <ListBox.ItemIndicator />
-                                      </ListBox.Item>
-                                    ))}
-                                  </ListBox>
-                                </Select.Popover>
-                              </Select>
-                            </div>
+                              }}
+                            />
                           )}
                         </div>
                       )
-                    })
-                  ) : (
-                    <NoData title="Pilih metode pembayaran di panel kanan untuk mulai mengisi nominal." />
-                  )}
-                </div>
+                    })}
+                  </div>
+                ) : (
+                  <NoData title="Pilih metode pembayaran dulu." />
+                )}
 
-                <div className="mt-3.5 space-y-2.5">
-                  <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
-                    <Label>Catatan</Label>
-                    <TextArea placeholder="Tambahkan catatan untuk transaksi ini..." rows={2} />
-                  </TextField>
-                  {isSingleCashSelection && primaryPaymentAmount > 0 && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-muted">Kembalian</span>
-                      <span
-                        className={cn(
-                          "font-semibold tabular-nums",
-                          changeAmount < 0 ? "text-danger" : "text-success",
-                        )}
-                      >
-                        {formatRupiah(Math.max(0, changeAmount))}
-                      </span>
-                    </div>
-                  )}
-                  {hasImplausibleAmount && (
-                    <p className="text-sm font-medium text-danger">
-                      Nominal pembayaran melebihi {formatRupiah(MAX_PAYMENT_AMOUNT)}. Periksa
-                      kembali — kemungkinan barcode ikut terbaca.
+                <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
+                  <Label>Catatan</Label>
+                  <TextArea placeholder="Opsional" rows={2} />
+                </TextField>
+
+                {isSingleCashSelection && primaryPaymentAmount > 0 && (
+                  <SummaryList
+                    items={[
+                      {
+                        label: "Kembalian",
+                        value: formatRupiah(Math.max(0, changeAmount)),
+                        tone: changeAmount < 0 ? "danger" : "success",
+                      },
+                    ]}
+                  />
+                )}
+                {hasImplausibleAmount && (
+                  <p className="text-danger">
+                    Nominal pembayaran melebihi {formatRupiah(MAX_PAYMENT_AMOUNT)}. Periksa kembali
+                    — kemungkinan barcode ikut terbaca.
+                  </p>
+                )}
+                {selectedMethodCount > 1 &&
+                  ((!hasCashInSplit && Math.abs(splitDifference) >= 0.01) ||
+                    (hasCashInSplit &&
+                      (nonCashSplitAmount > total + 0.01 ||
+                        cashSplitAmount + 0.01 < Math.max(total - nonCashSplitAmount, 0)))) && (
+                    <p className="text-danger">
+                      {hasCashInSplit
+                        ? nonCashSplitAmount > total + 0.01
+                          ? "Nominal non-tunai melebihi total transaksi."
+                          : `Nominal tunai masih kurang ${formatRupiah(
+                              Math.max(total - nonCashSplitAmount - cashSplitAmount, 0),
+                            )}.`
+                        : splitDifference > 0
+                          ? `Nominal gabungan masih kurang ${formatRupiah(splitDifference)}.`
+                          : `Nominal gabungan kelebihan ${formatRupiah(Math.abs(splitDifference))}.`}
                     </p>
                   )}
-                  {selectedMethodCount > 1 &&
-                    ((!hasCashInSplit && Math.abs(splitDifference) >= 0.01) ||
-                      (hasCashInSplit &&
-                        (nonCashSplitAmount > total + 0.01 ||
-                          cashSplitAmount + 0.01 < Math.max(total - nonCashSplitAmount, 0)))) && (
-                      <p className="text-sm font-medium text-danger">
-                        {hasCashInSplit
-                          ? nonCashSplitAmount > total + 0.01
-                            ? "Nominal non-tunai melebihi total transaksi."
-                            : `Nominal tunai masih kurang ${formatRupiah(
-                                Math.max(total - nonCashSplitAmount - cashSplitAmount, 0),
-                              )}.`
-                          : splitDifference > 0
-                            ? `Nominal gabungan masih kurang ${formatRupiah(splitDifference)}.`
-                            : `Nominal gabungan kelebihan ${formatRupiah(Math.abs(splitDifference))}.`}
-                      </p>
-                    )}
-                  {selectedMethodCount > 1 &&
-                    hasCashInSplit &&
-                    nonCashSplitAmount <= total + 0.01 &&
-                    cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0) &&
-                    totalSplitAmount - total > 0.01 && (
-                      <p className="text-sm font-medium text-success">
-                        Kembalian tunai: {formatRupiah(totalSplitAmount - total)}
-                      </p>
-                    )}
-                  {!allTransferMethodsHaveBank && (
-                    <p className="text-sm font-medium text-danger">
-                      Isi nama bank untuk pembayaran transfer bank.
-                    </p>
+                {selectedMethodCount > 1 &&
+                  hasCashInSplit &&
+                  nonCashSplitAmount <= total + 0.01 &&
+                  cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0) &&
+                  totalSplitAmount - total > 0.01 && (
+                    <SummaryList
+                      items={[
+                        {
+                          label: "Kembalian tunai",
+                          value: formatRupiah(totalSplitAmount - total),
+                          tone: "success",
+                        },
+                      ]}
+                    />
                   )}
-                </div>
+                {!allTransferMethodsHaveBank && (
+                  <p className="text-danger">Isi nama bank untuk pembayaran transfer bank.</p>
+                )}
               </div>
 
-              <div className="flex min-h-0 flex-col gap-2 sm:gap-2.5">
-                <div className="grid grid-cols-[minmax(0,1fr)_84px] gap-2 sm:grid-cols-[minmax(0,1fr)_96px]">
+              {/* Kanan: keypad, nominal cepat, pilihan metode. */}
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2">
                   <div className="grid grid-cols-3 gap-2">
                     {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "000"].map((key) => (
                       <Button
                         key={key}
+                        className="tabular-nums"
+                        size="lg"
                         variant="secondary"
-                        className="h-9 text-base font-medium tabular-nums sm:h-9.5 sm:text-[1rem]"
                         onPress={() => handleKeypadInput(key)}
                       >
                         {key}
                       </Button>
                     ))}
                   </div>
+                  {/* Dua tombol setinggi dua baris keypad; tingginya dari grid, bukan angka. */}
                   <div className="grid grid-rows-2 gap-2">
-                    <Button
-                      variant="tertiary"
-                      className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
-                      onPress={handleKeypadDelete}
-                    >
+                    <Button className="h-full" variant="tertiary" onPress={handleKeypadDelete}>
                       <Delete />
-                      Delete
+                      Hapus
                     </Button>
-                    <Button
-                      variant="tertiary"
-                      className="h-full min-h-[68px] text-sm font-medium sm:min-h-[74px] sm:text-sm"
-                      onPress={handleKeypadClear}
-                    >
+                    <Button className="h-full" variant="tertiary" onPress={handleKeypadClear}>
                       <RotateCcw />
-                      Clear
+                      Kosongkan
                     </Button>
                   </div>
                 </div>
@@ -715,8 +685,9 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   {quickAmounts.map((amount) => (
                     <Button
                       key={amount}
+                      className="tabular-nums"
+                      size="sm"
                       variant="secondary"
-                      className="h-8 text-xs font-medium tabular-nums sm:h-8.5 sm:text-xs"
                       onPress={() => handleSetExactAmount(amount)}
                     >
                       {formatQuickAmountLabel(amount)}
@@ -724,18 +695,13 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   ))}
                 </div>
 
-                <Button
-                  fullWidth
-                  variant="secondary"
-                  className="h-9 text-base font-semibold sm:h-9.5 sm:text-lg"
-                  onPress={handleSetRemainingAmount}
-                >
+                <Button fullWidth variant="secondary" onPress={handleSetRemainingAmount}>
                   Uang Pas
                 </Button>
 
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <p className="mb-3 text-xs text-muted">Metode Pembayaran</p>
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <p>Metode Pembayaran</p>
+                  <div className="grid grid-cols-2 gap-2">
                     {PAYMENT_METHODS.map((method) => {
                       const split = paymentSplits.find(
                         (current) => current.payment_method === method.value,
@@ -743,55 +709,37 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
 
                       if (!split) return null
 
-                      const isSelected = split.selected
-                      const isActive = activePaymentMethod === method.value
-
                       return (
                         // `ToggleButton`, bukan tombol biasa: metode yang tercentang
                         // adalah keadaan, dan `aria-pressed` satu-satunya cara pembaca
-                        // layar tahu mana yang aktif. Klik tetap lewat
-                        // `handleMethodClick` — aturan radio-lalu-tambah ada di sana.
+                        // layar tahu mana yang aktif. Tampilan terpilihnya bawaan
+                        // komponen (`accent-soft`). Klik tetap lewat `handleMethodClick`
+                        // — aturan radio-lalu-tambah ada di sana.
                         <ToggleButton
                           key={method.value}
-                          className={cn(
-                            "h-9 justify-start gap-2.5 px-3 text-left text-sm font-medium",
-                            isSelected && "border-accent bg-accent/10 text-accent",
-                            isActive && "ring-2 ring-accent/20",
-                          )}
-                          isSelected={isSelected}
+                          className="w-full"
+                          isSelected={split.selected}
                           onChange={() => handleMethodClick(method.value)}
                         >
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "pointer-events-none flex h-5 w-5 items-center justify-center rounded border",
-                              isSelected
-                                ? "border-accent bg-accent text-accent-foreground"
-                                : "border-muted/30",
-                            )}
-                          >
-                            {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
-                          </span>
-                          <span className="flex-1">{method.label}</span>
+                          {method.label}
                         </ToggleButton>
                       )
                     })}
                   </div>
                 </div>
-
-                <PendingButton
-                  className="sticky bottom-0 shrink-0"
-                  fullWidth
-                  isDisabled={!canConfirm}
-                  isPending={checkoutTransaction.isPending}
-                  size="lg"
-                  onPress={handleConfirm}
-                >
-                  Bayar
-                </PendingButton>
               </div>
             </div>
           </Modal.Body>
+          <Modal.Footer>
+            <PendingButton
+              fullWidth
+              isDisabled={!canConfirm}
+              isPending={checkoutTransaction.isPending}
+              onPress={handleConfirm}
+            >
+              Bayar
+            </PendingButton>
+          </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>

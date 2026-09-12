@@ -87,6 +87,26 @@ describe("cart panel", () => {
     expect(screen.queryByRole("grid", { name: "Isi keranjang" })).not.toBeInTheDocument()
   })
 
+  // Pintasannya ditulis sebagai `Kbd` di tombol yang memicunya, jadi ikut nama
+  // aksesibelnya. Tiap tombol yang diklaim memang terikat — F4 di CashierPage,
+  // sisanya di panel ini.
+  it("labels each action button with its shortcut key", () => {
+    resetStore({ items: [cartItem()] })
+    useShiftStore.setState({ activeShift: { id: 1 } as never })
+    renderPanel()
+
+    for (const name of [
+      "Uang F1",
+      "Diskon F2",
+      "Simpan F3",
+      "Bayar F4",
+      "Tutup F6",
+      "Tersimpan F9",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument()
+    }
+  })
+
   it("opens the discount dialog on F2", async () => {
     resetStore({ items: [cartItem()] })
     renderPanel()

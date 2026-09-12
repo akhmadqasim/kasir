@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom"
 import { Button, Skeleton, Surface } from "@heroui/react"
 import { History, RefreshCw, Wallet } from "lucide-react"
 
+import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { usePpobSaldo } from "../../hooks"
 
@@ -26,7 +27,7 @@ export function SaldoBar() {
       </div>
       <div className="flex items-center gap-2">
         <Button
-          aria-label="Muat ulang saldo"
+          aria-label={id.common.reload}
           isIconOnly
           size="sm"
           variant="tertiary"

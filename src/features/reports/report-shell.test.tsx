@@ -277,7 +277,8 @@ describe("kerangka laporan", () => {
         {[]}
       </ReportTable>,
     )
-    expect(screen.getByText("Tidak ada data")).toBeInTheDocument()
+    // Kalimat bawaan `NoData`, sama dengan tabel dashboard (DESIGN.md §6).
+    expect(screen.getByText("Belum ada data")).toBeInTheDocument()
 
     rerender(
       <ReportTable
@@ -291,7 +292,7 @@ describe("kerangka laporan", () => {
       </ReportTable>,
     )
     expect(screen.getByText("Error: koneksi database putus")).toBeInTheDocument()
-    expect(screen.queryByText("Tidak ada data")).not.toBeInTheDocument()
+    expect(screen.queryByText("Belum ada data")).not.toBeInTheDocument()
   })
 
   it.each(REPORT_PAGES)(
@@ -339,11 +340,13 @@ describe("angka bersih yang negatif", () => {
     // The figure appears in the card above the table as well as in the row, so
     // finding it at all is the proof the negative amount rendered.
     expect(await screen.findAllByText(rupiahText(-30000))).not.toHaveLength(0)
-    expect(await screen.findByText("-25.0%")).toBeInTheDocument()
-    // The bar is decorative and the percentage is written out beside it; a
-    // negative width is an invalid CSS declaration the browser drops silently,
-    // so it is clamped rather than passed through.
+    // Once in the card's note chip, once in the table row.
+    expect(await screen.findAllByText("-25.0%")).toHaveLength(2)
+    // The bar is a HeroUI `Meter`; React Aria clamps its value to the 0–100
+    // range, so a negative share never becomes a negative `width`, which is an
+    // invalid CSS declaration the browser drops silently.
     const bars = document.querySelectorAll<HTMLElement>("[style*='width']")
+    expect(bars.length).toBeGreaterThan(0)
     for (const bar of bars) {
       const width = Number.parseFloat(bar.style.width)
       expect(width).toBeGreaterThanOrEqual(0)

@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale"
-import { Label, ListBox, Select, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
 import { StatCard } from "@/components/stat-card"
 import { formatNumber, formatRupiah } from "@/lib/format"
 import { useSalesMonthly } from "../hooks/use-reports"
@@ -20,6 +20,7 @@ export function SalesMonthlyPage() {
   const { data, isLoading, error } = useSalesMonthly(year)
 
   const years = Array.from({ length: YEAR_CHOICES }, (_, i) => currentYear - i)
+  const yearOptions = years.map((option) => ({ key: String(option), label: String(option) }))
 
   const totals = data?.reduce(
     (acc, row) => ({
@@ -35,27 +36,13 @@ export function SalesMonthlyPage() {
     <ReportPage
       filters={
         <div className="ml-auto">
-          <Select
+          <OptionSelect
             aria-label="Tahun laporan"
             className="w-32"
+            options={yearOptions}
             value={String(year)}
-            onChange={(value) => setYear(Number(value))}
-          >
-            <Select.Trigger>
-              <Select.Value>{selectedText}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {years.map((option) => (
-                  <ListBox.Item key={option} id={String(option)} textValue={String(option)}>
-                    <Label>{option}</Label>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            onChange={(key) => setYear(Number(key ?? currentYear))}
+          />
         </div>
       }
     >
@@ -93,7 +80,9 @@ export function SalesMonthlyPage() {
               <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
               <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
               <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
-              <Table.Cell className="text-right font-medium text-success">
+              <Table.Cell
+                className={`text-right font-medium ${row.grossProfit < 0 ? "text-danger" : "text-success"}`}
+              >
                 {formatRupiah(row.grossProfit)}
               </Table.Cell>
             </Table.Row>

@@ -1,10 +1,9 @@
-import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah } from "@/lib/format"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useSalesDaily } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -12,11 +11,7 @@ const TITLE = "Penjualan per Hari"
 const COLUMN_COUNT = 5
 
 export function SalesDailyPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
-
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const { data, isLoading, error } = useSalesDaily(startDate, endDate)
 
   const totals = data?.reduce(
@@ -67,7 +62,11 @@ export function SalesDailyPage() {
             <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
-            <Table.Cell className="text-right font-medium text-success">
+            {/* Angkanya bersih dari retur, jadi laba sehari bisa negatif; hijau
+                hanya untuk yang memang laba (lihat juga Penjualan Produk). */}
+            <Table.Cell
+              className={`text-right font-medium ${row.grossProfit < 0 ? "text-danger" : "text-success"}`}
+            >
               {formatRupiah(row.grossProfit)}
             </Table.Cell>
           </Table.Row>

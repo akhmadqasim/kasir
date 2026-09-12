@@ -1,7 +1,7 @@
 import { useState } from "react"
-import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } from "@heroui/react"
+import { Button, Input, Modal, TextField } from "@heroui/react"
 
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
 import { SummaryList } from "@/components/summary-list"
 import { useCartStore } from "@/stores/cart-store"
 import { formatRupiah } from "../utils"
@@ -87,31 +87,18 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
       </Modal.Header>
 
       <Modal.Body>
-        {/* Transaction-level discount */}
+        {/* Jenis dan nilai berdampingan; judul bloknya ditulis sekali, kolomnya
+            sendiri diberi `aria-label` supaya tidak ada `<label>` menggantung. */}
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Diskon</p>
+          <p className="font-medium text-foreground">Diskon</p>
           <div className="flex items-center gap-2">
-            <Select
+            <OptionSelect
               aria-label="Jenis diskon"
               variant="secondary"
+              options={DISCOUNT_TYPES}
               value={txnDiscType}
-              onChange={(value) => handleToggleType(value as "fixed" | "percentage")}
-            >
-              <Select.Trigger>
-                <Select.Value>{selectedText}</Select.Value>
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {DISCOUNT_TYPES.map((option) => (
-                    <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                      <Label>{option.label}</Label>
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              onChange={(key) => handleToggleType(key as "fixed" | "percentage")}
+            />
             <TextField
               aria-label="Nilai diskon"
               autoFocus
@@ -132,9 +119,6 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
           </div>
         </div>
 
-        <Separator />
-
-        {/* Summary */}
         <SummaryList
           items={[
             { label: "Subtotal", value: formatRupiah(subtotal) },

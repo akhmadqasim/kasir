@@ -41,6 +41,33 @@ export function paymentMethodLabel(method: string): string {
   return PAYMENT_METHOD_LABELS[method] ?? method
 }
 
+/**
+ * Warna grafik per metode, dipatok bukan dibagikan menurut urutan kemunculan
+ * (DESIGN.md §3.3).
+ *
+ * Kalau warnanya diambil berurutan dari data, satu hari tanpa QRIS akan
+ * menggeser seluruh warna dan kasir yang hafal "garis biru itu tunai" membaca
+ * grafik yang salah. `mixed` sengaja abu-abu: ia bukan metode yang bisa
+ * dipilih, melainkan penanda transaksi yang dibayar dengan beberapa metode.
+ *
+ * Tinggal di sini, bersebelahan dengan labelnya, supaya dashboard dan laporan
+ * membaca satu peta yang sama — laporan pernah menyimpan salinan yang
+ * tertinggal.
+ */
+export const METHOD_COLORS: Record<string, string> = {
+  cash: "var(--chart-1)",
+  qris: "var(--chart-2)",
+  debit: "var(--chart-3)",
+  ewallet: "var(--chart-4)",
+  transfer: "var(--chart-5)",
+  mixed: "var(--muted)",
+}
+
+/** Metode di luar daftar tetap tergambar, memakai warna aksen. */
+export function paymentMethodColor(method: string): string {
+  return METHOD_COLORS[method] ?? "var(--accent)"
+}
+
 /** "Transfer Bank (BCA)" — untuk baris split yang menyimpan nama bank. */
 export function paymentSplitLabel(method: string, bankName?: string | null): string {
   const label = paymentMethodLabel(method)

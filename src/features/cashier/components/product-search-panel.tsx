@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
 import { Button, InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
-import { Search, Pin, Trash2, TrendingUp, Smartphone } from "lucide-react"
+import { Search, Pin, Trash2, TrendingUp } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { NoData } from "@/components/no-data"
@@ -355,10 +355,10 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
       <div className={cn("flex flex-col", showSearchResults ? "min-h-0 flex-1" : "h-auto")}>
         {/* Kolom scan tinggal di dalam panel `Surface`, jadi `variant="secondary"`;
             tinggi dan ukuran hurufnya bawaan HeroUI. */}
-        <div className="flex flex-col gap-2 p-4">
+        <div className="p-4">
           <InputGroup fullWidth variant="secondary">
             <InputGroup.Prefix>
-              <Search aria-hidden="true" className="size-4" />
+              <Search aria-hidden="true" className="size-4 text-muted" />
             </InputGroup.Prefix>
             <InputGroup.Input
               ref={searchInputRef}
@@ -378,20 +378,13 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
               onChange={(e) => handleSearchQueryChange(e.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <InputGroup.Suffix>
+            {/* Contoh "Keyboard Shortcut" InputGroup: `Kbd` di suffix ber-`pe-2`. */}
+            <InputGroup.Suffix className="pe-2">
               <Kbd>
-                <Kbd.Content>Enter</Kbd.Content>
+                <Kbd.Abbr keyValue="enter" />
               </Kbd>
             </InputGroup.Suffix>
           </InputGroup>
-
-          {showSearchResults && activeProduct && (
-            <p className="text-xs text-muted">
-              Enter akan pilih item aktif:{" "}
-              <span className="font-medium text-foreground">{activeProduct.name}</span>{" "}
-              <span className="tabular-nums">({formatRupiah(activeProduct.sell_price)})</span>
-            </p>
-          )}
         </div>
 
         {/* Search Results */}
@@ -434,10 +427,17 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <StatusBadge size="sm" status={product.stock <= 0 ? "error" : "neutral"}>
-                            {product.stock} {product.unit}
-                          </StatusBadge>
-                          <span className="min-w-20 text-right font-semibold tabular-nums">
+                          {/* Lencana hanya untuk stok habis; stok yang ada cuma angka — DESIGN.md §5.4. */}
+                          {product.stock <= 0 ? (
+                            <StatusBadge size="sm" status="error">
+                              {product.stock} {product.unit}
+                            </StatusBadge>
+                          ) : (
+                            <span className="text-xs tabular-nums text-muted">
+                              {product.stock} {product.unit}
+                            </span>
+                          )}
+                          <span className="min-w-20 text-right font-medium tabular-nums">
                             {formatRupiah(product.sell_price)}
                           </span>
                         </div>
@@ -453,25 +453,28 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
         )}
       </div>
 
-      {/* Tabs: Favorit / PPOB — only when not searching. Tabnya sudah di panel produk, jadi kata "Produk" tidak diulang di labelnya. */}
+      {/* Tabs: Favorit / PPOB — only when not searching. Tabnya sudah di panel
+          produk, jadi kata "Produk" tidak diulang di labelnya; tanpa ikon,
+          seperti tab dashboard. */}
       {!showSearchResults && (
-        <Tabs className="flex min-h-0 flex-1 flex-col" defaultSelectedKey="produk">
-          <Tabs.ListContainer className="mx-4 mt-4 w-auto self-start">
+        <Tabs className="min-h-0 flex-1" defaultSelectedKey="produk">
+          <Tabs.ListContainer className="mx-4 w-fit">
             <Tabs.List aria-label="Pintasan kasir">
-              <Tabs.Tab className="gap-2" id="produk">
-                <TrendingUp aria-hidden="true" className="size-4" />
+              <Tabs.Tab id="produk">
                 Favorit
                 <Tabs.Indicator />
               </Tabs.Tab>
-              <Tabs.Tab className="gap-2" id="ppob">
-                <Smartphone aria-hidden="true" className="size-4" />
+              <Tabs.Tab id="ppob">
                 PPOB
                 <Tabs.Indicator />
               </Tabs.Tab>
             </Tabs.List>
           </Tabs.ListContainer>
 
-          <Tabs.Panel className="mt-0 min-h-0 flex-1" id="produk">
+          {/* Panel mengisi sisa tinggi dan menggulung sendiri; jarak dan
+              padding-nya diambil dari `p-4` di dalam supaya sama dengan kepala
+              panel, bukan `mt-4 p-2` bawaan yang menambah 24px. */}
+          <Tabs.Panel className="mt-0 min-h-0 flex-1 p-0" id="produk">
             <ScrollShadow className="h-full">
               <div className="p-4">
                 {shortcutProducts && shortcutProducts.length > 0 ? (
@@ -479,9 +482,11 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
                     {shortcutProducts.map((product) => {
                       const isHolding = holdingPinId === product.id
                       return (
+                        // Ubin dua baris (nama, harga) — tinggi bawaan `Button` satu
+                        // baris, jadi `h-auto` dan susunan kolomnya ditulis di sini.
                         <Button
                           key={product.id}
-                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors"
+                          className="group relative h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
                           style={
                             isHolding
                               ? {
@@ -544,7 +549,7 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
           {/* Padding luar milik panel ini, bukan `PpobQuickAccess`: di halaman
               PPOB komponen yang sama berdiri langsung di atas kanvas yang sudah
               diberi padding `AppLayout`. */}
-          <Tabs.Panel className="mt-0 min-h-0 flex-1" id="ppob">
+          <Tabs.Panel className="mt-0 min-h-0 flex-1 p-0" id="ppob">
             <ScrollShadow className="h-full">
               <div className="p-4">
                 <PpobQuickAccess />

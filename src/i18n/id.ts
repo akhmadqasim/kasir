@@ -131,6 +131,8 @@ export const id = {
     success: "Berhasil",
     confirm: "Konfirmasi",
     back: "Kembali",
+    reload: "Muat ulang",
+    close: "Tutup",
   },
   transactions: {
     title: "Riwayat Transaksi",
@@ -434,10 +436,11 @@ export const id = {
     basePrice: "Harga Modal",
     margin: "Margin",
     confirm: "Konfirmasi Pembelian",
-    process: "Proses",
-    processing: "Memproses...",
     success: "Transaksi berhasil",
     failed: "Transaksi gagal",
+    notAvailable: "Belum tersedia",
+    merchantNotFound: "Merchant tidak ditemukan",
+    bankNotFound: "Bank tidak ditemukan",
     notConfigured: "Mitra Indogrosir belum dikonfigurasi",
     configureInSettings: "Atur kredensial Mitra di Pengaturan → Mitra Indogrosir",
     // Settings

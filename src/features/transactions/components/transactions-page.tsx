@@ -2,20 +2,12 @@ import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Eye, Printer, RotateCcw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
-  Button,
-  Label,
-  ListBox,
-  SearchField,
-  Select,
-  Skeleton,
-  Table,
-  Tooltip,
-} from "@heroui/react"
+import { Button, Skeleton, Table, Tooltip } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { NoData } from "@/components/no-data"
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
+import { SearchInput } from "@/components/search-input"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
@@ -182,73 +174,40 @@ export function TransactionsPage() {
     <div className="flex h-full flex-col gap-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <SearchField
+        <SearchInput
           aria-label={id.transactions.searchPlaceholder}
+          placeholder={id.transactions.searchPlaceholder}
           className="w-64"
           value={search}
           onChange={(value) => {
             setSearch(value)
             setPage(1)
           }}
-        >
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder={id.transactions.searchPlaceholder} />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
+        />
 
-        <Select
+        <OptionSelect
           aria-label={id.transactions.allMethods}
           className="w-48"
           placeholder={id.transactions.allMethods}
+          options={PAYMENT_METHOD_FILTERS}
           value={paymentMethod || ALL}
-          onChange={(value) => {
-            setPaymentMethod(value === ALL ? "" : String(value))
+          onChange={(key) => {
+            setPaymentMethod(key === ALL || key === null ? "" : key)
             setPage(1)
           }}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {PAYMENT_METHOD_FILTERS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
 
-        <Select
+        <OptionSelect
           aria-label={id.transactions.allStatus}
           className="w-48"
           placeholder={id.transactions.allStatus}
+          options={STATUS_FILTERS}
           value={status || ALL}
-          onChange={(value) => {
-            setStatus(value === ALL ? "" : String(value))
+          onChange={(key) => {
+            setStatus(key === ALL || key === null ? "" : key)
             setPage(1)
           }}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {STATUS_FILTERS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
 
         {hasFilters && (
           <Button size="sm" variant="tertiary" onPress={resetFilters}>
@@ -309,7 +268,7 @@ export function TransactionsPage() {
                         textValue={txn.receipt_number}
                         onAction={() => setDetailTxn(txn)}
                       >
-                        <Table.Cell className="font-mono text-sm">
+                        <Table.Cell className="font-mono">
                           <div className="space-y-1">
                             <p>{txn.receipt_number}</p>
                             {txn.ppob_message && (
@@ -320,16 +279,12 @@ export function TransactionsPage() {
                           </div>
                         </Table.Cell>
                         <Table.Cell>{txn.cashier_name}</Table.Cell>
-                        <Table.Cell className="text-sm">
-                          {formatDateTime(txn.created_at)}
-                        </Table.Cell>
+                        <Table.Cell>{formatDateTime(txn.created_at)}</Table.Cell>
                         <Table.Cell className="text-center">{txn.item_count}</Table.Cell>
                         {/* Teks, bukan `Chip`: lencana disimpan untuk kolom Status. */}
                         <Table.Cell>{paymentMethodLabel(txn.payment_method)}</Table.Cell>
                         <Table.Cell className="max-w-64 whitespace-normal">
-                          <p className="break-words text-sm text-muted">
-                            {getTransactionDescription(txn)}
-                          </p>
+                          <p className="break-words text-muted">{getTransactionDescription(txn)}</p>
                         </Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={transactionStatusVariant(txn.status)}>

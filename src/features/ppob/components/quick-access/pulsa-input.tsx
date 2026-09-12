@@ -123,7 +123,7 @@ export function PulsaInput({
         </div>
       )}
 
-      {error && phoneNumber.length >= 10 && <p className="text-sm text-danger">{error.message}</p>}
+      {error && phoneNumber.length >= 10 && <NoData title={error.message} tone="danger" />}
 
       {/*
         A lookup that comes back with nothing to sell — every product flagged as

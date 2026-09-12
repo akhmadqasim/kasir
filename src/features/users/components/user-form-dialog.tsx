@@ -1,19 +1,9 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import {
-  Button,
-  FieldError,
-  Form,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Select,
-  TextField,
-} from "@heroui/react"
+import { Button, FieldError, Form, Input, Label, Modal, TextField } from "@heroui/react"
 
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
@@ -159,36 +149,23 @@ function UserFormBody({
           <FieldError>{errors.fullName}</FieldError>
         </TextField>
 
-        <Select
+        <OptionSelect
           fullWidth
           isDisabled={isPending}
+          label={id.users.role}
+          options={ROLE_OPTIONS}
           value={role}
           variant="secondary"
           onChange={(value) => setRole(value === "admin" ? "admin" : "kasir")}
-        >
-          <Label>{id.users.role}</Label>
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {ROLE_OPTIONS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
 
+        {/* Satu keterangan per kolom: saat mengubah, `description` sudah
+            mengatakan kolomnya boleh kosong, jadi placeholder tidak mengulanginya. */}
         <PinInput
           errorMessage={errors.pin}
           isDisabled={isPending}
           label={isEdit ? id.users.resetPin : id.users.pin}
-          description={isEdit ? id.users.resetPinDesc : undefined}
-          placeholder={isEdit ? "Kosongkan jika tidak diubah" : "4-6 digit"}
+          description={isEdit ? id.users.resetPinDesc : id.onboarding.pinHint}
           value={pin}
           variant="secondary"
           onChange={setPin}
@@ -199,7 +176,6 @@ function UserFormBody({
             errorMessage={errors.confirmPin}
             isDisabled={isPending}
             label={id.users.confirmPin}
-            placeholder="Ulangi PIN"
             value={confirmPin}
             variant="secondary"
             onChange={setConfirmPin}

@@ -1,9 +1,20 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { Button, Card, Input, Label, SearchField, Skeleton, TextField } from "@heroui/react"
+import {
+  Button,
+  Card,
+  Description,
+  Input,
+  Label,
+  ListBox,
+  Skeleton,
+  Surface,
+  TextField,
+} from "@heroui/react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { useTransferChannels } from "../hooks"
@@ -57,8 +68,10 @@ export function TransferFlow() {
           selectedChannel && selectedDetail && isFormValid ? (
             <ConfirmCard
               footer={
+                // Transfer belum tersambung ke backend; tombolnya tetap ada
+                // supaya bentuk kartunya sama dengan flow lain.
                 <Button fullWidth isDisabled size="lg">
-                  {id.ppob.process} (Coming Soon)
+                  {id.ppob.notAvailable}
                 </Button>
               }
               items={[
@@ -69,7 +82,7 @@ export function TransferFlow() {
                 { label: id.ppob.senderName, value: senderName },
                 { label: id.ppob.senderPhone, value: senderPhone, tone: "mono" },
               ]}
-              title={<Card.Title>{id.ppob.confirm}</Card.Title>}
+              title={id.ppob.confirm}
               totals={[
                 { label: id.ppob.fee, value: formatRupiah(fee) },
                 { label: id.ppob.totalPayment, value: formatRupiah(total), tone: "strong" },
@@ -87,18 +100,13 @@ export function TransferFlow() {
         {/* Bank Selection */}
         {!selectedChannel && (
           <>
-            <SearchField
+            <SearchInput
               aria-label={id.ppob.searchBank}
               className="max-w-sm"
+              placeholder={id.ppob.searchBank}
               value={search}
               onChange={setSearch}
-            >
-              <SearchField.Group>
-                <SearchField.SearchIcon />
-                <SearchField.Input placeholder={id.ppob.searchBank} />
-                <SearchField.ClearButton />
-              </SearchField.Group>
-            </SearchField>
+            />
 
             {isLoading ? (
               <div className="flex flex-col gap-2">
@@ -106,26 +114,35 @@ export function TransferFlow() {
                   <Skeleton key={i} className="h-16" />
                 ))}
               </div>
+            ) : filtered.length === 0 ? (
+              <NoData title={id.ppob.bankNotFound} />
             ) : (
-              <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
-                {filtered.map((ch) => (
-                  <Button
-                    key={ch.channel}
-                    fullWidth
-                    className="h-auto flex-col items-start gap-0.5 whitespace-normal px-4 py-4 text-left"
-                    variant="secondary"
-                    onPress={() => {
-                      setSelectedChannel(ch)
-                      if (ch.details.length === 1) {
-                        setSelectedDetail(ch.details[0])
-                      }
-                    }}
-                  >
-                    <span>{ch.channel}</span>
-                    <span className="text-muted">{ch.details.length} tipe transfer</span>
-                  </Button>
-                ))}
-              </div>
+              // Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
+              // membingkainya, `onAction` memilih.
+              <Surface className="max-h-[60vh] overflow-y-auto">
+                <ListBox
+                  aria-label={id.ppob.selectBank}
+                  className="p-2"
+                  selectionMode="none"
+                  onAction={(key) => {
+                    const ch = filtered.find((candidate) => candidate.channel === key)
+                    if (!ch) return
+                    setSelectedChannel(ch)
+                    if (ch.details.length === 1) {
+                      setSelectedDetail(ch.details[0])
+                    }
+                  }}
+                >
+                  {filtered.map((ch) => (
+                    <ListBox.Item key={ch.channel} id={ch.channel} textValue={ch.channel}>
+                      <div className="flex min-w-0 flex-col">
+                        <Label>{ch.channel}</Label>
+                        <Description>{ch.details.length} tipe transfer</Description>
+                      </div>
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Surface>
             )}
           </>
         )}
@@ -136,21 +153,32 @@ export function TransferFlow() {
             <Card.Header>
               <Card.Title>{selectedChannel.channel}</Card.Title>
             </Card.Header>
-            <Card.Content className="gap-2">
-              {selectedChannel.details.map((detail) => (
-                <Button
-                  key={detail.channelId}
-                  fullWidth
-                  className="h-auto justify-between whitespace-normal px-4 py-3"
-                  variant="secondary"
-                  onPress={() => setSelectedDetail(detail)}
-                >
-                  <span>{detail.transferType}</span>
-                  <span className="text-muted tabular-nums">
-                    {id.ppob.fee}: {formatRupiah(detail.fee)}
-                  </span>
-                </Button>
-              ))}
+            <Card.Content>
+              <ListBox
+                aria-label="Tipe transfer"
+                selectionMode="none"
+                onAction={(key) => {
+                  const detail = selectedChannel.details.find(
+                    (candidate) => candidate.channelId === key,
+                  )
+                  if (detail) setSelectedDetail(detail)
+                }}
+              >
+                {selectedChannel.details.map((detail) => (
+                  <ListBox.Item
+                    key={detail.channelId}
+                    id={detail.channelId}
+                    textValue={detail.transferType}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <Label>{detail.transferType}</Label>
+                      <Description className="tabular-nums">
+                        {id.ppob.fee}: {formatRupiah(detail.fee)}
+                      </Description>
+                    </div>
+                  </ListBox.Item>
+                ))}
+              </ListBox>
             </Card.Content>
             <Card.Footer>
               <Button size="sm" variant="tertiary" onPress={resetChannel}>

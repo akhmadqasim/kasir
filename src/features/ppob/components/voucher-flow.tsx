@@ -5,6 +5,7 @@ import { Ticket } from "lucide-react"
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
 import { id } from "@/i18n/id"
+import { PPOB_SERVICE_COLORS } from "../constants"
 import { useVoucherGroups } from "../hooks"
 
 export function VoucherFlow() {
@@ -31,7 +32,10 @@ export function VoucherFlow() {
                 {group.icon ? (
                   <img src={group.icon} alt="" className="size-8" />
                 ) : (
-                  <Ticket aria-hidden="true" className="size-8 text-accent" />
+                  <Ticket
+                    aria-hidden="true"
+                    className={`size-8 ${PPOB_SERVICE_COLORS.voucher.text}`}
+                  />
                 )}
                 <Card.Title>{group.group}</Card.Title>
               </Card.Content>

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react"
-import { Button, Card, Chip, Separator } from "@heroui/react"
-import { CheckCircle2, Smartphone } from "lucide-react"
+import { Button, Card, Separator } from "@heroui/react"
 
 import { NoData } from "@/components/no-data"
 import type { SummaryItem } from "@/components/summary-list"
+import { id } from "@/i18n/id"
 import { FlowColumns } from "../flow-columns"
 import { ConfirmCard } from "./confirm-card"
 
@@ -34,22 +34,17 @@ export function ServiceFlowLayout({
   placeholderText,
   children,
 }: ServiceFlowLayoutProps) {
+  // Kartunya sendiri sudah berarti "siap": tidak perlu lencana yang mengulanginya.
   const confirmCard = confirmItems ? (
     <ConfirmCard
       scrollIntoView
       footer={
         <Button fullWidth size="lg" onPress={onConfirm}>
-          <Smartphone />
           Tambah ke Keranjang
         </Button>
       }
       items={confirmItems}
-      title={
-        <Chip color="success" variant="soft">
-          <CheckCircle2 />
-          <Chip.Label>Siap ditambahkan ke keranjang</Chip.Label>
-        </Chip>
-      }
+      title={id.ppob.confirm}
     />
   ) : null
 

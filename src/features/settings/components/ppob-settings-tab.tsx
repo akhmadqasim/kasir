@@ -7,18 +7,16 @@ import {
   Description,
   Fieldset,
   Input,
+  InputGroup,
   Label,
-  ListBox,
   NumberField,
-  Select,
-  Separator,
   Switch,
   TextField,
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import {
@@ -167,17 +165,17 @@ export function PpobSettingsTab() {
           </Card.Description>
         </Card.Header>
         <Card.Content className="gap-6">
-          <Switch className="w-full" isSelected={enabled} onChange={setEnabled}>
-            <Switch.Content className="w-full justify-between">
-              {id.ppob.enabled}
+          {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
+              label di kanannya, keterangan di bawah. */}
+          <Switch isSelected={enabled} onChange={setEnabled}>
+            <Switch.Content>
               <Switch.Control>
                 <Switch.Thumb />
               </Switch.Control>
+              {id.ppob.enabled}
             </Switch.Content>
             <Description>{id.ppob.enabledDesc}</Description>
           </Switch>
-
-          <Separator />
 
           <div className="flex flex-col gap-4">
             <TextField
@@ -210,33 +208,37 @@ export function PpobSettingsTab() {
               />
             </TextField>
 
-            <div className="flex flex-col gap-1">
-              <div className="flex items-end gap-2">
-                <TextField
-                  className="flex-1"
-                  isDisabled={!enabled}
-                  value={deviceId}
-                  variant="secondary"
-                  onChange={setDeviceId}
-                >
-                  <Label>{id.ppob.mitraDeviceId}</Label>
-                  <Input placeholder={id.ppob.mitraDeviceIdPlaceholder} />
-                </TextField>
-                <Button
-                  aria-label="Generate Device ID"
-                  isDisabled={!enabled}
-                  isIconOnly
-                  type="button"
-                  variant="tertiary"
-                  onPress={() => setDeviceId(crypto.randomUUID())}
-                >
-                  <RefreshCw />
-                </Button>
-              </div>
+            {/* Tombol generate di dalam kolomnya, contoh "Copy Button Suffix"
+                dari dokumentasi InputGroup — bukan tombol terpisah yang harus
+                disejajarkan tangan ke dasar kolom. */}
+            <TextField
+              fullWidth
+              isDisabled={!enabled}
+              value={deviceId}
+              variant="secondary"
+              onChange={setDeviceId}
+            >
+              <Label>{id.ppob.mitraDeviceId}</Label>
+              <InputGroup fullWidth variant="secondary">
+                <InputGroup.Input placeholder={id.ppob.mitraDeviceIdPlaceholder} />
+                <InputGroup.Suffix className="pe-0">
+                  <Button
+                    aria-label="Generate Device ID"
+                    isDisabled={!enabled}
+                    isIconOnly
+                    size="sm"
+                    type="button"
+                    variant="tertiary"
+                    onPress={() => setDeviceId(crypto.randomUUID())}
+                  >
+                    <RefreshCw />
+                  </Button>
+                </InputGroup.Suffix>
+              </InputGroup>
               <Description>
                 Masukkan device ID dari HP atau klik tombol generate untuk membuat ID baru
               </Description>
-            </div>
+            </TextField>
 
             <TextField
               fullWidth
@@ -305,10 +307,11 @@ export function PpobSettingsTab() {
                 return (
                   <div key={key} className="flex items-center gap-2">
                     <span className="w-20 text-sm font-medium">{label}</span>
-                    <Select
+                    <OptionSelect
                       aria-label={`Tipe markup ${label}`}
                       className="w-32"
                       isDisabled={!enabled}
+                      options={MARKUP_TYPES}
                       value={config.type}
                       variant="secondary"
                       onChange={(value) => {
@@ -316,22 +319,7 @@ export function PpobSettingsTab() {
                         const type = value === "percentage" ? "percentage" : "fixed"
                         setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], type } }))
                       }}
-                    >
-                      <Select.Trigger>
-                        <Select.Value>{selectedText}</Select.Value>
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {MARKUP_TYPES.map((option) => (
-                            <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                              <Label>{option.label}</Label>
-                              <ListBox.ItemIndicator />
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                    />
                     {/* Grouping stays off for the same reason as the custom prices
                         below: without an I18nProvider the parse locale follows the
                         webview, and a grouped value would not survive a re-read. */}
@@ -363,8 +351,6 @@ export function PpobSettingsTab() {
               })}
             </Fieldset.Group>
           </Fieldset>
-
-          <Separator />
 
           <PpobCustomPrices
             customPrices={markup.custom_prices}

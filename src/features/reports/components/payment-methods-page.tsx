@@ -1,36 +1,18 @@
-import { useState } from "react"
-import { Table } from "@heroui/react"
+import { Meter, Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatRupiah } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { usePaymentMethods } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
 const TITLE = "Jenis Pembayaran"
 const COLUMN_COUNT = 4
 
-const paymentColors: Record<string, string> = {
-  cash: "bg-[var(--chart-1)]",
-  qris: "bg-[var(--chart-2)]",
-  debit: "bg-[var(--chart-4)]",
-  ewallet: "bg-[var(--chart-3)]",
-  transfer: "bg-[var(--chart-5)]",
-}
-
-function clampPercentage(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.min(100, Math.max(0, value))
-}
-
 export function PaymentMethodsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
-
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const { data, isLoading, error } = usePaymentMethods(startDate, endDate)
 
   const rows = data ?? []
@@ -48,31 +30,29 @@ export function PaymentMethodsPage() {
       {rows.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {rows.map((row) => (
-            /* Bilah persentase murni hiasan — persentasenya sudah tertulis
-               sebagai teks tepat di atasnya — jadi ia duduk di `footer`. */
+            /* Porsinya jadi lencana netral (`note`), bilahnya `Meter` HeroUI di
+               kaki kartu. Jumlah transaksi tidak diulang di sini — ada di tabel. */
             <StatCard
               key={row.paymentMethod}
               label={paymentMethodLabel(row.paymentMethod)}
+              note={`${row.percentage.toFixed(1)}%`}
               value={formatRupiah(row.totalAmount)}
               footer={
-                <div aria-hidden="true" className="h-2 w-full rounded-full bg-default">
-                  {/* Angka laporan bersih dari retur, jadi sebuah metode yang
-                      periode itu hanya kena retur muncul dengan nominal negatif —
-                      dan `width: -12%` adalah deklarasi CSS tidak sah yang
-                      diam-diam dibuang browser. Dijepit supaya bilahnya selalu
-                      punya lebar yang masuk akal. */}
-                  <div
-                    className={`h-2 rounded-full ${paymentColors[row.paymentMethod] ?? "bg-muted"}`}
-                    style={{ width: `${clampPercentage(row.percentage)}%` }}
-                  />
-                </div>
+                /* Angka laporan bersih dari retur, jadi sebuah metode yang periode
+                   itu hanya kena retur muncul dengan porsi negatif. React Aria
+                   menjepit `value` ke 0–100, sehingga bilahnya tidak pernah
+                   mendapat lebar negatif. */
+                <Meter
+                  aria-label={`Porsi ${paymentMethodLabel(row.paymentMethod)}`}
+                  size="sm"
+                  value={row.percentage}
+                >
+                  <Meter.Track>
+                    <Meter.Fill />
+                  </Meter.Track>
+                </Meter>
               }
-            >
-              <p className="text-sm text-muted tabular-nums">
-                {formatNumber(row.transactionCount)} transaksi <span aria-hidden="true">·</span>{" "}
-                {row.percentage.toFixed(1)}%
-              </p>
-            </StatCard>
+            />
           ))}
         </div>
       )}

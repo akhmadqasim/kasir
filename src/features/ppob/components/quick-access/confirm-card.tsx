@@ -4,8 +4,8 @@ import { Card, Separator } from "@heroui/react"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
 
 interface ConfirmCardProps {
-  /** Isi `Card.Header`: lencana "siap" atau `Card.Title`. */
-  title: ReactNode
+  /** Judul kartu, digambar lewat `Card.Title` apa adanya. */
+  title: string
   items: SummaryItem[]
   /** Baris biaya dan total, dipisah garis dari rincian di atasnya. */
   totals?: SummaryItem[]
@@ -40,7 +40,9 @@ export function ConfirmCard({
   return (
     <div ref={ref}>
       <Card>
-        <Card.Header className="items-start">{title}</Card.Header>
+        <Card.Header>
+          <Card.Title>{title}</Card.Title>
+        </Card.Header>
         <Card.Content className="gap-3">
           <SummaryList items={items} />
           {totals ? (

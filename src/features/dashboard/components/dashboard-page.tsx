@@ -82,7 +82,7 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <Tabs.Panel className="flex flex-col gap-4 pt-2" id="overview">
+        <Tabs.Panel className="flex flex-col gap-4" id="overview">
           <SummaryCards />
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <RevenueChart days={days} />
@@ -91,12 +91,12 @@ export function DashboardPage() {
           <RecentTransactionsTable />
         </Tabs.Panel>
 
-        <Tabs.Panel className="grid grid-cols-1 gap-4 pt-2 xl:grid-cols-2" id="sales">
+        <Tabs.Panel className="grid grid-cols-1 gap-4 xl:grid-cols-2" id="sales">
           <TopProductsTable />
           <PaymentBreakdownTable />
         </Tabs.Panel>
 
-        <Tabs.Panel className="pt-2" id="stock">
+        <Tabs.Panel id="stock">
           <LowStockTable />
         </Tabs.Panel>
       </Tabs>

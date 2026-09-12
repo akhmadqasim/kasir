@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Modal, Separator, Spinner } from "@heroui/react"
+import { Button, Modal, Spinner } from "@heroui/react"
 import { CheckCircle2, Printer } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
@@ -125,24 +125,18 @@ export function TransactionSuccessDialog({
       <Modal.Container size="sm">
         <Modal.Dialog aria-label="Transaksi Berhasil">
           <Modal.CloseTrigger />
-          <Modal.Header className="items-center text-center">
+          <Modal.Header>
             <Modal.Icon className="bg-success-soft text-success-soft-foreground">
               <CheckCircle2 className="size-5" />
             </Modal.Icon>
-            <Modal.Heading>Transaksi Berhasil!</Modal.Heading>
+            <Modal.Heading>Transaksi Berhasil</Modal.Heading>
           </Modal.Header>
 
           <Modal.Body>
             <InfoPanel className="flex flex-col gap-3">
-              <div className="text-center">
-                <p className="text-muted">No. Struk</p>
-                <p className="font-mono font-medium">{transaction.receipt_number}</p>
-              </div>
-
-              <Separator />
-
               <SummaryList
                 items={[
+                  { label: "No. Struk", value: transaction.receipt_number, tone: "mono" },
                   { label: "Total", value: formatRupiah(transaction.total_amount), tone: "strong" },
                   {
                     label: "Metode Pembayaran",
@@ -151,73 +145,44 @@ export function TransactionSuccessDialog({
                       paymentBreakdown[0]?.bank_name,
                     ),
                   },
+                  ...(paymentBreakdown.length > 1
+                    ? paymentBreakdown.map((split) => ({
+                        label: formatPaymentSplitLabel(split.payment_method, split.bank_name),
+                        value: formatRupiah(split.amount),
+                      }))
+                    : []),
+                  ...(changeAmount > 0
+                    ? [{ label: "Jumlah Bayar", value: formatRupiah(transaction.payment_amount) }]
+                    : []),
+                  ...(transaction.notes ? [{ label: "Catatan", value: transaction.notes }] : []),
                 ]}
               />
 
-              {paymentBreakdown.length > 1 && (
-                <>
-                  <Separator />
-                  <SummaryList
-                    items={paymentBreakdown.map((split) => ({
-                      label: formatPaymentSplitLabel(split.payment_method, split.bank_name),
-                      value: formatRupiah(split.amount),
-                    }))}
-                  />
-                </>
-              )}
-
               {changeAmount > 0 && (
-                <>
-                  <Separator />
-                  <SummaryList
-                    items={[
-                      { label: "Jumlah Bayar", value: formatRupiah(transaction.payment_amount) },
-                    ]}
-                  />
-                  {/* Kembalian dibaca pelanggan dari seberang meja — peran
-                      "Total keranjang" di DESIGN.md §3.4. */}
-                  <div className="text-center">
-                    <p className="text-muted">Kembalian</p>
-                    <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                      {formatRupiah(changeAmount)}
-                    </p>
-                  </div>
-                </>
-              )}
-              {hasPpob && (
-                <>
-                  <Separator />
-                  <div className="flex items-center gap-2 text-accent">
-                    <Spinner color="current" size="sm" />
-                    <span>PPOB sedang diproses di latar belakang. Cek status di Riwayat.</span>
-                  </div>
-                </>
-              )}
-              {transaction.notes && (
-                <>
-                  <Separator />
-                  <div>
-                    <p className="text-muted">Catatan</p>
-                    <p>{transaction.notes}</p>
-                  </div>
-                </>
+                /* Kembalian dibaca pelanggan dari seberang meja — peran
+                   "Total keranjang" di DESIGN.md §3.4. */
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="text-muted">Kembalian</span>
+                  <span className="text-3xl font-semibold tracking-tight tabular-nums text-success">
+                    {formatRupiah(changeAmount)}
+                  </span>
+                </div>
               )}
             </InfoPanel>
+            {hasPpob && (
+              <p className="flex items-center gap-2">
+                <Spinner color="current" size="sm" />
+                PPOB sedang diproses di latar belakang. Cek statusnya di Riwayat.
+              </p>
+            )}
           </Modal.Body>
 
-          <Modal.Footer className="flex-col">
-            <PendingButton
-              fullWidth
-              isPending={isPrinting}
-              variant="secondary"
-              onPress={handlePrint}
-            >
+          <Modal.Footer>
+            <PendingButton isPending={isPrinting} variant="secondary" onPress={handlePrint}>
               <Printer />
               Cetak Struk
             </PendingButton>
-            <Button fullWidth onPress={onNewTransaction}>
-              Transaksi Baru
-            </Button>
+            <Button onPress={onNewTransaction}>Transaksi Baru</Button>
           </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>

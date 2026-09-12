@@ -5,10 +5,8 @@ import {
   Button,
   Checkbox,
   Label,
-  ListBox,
   NumberField,
   ScrollShadow,
-  Select,
   Separator,
   Skeleton,
   Surface,
@@ -20,9 +18,10 @@ import {
 import { InfoPanel } from "@/components/info-panel"
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { ProductAutocomplete } from "@/components/product-autocomplete"
-import { selectedText } from "@/components/selected-text"
+import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useAuthStore } from "@/features/auth"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
@@ -35,7 +34,6 @@ import {
   netUnitAmount,
 } from "@/features/transactions/line-amounts"
 import type { TransactionItem } from "@/features/transactions/types"
-import { differenceToneClass } from "../labels"
 import {
   useRefundForm,
   CONDITION_LABELS,
@@ -55,7 +53,13 @@ const ACTION_OPTIONS = [
 ] as const
 
 /** Kelas kedua panel halaman: permukaan bertepi yang mengisi tinggi layar. */
-const PANEL_CLASS = "flex flex-col overflow-hidden border"
+const PANEL_CLASS = "flex min-h-0 flex-1 flex-col overflow-hidden border lg:flex-none"
+
+/**
+ * Susunan halaman sama dengan layar kasir: dua `Surface` bertumpuk di layar
+ * sempit, berdampingan 4:6 dari `lg` ke atas.
+ */
+const PAGE_CLASS = "flex h-full flex-col gap-4 lg:grid lg:grid-cols-10"
 
 export function CreateRefundPage() {
   const { transactionId } = useParams<{ transactionId: string }>()
@@ -96,14 +100,14 @@ export function CreateRefundPage() {
 
   if (isLoading || !detail) {
     return (
-      <div className="grid h-full grid-cols-10 gap-4">
+      <div className={PAGE_CLASS}>
         {navbar}
-        <Surface className={`${PANEL_CLASS} col-span-4 gap-4 p-4`}>
+        <Surface className={`${PANEL_CLASS} gap-4 p-4 lg:col-span-4`}>
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
         </Surface>
-        <Surface className={`${PANEL_CLASS} col-span-6 gap-4 p-4`}>
+        <Surface className={`${PANEL_CLASS} gap-4 p-4 lg:col-span-6`}>
           <Skeleton className="h-10 w-56" />
           <Skeleton className="h-48 w-full" />
         </Surface>
@@ -111,27 +115,50 @@ export function CreateRefundPage() {
     )
   }
 
+  const summaryItems: SummaryItem[] = [
+    { label: id.refund.totalRefund, value: formatRupiah(totalRefund) },
+    ...(actionType === "exchange"
+      ? [
+          { label: id.refund.totalExchange, value: formatRupiah(totalExchange) },
+          {
+            label: id.refund.difference,
+            value: formatRupiah(Math.abs(difference)),
+            tone: difference > 0 ? "success" : difference < 0 ? "danger" : "strong",
+          } satisfies SummaryItem,
+        ]
+      : []),
+  ]
+
   return (
-    <div className="grid h-full grid-cols-10 gap-4">
+    <div className={PAGE_CLASS}>
       {navbar}
 
       {/* Kolom kiri: info transaksi + barang yang diretur */}
-      <Surface className={`${PANEL_CLASS} col-span-4`}>
+      <Surface className={`${PANEL_CLASS} lg:col-span-4`}>
         <div className="flex flex-col gap-3 p-4">
-          <InfoPanel className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{detail.transaction.receipt_number}</span>
-              <span className="text-muted">
-                {paymentMethodLabel(detail.transaction.payment_method)}
-              </span>
-            </div>
-            <p className="text-xs text-muted">{formatDateTime(detail.transaction.created_at)}</p>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted">Total</span>
-              <span className="font-medium tabular-nums">
-                {formatRupiah(detail.transaction.total_amount)}
-              </span>
-            </div>
+          <InfoPanel>
+            <SummaryList
+              items={[
+                {
+                  label: id.transactions.receiptNumber,
+                  value: detail.transaction.receipt_number,
+                  tone: "mono",
+                },
+                {
+                  label: id.transactions.date,
+                  value: formatDateTime(detail.transaction.created_at),
+                },
+                {
+                  label: id.transactions.paymentMethod,
+                  value: paymentMethodLabel(detail.transaction.payment_method),
+                },
+                {
+                  label: id.transactions.totalAmount,
+                  value: formatRupiah(detail.transaction.total_amount),
+                  tone: "strong",
+                },
+              ]}
+            />
           </InfoPanel>
 
           {blockedReason && (
@@ -173,54 +200,38 @@ export function CreateRefundPage() {
               />
             ))}
             {nonRefundableItems.length > 0 && (
-              <Surface className="flex flex-col gap-1 border p-3" variant="transparent">
-                <p className="text-xs font-medium text-muted">Tidak bisa diretur (layanan PPOB)</p>
+              <InfoPanel className="flex flex-col gap-1 text-muted">
+                <p className="font-medium">Tidak bisa diretur (layanan PPOB)</p>
                 <ul className="flex flex-col gap-0.5">
                   {nonRefundableItems.map((item) => (
-                    <li key={item.id} className="text-xs text-muted">
+                    <li key={item.id}>
                       {item.product_name} × {item.quantity}
                     </li>
                   ))}
                 </ul>
-              </Surface>
+              </InfoPanel>
             )}
           </div>
         </ScrollShadow>
       </Surface>
 
       {/* Kolom kanan: tipe aksi + barang pengganti + ringkasan */}
-      <Surface className={`${PANEL_CLASS} col-span-6`}>
+      <Surface className={`${PANEL_CLASS} lg:col-span-6`}>
         <ScrollShadow className="min-h-0 flex-1">
           <div className="flex flex-col gap-6 p-4">
             {/* Pemilih tipe aksi */}
-            <Select
+            <OptionSelect
               className="max-w-56"
+              label={id.refund.actionType}
+              options={ACTION_OPTIONS}
               value={actionType}
               variant="secondary"
-              onChange={(value) => setActionType(value === "exchange" ? "exchange" : "refund")}
-            >
-              <Label>{id.refund.actionType}</Label>
-              <Select.Trigger>
-                <Select.Value>{selectedText}</Select.Value>
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {ACTION_OPTIONS.map((option) => (
-                    <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                      <Label>{option.label}</Label>
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              onChange={(key) => setActionType(key === "exchange" ? "exchange" : "refund")}
+            />
 
             {/* Bagian tukar barang */}
             {actionType === "exchange" && (
               <div className="flex flex-col gap-4">
-                <Separator />
-
                 {/* Pencarian produk — produk terpilih langsung masuk tabel di bawah,
                     jadi kolomnya selalu melaporkan pilihan kosong. */}
                 <ProductAutocomplete
@@ -322,13 +333,10 @@ export function CreateRefundPage() {
             )}
 
             {/* Alasan */}
-            <div className="flex flex-col gap-4">
-              <Separator />
-              <TextField fullWidth value={reason} variant="secondary" onChange={setReason}>
-                <Label>{id.refund.reason}</Label>
-                <TextArea placeholder={id.refund.reasonPlaceholder} rows={3} />
-              </TextField>
-            </div>
+            <TextField fullWidth value={reason} variant="secondary" onChange={setReason}>
+              <Label>{id.refund.reason}</Label>
+              <TextArea placeholder={id.refund.reasonPlaceholder} rows={3} />
+            </TextField>
 
             {/* Catatan */}
             <ul className="flex list-disc flex-col gap-1 ps-4 text-xs text-muted">
@@ -338,52 +346,20 @@ export function CreateRefundPage() {
           </div>
         </ScrollShadow>
 
-        {/* Ringkasan + aksi, ditambatkan di bawah */}
+        {/* Ringkasan + aksi, ditambatkan di bawah. Angkanya ukuran bawaan:
+            DESIGN.md §3.4 tidak punya peran "selisih retur", dan yang membedakan
+            arah uangnya adalah warna plus kalimat di bawahnya. */}
         <Separator />
         <div className="flex flex-col gap-4 p-4">
           <InfoPanel className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-muted">{id.refund.totalRefund}</span>
-              <span className="font-medium tabular-nums">{formatRupiah(totalRefund)}</span>
-            </div>
-
+            <SummaryList items={summaryItems} />
             {actionType === "exchange" && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted">{id.refund.totalExchange}</span>
-                  <span className="font-medium tabular-nums">{formatRupiah(totalExchange)}</span>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{id.refund.difference}</span>
-                  <div className="text-right">
-                    <span
-                      className={`text-xl font-semibold tracking-tight tabular-nums ${differenceToneClass(difference)}`}
-                    >
-                      {formatRupiah(Math.abs(difference))}
-                    </span>
-                    <p className="text-xs text-muted">
-                      {difference >= 0
-                        ? id.refund.differenceStoreReturns
-                        : id.refund.differenceCustomerPays}
-                    </p>
-                  </div>
-                </div>
-              </>
+              <p className="text-xs text-muted">
+                {difference >= 0
+                  ? id.refund.differenceStoreReturns
+                  : id.refund.differenceCustomerPays}
+              </p>
             )}
-
-            {actionType === "refund" && totalRefund > 0 && (
-              <>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{id.refund.totalRefund}</span>
-                  <span className="text-xl font-semibold tracking-tight tabular-nums text-success">
-                    {formatRupiah(totalRefund)}
-                  </span>
-                </div>
-              </>
-            )}
-
             {selectedItems.length > 0 && (
               <p className="text-xs text-muted">
                 {selectedItems.length} item diretur
@@ -394,17 +370,11 @@ export function CreateRefundPage() {
             )}
           </InfoPanel>
 
-          <div className="flex items-center gap-2">
-            <Button
-              className="flex-1"
-              isDisabled={isSubmitting}
-              variant="tertiary"
-              onPress={() => navigate(-1)}
-            >
+          <div className="flex justify-end gap-2">
+            <Button isDisabled={isSubmitting} variant="tertiary" onPress={() => navigate(-1)}>
               {id.refund.cancel}
             </Button>
             <PendingButton
-              className="flex-1"
               isDisabled={
                 blockedReason !== null ||
                 selectedItems.length === 0 ||
@@ -436,25 +406,22 @@ function RefundItemCard({
   const isFullyRefunded = state.maxQty <= 0
 
   return (
-    // Baris yang dicentang ditandai garis tepi warna merek dan permukaan bertingkat
-    // (`secondary`); yang belum dicentang transparan di atas panelnya.
-    <Surface
-      className={`border p-4 transition-colors ${
-        state.checked ? "border-accent" : ""
-      } ${isFullyRefunded ? "opacity-60" : ""}`}
-      variant={state.checked ? "secondary" : "transparent"}
-    >
+    // Permukaan bertingkat di dalam panel; kotak centangnya sendiri yang
+    // menandai baris terpilih, bukan garis tepi warna merek tambahan.
+    <Surface className="p-3" variant="secondary">
       <Checkbox
         isDisabled={isFullyRefunded}
         isSelected={state.checked}
+        variant="secondary"
         onChange={(isSelected) => onUpdate({ checked: isSelected })}
       >
-        <Checkbox.Content className="items-start gap-4">
-          <Checkbox.Control className="mt-0.5">
+        {/* Labelnya dua-tiga baris, jadi kontrolnya rata atas. */}
+        <Checkbox.Content className="items-start">
+          <Checkbox.Control>
             <Checkbox.Indicator />
           </Checkbox.Control>
           <div className="grid flex-1 gap-0.5 text-left">
-            <span className="text-sm font-medium leading-none">{item.product_name}</span>
+            <span>{item.product_name}</span>
             <span className="text-xs text-muted">
               {formatRupiah(netUnitAmount(item))} × {item.quantity} ={" "}
               {formatRupiah(netLineAmount(item))}
@@ -470,7 +437,7 @@ function RefundItemCard({
             )}
           </div>
           {state.checked && (
-            <span className="text-sm font-medium tabular-nums whitespace-nowrap">
+            <span className="tabular-nums whitespace-nowrap">
               {formatRupiah(netAmountForQuantity(item, state.quantity))}
             </span>
           )}
@@ -478,9 +445,8 @@ function RefundItemCard({
       </Checkbox>
 
       {state.checked && (
-        <div className="mt-3 flex flex-wrap items-end gap-4 pl-9">
-          {/* Field di dalam Surface memakai `variant="secondary"`; label dan
-              input dibiarkan bawaan HeroUI. */}
+        // `ps-7` menyejajarkan kolom isian dengan teks label di sebelah kotak centang.
+        <div className="mt-3 flex flex-wrap items-end gap-4 ps-7">
           <NumberField
             className="w-32"
             maxValue={state.maxQty}
@@ -502,28 +468,14 @@ function RefundItemCard({
             </NumberField.Group>
           </NumberField>
 
-          <Select
+          <OptionSelect
             className="w-36"
+            label={id.refund.condition}
+            options={CONDITION_OPTIONS}
             value={state.condition}
             variant="secondary"
-            onChange={(value) => onUpdate({ condition: value as Condition })}
-          >
-            <Label>{id.refund.condition}</Label>
-            <Select.Trigger>
-              <Select.Value>{selectedText}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {CONDITION_OPTIONS.map((option) => (
-                  <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                    <Label>{option.label}</Label>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            onChange={(key) => onUpdate({ condition: key as Condition })}
+          />
         </div>
       )}
     </Surface>

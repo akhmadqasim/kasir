@@ -1,12 +1,13 @@
 import { useState } from "react"
-import { SearchField, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
+import { SearchInput } from "@/components/search-input"
 import { StatusBadge } from "@/components/status-badge"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { useDebounce } from "@/hooks/use-debounce"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useSalesReceipt } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -15,12 +16,9 @@ const COLUMN_COUNT = 9
 const SEARCH_PLACEHOLDER = "Cari no. struk..."
 
 export function SalesReceiptPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 300)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading, error } = useSalesReceipt(startDate, endDate, debouncedSearch)
 
@@ -28,18 +26,13 @@ export function SalesReceiptPage() {
     <ReportPage
       filters={
         <>
-          <SearchField
+          <SearchInput
             aria-label={SEARCH_PLACEHOLDER}
+            placeholder={SEARCH_PLACEHOLDER}
             className="w-64"
             value={search}
             onChange={setSearch}
-          >
-            <SearchField.Group>
-              <SearchField.SearchIcon />
-              <SearchField.Input placeholder={SEARCH_PLACEHOLDER} />
-              <SearchField.ClearButton />
-            </SearchField.Group>
-          </SearchField>
+          />
           <div className="ml-auto">
             <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
@@ -77,9 +70,9 @@ export function SalesReceiptPage() {
       >
         {(data?.items ?? []).map((row) => (
           <Table.Row key={row.id} id={row.id} textValue={row.receiptNumber}>
-            <Table.Cell className="font-mono text-sm">{row.receiptNumber}</Table.Cell>
+            <Table.Cell className="font-mono">{row.receiptNumber}</Table.Cell>
             <Table.Cell>{row.cashierName}</Table.Cell>
-            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+            <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
             <Table.Cell className="text-right">{row.itemCount}</Table.Cell>
             {/* Teks, bukan `Chip`: sepuluh lencana per layar berhenti berarti apa-apa.
                 Lencana disimpan untuk kolom Status yang memang menyatakan keadaan. */}
@@ -92,7 +85,9 @@ export function SalesReceiptPage() {
               </StatusBadge>
             </Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalAmount)}</Table.Cell>
-            <Table.Cell className="text-right text-danger">
+            <Table.Cell
+              className={`text-right ${row.refundAmount > 0 ? "text-danger" : "text-muted"}`}
+            >
               {row.refundAmount > 0 ? `-${formatRupiah(row.refundAmount)}` : "-"}
             </Table.Cell>
             <Table.Cell className="text-right font-medium">

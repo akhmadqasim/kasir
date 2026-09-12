@@ -127,7 +127,7 @@ export function PpobCustomPrices({
                   isDisabled={disabled}
                   isIconOnly
                   size="sm"
-                  variant="danger"
+                  variant="danger-soft"
                   onPress={() => handleRemoveCustom(nominal)}
                 >
                   <Trash2 />

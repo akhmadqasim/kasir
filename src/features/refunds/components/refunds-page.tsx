@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo } from "react"
 import { Eye, X } from "lucide-react"
-import { Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
+import { Button, Skeleton, Table } from "@heroui/react"
 
 import { NoData } from "@/components/no-data"
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { DateRangePicker } from "@/components/date-range-picker"
@@ -76,31 +76,17 @@ export function RefundsPage() {
     <div className="flex h-full flex-col gap-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <Select
+        <OptionSelect
           aria-label={id.refund.allTypes}
           className="w-48"
           placeholder={id.refund.allTypes}
+          options={TYPE_FILTERS}
           value={typeFilter || ALL}
-          onChange={(value) => {
-            setTypeFilter(value === ALL ? "" : String(value))
+          onChange={(key) => {
+            setTypeFilter(key === ALL || key === null ? "" : key)
             setPage(1)
           }}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {TYPE_FILTERS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
 
         {hasFilters && (
           <Button size="sm" variant="tertiary" onPress={resetFilters}>
@@ -157,10 +143,8 @@ export function RefundsPage() {
                         textValue={item.refund_number}
                         onAction={() => setDetailRefundId(item.id)}
                       >
-                        <Table.Cell className="font-mono text-sm">{item.refund_number}</Table.Cell>
-                        <Table.Cell className="font-mono text-sm">
-                          {item.transaction_receipt}
-                        </Table.Cell>
+                        <Table.Cell className="font-mono">{item.refund_number}</Table.Cell>
+                        <Table.Cell className="font-mono">{item.transaction_receipt}</Table.Cell>
                         <Table.Cell>
                           <StatusBadge status={refundTypeVariant(item.refund_type)}>
                             {refundTypeLabel(item.refund_type)}
@@ -182,9 +166,7 @@ export function RefundsPage() {
                             : "—"}
                         </Table.Cell>
                         <Table.Cell>{item.cashier_name}</Table.Cell>
-                        <Table.Cell className="text-sm">
-                          {formatDateTime(item.created_at)}
-                        </Table.Cell>
+                        <Table.Cell>{formatDateTime(item.created_at)}</Table.Cell>
                         <Table.Cell className="text-right">
                           <Button
                             aria-label={id.refund.detail}

@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { Input, Label, ListBox, Select, Skeleton, TextField } from "@heroui/react"
+import { Input, Label, Skeleton, TextField } from "@heroui/react"
 import { Droplets } from "lucide-react"
 
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
@@ -81,32 +81,18 @@ export function PdamInput({
       {pdamLoading ? (
         <Skeleton className="h-10 w-full" />
       ) : (
-        <Select
+        <OptionSelect
           fullWidth
-          placeholder="-- Pilih PDAM --"
+          label="PDAM"
+          options={pdamProducts?.map((p) => ({ key: p.plu, label: p.merchant })) ?? []}
+          placeholder="Pilih PDAM"
           value={selectedPdam || null}
           variant="secondary"
           onChange={(value) => {
-            setSelectedPdam(value === null ? "" : String(value))
+            setSelectedPdam(value ?? "")
             setInquiryResult(null)
           }}
-        >
-          <Label>Pilih PDAM</Label>
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {pdamProducts?.map((p) => (
-                <ListBox.Item key={p.id} id={p.plu} textValue={p.merchant}>
-                  <Label>{p.merchant}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        />
       )}
 
       <TextField

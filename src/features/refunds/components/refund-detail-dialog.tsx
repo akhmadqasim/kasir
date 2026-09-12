@@ -1,4 +1,4 @@
-import { Button, Modal, Separator, Skeleton, Table } from "@heroui/react"
+import { Button, Modal, Skeleton, Table } from "@heroui/react"
 
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
@@ -84,10 +84,9 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
             <Modal.Body>
               <SummaryList items={headerItems} layout="grid" />
 
-              <Separator />
-
-              <div>
-                <h4 className="mb-2 font-medium">{id.refund.returnedItems}</h4>
+              {/* Bagian dipisah ruang, bukan garis — DESIGN.md §5.7. */}
+              <div className="flex flex-col gap-2">
+                <p className="font-medium text-foreground">{id.refund.returnedItems}</p>
                 <Table variant="secondary">
                   <Table.ScrollContainer>
                     <Table.Content aria-label={id.refund.returnedItems} className="tabular-nums">
@@ -130,44 +129,39 @@ export function RefundDetailDialog({ refundId, onClose }: RefundDetailDialogProp
               </div>
 
               {isExchange && detail.exchange_items.length > 0 && (
-                <>
-                  <Separator />
-                  <div>
-                    <h4 className="mb-2 font-medium">{id.refund.replacementItems}</h4>
-                    <Table variant="secondary">
-                      <Table.ScrollContainer>
-                        <Table.Content
-                          aria-label={id.refund.replacementItems}
-                          className="tabular-nums"
-                        >
-                          <Table.Header>
-                            <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
-                            <Table.Column className="text-center">Qty</Table.Column>
-                            <Table.Column className="text-right">{id.refund.price}</Table.Column>
-                            <Table.Column className="text-right">{id.refund.subtotal}</Table.Column>
-                          </Table.Header>
-                          <Table.Body>
-                            {detail.exchange_items.map((item) => (
-                              <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
-                                <Table.Cell>{item.product_name}</Table.Cell>
-                                <Table.Cell className="text-center">{item.quantity}</Table.Cell>
-                                <Table.Cell className="text-right">
-                                  {formatRupiah(item.product_price)}
-                                </Table.Cell>
-                                <Table.Cell className="text-right">
-                                  {formatRupiah(item.subtotal)}
-                                </Table.Cell>
-                              </Table.Row>
-                            ))}
-                          </Table.Body>
-                        </Table.Content>
-                      </Table.ScrollContainer>
-                    </Table>
-                  </div>
-                </>
+                <div className="flex flex-col gap-2">
+                  <p className="font-medium text-foreground">{id.refund.replacementItems}</p>
+                  <Table variant="secondary">
+                    <Table.ScrollContainer>
+                      <Table.Content
+                        aria-label={id.refund.replacementItems}
+                        className="tabular-nums"
+                      >
+                        <Table.Header>
+                          <Table.Column isRowHeader>{id.refund.productName}</Table.Column>
+                          <Table.Column className="text-center">Qty</Table.Column>
+                          <Table.Column className="text-right">{id.refund.price}</Table.Column>
+                          <Table.Column className="text-right">{id.refund.subtotal}</Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {detail.exchange_items.map((item) => (
+                            <Table.Row key={item.id} id={item.id} textValue={item.product_name}>
+                              <Table.Cell>{item.product_name}</Table.Cell>
+                              <Table.Cell className="text-center">{item.quantity}</Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.product_price)}
+                              </Table.Cell>
+                              <Table.Cell className="text-right">
+                                {formatRupiah(item.subtotal)}
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
+                </div>
               )}
-
-              <Separator />
 
               <SummaryList items={summaryItems} />
             </Modal.Body>

@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import { Card, Description, Label, ListBox, Select, Separator, Switch } from "@heroui/react"
+import { Card, Description, Switch } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import { getAppSettings, toUpdateAppSettingsInput, updateAppSettings } from "@/lib/api/settings"
@@ -59,12 +59,12 @@ export function SalesSettingsTab() {
   const isReady = settingsQuery.isSuccess && initialized
 
   const paymentOptions = [
-    { value: "cash", label: id.payment.cash },
-    { value: "qris", label: id.payment.qris },
-    { value: "debit", label: id.payment.debit },
-    { value: "ewallet", label: id.payment.ewallet },
-    { value: "transfer", label: id.payment.transfer },
-  ] as const
+    { key: "cash", label: id.payment.cash },
+    { key: "qris", label: id.payment.qris },
+    { key: "debit", label: id.payment.debit },
+    { key: "ewallet", label: id.payment.ewallet },
+    { key: "transfer", label: id.payment.transfer },
+  ]
 
   return (
     <Card>
@@ -72,43 +72,27 @@ export function SalesSettingsTab() {
         <Card.Title>{id.settings.tabSales}</Card.Title>
       </Card.Header>
       <Card.Content className="gap-6">
-        {/* The label now sits inside the Switch, so clicking the text toggles it and
-            the description is wired up through aria-describedby — neither held with
-            the old free-standing Label. */}
-        <Switch className="w-full" isSelected={allowNegativeStock} onChange={setAllowNegativeStock}>
-          <Switch.Content className="w-full justify-between">
-            {id.settings.allowNegativeStock}
+        {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
+            label di kanannya, keterangan di bawah. Mengklik teksnya ikut
+            menggeser, dan keterangannya tersambung lewat aria-describedby. */}
+        <Switch isSelected={allowNegativeStock} onChange={setAllowNegativeStock}>
+          <Switch.Content>
             <Switch.Control>
               <Switch.Thumb />
             </Switch.Control>
+            {id.settings.allowNegativeStock}
           </Switch.Content>
           <Description>{id.settings.allowNegativeStockDesc}</Description>
         </Switch>
 
-        <Separator />
-
-        <Select
+        <OptionSelect
           fullWidth
+          label={id.settings.defaultPaymentMethod}
+          options={paymentOptions}
           value={defaultPaymentMethod || null}
           variant="secondary"
-          onChange={(value) => setDefaultPaymentMethod(value === null ? "" : String(value))}
-        >
-          <Label>{id.settings.defaultPaymentMethod}</Label>
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {paymentOptions.map((option) => (
-                <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+          onChange={(value) => setDefaultPaymentMethod(value ?? "")}
+        />
       </Card.Content>
       <Card.Footer>
         <PendingButton

@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react"
 import { Upload, FileSpreadsheet, Download } from "lucide-react"
 import { read, utils, type WorkBook } from "xlsx"
-import { Alert, Button, Label, ListBox, Modal, ScrollShadow, Select, Table } from "@heroui/react"
+import { Alert, Button, Modal, ScrollShadow, Table } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
+import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { StatusBadge } from "@/components/status-badge"
 import { useApiMutation } from "@/hooks/use-api"
 import { bulkCreateProducts, downloadImportTemplate } from "@/lib/api/products"
@@ -364,19 +365,16 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             </p>
 
             {step === "upload" && (
-              <div className="flex flex-col gap-2 py-4">
-                <p className="text-sm font-medium">File</p>
+              <div className="flex flex-col gap-2">
                 {/* Input filenya sengaja tetap HTML biasa: `<label>` yang
                     membungkusnya sekaligus jadi nama aksesibel dan area drop.
                     `border-dashed` dipertahankan — satu-satunya pengecualian
                     DESIGN.md §5.7, karena ini drop-zone berkas sungguhan. */}
-                <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-accent hover:bg-default/50">
-                  <Upload className="size-10 text-muted" />
+                <label className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition-colors hover:border-accent hover:bg-default/50">
+                  <Upload className="size-8 text-muted" />
                   <div>
-                    <p className="font-medium">Klik untuk memilih file</p>
-                    <p className="text-sm text-muted">
-                      .xlsx, .xls, .csv — kolom akan otomatis dideteksi
-                    </p>
+                    <p className="font-medium text-foreground">Klik untuk memilih file</p>
+                    <p>.xlsx, .xls, .csv — kolom akan otomatis dideteksi</p>
                   </div>
                   <input
                     type="file"
@@ -400,9 +398,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             {step === "mapping" && (
               <>
                 {/* Column Mapping */}
-                <div className="space-y-3">
+                <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">{id.products.columnMapping}</p>
+                    <p className="font-medium text-foreground">{id.products.columnMapping}</p>
                     <StatusBadge status="neutral" size="sm">
                       {mappedCount} field dimapping
                     </StatusBadge>
@@ -413,40 +411,19 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                         const columnLabel = header || `Kolom ${idx + 1}`
                         return (
                           <div key={idx} className="flex items-center gap-2">
-                            <span className="min-w-[160px] truncate text-sm font-medium">
+                            <span className="min-w-[160px] truncate font-medium text-foreground">
                               {columnLabel}
                             </span>
-                            <Select
+                            <OptionSelect
                               aria-label={`Field untuk ${columnLabel}`}
                               className="flex-1"
+                              options={TARGET_FIELDS}
                               value={columnMap[idx] ?? "skip"}
                               variant="secondary"
                               onChange={(value) =>
-                                handleColumnMapChange(
-                                  idx,
-                                  (value === null ? "skip" : String(value)) as TargetFieldKey,
-                                )
+                                handleColumnMapChange(idx, (value ?? "skip") as TargetFieldKey)
                               }
-                            >
-                              <Select.Trigger>
-                                <Select.Value>{selectedText}</Select.Value>
-                                <Select.Indicator />
-                              </Select.Trigger>
-                              <Select.Popover>
-                                <ListBox>
-                                  {TARGET_FIELDS.map((field) => (
-                                    <ListBox.Item
-                                      key={field.key}
-                                      id={field.key}
-                                      textValue={field.label}
-                                    >
-                                      <Label>{field.label}</Label>
-                                      <ListBox.ItemIndicator />
-                                    </ListBox.Item>
-                                  ))}
-                                </ListBox>
-                              </Select.Popover>
-                            </Select>
+                            />
                           </div>
                         )
                       })}
@@ -464,8 +441,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 )}
 
                 {/* Preview Table */}
-                <div className="min-h-0 flex-1">
-                  <p className="mb-2 text-sm font-medium">
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                  <p className="font-medium text-foreground">
                     Preview ({previewRows.length} dari {rows.length} baris)
                   </p>
                   <Table variant="secondary">
@@ -512,7 +489,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             )}
 
             {step === "result" && result && (
-              <div className="flex flex-col gap-4 py-4">
+              <div className="flex flex-col gap-4">
                 <Alert status="success">
                   <Alert.Indicator />
                   <Alert.Content>
@@ -525,14 +502,16 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 </Alert>
 
                 {result.errors.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Peringatan ({result.errors.length})</p>
-                    <ScrollShadow className="max-h-32 rounded-md border p-3">
-                      {result.errors.map((err, i) => (
-                        <p key={i} className="text-xs text-danger">
-                          {err}
-                        </p>
-                      ))}
+                  <div className="flex flex-col gap-2">
+                    <p className="font-medium text-foreground">
+                      Peringatan ({result.errors.length})
+                    </p>
+                    <ScrollShadow className="max-h-32">
+                      <InfoPanel className="flex flex-col gap-1 text-danger">
+                        {result.errors.map((err, i) => (
+                          <p key={i}>{err}</p>
+                        ))}
+                      </InfoPanel>
                     </ScrollShadow>
                   </div>
                 )}

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Avatar, Dropdown, Label, Separator } from "@heroui/react"
+import { Avatar, Dropdown, Label } from "@heroui/react"
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react"
 
 import { SidebarLabel, SidebarMenu, SidebarMenuItem } from "@/components/layout/sidebar"
@@ -66,12 +66,12 @@ export function NavUser() {
                 "aria-expanded:bg-default aria-expanded:text-default-foreground",
               )}
             >
-              <Avatar size="sm" className="rounded-lg">
-                <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
+              <Avatar size="sm">
+                <Avatar.Fallback>{initials}</Avatar.Fallback>
               </Avatar>
               <SidebarLabel className="grid leading-tight">
                 <span className="truncate text-sm font-medium">{user?.full_name}</span>
-                <span className="truncate text-xs capitalize">{user?.role}</span>
+                <span className="truncate text-xs capitalize text-muted">{user?.role}</span>
               </SidebarLabel>
               <ChevronsUpDownIcon className="ml-auto group-data-[state=collapsed]/sidebar:hidden" />
             </Dropdown.Trigger>
@@ -79,23 +79,29 @@ export function NavUser() {
               className="min-w-56"
               placement={isMobile ? "bottom end" : "right bottom"}
             >
-              <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
-                <Avatar size="sm" className="rounded-lg">
-                  <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
-                </Avatar>
-                <div className="grid min-w-0 flex-1 leading-tight">
-                  <span className="truncate font-medium">{user?.full_name}</span>
-                  <span className="truncate text-xs capitalize text-muted">{user?.role}</span>
+              {/* Kepala menu mengikuti contoh "Custom Trigger" di dokumentasi
+                  Dropdown: avatar kecil dan dua baris teks, tanpa pemisah ke
+                  menunya — jarak yang memisahkan, bukan garis. */}
+              <div className="px-3 pt-3 pb-1">
+                <div className="flex items-center gap-2">
+                  <Avatar size="sm">
+                    <Avatar.Fallback>{initials}</Avatar.Fallback>
+                  </Avatar>
+                  <div className="flex min-w-0 flex-col">
+                    <p className="truncate text-sm leading-5 font-medium">{user?.full_name}</p>
+                    <p className="truncate text-xs leading-none capitalize text-muted">
+                      {user?.role}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <Separator className="my-1" />
               <Dropdown.Menu onAction={handleAction}>
                 <Dropdown.Item id="profile" textValue={id.profile.title}>
-                  <UserIcon className="size-4" />
+                  <UserIcon className="size-4 shrink-0 text-muted" />
                   <Label>{id.profile.title}</Label>
                 </Dropdown.Item>
-                <Dropdown.Item id="logout" textValue={id.auth.logout}>
-                  <LogOutIcon className="size-4" />
+                <Dropdown.Item id="logout" textValue={id.auth.logout} variant="danger">
+                  <LogOutIcon className="size-4 shrink-0 text-danger" />
                   <Label>{id.auth.logout}</Label>
                 </Dropdown.Item>
               </Dropdown.Menu>

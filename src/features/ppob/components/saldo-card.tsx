@@ -1,4 +1,4 @@
-import { Button, Card, Skeleton } from "@heroui/react"
+import { Button, Skeleton } from "@heroui/react"
 import { RefreshCw } from "lucide-react"
 
 import { StatCard } from "@/components/stat-card"
@@ -13,7 +13,7 @@ export function SaldoCard() {
   const action = (
     <Button
       isIconOnly
-      aria-label="Muat ulang saldo"
+      aria-label={id.common.reload}
       size="sm"
       variant="tertiary"
       onPress={() => refetch()}
@@ -24,15 +24,7 @@ export function SaldoCard() {
 
   if (isLoading) {
     return (
-      <Card>
-        <Card.Header className="flex-row items-center justify-between gap-2">
-          <Card.Description>{id.ppob.saldo}</Card.Description>
-          {action}
-        </Card.Header>
-        <Card.Content>
-          <Skeleton className="h-8 w-48" />
-        </Card.Content>
-      </Card>
+      <StatCard action={action} label={id.ppob.saldo} value={<Skeleton className="h-8 w-32" />} />
     )
   }
 

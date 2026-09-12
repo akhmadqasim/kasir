@@ -52,7 +52,6 @@ export function LoginPage() {
               lewat tombol yang nonaktif.
             */}
             <Input
-              placeholder={t.username}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return
                 event.preventDefault()
@@ -70,7 +69,6 @@ export function LoginPage() {
             inputRef={pinRef}
             isDisabled={loginMutation.isPending}
             label={t.pin}
-            placeholder={t.pin}
             value={pin}
             variant="secondary"
             onChange={setPin}

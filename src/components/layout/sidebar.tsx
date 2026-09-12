@@ -350,27 +350,6 @@ export function SidebarGroup({
   )
 }
 
-export function SidebarGroupLabel({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div
-      data-slot="sidebar-group-label"
-      className={cn(
-        "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-muted",
-        "transition-opacity duration-200 ease-linear group-data-[state=collapsed]/sidebar:opacity-0",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
-}
-
 export function SidebarMenu({
   children,
   className,
@@ -427,59 +406,6 @@ export function SidebarLabel({
 function useCollapsedTooltip(tooltip: string | undefined): boolean {
   const { state, isMobile } = useSidebar()
   return Boolean(tooltip) && state === "collapsed" && !isMobile
-}
-
-type SidebarMenuButtonProps = Omit<React.ComponentProps<"button">, "className"> & {
-  isActive?: boolean
-  size?: SidebarMenuSize
-  tooltip?: string
-  className?: string
-}
-
-export function SidebarMenuButton({
-  isActive = false,
-  size = "default",
-  tooltip,
-  className,
-  children,
-  ...props
-}: SidebarMenuButtonProps) {
-  const showTooltip = useCollapsedTooltip(tooltip)
-  const classes = sidebarMenuButtonClass(size, className)
-
-  if (!showTooltip) {
-    return (
-      <button
-        type="button"
-        data-slot="sidebar-menu-button"
-        data-active={isActive}
-        className={classes}
-        {...props}
-      >
-        {children}
-      </button>
-    )
-  }
-
-  return (
-    <Tooltip delay={300}>
-      <Tooltip.Trigger<"button">
-        render={({ role: _role, className: triggerClassName, ...domProps }) => (
-          <button
-            type="button"
-            data-slot="sidebar-menu-button"
-            data-active={isActive}
-            {...props}
-            {...domProps}
-            className={cn(classes, triggerClassName)}
-          >
-            {children}
-          </button>
-        )}
-      />
-      <Tooltip.Content placement="right">{tooltip}</Tooltip.Content>
-    </Tooltip>
-  )
 }
 
 type SidebarMenuLinkProps = Omit<React.ComponentProps<typeof NavLink>, "className" | "children"> & {

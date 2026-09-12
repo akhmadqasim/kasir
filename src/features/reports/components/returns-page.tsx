@@ -1,11 +1,10 @@
-import { useState } from "react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatNumber, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatNumber, formatRupiah } from "@/lib/format"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useReturns } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -24,11 +23,7 @@ const TYPE_VARIANTS: Record<string, StatusVariant> = {
 }
 
 export function ReturnsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
-
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const { data, isLoading, error } = useReturns(startDate, endDate)
 
   const totals = data?.reduce(
@@ -70,8 +65,8 @@ export function ReturnsPage() {
       >
         {(data ?? []).map((row) => (
           <Table.Row key={row.id} id={row.id} textValue={row.refundNumber}>
-            <Table.Cell className="font-mono text-sm">{row.refundNumber}</Table.Cell>
-            <Table.Cell className="font-mono text-sm">{row.transactionReceipt}</Table.Cell>
+            <Table.Cell className="font-mono">{row.refundNumber}</Table.Cell>
+            <Table.Cell className="font-mono">{row.transactionReceipt}</Table.Cell>
             <Table.Cell>{row.cashierName}</Table.Cell>
             <Table.Cell>
               <StatusBadge status={TYPE_VARIANTS[row.type] ?? "neutral"}>
@@ -81,10 +76,10 @@ export function ReturnsPage() {
             <Table.Cell className="text-right font-medium text-danger">
               {formatRupiah(row.totalRefundAmount)}
             </Table.Cell>
-            <Table.Cell className="max-w-[200px] truncate text-sm text-muted">
+            <Table.Cell className="max-w-[200px] truncate text-muted">
               {row.reason ?? "-"}
             </Table.Cell>
-            <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+            <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
           </Table.Row>
         ))}
       </ReportTable>

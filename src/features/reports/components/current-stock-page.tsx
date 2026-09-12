@@ -1,7 +1,8 @@
 import { useState } from "react"
-import { Label, ListBox, SearchField, Select, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
+import { SearchInput } from "@/components/search-input"
 import { StatCard } from "@/components/stat-card"
 import { StatusBadge } from "@/components/status-badge"
 import { formatNumber, formatRupiah } from "@/lib/format"
@@ -42,39 +43,20 @@ export function CurrentStockPage() {
     <ReportPage
       filters={
         <>
-          <SearchField
+          <SearchInput
             aria-label={SEARCH_PLACEHOLDER}
+            placeholder={SEARCH_PLACEHOLDER}
             className="w-64"
             value={search}
             onChange={setSearch}
-          >
-            <SearchField.Group>
-              <SearchField.SearchIcon />
-              <SearchField.Input placeholder={SEARCH_PLACEHOLDER} />
-              <SearchField.ClearButton />
-            </SearchField.Group>
-          </SearchField>
-          <Select
+          />
+          <OptionSelect
             aria-label="Saring stok"
             className="w-44"
+            options={FILTER_OPTIONS}
             value={filter}
-            onChange={(value) => setFilter(String(value) as StockFilter)}
-          >
-            <Select.Trigger>
-              <Select.Value>{selectedText}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {FILTER_OPTIONS.map((option) => (
-                  <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                    <Label>{option.label}</Label>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            onChange={(key) => setFilter((key as StockFilter) ?? "all")}
+          />
         </>
       }
     >
@@ -122,23 +104,20 @@ export function CurrentStockPage() {
         {(data?.items ?? []).map((row) => {
           const isLow = row.stock <= row.minStock && row.minStock > 0
           return (
-            <Table.Row
-              key={row.productId}
-              id={row.productId}
-              className={isLow ? "bg-danger-soft" : undefined}
-              textValue={row.productName}
-            >
+            <Table.Row key={row.productId} id={row.productId} textValue={row.productName}>
               <Table.Cell className="font-medium">{row.productName}</Table.Cell>
-              <Table.Cell className="font-mono text-sm text-muted">{row.barcode ?? "-"}</Table.Cell>
+              <Table.Cell className="font-mono text-muted">{row.barcode ?? "-"}</Table.Cell>
               <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
+              {/* Bentuk yang sama dengan tabel Stok Rendah di dashboard: angkanya
+                  di dalam lencana — peringatan bila menipis, error bila habis.
+                  Satu penanda, bukan tiga (latar baris, angka tebal, lencana). */}
               <Table.Cell className="text-right">
-                <span className={isLow ? "font-semibold text-danger" : "font-medium"}>
-                  {row.stock}
-                </span>
-                {isLow && (
-                  <StatusBadge className="ml-2" size="sm" status="error">
-                    Menipis
+                {isLow ? (
+                  <StatusBadge size="sm" status={row.stock === 0 ? "error" : "warning"}>
+                    {row.stock}
                   </StatusBadge>
+                ) : (
+                  row.stock
                 )}
               </Table.Cell>
               <Table.Cell className="text-right text-muted">{row.minStock}</Table.Cell>

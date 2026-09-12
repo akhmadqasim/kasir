@@ -37,36 +37,31 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
     <Table.Row id={item.cart_id} textValue={item.product_name} onAction={() => onEdit(item)}>
       <Table.Cell className="whitespace-normal">
         <div className="flex min-w-0 items-start gap-2">
-          {/* Qty. PPOB selalu satu baris per tagihan, jadi lencananya netral
-              dan tidak menonjol; barang fisik memakai aksen supaya jumlah yang
-              bukan 1 langsung tertangkap mata saat kasir memindai keranjang. */}
-          <Chip
-            className="mt-0.5 shrink-0 tabular-nums"
-            color={item.is_ppob ? "default" : "accent"}
-            size="lg"
-            variant={item.is_ppob ? "secondary" : "primary"}
-          >
+          {/* Qty sebagai `Chip` netral: satu bentuk untuk barang fisik dan PPOB.
+              Lencana beraksen di setiap baris tidak lagi membedakan apa pun
+              begitu semua baris memilikinya — DESIGN.md §5.4. */}
+          <Chip className="shrink-0 tabular-nums" size="lg">
             {qty}
           </Chip>
           <div className="min-w-0">
-            <p className="font-medium leading-snug">
+            <p className="font-medium">
               {item.is_ppob ? truncatePpobName(item.product_name) : item.product_name}
             </p>
             {item.is_ppob ? (
-              <div className="mt-0.5 flex items-center gap-1">
-                <PpobIcon aria-hidden="true" className="size-3 shrink-0 text-muted" />
-                <p className="text-xs text-muted">{item.service_ref}</p>
-              </div>
+              <p className="flex items-center gap-1 text-xs text-muted">
+                <PpobIcon aria-hidden="true" className="size-3 shrink-0" />
+                {item.service_ref}
+              </p>
             ) : (
               <p className="text-xs text-muted">
                 {formatRupiah(item.product_price)} / {item.unit}
               </p>
             )}
-            {hasDiscount && <p className="text-xs font-medium text-danger">Diskon aktif</p>}
+            {hasDiscount && <p className="text-xs text-danger">Diskon aktif</p>}
           </div>
         </div>
       </Table.Cell>
-      <Table.Cell className="text-right font-semibold tabular-nums">
+      <Table.Cell className="text-right font-medium tabular-nums">
         {formatRupiah(subtotal)}
       </Table.Cell>
       <Table.Cell>

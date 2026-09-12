@@ -22,7 +22,12 @@ import { cn } from "@/lib/utils"
  */
 export interface StatCardProps {
   label: string
-  value: string
+  /**
+   * Angkanya, sudah diformat. Boleh `ReactNode` supaya kartu yang masih
+   * menunggu data menaruh `Skeleton` di baris angka alih-alih merakit kartunya
+   * sendiri — bentuk kartunya tetap satu, isinya saja yang berganti.
+   */
+  value: ReactNode
   /** Persentase perubahan terhadap periode sebelumnya. `null` = tanpa pembanding. */
   delta?: number | null
   /**

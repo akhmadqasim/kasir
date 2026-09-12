@@ -1,12 +1,12 @@
 import { useState, useCallback } from "react"
 import { Plus, Check, X, Trash2 } from "lucide-react"
-import { AlertDialog, Button, Label, ListBox, Select, Skeleton, Table } from "@heroui/react"
+import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { NoData } from "@/components/no-data"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { StatusBadge, type StatusVariant } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
 import { TablePagination } from "@/components/table-pagination"
@@ -46,14 +46,6 @@ const REASON_LABELS: Record<string, string> = {
   other: "Lainnya",
 }
 
-/** Alasan kerugian: rusak paling berat, kadaluarsa masih bisa dicegah, hilang netral. */
-const REASON_VARIANTS: Record<string, StatusVariant> = {
-  damaged: "error",
-  expired: "warning",
-  lost: "neutral",
-  other: "neutral",
-}
-
 const STATUS_LABELS: Record<string, string> = {
   pending: "Menunggu",
   approved: "Disetujui",
@@ -67,14 +59,6 @@ const STATUS_VARIANTS: Record<string, StatusVariant> = {
 }
 
 const COLUMN_COUNT = 9
-
-function ReasonBadge({ reason }: { reason: string }) {
-  return (
-    <StatusBadge status={REASON_VARIANTS[reason] ?? "neutral"}>
-      {REASON_LABELS[reason] ?? reason}
-    </StatusBadge>
-  )
-}
 
 function WriteoffStatusBadge({ status }: { status: string }) {
   return (
@@ -171,7 +155,7 @@ export function StockWriteoffPage() {
     approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
 
   return (
-    <div className="flex h-full flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <NavbarActions>
         <Button size="sm" onPress={() => setFormOpen(true)}>
           <Plus />
@@ -181,53 +165,24 @@ export function StockWriteoffPage() {
 
       {/* Filter Bar */}
       <div className="flex items-center gap-2">
-        <Select
+        <OptionSelect
           aria-label="Filter status"
           className="w-44"
+          options={STATUS_OPTIONS}
           value={statusFilter}
-          onChange={(value) => handleFilterChange(setStatusFilter)(String(value))}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {STATUS_OPTIONS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+          onChange={(value) => handleFilterChange(setStatusFilter)(value ?? ALL)}
+        />
 
-        <Select
+        <OptionSelect
           aria-label="Filter alasan"
           className="w-44"
+          options={REASON_OPTIONS}
           value={reasonFilter}
-          onChange={(value) => handleFilterChange(setReasonFilter)(String(value))}
-        >
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {REASON_OPTIONS.map((option) => (
-                <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                  <Label>{option.label}</Label>
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+          onChange={(value) => handleFilterChange(setReasonFilter)(value ?? ALL)}
+        />
       </div>
 
-      {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex flex-col gap-4">
         <Table variant="secondary">
           <Table.ScrollContainer>
             <Table.Content aria-label={id.nav.stock}>
@@ -255,20 +210,20 @@ export function StockWriteoffPage() {
                     ))
                   : writeoffs.map((wo) => (
                       <Table.Row key={wo.id} id={wo.id} textValue={wo.writeoffNumber}>
-                        <Table.Cell className="font-mono text-sm">{wo.writeoffNumber}</Table.Cell>
+                        <Table.Cell className="font-mono">{wo.writeoffNumber}</Table.Cell>
                         <Table.Cell className="font-medium">{wo.productName}</Table.Cell>
                         <Table.Cell className="text-muted">{wo.cashierName}</Table.Cell>
                         <Table.Cell className="text-right tabular-nums">{wo.quantity}</Table.Cell>
-                        <Table.Cell>
-                          <ReasonBadge reason={wo.reason} />
-                        </Table.Cell>
+                        {/* Alasan adalah kategori, bukan status: teks polos
+                            (DESIGN.md §5.4). */}
+                        <Table.Cell>{REASON_LABELS[wo.reason] ?? wo.reason}</Table.Cell>
                         <Table.Cell className="text-right font-medium tabular-nums text-danger">
                           {formatRupiah(wo.lossValue)}
                         </Table.Cell>
                         <Table.Cell>
                           <WriteoffStatusBadge status={wo.status} />
                         </Table.Cell>
-                        <Table.Cell className="text-sm text-muted">
+                        <Table.Cell className="text-muted">
                           {formatDateTime(wo.createdAt)}
                         </Table.Cell>
                         <Table.Cell className="text-right">
@@ -284,9 +239,9 @@ export function StockWriteoffPage() {
             </Table.Content>
           </Table.ScrollContainer>
         </Table>
-      </div>
 
-      <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
+        <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      </div>
 
       {/* Form Dialog */}
       <WriteoffFormDialog open={formOpen} onOpenChange={setFormOpen} />
@@ -362,26 +317,31 @@ function WriteoffActions({
   onAction: (action: ConfirmAction) => void
 }) {
   if (writeoff.status !== "pending") {
-    return <span className="text-sm text-muted">—</span>
+    return <span className="text-muted">—</span>
   }
 
+  // Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI: `tertiary` untuk
+  // aksi biasa, `danger-soft` untuk yang merusak. Setujui bukan `primary` —
+  // satu tombol primary per baris berarti sepuluh primary per layar, dan yang
+  // memajukan pekerjaan di halaman ini adalah "Buat Write-off" di navbar.
   return (
     <div className="flex items-center justify-end gap-1">
       {isAdmin && (
         <>
           <Button
-            aria-label="Setujui"
+            aria-label={`Setujui ${writeoff.writeoffNumber}`}
             isIconOnly
             size="sm"
+            variant="tertiary"
             onPress={() => onAction({ type: "approve", writeoff })}
           >
             <Check />
           </Button>
           <Button
-            aria-label="Tolak"
+            aria-label={`Tolak ${writeoff.writeoffNumber}`}
             isIconOnly
             size="sm"
-            variant="danger"
+            variant="danger-soft"
             onPress={() => onAction({ type: "reject", writeoff })}
           >
             <X />
@@ -390,10 +350,10 @@ function WriteoffActions({
       )}
       {isAdmin && !writeoff.refundId && (
         <Button
-          aria-label="Hapus"
+          aria-label={`Hapus ${writeoff.writeoffNumber}`}
           isIconOnly
           size="sm"
-          variant="danger"
+          variant="danger-soft"
           onPress={() => onAction({ type: "delete", writeoff })}
         >
           <Trash2 />

@@ -1,19 +1,8 @@
 import { Button, Card, ScrollShadow, Separator } from "@heroui/react"
-import {
-  ArrowDownCircle,
-  ArrowLeft,
-  ArrowUpCircle,
-  Banknote,
-  CreditCard,
-  LogOut,
-  Printer,
-  ShoppingBag,
-  Store,
-  User,
-  Wallet,
-} from "lucide-react"
+import { ArrowLeft, LogOut, Printer } from "lucide-react"
 
 import { StatusBadge } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { paymentMethodLabel } from "@/lib/labels"
 import { cashDifferenceStatus, signedRupiah } from "../utils"
@@ -58,94 +47,60 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
 
   return (
     <ScrollShadow className="h-full print:h-auto print:overflow-visible print:[-webkit-mask-image:none] print:[mask-image:none]">
-      <div className="mx-auto flex max-w-2xl flex-col gap-6 py-6 print:max-w-none print:py-2">
-        {/* Report Header */}
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 print:max-w-none">
+        {/* Kepala laporan. `<h1>` boleh di sini karena ini dokumen cetak — DESIGN.md §5.1. */}
         <div className="text-center">
-          <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-accent-soft print:hidden">
-            <Store className="size-6 text-accent-soft-foreground" />
-          </div>
           <h1 className="text-xl font-semibold">Laporan Tutup Kasir</h1>
-          {storeName && <p className="mt-1 text-muted">{storeName}</p>}
+          {storeName && <p className="text-sm text-muted">{storeName}</p>}
         </div>
 
         {/* Shift Info */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2">
-              <User className="size-4" />
-              Ringkasan
-            </Card.Title>
+            <Card.Title>Ringkasan</Card.Title>
           </Card.Header>
           <Card.Content>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-1">
-                <p className="text-muted">Kasir</p>
-                <p className="font-medium">{shift.userName}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-muted">Modal Awal</p>
-                <p className="font-medium tabular-nums">{formatRupiah(shift.openingCash)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-muted">Dibuka</p>
-                <p className="font-medium">{formatDateTime(shift.openedAt)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-muted">Ditutup</p>
-                <p className="font-medium">{formatDateTime(shift.closedAt, "-")}</p>
-              </div>
-            </div>
+            <SummaryList
+              layout="grid"
+              items={[
+                { label: "Kasir", value: shift.userName },
+                { label: "Modal Awal", value: formatRupiah(shift.openingCash) },
+                { label: "Dibuka", value: formatDateTime(shift.openedAt) },
+                { label: "Ditutup", value: formatDateTime(shift.closedAt, "-") },
+              ]}
+            />
           </Card.Content>
         </Card>
 
         {/* Sales Summary */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2">
-              <ShoppingBag className="size-4" />
-              Penjualan
-            </Card.Title>
+            <Card.Title>Penjualan</Card.Title>
           </Card.Header>
           <Card.Content>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted">Jumlah Transaksi</span>
-                <span className="font-medium tabular-nums">{totalTransactions}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Total Penjualan</span>
-                <span className="font-medium tabular-nums">{formatRupiah(totalSales)}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between font-semibold">
-                <span>TOTAL</span>
-                <span className="tabular-nums">{formatRupiah(totalSales)}</span>
-              </div>
-            </div>
+            <SummaryList
+              items={[
+                { label: "Jumlah Transaksi", value: String(totalTransactions) },
+                { label: "Total Penjualan", value: formatRupiah(totalSales), tone: "strong" },
+              ]}
+            />
           </Card.Content>
         </Card>
 
-        {/* Payment Breakdown */}
+        {/* Payment Breakdown — jumlah transaksi ikut di label sebagai teks,
+            bukan lencana: DESIGN.md §5.4. */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2">
-              <CreditCard className="size-4" />
-              Jenis Pembayaran
-            </Card.Title>
+            <Card.Title>Jenis Pembayaran</Card.Title>
           </Card.Header>
           <Card.Content>
             {paymentBreakdown.length > 0 ? (
-              <div className="space-y-2 text-sm">
-                {paymentBreakdown.map((pb) => (
-                  <div key={pb.method} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted">{paymentMethodLabel(pb.method)}</span>
-                      <StatusBadge size="sm" status="neutral">{`${pb.count}x`}</StatusBadge>
-                    </div>
-                    <span className="font-medium tabular-nums">{formatRupiah(pb.total)}</span>
-                  </div>
-                ))}
-              </div>
+              <SummaryList
+                items={paymentBreakdown.map((pb) => ({
+                  label: `${paymentMethodLabel(pb.method)} (${pb.count}×)`,
+                  value: formatRupiah(pb.total),
+                }))}
+              />
             ) : (
               <p className="text-sm text-muted">Tidak ada transaksi</p>
             )}
@@ -156,39 +111,26 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {cashFlows.length > 0 && (
           <Card>
             <Card.Header>
-              <Card.Title className="flex items-center gap-2">
-                <Banknote className="size-4" />
-                Uang Masuk / Keluar
-              </Card.Title>
+              <Card.Title>Uang Masuk / Keluar</Card.Title>
             </Card.Header>
             <Card.Content>
-              <div className="space-y-2 text-sm">
-                {cashFlows.map((cf) => (
-                  <div key={cf.id} className="flex items-center gap-2">
-                    {cf.flowType === "in" ? (
-                      <ArrowDownCircle className="size-4 shrink-0 text-success" />
-                    ) : (
-                      <ArrowUpCircle className="size-4 shrink-0 text-danger" />
-                    )}
-                    <span className="min-w-0 truncate text-muted">{cf.description}</span>
-                    <span
-                      className={`ml-auto shrink-0 font-medium tabular-nums ${cf.flowType === "in" ? "text-success" : "text-danger"}`}
-                    >
-                      {cf.flowType === "in" ? "+" : "-"}
-                      {formatRupiah(cf.amount)}
-                    </span>
-                  </div>
-                ))}
-                <Separator />
-                <div className="flex justify-between font-medium">
-                  <span>Total</span>
-                  <span
-                    className={`tabular-nums ${netCashFlow >= 0 ? "text-success" : "text-danger"}`}
-                  >
-                    {signedRupiah(netCashFlow)}
-                  </span>
-                </div>
-              </div>
+              <SummaryList
+                items={cashFlows.map((cf) => ({
+                  label: cf.description,
+                  value: signedRupiah(cf.flowType === "in" ? cf.amount : -cf.amount),
+                  tone: cf.flowType === "in" ? "success" : "danger",
+                }))}
+              />
+              <Separator />
+              <SummaryList
+                items={[
+                  {
+                    label: "Total",
+                    value: signedRupiah(netCashFlow),
+                    tone: netCashFlow >= 0 ? "success" : "danger",
+                  },
+                ]}
+              />
             </Card.Content>
           </Card>
         )}
@@ -196,53 +138,47 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Cash Reconciliation */}
         <Card>
           <Card.Header>
-            <Card.Title className="flex items-center gap-2">
-              <Wallet className="size-4" />
-              Setoran Uang Tunai
-            </Card.Title>
+            <Card.Title>Setoran Uang Tunai</Card.Title>
           </Card.Header>
           <Card.Content>
-            <div className="space-y-2 text-sm">
-              {hasClosingCash && (
-                <div className="flex justify-between">
-                  <span className="text-muted">Inputan Kasir</span>
-                  <span className="font-medium tabular-nums">{formatRupiah(closingCash)}</span>
+            <SummaryList
+              items={[
+                ...(hasClosingCash
+                  ? [{ label: "Inputan Kasir", value: formatRupiah(closingCash) }]
+                  : []),
+                // Retur tunai sudah dipotong dari `expectedCash`. Ditulis sendiri
+                // supaya saldo aplikasi yang lebih kecil dari penjualan punya
+                // penjelasan di halaman yang sama.
+                ...(cashRefunds > 0
+                  ? [
+                      {
+                        label: "Retur Tunai",
+                        value: signedRupiah(-cashRefunds),
+                        tone: "danger" as const,
+                      },
+                    ]
+                  : []),
+                { label: "Dari Aplikasi", value: formatRupiah(expectedCash) },
+              ]}
+            />
+            {cashDifference !== null && (
+              <>
+                <Separator />
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Selisih</span>
+                  <StatusBadge
+                    className="tabular-nums"
+                    status={cashDifferenceStatus(cashDifference)}
+                  >
+                    {signedRupiah(cashDifference)}
+                  </StatusBadge>
                 </div>
-              )}
-              {/* Retur tunai sudah dipotong dari `expectedCash`. Ditulis
-                  sendiri supaya saldo aplikasi yang lebih kecil dari penjualan
-                  punya penjelasan di halaman yang sama. */}
-              {cashRefunds > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted">Retur Tunai</span>
-                  <span className="font-medium tabular-nums text-danger">
-                    {signedRupiah(-cashRefunds)}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted">Dari Aplikasi</span>
-                <span className="font-medium tabular-nums">{formatRupiah(expectedCash)}</span>
-              </div>
-              {cashDifference !== null && (
-                <>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">Selisih</span>
-                    <StatusBadge
-                      className="tabular-nums"
-                      status={cashDifferenceStatus(cashDifference)}
-                    >
-                      {signedRupiah(cashDifference)}
-                    </StatusBadge>
-                  </div>
-                </>
-              )}
-            </div>
+              </>
+            )}
           </Card.Content>
           {!hasClosingCash && (
             <Card.Footer>
-              <p className="text-xs text-muted">* Saldo aktual tidak diisi saat tutup kasir</p>
+              <p className="text-xs text-muted">Saldo aktual tidak diisi saat tutup kasir.</p>
             </Card.Footer>
           )}
         </Card>
@@ -258,19 +194,19 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
           </Card>
         )}
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 print:hidden">
-          <Button className="flex-1" size="lg" variant="tertiary" onPress={onBack}>
+        {/* Satu aksi utama (cetak); keluar hanya mengakhiri sesi, bukan merusak. */}
+        <div className="flex flex-wrap justify-end gap-2 print:hidden">
+          <Button variant="tertiary" onPress={onBack}>
             <ArrowLeft />
             Kembali
           </Button>
-          <Button className="flex-1" size="lg" onPress={handlePrint}>
-            <Printer />
-            Cetak Laporan
-          </Button>
-          <Button className="flex-1" size="lg" variant="danger" onPress={onLogout}>
+          <Button variant="secondary" onPress={onLogout}>
             <LogOut />
             Keluar
+          </Button>
+          <Button onPress={handlePrint}>
+            <Printer />
+            Cetak Laporan
           </Button>
         </div>
       </div>

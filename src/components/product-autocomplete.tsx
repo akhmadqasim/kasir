@@ -1,5 +1,13 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { Autocomplete, FieldError, Label, ListBox, SearchField } from "@heroui/react"
+import {
+  Autocomplete,
+  Description,
+  EmptyState,
+  FieldError,
+  Label,
+  ListBox,
+  SearchField,
+} from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -125,18 +133,21 @@ export function ProductAutocomplete({
               <SearchField.Input placeholder={searchPlaceholder} />
             </SearchField.Group>
           </SearchField>
+          {/* `EmptyState` dan `Description` per item: susunan yang dipakai
+              dokumentasi Autocomplete sendiri untuk daftar kosong dan baris
+              berketerangan. */}
           <ListBox
             aria-label={label}
             renderEmptyState={() => (
-              <p className="px-3 py-6 text-center text-sm text-muted">
-                {isSearching ? "Produk tidak ditemukan" : searchPlaceholder}
-              </p>
+              <EmptyState>{isSearching ? "Produk tidak ditemukan" : searchPlaceholder}</EmptyState>
             )}
           >
             {items.map((product) => (
               <ListBox.Item key={product.id} id={String(product.id)} textValue={product.name}>
-                <Label>{product.name}</Label>
-                <span className="text-xs text-muted">{renderDetail(product)}</span>
+                <div className="flex flex-col">
+                  <Label>{product.name}</Label>
+                  <Description>{renderDetail(product)}</Description>
+                </div>
                 <ListBox.ItemIndicator />
               </ListBox.Item>
             ))}

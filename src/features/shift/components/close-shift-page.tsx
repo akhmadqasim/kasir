@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
-  Alert,
   AlertDialog,
   Button,
   Card,
@@ -128,12 +127,7 @@ export function CloseShiftPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner
-          aria-label="Memuat ringkasan shift"
-          color="current"
-          size="lg"
-          className="text-muted"
-        />
+        <Spinner aria-label="Memuat ringkasan shift" size="lg" />
       </div>
     )
   }
@@ -168,7 +162,8 @@ export function CloseShiftPage() {
   const canDeleteCashFlow = (cf: CashFlow) => user?.role === "admin" || user?.id === cf.userId
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+    // Padding luar milik `app-layout`; halaman hanya mengatur jarak antar kartu — DESIGN.md §3.5.
+    <div className="flex flex-col gap-4">
       <SubpageHeader title="Tutup Kasir" onBack={() => navigate(-1)} />
 
       {/* Detail Kasir card */}
@@ -177,20 +172,14 @@ export function CloseShiftPage() {
           <Card.Title>Detail Kasir</Card.Title>
         </Card.Header>
         <Card.Content>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-muted">Kasir</p>
-              <p className="font-medium">{summary.shift.userName}</p>
-            </div>
-            <div>
-              <p className="text-muted">Tanggal Buka</p>
-              <p className="font-medium">{formatDateTime(summary.shift.openedAt)}</p>
-            </div>
-            <div>
-              <p className="text-muted">Modal Awal</p>
-              <p className="font-medium tabular-nums">{formatRupiah(summary.shift.openingCash)}</p>
-            </div>
-          </div>
+          <SummaryList
+            layout="grid"
+            items={[
+              { label: "Kasir", value: summary.shift.userName },
+              { label: "Tanggal Buka", value: formatDateTime(summary.shift.openedAt) },
+              { label: "Modal Awal", value: formatRupiah(summary.shift.openingCash) },
+            ]}
+          />
         </Card.Content>
       </Card>
 
@@ -400,19 +389,12 @@ export function CloseShiftPage() {
               <AlertDialog.Heading>Verifikasi Terakhir</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
+              {/* Satu kalimat, tanpa `Alert` tambahan yang mengulang peringatan
+                  yang sudah dibawa ikon `danger` di kepala — DESIGN.md §5.7. */}
               <p>
-                Shift akan ditutup sekarang dan laporan tutup kasir akan dibuat. Lanjutkan hanya
-                jika Anda benar-benar yakin.
+                Shift ditutup sekarang dan laporannya dibuat. Pastikan tidak ada pelanggan yang
+                masih dalam proses pembayaran.
               </p>
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Description>
-                    Tindakan ini tidak untuk transaksi aktif. Pastikan tidak ada pelanggan yang
-                    masih dalam proses pembayaran.
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
             </AlertDialog.Body>
             <AlertDialog.Footer>
               <Button isDisabled={isSubmitting} slot="close" variant="tertiary">

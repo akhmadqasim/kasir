@@ -23,8 +23,8 @@ import {
 } from "lucide-react"
 
 import { NoData } from "@/components/no-data"
-import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
+import { formatDateTime } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { useCartStore } from "@/stores/cart-store"
@@ -44,19 +44,26 @@ interface CartPanelProps {
   onRequestProductSearchFocus?: () => void
 }
 
-/** Pintasan yang ditampilkan di kaki keranjang — pasangan tombol dan kata kerjanya. */
-const SHORTCUTS: ReadonlyArray<readonly [key: string, label: string]> = [
-  ["F1", "uang"],
-  ["F2", "diskon"],
-  ["F3", "simpan"],
-  ["F4", "bayar"],
-  ["F9", "tersimpan"],
-]
-
-function formatHeldDate(timestamp: number): string {
-  const d = new Date(timestamp)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+/**
+ * Tombol pintasan di dalam tombol aksinya, setelah label. Dokumentasi `Kbd`
+ * tidak punya contoh di dalam `Button`, jadi yang dipakai varian `light`
+ * (tanpa latar) supaya tidak ada kotak `bg-default` kedua di atas tombol yang
+ * latarnya sudah `bg-default`. Pengikatan tombolnya: F1/F2/F3/F6/F9 di
+ * `CartPanel`, F4 di `CashierPage`.
+ *
+ * Spasi di depannya ikut nama aksesibel tombolnya — "Diskon F2", bukan
+ * "DiskonF2" — dan tidak menambah jarak di layar karena tombolnya flex.
+ * (`aria-keyshortcuts` tidak bisa dipakai: React Aria membuangnya dari `Button`.)
+ */
+function ShortcutKey({ children, className }: { children: string; className?: string }) {
+  return (
+    <>
+      {" "}
+      <Kbd className={className} variant="light">
+        <Kbd.Content>{children}</Kbd.Content>
+      </Kbd>
+    </>
+  )
 }
 
 export function CartPanel({
@@ -239,11 +246,8 @@ export function CartPanel({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3">
         <h2 className="text-base font-medium">Keranjang</h2>
-        {items.length > 0 && (
-          <StatusBadge size="sm" status="neutral">
-            {itemCount} item
-          </StatusBadge>
-        )}
+        {/* Teks, bukan lencana: jumlah item bukan status — DESIGN.md §9. */}
+        {items.length > 0 && <span className="text-sm text-muted">{itemCount} item</span>}
         <div className="flex-1" />
         <Badge.Anchor>
           <Button
@@ -257,6 +261,7 @@ export function CartPanel({
           >
             <PlayCircle />
             Tersimpan
+            <ShortcutKey>F9</ShortcutKey>
           </Button>
           {heldCarts.length > 0 && (
             <Badge color="danger" size="sm">
@@ -278,30 +283,32 @@ export function CartPanel({
       ) : (
         <ScrollShadow className="min-h-0 flex-1">
           <Table variant="secondary">
-            <Table.Content aria-label="Isi keranjang">
-              <Table.Header>
-                <Table.Column isRowHeader id="product">
-                  Produk
-                </Table.Column>
-                <Table.Column className="w-[90px] text-right" id="subtotal">
-                  Subtotal
-                </Table.Column>
-                <Table.Column className="w-[36px]" id="actions">
-                  <span className="sr-only">Aksi</span>
-                </Table.Column>
-              </Table.Header>
-              <Table.Body>
-                {items.map((item) => (
-                  <CartItemRow
-                    key={item.cart_id}
-                    item={item}
-                    onRemove={removeItem}
-                    onEdit={(it) => setEditItem(it)}
-                    hasDiscount={!!itemDiscounts[item.cart_id]}
-                  />
-                ))}
-              </Table.Body>
-            </Table.Content>
+            <Table.ScrollContainer>
+              <Table.Content aria-label="Isi keranjang">
+                <Table.Header>
+                  <Table.Column isRowHeader id="product">
+                    Produk
+                  </Table.Column>
+                  <Table.Column className="w-24 text-right" id="subtotal">
+                    Subtotal
+                  </Table.Column>
+                  <Table.Column className="w-9" id="actions">
+                    <span className="sr-only">Aksi</span>
+                  </Table.Column>
+                </Table.Header>
+                <Table.Body>
+                  {items.map((item) => (
+                    <CartItemRow
+                      key={item.cart_id}
+                      item={item}
+                      onRemove={removeItem}
+                      onEdit={(it) => setEditItem(it)}
+                      hasDiscount={!!itemDiscounts[item.cart_id]}
+                    />
+                  ))}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
           </Table>
         </ScrollShadow>
       )}
@@ -334,6 +341,7 @@ export function CartPanel({
           >
             <Percent />
             Diskon
+            <ShortcutKey>F2</ShortcutKey>
           </Button>
           <Button
             isDisabled={items.length === 0}
@@ -343,35 +351,29 @@ export function CartPanel({
           >
             <PauseCircle />
             Simpan
+            <ShortcutKey>F3</ShortcutKey>
           </Button>
           {activeShift && (
             <>
               <Button size="sm" variant="secondary" onPress={() => setCashFlowOpen(true)}>
                 <ArrowDownUp />
                 Uang
+                <ShortcutKey>F1</ShortcutKey>
               </Button>
-              <Button size="sm" variant="danger" onPress={() => navigate("/close-shift")}>
+              {/* Hanya membuka halaman tutup kasir; yang merusak dikonfirmasi di sana. */}
+              <Button size="sm" variant="secondary" onPress={() => navigate("/close-shift")}>
                 <DoorClosed />
                 Tutup
+                <ShortcutKey>F6</ShortcutKey>
               </Button>
             </>
           )}
         </div>
         <Button fullWidth isDisabled={items.length === 0 || disabled} size="lg" onPress={onPay}>
           Bayar
+          {/* `.kbd` memaksa `text-muted`; di atas latar aksen warnanya harus ikut tombolnya. */}
+          <ShortcutKey className="text-accent-foreground">F4</ShortcutKey>
         </Button>
-        {items.length > 0 && (
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-            {SHORTCUTS.map(([key, label]) => (
-              <span key={key} className="flex items-center gap-1">
-                <Kbd>
-                  <Kbd.Content>{key}</Kbd.Content>
-                </Kbd>
-                {label}
-              </span>
-            ))}
-          </p>
-        )}
       </div>
 
       {/* Hold Dialog */}
@@ -383,7 +385,10 @@ export function CartPanel({
               <Modal.Heading>Simpan Transaksi</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p>Beri label agar mudah dikenali (opsional), lalu tekan Enter.</p>
+              <p>
+                {itemCount} item · {formatRupiah(total)}. Beri label supaya mudah dikenali; boleh
+                kosong.
+              </p>
               <TextField
                 autoFocus
                 fullWidth
@@ -391,19 +396,15 @@ export function CartPanel({
                 variant="secondary"
                 onChange={setHoldLabel}
               >
-                <Label className="sr-only">Label transaksi</Label>
+                <Label>Label</Label>
                 <Input
                   placeholder="Contoh: Pelanggan 1"
                   onKeyDown={(e) => e.key === "Enter" && confirmHold()}
                 />
               </TextField>
-              <p>
-                {itemCount} item • {formatRupiah(total)}
-              </p>
             </Modal.Body>
             <Modal.Footer>
               <Button fullWidth onPress={confirmHold}>
-                <PauseCircle />
                 Simpan Transaksi
               </Button>
             </Modal.Footer>
@@ -423,29 +424,55 @@ export function CartPanel({
               <Modal.Heading>Transaksi Tersimpan ({heldCarts.length})</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p>
-                ↑↓ pilih • Enter lanjut • Del hapus • Angka 1-{Math.min(heldCarts.length, 9)}{" "}
-                panggil cepat
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="flex items-center gap-1">
+                  <Kbd>
+                    <Kbd.Abbr keyValue="up" />
+                  </Kbd>
+                  <Kbd>
+                    <Kbd.Abbr keyValue="down" />
+                  </Kbd>
+                  pilih
+                </span>
+                <span className="flex items-center gap-1">
+                  <Kbd>
+                    <Kbd.Abbr keyValue="enter" />
+                  </Kbd>
+                  lanjut
+                </span>
+                <span className="flex items-center gap-1">
+                  <Kbd>
+                    <Kbd.Content>Del</Kbd.Content>
+                  </Kbd>
+                  hapus
+                </span>
+                <span className="flex items-center gap-1">
+                  <Kbd>
+                    <Kbd.Content>1–{Math.min(heldCarts.length, 9)}</Kbd.Content>
+                  </Kbd>
+                  panggil cepat
+                </span>
               </p>
-              <ScrollShadow className="max-h-[500px]">
-                <Table variant="secondary">
+              {/* Tinggi Body sudah dibatasi `scroll="inside"` bawaan Container. */}
+              <Table variant="secondary">
+                <Table.ScrollContainer>
                   <Table.Content aria-label="Daftar transaksi tersimpan">
                     <Table.Header>
-                      <Table.Column className="w-[40px] text-center" id="index">
+                      <Table.Column className="w-10 text-center" id="index">
                         #
                       </Table.Column>
-                      <Table.Column className="w-[130px]" id="date">
+                      <Table.Column className="w-36" id="date">
                         Tanggal
                       </Table.Column>
-                      <Table.Column className="w-[130px]" isRowHeader id="label">
+                      <Table.Column className="w-32" isRowHeader id="label">
                         Label
                       </Table.Column>
                       <Table.Column id="items">Barang (Jumlah)</Table.Column>
-                      <Table.Column className="w-[110px] text-right" id="total">
+                      <Table.Column className="w-28 text-right" id="total">
                         Total
                       </Table.Column>
-                      <Table.Column className="w-[170px] text-center" id="actions">
-                        Aksi
+                      <Table.Column className="w-44" id="actions">
+                        <span className="sr-only">Aksi</span>
                       </Table.Column>
                     </Table.Header>
                     <Table.Body>
@@ -457,28 +484,36 @@ export function CartPanel({
                           className={cn("align-top", idx === selectedIdx && "bg-default")}
                           textValue={held.label}
                         >
-                          <Table.Cell className="text-center font-semibold">{idx + 1}</Table.Cell>
-                          <Table.Cell className="whitespace-nowrap text-sm">
-                            {formatHeldDate(held.heldAt)}
+                          <Table.Cell className="text-center tabular-nums">{idx + 1}</Table.Cell>
+                          <Table.Cell className="whitespace-nowrap">
+                            {formatDateTime(new Date(held.heldAt).toISOString())}
                           </Table.Cell>
                           <Table.Cell className="font-medium">{held.label}</Table.Cell>
-                          <Table.Cell className="text-sm">
+                          <Table.Cell className="whitespace-normal">
                             {held.items.map((item) => (
-                              <div key={item.cart_id} className="leading-snug">
+                              <div key={item.cart_id}>
                                 {item.product_name} ({item.quantity})
                               </div>
                             ))}
                           </Table.Cell>
-                          <Table.Cell className="text-right font-semibold tabular-nums">
+                          <Table.Cell className="text-right font-medium tabular-nums">
                             {formatRupiah(held.total)}
                           </Table.Cell>
-                          <Table.Cell className="text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <Button size="sm" onPress={() => handleRecall(held.id)}>
+                          <Table.Cell>
+                            {/* Enter adalah aksi utamanya; tombol di tiap baris hanya
+                                alternatif pointer, jadi tidak ada `primary` berulang. */}
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onPress={() => handleRecall(held.id)}
+                              >
                                 <PlayCircle />
                                 Lanjut
                               </Button>
                               <Button
+                                aria-label={`Hapus ${held.label}`}
+                                isIconOnly
                                 size="sm"
                                 variant="danger"
                                 onPress={() => {
@@ -487,7 +522,6 @@ export function CartPanel({
                                 }}
                               >
                                 <Trash2 />
-                                Hapus
                               </Button>
                             </div>
                           </Table.Cell>
@@ -495,8 +529,8 @@ export function CartPanel({
                       ))}
                     </Table.Body>
                   </Table.Content>
-                </Table>
-              </ScrollShadow>
+                </Table.ScrollContainer>
+              </Table>
             </Modal.Body>
           </Modal.Dialog>
         </Modal.Container>

@@ -106,7 +106,8 @@ garisnya bersinggungan. Seri pertama memakai aksen; sisanya memutari roda warna 
 lightness yang setara sehingga tidak ada satu garis pun yang tampak lebih penting.
 
 Pemetaan warna ke metode pembayaran **dipatok**, bukan dibagi menurut urutan kemunculan
-(lihat `METHOD_COLORS` di `payment-trend-chart.tsx`). Kalau dibagi berurutan, satu hari
+(`METHOD_COLORS` di `src/lib/labels.ts`, bersebelahan dengan labelnya, dibaca dashboard
+dan laporan). Kalau dibagi berurutan, satu hari
 tanpa QRIS akan menggeser seluruh warna dan kasir yang hafal "garis biru itu tunai"
 membaca grafik yang salah.
 
@@ -164,6 +165,13 @@ sempat menulis radiusnya sendiri — 15 `rounded-2xl`, 6 `rounded-xl` — bukan 
 berbeda, melainkan karena ditulis orang yang berbeda. Jangan tulis `rounded-*` pada
 `Surface` maupun `Card`; kalau satu tempat memang harus berbeda, tulis kelasnya dengan
 komentar yang menyebut alasannya.
+
+**Panel setinggi layar memakai `border`, kartu memakai `shadow-surface`.** Keranjang kasir,
+katalog, dan panel refund adalah `Surface` yang mengisi tinggi layar dan bertemu tepi
+viewport; bayangan di tepi yang terpotong hanya terlihat sebagai garis kotor, jadi panel
+itu diberi `border` dan tidak berbayang. `Card` yang berdiri di kanvas dengan ruang di
+sekelilingnya tetap memakai `shadow-surface` bawaannya. Keputusan, bukan kebetulan —
+jangan menyamakan keduanya ke salah satu arah.
 
 Halaman **tidak menambahkan padding luarnya sendiri**. `app-layout` memberi `px-6` supaya
 tepi isi sejajar dengan tepi judul di navbar; halaman hanya mengatur `gap` antar bagian.
@@ -232,6 +240,21 @@ manual hanya mewarnai satu di antaranya dan menyisakan tiga sisanya netral.
 Teks polos di dalam `Chip` **otomatis** dibungkus `Chip.Label` — tulis `<Chip>Tunai</Chip>`.
 `Chip.Label` hanya perlu ditulis sendiri kalau ada ikon di sebelahnya.
 
+- `Switch` mengikuti contoh "With Description": `Switch.Control` dulu, lalu teks labelnya,
+  `Description` di bawah. Bukan label di kiri dan sakelar di kanan dengan `w-full
+justify-between` — itu bentuk layar pengaturan ponsel, bukan bentuk HeroUI.
+- Tombol yang menempel pada kolom isian (generate, salin, lihat sandi) masuk ke
+  `InputGroup.Suffix className="pe-0"` sebagai `Button isIconOnly size="sm" variant="tertiary"`,
+  contoh "Copy Button Suffix" di dokumentasi InputGroup — bukan `flex items-end gap-2` yang
+  menyejajarkan tombol ke dasar kolom dengan tangan, dan patah begitu kolomnya punya
+  `Description`.
+- `Avatar` bulat, bawaannya. Tidak ada `rounded-lg` pada `Avatar` atau `Avatar.Fallback`;
+  itu bentuk avatar shadcn.
+- Pintasan keyboard ditulis sebagai `Kbd variant="light"` di dalam tombol yang memicunya,
+  setelah label; tidak ada legenda pintasan terpisah. Di tombol `primary` beri
+  `className="text-accent-foreground"` karena `.kbd` memaksa `text-muted`.
+  `aria-keyshortcuts` tidak bisa dipakai — React Aria membuangnya dari `Button`.
+
 ### 4.2 Komponen bersama
 
 Pola yang muncul di lebih dari satu fitur ditulis sekali di `src/components/`. Sebelum
@@ -239,20 +262,22 @@ menulis kartu angka, baris label–nilai, keadaan kosong, tombol yang menunggu, 
 atau kepala sub-halaman, pakai yang di bawah ini — masing-masing pernah punya 3–6
 implementasi karena migrasi HeroUI dikerjakan per fitur.
 
-| Berkas di `src/components/`                              | Tugas                                                                                                                                                                                             |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stat-card.tsx` — `StatCard`                             | satu kartu KPI; `delta` untuk tren, `note` lencana netral, `tone` warna angka (`success`/`danger`), `action` kontrol di kanan kepala, `children` baris di bawah angka, `footer` isi `Card.Footer` |
-| `summary-list.tsx` — `SummaryList`, `SummaryItem`        | baris label–nilai semantik `<dl>`; `tone` per baris (`mono`/`strong`/`success`/`danger`), `layout` `row` (nilai rata kanan) atau `grid` (kolom label 120px)                                       |
-| `no-data.tsx` — `NoData`                                 | keadaan kosong dan gagal; tanpa `icon`/`children` ia satu `<p>` muted rata tengah, `tone="danger"` untuk pesan gagal                                                                              |
-| `pending-button.tsx` — `PendingButton`                   | `Button` HeroUI plus `isPending`; spinner di kiri label, label tidak berubah                                                                                                                      |
-| `info-panel.tsx` — `InfoPanel`                           | kotak info di dialog: `Surface variant="secondary"`, `p-3 text-sm`, sudut dari aturan global                                                                                                      |
-| `status-badge.tsx` — `StatusBadge`                       | lencana status semantik (`success`/`error`/`warning`/`info`/`neutral`) di atas `Chip`; satu-satunya tempat makna status dipetakan ke warna                                                        |
-| `table-pagination.tsx` — `TablePagination`               | baris halaman di bawah tabel, `Pagination` HeroUI ukuran `sm` rata kanan                                                                                                                          |
-| `date-range-picker.tsx` — `DateRangePicker`              | pemilih rentang tanggal laporan dan riwayat, dua bulan berdampingan                                                                                                                               |
-| `product-autocomplete.tsx` — `ProductAutocomplete`       | pencarian produk di dialog (refund, tukar, write-off): `Autocomplete` dengan `SearchField` di popover                                                                                             |
-| `auth-card.tsx` — `AuthCard`, `AuthScreen`               | kartu dan kanvas layar login/onboarding, mengikuti `login-demo` HeroUI                                                                                                                            |
-| `layout/app-navbar.tsx` — `NavbarTitle`, `NavbarActions` | portal judul dan aksi halaman ke slot navbar milik `AppLayout`                                                                                                                                    |
-| `layout/subpage-header.tsx` — `SubpageHeader`            | judul + tombol kembali (+ aksi) sub-halaman, semuanya di navbar                                                                                                                                   |
+| Berkas di `src/components/`                              | Tugas                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stat-card.tsx` — `StatCard`                             | satu kartu KPI; `delta` untuk tren, `note` lencana netral, `tone` warna angka (`success`/`danger`), `action` kontrol di kanan kepala, `children` baris di bawah angka, `footer` isi `Card.Footer`; `value` boleh `ReactNode` supaya kartu yang memuat menaruh `Skeleton` di baris angka |
+| `summary-list.tsx` — `SummaryList`, `SummaryItem`        | baris label–nilai semantik `<dl>`; `tone` per baris (`mono`/`strong`/`success`/`danger`), `layout` `row` (nilai rata kanan) atau `grid` (kolom label 120px)                                                                                                                             |
+| `no-data.tsx` — `NoData`                                 | keadaan kosong dan gagal di atas `EmptyState` HeroUI (yang dipakai dokumentasi Table/ComboBox untuk `renderEmptyState`); ikon `size-6` lalu satu kalimat, `tone="danger"` untuk pesan gagal                                                                                             |
+| `search-input.tsx` — `SearchInput`                       | bar pencarian di atas tabel: `SearchField` > `Group` > ikon + kolom + tombol hapus, ditulis sekali; `aria-label` wajib, varian bawaan karena berdiri di kanvas                                                                                                                          |
+| `option-select.tsx` — `OptionSelect`                     | `Select` untuk daftar `{ key, label }` statis (status, alasan, peran, satuan); `label` atau `aria-label`, `description`, `errorMessage`; `onChange` menerima `string \| null`                                                                                                           |
+| `pending-button.tsx` — `PendingButton`                   | `Button` HeroUI plus `isPending`; spinner di kiri label, label tidak berubah                                                                                                                                                                                                            |
+| `info-panel.tsx` — `InfoPanel`                           | kotak info di dialog: `Surface variant="secondary"`, `p-3 text-sm`, sudut dari aturan global                                                                                                                                                                                            |
+| `status-badge.tsx` — `StatusBadge`                       | lencana status semantik (`success`/`error`/`warning`/`info`/`neutral`) di atas `Chip`; satu-satunya tempat makna status dipetakan ke warna                                                                                                                                              |
+| `table-pagination.tsx` — `TablePagination`               | baris halaman di bawah tabel, `Pagination` HeroUI ukuran `sm` rata kanan                                                                                                                                                                                                                |
+| `date-range-picker.tsx` — `DateRangePicker`              | pemilih rentang tanggal laporan dan riwayat, dua bulan berdampingan                                                                                                                                                                                                                     |
+| `product-autocomplete.tsx` — `ProductAutocomplete`       | pencarian produk di dialog (refund, tukar, write-off): `Autocomplete` dengan `SearchField` di popover                                                                                                                                                                                   |
+| `auth-card.tsx` — `AuthCard`, `AuthScreen`               | kartu dan kanvas layar login/onboarding, mengikuti `login-demo` HeroUI                                                                                                                                                                                                                  |
+| `layout/app-navbar.tsx` — `NavbarTitle`, `NavbarActions` | portal judul dan aksi halaman ke slot navbar milik `AppLayout`                                                                                                                                                                                                                          |
+| `layout/subpage-header.tsx` — `SubpageHeader`            | judul + tombol kembali (+ aksi) sub-halaman, semuanya di navbar                                                                                                                                                                                                                         |
 
 Yang masih tinggal di `features/dashboard/components/` karena memang hanya dashboard yang
 memakainya: `inline-stat.tsx` (angka sekunder di kepala kartu grafik), `section-card.tsx`
@@ -284,6 +309,11 @@ pagi hanya satu, dan itu yang tetap berupa tombol bertulisan.
 Tombol lipat sidebar duduk di navbar, bukan di kepala sidebar: kontrol yang mengubah tata
 letak halaman tinggal di halaman, dan di ponsel tombol yang sama membuka drawer.
 
+Tombol muat-ulang di navbar (dan di kepala kartu) adalah `Button isIconOnly isPending` dengan
+render-prop `Spinner color="current"`; `PendingButton` menaruh spinner di samping label, dan
+tombol ikon tidak punya label. Bukan `RefreshCw className="animate-spin"` — itu ikon yang
+menirukan `Spinner`.
+
 **Sub-halaman memakai `SubpageHeader`** (`src/components/layout/subpage-header.tsx`):
 judul dan tombol kembali `sm tertiary` keduanya di navbar, aksinya lewat prop `actions`.
 Riwayat PPOB, mutasi, notifikasi, buat refund, dan tutup kasir pernah menulis "tombol
@@ -300,13 +330,21 @@ Panel yang tidak terpilih tidak dirender oleh React Aria. Ini menguntungkan (tid
 permintaan jaringan untuk panel yang tidak dilihat) tapi harus diingat saat menulis test:
 isinya baru ada setelah tabnya diklik.
 
+`Tabs.Panel` bawaan sudah `p-2` dan `mt-4` dari daftar tabnya; jangan tulis `pt-*`/`p-*`
+di panel.
+
 ### 5.3 Kartu KPI
 
 Tiga hal saja: label, lencana bila ada yang dibandingkan, angka. **Tidak ada baris
-keempat.** Keterangan seperti "transaksi selesai" di bawah kartu berjudul "Transaksi Hari
-Ini" hanya mengulang labelnya dengan kata lain, dan empat kartu berdampingan yang
-masing-masing punya empat baris membuat baris teratas dashboard terasa penuh sebelum
-satu angka pun terbaca.
+keterangan yang mengulang labelnya.** "Transaksi selesai" di bawah kartu berjudul
+"Transaksi Hari Ini" hanya mengatakan judulnya dengan kata lain, dan empat kartu
+berdampingan yang masing-masing punya empat baris membuat baris teratas dashboard terasa
+penuh sebelum satu angka pun terbaca.
+
+`children` dan `footer` pada `StatCard` ada untuk fakta yang tidak dibawa label maupun
+angkanya — catatan "termasuk 3 topup tanpa tanggal" di mutasi PPOB, bilah porsi di kartu
+metode pembayaran. Kalau kalimatnya bisa dihapus tanpa ada informasi yang hilang, jangan
+diisi.
 
 Empat kartu per baris di layar lebar, dua di tablet, satu di ponsel. Tanpa gradasi, tanpa
 bayangan tambahan, tanpa paragraf di kaki kartu.
@@ -320,10 +358,31 @@ diubah tanpa alasan. Kolom nominal rata kanan dan `tabular-nums`; kolom teks bol
 
 Keadaan kosong lewat `renderEmptyState={() => <NoData />}`, bukan satu baris ber-`colSpan`.
 
+Baris tabel di dalam dialog (rincian transaksi, item refund) memakai `Table
+variant="secondary"` yang sama, bukan `Surface divide-y`.
+
 **Sel berisi teks tetap teks.** Metode pembayaran di tabel transaksi pernah dibungkus
 `Chip`; sepuluh baris berarti sepuluh lencana, dan lencana berhenti berarti apa-apa ketika
 setiap baris punya satu. Lencana disimpan untuk yang benar-benar status — `StatusBadge`
-pada transaksi yang belum tuntas dan pada stok yang habis.
+pada transaksi yang belum tuntas dan pada stok yang habis. Lencana kategori (jenis,
+alasan, tipe, peran) yang muncul di setiap baris ditulis sebagai teks; hanya kolom status
+memakai `StatusBadge`.
+
+**Aksi baris mengikuti contoh "Custom Cells" di dokumentasi Table:** `Button isIconOnly
+size="sm"` berjajar dalam `flex items-center justify-end gap-1`, `variant="tertiary"`
+untuk aksi biasa (ubah, pin, setujui) dan `variant="danger-soft"` untuk yang merusak
+(hapus, nonaktifkan, tolak, pulihkan). `aria-label` menyebut aksinya dan nama barisnya —
+"Hapus Indomie Goreng" — karena itulah yang dibaca pembaca layar dan test. Tidak ada
+`primary` di baris tabel: satu per baris berarti sepuluh per layar. Aksi baris selalu
+terlihat, bukan muncul saat hover — layar ini juga dibuka dari tablet.
+
+**Daftar pilih-satu** (merchant, bank, kotak masuk) memakai `ListBox selectionMode="none"
+onAction` di dalam `Surface`, seperti contoh "With Sections" — bukan kolom
+`Button variant="secondary"`.
+
+**Baris memuat = baris `Skeleton`**: selama permintaan pertama, `Table.Body` diisi
+beberapa `Table.Row` berisi `Skeleton className="h-5 w-full"` per sel, bukan `NoData
+title="Memuat..."` dan bukan tabel yang hilang lalu muncul.
 
 ### 5.5 Grafik
 
@@ -338,9 +397,12 @@ melompat saat data datang.
 
 Kosong: `NoData` (`src/components/no-data.tsx`) — tanpa prop ia kalimat pendek dari
 `t.dashboard.noData`, rata tengah; beri `icon` dan `title` untuk kolom ringkasan yang
-belum terisi. Gagal: `NoData tone="danger"` dengan pesan dari `ApiError`, jangan pernah
-menampilkan pesan mentah dari `Database`/`Internal` — keduanya sudah diredaksi di sisi
-server dan yang asli hanya masuk log.
+belum terisi. Ia dibangun di atas `EmptyState` HeroUI; daftar di dalam popover
+(`ComboBox`, `Autocomplete`) memakai `EmptyState` langsung dengan kalimatnya, seperti di
+dokumentasinya — bukan `<p className="px-3 py-6 text-center …">`. Gagal: `NoData
+tone="danger"` dengan pesan dari `ApiError`, jangan pernah menampilkan pesan mentah dari
+`Database`/`Internal` — keduanya sudah diredaksi di sisi server dan yang asli hanya masuk
+log.
 
 Memuat di dalam tombol: `PendingButton` (`src/components/pending-button.tsx`) dengan
 `isPending` dari mutasinya. Spinner muncul di kiri label, labelnya tetap. **Tidak ada
@@ -404,6 +466,14 @@ dengan `flex items-center gap-2`. Latar `bg-default text-foreground` untuk ikon 
 **Kolom isian di dalam dialog memakai `variant="secondary"`** (aturan umum §4) dan tidak menimpa tinggi,
 ukuran huruf, atau bobot bawaan (`h-12`, `text-lg`, `font-bold`, label uppercase). Yang
 tersisa hanya perataan angka: `text-right tabular-nums`.
+
+**Kolom isian di dialog selalu punya `<Label>` terlihat.** `aria-label` saja hanya untuk
+kolom yang labelnya sudah berdiri di sebelahnya sebagai teks — nama metode di dialog
+pembayaran, nama kolom di pemetaan import. Placeholder bukan label: ia hilang begitu
+kolomnya diisi, dan tidak boleh mengulang labelnya.
+
+**Tombol yang hanya menutup dialog baca-saja bertuliskan "Tutup"** (`common.close`),
+bukan "Batal" — tidak ada yang dibatalkan.
 
 **Konfirmasi yang merusak memakai `AlertDialog`** dengan `AlertDialog.Icon status=…`,
 tanpa CloseTrigger — keputusannya harus eksplisit.

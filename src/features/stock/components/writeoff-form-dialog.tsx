@@ -5,18 +5,16 @@ import {
   FieldError,
   Form,
   Label,
-  ListBox,
   Modal,
   NumberField,
-  Select,
   TextArea,
   TextField,
 } from "@heroui/react"
 
 import { InfoPanel } from "@/components/info-panel"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { ProductAutocomplete } from "@/components/product-autocomplete"
-import { selectedText } from "@/components/selected-text"
 import { SummaryList } from "@/components/summary-list"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
@@ -41,6 +39,7 @@ export function WriteoffFormDialog({ open, onOpenChange }: WriteoffFormDialogPro
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container scroll="inside" size="md">
         <Modal.Dialog aria-label="Buat Write-off Baru">
+          <Modal.CloseTrigger />
           {/* React Aria unmounts the dialog on close, so the form state below is
               recreated on every open — no stale product from the previous run. */}
           <WriteoffFormBody onOpenChange={onOpenChange} />
@@ -107,8 +106,11 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
     // Aria's default ("native") an `isInvalid` field calls setCustomValidity, and
     // the browser then blocks every later submit — including the one that would
     // clear the error.
-    <Form validationBehavior="aria" onSubmit={handleSubmit}>
-      <Modal.CloseTrigger />
+    <Form
+      className="flex min-h-0 flex-1 flex-col"
+      validationBehavior="aria"
+      onSubmit={handleSubmit}
+    >
       <Modal.Header>
         <Modal.Heading>Buat Write-off Baru</Modal.Heading>
       </Modal.Header>
@@ -167,34 +169,19 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             <FieldError>{errors.quantity}</FieldError>
           </NumberField>
 
-          <Select
+          <OptionSelect
             fullWidth
-            isInvalid={Boolean(errors.reason)}
+            errorMessage={errors.reason}
+            label="Alasan *"
+            options={REASONS}
             placeholder="Pilih alasan"
             value={reason || null}
             variant="secondary"
             onChange={(value) => {
-              setReason(value === null ? "" : String(value))
+              setReason(value ?? "")
               clearError("reason")
             }}
-          >
-            <Label>Alasan *</Label>
-            <Select.Trigger>
-              <Select.Value>{selectedText}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {REASONS.map((option) => (
-                  <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                    <Label>{option.label}</Label>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-            <FieldError>{errors.reason}</FieldError>
-          </Select>
+          />
         </div>
 
         <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>

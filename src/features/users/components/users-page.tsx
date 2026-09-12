@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react"
 import { PlusIcon, PencilIcon, UserXIcon, UserCheckIcon } from "lucide-react"
-import { AlertDialog, Button, SearchField, Skeleton, Table } from "@heroui/react"
+import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { NoData } from "@/components/no-data"
+import { SearchInput } from "@/components/search-input"
 import { StatusBadge } from "@/components/status-badge"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -89,18 +90,13 @@ export function UsersPage() {
         </Button>
       </NavbarActions>
 
-      <SearchField
+      <SearchInput
         aria-label={id.users.searchPlaceholder}
-        fullWidth
+        className="max-w-sm"
+        placeholder={id.users.searchPlaceholder}
         value={search}
         onChange={setSearch}
-      >
-        <SearchField.Group>
-          <SearchField.SearchIcon />
-          <SearchField.Input placeholder={id.users.searchPlaceholder} />
-          <SearchField.ClearButton />
-        </SearchField.Group>
-      </SearchField>
+      />
 
       <Table variant="secondary">
         <Table.ScrollContainer>
@@ -134,10 +130,9 @@ export function UsersPage() {
                       <Table.Cell>{index + 1}</Table.Cell>
                       <Table.Cell className="font-medium">{user.username}</Table.Cell>
                       <Table.Cell>{user.full_name}</Table.Cell>
+                      {/* Peran adalah kategori, bukan status: teks polos (DESIGN.md §5.4). */}
                       <Table.Cell>
-                        <StatusBadge status={user.role === "admin" ? "info" : "neutral"}>
-                          {user.role === "admin" ? id.users.admin : id.users.kasir}
-                        </StatusBadge>
+                        {user.role === "admin" ? id.users.admin : id.users.kasir}
                       </Table.Cell>
                       <Table.Cell>
                         <StatusBadge status={user.is_active ? "success" : "neutral"}>
@@ -145,12 +140,15 @@ export function UsersPage() {
                         </StatusBadge>
                       </Table.Cell>
                       <Table.Cell className="text-right">
+                        {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
+                            `tertiary` untuk aksi biasa, `danger-soft` untuk yang
+                            merusak (DESIGN.md §5.4). */}
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             aria-label={`${id.users.edit} ${user.username}`}
                             isIconOnly
                             size="sm"
-                            variant="secondary"
+                            variant="tertiary"
                             onPress={() => handleEdit(user)}
                           >
                             <PencilIcon />
@@ -160,7 +158,7 @@ export function UsersPage() {
                               aria-label={`${user.is_active ? id.users.deactivate : id.users.activate} ${user.username}`}
                               isIconOnly
                               size="sm"
-                              variant={user.is_active ? "danger" : "secondary"}
+                              variant={user.is_active ? "danger-soft" : "tertiary"}
                               onPress={() => handleToggleActive(user)}
                             >
                               {user.is_active ? <UserXIcon /> : <UserCheckIcon />}

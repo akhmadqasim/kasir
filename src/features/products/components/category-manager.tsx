@@ -1,15 +1,6 @@
 import { useState } from "react"
 import { Pencil, Trash2, Plus, Check, X } from "lucide-react"
-import {
-  AlertDialog,
-  Button,
-  Drawer,
-  Input,
-  Label,
-  ScrollShadow,
-  Separator,
-  TextField,
-} from "@heroui/react"
+import { AlertDialog, Button, Drawer, Input, Label, ScrollShadow, TextField } from "@heroui/react"
 
 import { NoData } from "@/components/no-data"
 import { id } from "@/i18n/id"
@@ -70,13 +61,12 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
             <Drawer.CloseTrigger />
             <Drawer.Header>
               <Drawer.Heading>{id.products.manageCategories}</Drawer.Heading>
-              <p className="text-sm text-muted">Tambah, edit, atau hapus kategori produk</p>
             </Drawer.Header>
 
             {/* `Drawer.Body` menggulir isinya sendiri. Di sini gulirannya
                 dimatikan supaya formulir tambah tetap menempel di atas dan hanya
                 daftarnya yang bergerak, sama seperti sebelum pindah dari Sheet. */}
-            <Drawer.Body className="flex flex-col gap-6 overflow-hidden text-foreground">
+            <Drawer.Body className="flex flex-col gap-6 overflow-hidden">
               <TextField
                 fullWidth
                 isDisabled={createCategory.isPending}
@@ -103,14 +93,12 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                 </div>
               </TextField>
 
-              <Separator />
-
               <ScrollShadow className="-mx-4 min-h-0 flex-1">
                 <div className="grid gap-1 px-4">
                   {categories?.map((category) => (
                     <div
                       key={category.id}
-                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-default"
+                      className="flex min-h-9 items-center gap-2 rounded-2xl px-2 py-1 hover:bg-default"
                     >
                       {editingCategory?.id === category.id ? (
                         <>
@@ -150,13 +138,17 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                         </>
                       ) : (
                         <>
-                          <span className="flex-1 truncate text-sm">{category.name}</span>
-                          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                          <span className="flex-1 truncate text-foreground">{category.name}</span>
+                          {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
+                              `tertiary` untuk ubah, `danger-soft` untuk hapus, dan
+                              selalu terlihat — layar ini juga dibuka dari tablet,
+                              yang tidak punya hover. */}
+                          <div className="flex items-center gap-1">
                             <Button
                               aria-label={`${id.common.edit} ${category.name}`}
                               isIconOnly
                               size="sm"
-                              variant="secondary"
+                              variant="tertiary"
                               onPress={() => handleStartEdit(category)}
                             >
                               <Pencil />
@@ -165,7 +157,7 @@ export function CategoryManager({ open, onOpenChange }: CategoryManagerProps) {
                               aria-label={`${id.common.delete} ${category.name}`}
                               isIconOnly
                               size="sm"
-                              variant="danger"
+                              variant="danger-soft"
                               onPress={() => setDeleteTarget(category)}
                             >
                               <Trash2 />

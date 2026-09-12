@@ -1,6 +1,14 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Form, Input, Label, Modal, TextField, ToggleButton } from "@heroui/react"
+import {
+  Form,
+  Input,
+  Label,
+  Modal,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react"
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 
 import { PendingButton } from "@/components/pending-button"
@@ -73,32 +81,32 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
       <Modal.Body>
         <div className="flex flex-col gap-2">
           <Label>Jenis</Label>
-          {/* `ToggleButton` rather than two plain buttons: the choice is a state,
-              and `aria-pressed` is the only way a screen reader can tell which of
-              the two is active. Each stays its own tab stop, as before. */}
-          <div className="grid w-full grid-cols-2 gap-2">
-            <ToggleButton
-              className="w-full data-[selected=true]:bg-success-soft data-[selected=true]:text-success-soft-foreground"
-              isDisabled={isSubmitting}
-              isSelected={flowType === "in"}
-              onChange={() => setFlowType("in")}
-            >
+          {/* `ToggleButtonGroup` pilihan tunggal, seperti contoh "Selection Mode"
+              di dokumentasinya — React Aria merendernya sebagai radiogroup, jadi
+              pembaca layar tahu ini satu pilihan dari dua. Warna terpilihnya
+              bawaan komponen; arah uangnya sudah dibawa ikon dan labelnya. */}
+          <ToggleButtonGroup
+            aria-label="Jenis"
+            disallowEmptySelection
+            fullWidth
+            isDisabled={isSubmitting}
+            selectedKeys={flowType ? [flowType] : []}
+            selectionMode="single"
+            onSelectionChange={(keys) => {
+              const [picked] = keys
+              if (picked === "in" || picked === "out") setFlowType(picked)
+            }}
+          >
+            <ToggleButton id="in">
               <ArrowDownCircle className="text-success" />
               Uang Masuk
             </ToggleButton>
-            <ToggleButton
-              className="w-full data-[selected=true]:bg-danger-soft data-[selected=true]:text-danger-soft-foreground"
-              isDisabled={isSubmitting}
-              isSelected={flowType === "out"}
-              onChange={() => setFlowType("out")}
-            >
+            <ToggleButton id="out">
+              <ToggleButtonGroup.Separator />
               <ArrowUpCircle className="text-danger" />
               Uang Keluar
             </ToggleButton>
-          </div>
-          {flowType === "" ? (
-            <p className="text-xs text-muted">Pilih jenis arus kas terlebih dahulu.</p>
-          ) : null}
+          </ToggleButtonGroup>
         </div>
 
         <TextField

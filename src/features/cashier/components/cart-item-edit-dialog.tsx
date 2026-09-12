@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Input, Label, ListBox, Modal, Select, Separator, TextField } from "@heroui/react"
+import { Button, Input, Modal, TextField } from "@heroui/react"
 import { Minus, Plus } from "lucide-react"
 
-import { selectedText } from "@/components/selected-text"
+import { OptionSelect } from "@/components/option-select"
 import { SummaryList } from "@/components/summary-list"
 import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
 import type { CartItem } from "../types"
@@ -160,7 +160,7 @@ function CartItemEditBody({
           <div className="flex flex-col gap-2">
             {/* Judul blok, bukan label kolom: kolomnya sendiri diberi `aria-label`
                 supaya tidak ada `<label>` yang menggantung tanpa kolom. */}
-            <p className="text-sm font-medium">Jumlah</p>
+            <p className="font-medium text-foreground">Jumlah</p>
             <div className="flex items-center gap-2">
               <Button
                 aria-label="Kurangi jumlah"
@@ -197,39 +197,21 @@ function CartItemEditBody({
                 <Plus />
               </Button>
             </div>
-            {quantityWarning && (
-              <p className="text-sm font-medium text-warning">{quantityWarning}</p>
-            )}
+            {quantityWarning && <p className="text-warning">{quantityWarning}</p>}
           </div>
         )}
 
-        <Separator />
-
         {/* Discount */}
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Diskon</p>
+          <p className="font-medium text-foreground">Diskon</p>
           <div className="flex items-center gap-2">
-            <Select
+            <OptionSelect
               aria-label="Jenis diskon"
               variant="secondary"
+              options={DISCOUNT_TYPES}
               value={discType}
-              onChange={(value) => handleTypeChange(value as "fixed" | "percentage")}
-            >
-              <Select.Trigger>
-                <Select.Value>{selectedText}</Select.Value>
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {DISCOUNT_TYPES.map((option) => (
-                    <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-                      <Label>{option.label}</Label>
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              onChange={(key) => handleTypeChange(key as "fixed" | "percentage")}
+            />
             <TextField
               aria-label="Nilai diskon"
               className="flex-1"
@@ -249,9 +231,6 @@ function CartItemEditBody({
           </div>
         </div>
 
-        <Separator />
-
-        {/* Summary */}
         <SummaryList
           items={[
             { label: "Subtotal", value: formatRupiah(lineTotal) },

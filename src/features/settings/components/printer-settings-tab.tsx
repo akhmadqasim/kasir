@@ -6,17 +6,15 @@ import {
   Card,
   Description,
   Label,
-  ListBox,
-  Select,
-  Separator,
+  Spinner,
   Switch,
   TextArea,
   TextField,
 } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
+import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { selectedText } from "@/components/selected-text"
 import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import {
@@ -27,6 +25,11 @@ import {
 } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { PrinterSettings, PrinterInfo } from "../types"
+
+const PAPER_WIDTHS = [
+  { key: "58", label: "58mm (32 karakter/baris)" },
+  { key: "80", label: "80mm (42 karakter/baris)" },
+]
 
 export function PrinterSettingsTab() {
   const queryClient = useQueryClient()
@@ -91,107 +94,65 @@ export function PrinterSettingsTab() {
   }
 
   const printers = printersQuery.data ?? []
+  const printerOptions = printers.map((printer) => ({ key: printer.id, label: printer.name }))
 
   return (
     <Card>
-      <Card.Header>
+      {/* Tombol muat-ulang daftar printer duduk di kanan kepala kartu, bukan
+          menempel di samping kolom pilihannya: kolom itu punya `Description` di
+          bawahnya, dan tombol yang disejajarkan ke dasar kolom akan turun ikut
+          keterangannya. */}
+      <Card.Header className="flex-row items-center justify-between gap-2">
         <Card.Title>{id.settings.tabPrinter}</Card.Title>
-        <Card.Description>
-          Konfigurasi printer thermal untuk mencetak struk transaksi
-        </Card.Description>
+        <Button
+          aria-label="Muat ulang daftar printer"
+          isIconOnly
+          isPending={printersQuery.isFetching}
+          size="sm"
+          variant="tertiary"
+          onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
+        >
+          {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
+        </Button>
       </Card.Header>
       <Card.Content className="gap-6">
-        {/* Printer Selection */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-end gap-2">
-            <Select
-              className="flex-1"
-              placeholder={id.settings.noPrinterSelected}
-              value={selectedPrinter || null}
-              variant="secondary"
-              onChange={(value) => setSelectedPrinter(value === null ? "" : String(value))}
-            >
-              <Label>{id.settings.selectPrinter}</Label>
-              <Select.Trigger>
-                <Select.Value>{selectedText}</Select.Value>
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {printers.length === 0 ? (
-                    <ListBox.Item id="_none" isDisabled textValue="Tidak ada printer tersedia">
-                      <Label>Tidak ada printer tersedia</Label>
-                    </ListBox.Item>
-                  ) : (
-                    printers.map((p) => (
-                      <ListBox.Item key={p.id} id={p.id} textValue={p.name}>
-                        <Label>{p.name}</Label>
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))
-                  )}
-                </ListBox>
-              </Select.Popover>
-            </Select>
-            <Button
-              aria-label="Muat ulang daftar printer"
-              isDisabled={printersQuery.isFetching}
-              isIconOnly
-              variant="tertiary"
-              onPress={() => queryClient.invalidateQueries({ queryKey: queryKeys.printers.list })}
-            >
-              <RefreshCw className={printersQuery.isFetching ? "animate-spin" : undefined} />
-            </Button>
-          </div>
-          <Description>
-            Pastikan printer thermal sudah terhubung dan terinstall di Windows
-          </Description>
-        </div>
-
-        <Separator />
-
-        {/* Paper Width */}
-        <Select
+        <OptionSelect
           fullWidth
+          isDisabled={printerOptions.length === 0}
+          label={id.settings.selectPrinter}
+          options={printerOptions}
+          placeholder={
+            printerOptions.length === 0
+              ? "Tidak ada printer tersedia"
+              : id.settings.noPrinterSelected
+          }
+          value={selectedPrinter || null}
+          variant="secondary"
+          description="Pastikan printer thermal sudah terhubung dan terinstall di Windows"
+          onChange={(value) => setSelectedPrinter(value ?? "")}
+        />
+
+        <OptionSelect
+          fullWidth
+          label={id.settings.paperWidth}
+          options={PAPER_WIDTHS}
           value={paperWidth}
           variant="secondary"
-          onChange={(value) => value !== null && setPaperWidth(String(value))}
-        >
-          <Label>{id.settings.paperWidth}</Label>
-          <Select.Trigger>
-            <Select.Value>{selectedText}</Select.Value>
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              <ListBox.Item id="58" textValue="58mm (32 karakter/baris)">
-                <Label>58mm (32 karakter/baris)</Label>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-              <ListBox.Item id="80" textValue="80mm (42 karakter/baris)">
-                <Label>80mm (42 karakter/baris)</Label>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-            </ListBox>
-          </Select.Popover>
-        </Select>
+          onChange={(value) => value !== null && setPaperWidth(value)}
+        />
 
-        <Separator />
-
-        {/* Auto Print */}
-        <Switch className="w-full" isSelected={autoPrint} onChange={setAutoPrint}>
-          <Switch.Content className="w-full justify-between">
-            {id.settings.autoPrint}
+        {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
+            label di kanannya, keterangan di bawah. */}
+        <Switch isSelected={autoPrint} onChange={setAutoPrint}>
+          <Switch.Content>
             <Switch.Control>
               <Switch.Thumb />
             </Switch.Control>
+            {id.settings.autoPrint}
           </Switch.Content>
           <Description>{id.settings.autoPrintDesc}</Description>
         </Switch>
 
-        <Separator />
-
-        {/* Footer Text */}
         <TextField fullWidth value={footerText} variant="secondary" onChange={setFooterText}>
           <Label>{id.settings.footerText}</Label>
           <TextArea placeholder={id.settings.footerTextPlaceholder} rows={3} />

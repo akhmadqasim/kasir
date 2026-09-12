@@ -1,12 +1,9 @@
-import { useState } from "react"
-import { ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
-import { StatusBadge } from "@/components/status-badge"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatDayDate, formatRupiah, toLocalDateString } from "@/lib/format"
+import { formatDayDate, formatRupiah } from "@/lib/format"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useCashFlows } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -14,10 +11,7 @@ const TITLE = "Uang Masuk / Keluar"
 const COLUMN_COUNT = 5
 
 export function CashFlowsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const { data, isLoading, error } = useCashFlows(startDate, endDate)
 
   return (
@@ -57,20 +51,14 @@ export function CashFlowsPage() {
       >
         {(data?.items ?? []).map((row) => {
           const isIn = row.flowType === "in"
-          const Icon = isIn ? ArrowDownCircle : ArrowUpCircle
           return (
             <Table.Row key={row.id} id={row.id} textValue={formatDayDate(row.createdAt)}>
-              <Table.Cell className="text-sm text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+              <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
               <Table.Cell>{row.cashierName}</Table.Cell>
-              <Table.Cell>
-                <StatusBadge status={isIn ? "neutral" : "error"}>
-                  <span className="flex items-center gap-1.5">
-                    <Icon aria-hidden="true" className="size-3" />
-                    {isIn ? "Uang Masuk" : "Uang Keluar"}
-                  </span>
-                </StatusBadge>
-              </Table.Cell>
-              <Table.Cell className="max-w-[320px] whitespace-normal break-words text-sm text-muted">
+              {/* Teks, bukan lencana: jenis bukan status, dan arahnya sudah dibaca
+                  dari tanda serta warna nominal di ujung baris (DESIGN.md §5.4). */}
+              <Table.Cell>{isIn ? "Uang Masuk" : "Uang Keluar"}</Table.Cell>
+              <Table.Cell className="max-w-[320px] whitespace-normal break-words text-muted">
                 {row.description}
               </Table.Cell>
               <Table.Cell

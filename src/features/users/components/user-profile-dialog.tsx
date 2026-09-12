@@ -1,9 +1,10 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Button, Form, Modal, Separator } from "@heroui/react"
+import { Button, Form, Modal } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
-import { StatusBadge } from "@/components/status-badge"
+import { SummaryList } from "@/components/summary-list"
 import { PinInput } from "@/features/auth/components/pin-input"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -88,20 +89,24 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
             </Modal.Header>
 
             <Modal.Body>
-              <div className="grid grid-cols-[100px_1fr] items-center gap-2 text-sm">
-                <span className="text-muted">{id.users.username}</span>
-                <span className="font-medium">{user.username}</span>
-                <span className="text-muted">{id.users.fullName}</span>
-                <span className="font-medium">{user.full_name}</span>
-                <span className="text-muted">{id.users.role}</span>
-                <StatusBadge className="w-fit" status={user.role === "admin" ? "info" : "neutral"}>
-                  {user.role === "admin" ? id.users.admin : id.users.kasir}
-                </StatusBadge>
-              </div>
+              {/* Identitas dibaca saja, jadi `InfoPanel` + `SummaryList` seperti
+                  ringkasan di dialog lain; peran ditulis sebagai teks karena ia
+                  bukan status (DESIGN.md §5.4). */}
+              <InfoPanel>
+                <SummaryList
+                  layout="grid"
+                  items={[
+                    { label: id.users.username, value: user.username },
+                    { label: id.users.fullName, value: user.full_name },
+                    {
+                      label: id.users.role,
+                      value: user.role === "admin" ? id.users.admin : id.users.kasir,
+                    },
+                  ]}
+                />
+              </InfoPanel>
 
-              <Separator />
-
-              <h4 className="font-medium">{id.profile.changePin}</h4>
+              <h4 className="font-medium text-foreground">{id.profile.changePin}</h4>
 
               <PinInput
                 errorMessage={errors.currentPin}

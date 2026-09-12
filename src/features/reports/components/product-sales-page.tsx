@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react"
-import { SearchField, Table } from "@heroui/react"
+import { Table } from "@heroui/react"
 
 import { DateRangePicker } from "@/components/date-range-picker"
-import { getDefaultDateRange, type DateRange } from "@/lib/date-range"
-import { formatRupiah, toLocalDateString } from "@/lib/format"
+import { SearchInput } from "@/components/search-input"
+import { formatRupiah } from "@/lib/format"
 import { useDebounce } from "@/hooks/use-debounce"
+import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useProductSales } from "../hooks/use-reports"
 import { ReportPage, ReportTable } from "./report-shell"
 
@@ -13,12 +14,9 @@ const COLUMN_COUNT = 7
 const SEARCH_PLACEHOLDER = "Cari produk..."
 
 export function ProductSalesPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRange)
+  const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 300)
-
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : ""
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : startDate
 
   const { data, isLoading, error } = useProductSales(startDate, endDate)
 
@@ -34,18 +32,13 @@ export function ProductSalesPage() {
     <ReportPage
       filters={
         <>
-          <SearchField
+          <SearchInput
             aria-label={SEARCH_PLACEHOLDER}
+            placeholder={SEARCH_PLACEHOLDER}
             className="w-64"
             value={search}
             onChange={setSearch}
-          >
-            <SearchField.Group>
-              <SearchField.SearchIcon />
-              <SearchField.Input placeholder={SEARCH_PLACEHOLDER} />
-              <SearchField.ClearButton />
-            </SearchField.Group>
-          </SearchField>
+          />
           <div className="ml-auto">
             <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
@@ -72,7 +65,7 @@ export function ProductSalesPage() {
         {filtered.map((row) => (
           <Table.Row key={row.productId} id={row.productId} textValue={row.productName}>
             <Table.Cell className="font-medium">{row.productName}</Table.Cell>
-            <Table.Cell className="font-mono text-sm text-muted">{row.barcode ?? "-"}</Table.Cell>
+            <Table.Cell className="font-mono text-muted">{row.barcode ?? "-"}</Table.Cell>
             <Table.Cell className="text-muted">{row.categoryName ?? "-"}</Table.Cell>
             <Table.Cell className="text-right">{row.qtySold}</Table.Cell>
             <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>

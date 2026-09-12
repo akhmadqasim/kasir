@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <Alert.Description>
               {this.state.error?.message || "Kesalahan tidak diketahui"}
             </Alert.Description>
-            <pre className="mt-3 max-h-64 overflow-auto rounded-md bg-default p-3 text-xs text-muted">
+            <pre className="mt-3 max-h-64 overflow-auto rounded-2xl bg-default p-3 text-xs text-muted">
               {this.state.error?.stack}
             </pre>
             <Button className="mt-4" size="sm" variant="danger" onPress={this.handleReload}>

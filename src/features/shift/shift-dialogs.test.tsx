@@ -98,7 +98,8 @@ describe("dialog arus kas", () => {
     // Jenis belum dipilih, jadi tombolnya harus tetap mati.
     expect(save).toBeDisabled()
 
-    fireEvent.click(dialog.getByRole("button", { name: "Uang Keluar" }))
+    // `ToggleButtonGroup` pilihan tunggal dirender React Aria sebagai radiogroup.
+    fireEvent.click(dialog.getByRole("radio", { name: "Uang Keluar" }))
     expect(save).toBeEnabled()
 
     fireEvent.click(save)

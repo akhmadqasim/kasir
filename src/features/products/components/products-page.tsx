@@ -3,7 +3,6 @@ import { Plus, Tags, Upload } from "lucide-react"
 import { Button } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
-import { NoData } from "@/components/no-data"
 import { StatCard } from "@/components/stat-card"
 import { id } from "@/i18n/id"
 import { formatNumber } from "@/lib/format"
@@ -144,21 +143,18 @@ export function ProductsPage() {
         />
       </div>
 
-      {isLoading ? (
-        <NoData title={id.common.loading} />
-      ) : (
-        <ProductTable
-          products={products}
-          categories={categories ?? []}
-          page={productsData?.page ?? 1}
-          totalPages={productsData?.total_pages ?? 1}
-          onPageChange={setPage}
-          onEdit={handleEdit}
-          sortBy={effectiveSortBy}
-          sortOrder={effectiveSortOrder}
-          onSortChange={handleSortChange}
-        />
-      )}
+      <ProductTable
+        products={products}
+        categories={categories ?? []}
+        isLoading={isLoading}
+        page={productsData?.page ?? 1}
+        totalPages={productsData?.total_pages ?? 1}
+        onPageChange={setPage}
+        onEdit={handleEdit}
+        sortBy={effectiveSortBy}
+        sortOrder={effectiveSortOrder}
+        onSortChange={handleSortChange}
+      />
 
       <ProductFormDialog
         open={formOpen}
