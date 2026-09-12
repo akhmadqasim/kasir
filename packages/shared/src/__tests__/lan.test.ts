@@ -8,6 +8,7 @@ import {
   originAuthority,
   probeHosts,
   subnetHosts,
+  subnetLabel,
 } from "../net/lan"
 
 describe("subnetHosts", () => {
@@ -24,6 +25,19 @@ describe("subnetHosts", () => {
     expect(subnetHosts("127.0.0.1")).toEqual([])
     expect(subnetHosts("not-an-ip")).toEqual([])
     expect(subnetHosts("300.1.1.1")).toEqual([])
+  })
+})
+
+describe("subnetLabel", () => {
+  it("names the /24 being swept", () => {
+    expect(subnetLabel("192.168.1.37")).toBe("192.168.1.0/24")
+    expect(subnetLabel("10.0.0.5")).toBe("10.0.0.0/24")
+  })
+
+  it("has no label where there is nothing to scan", () => {
+    expect(subnetLabel("0.0.0.0")).toBeNull()
+    expect(subnetLabel("127.0.0.1")).toBeNull()
+    expect(subnetLabel("not-an-ip")).toBeNull()
   })
 })
 

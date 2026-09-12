@@ -33,9 +33,15 @@ export function useServerDiscovery() {
   const [state, setState] = useState<DiscoveryState>(IDLE);
   const controller = useRef<AbortController | null>(null);
 
+  /**
+   * Stop the sweep. The status drops back to `idle` so a screen that offers a
+   * cancel button does not sit on a progress bar that has stopped moving;
+   * whatever was already found stays listed, because those servers are real.
+   */
   const cancel = useCallback(() => {
     controller.current?.abort();
     controller.current = null;
+    setState((prev) => (prev.status === "scanning" ? { ...prev, status: "idle" } : prev));
   }, []);
 
   useEffect(() => cancel, [cancel]);
@@ -49,6 +55,12 @@ export function useServerDiscovery() {
       const network = await Network.getNetworkStateAsync();
       const ownIp = await Network.getIpAddressAsync();
       const hosts = subnetHosts(ownIp);
+
+      // Asking the OS for the Wi-Fi state takes long enough to tap "Batal" in.
+      // Without this the scan would still announce itself as running, then
+      // finish silently against an already-aborted signal and leave the
+      // progress bar stuck at 0.
+      if (own.signal.aborted) return;
 
       if (!network.isConnected || hosts.length === 0) {
         setState({ ...IDLE, status: "no_network", ownIp });

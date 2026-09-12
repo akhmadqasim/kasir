@@ -25,18 +25,29 @@ export function isIpv4(value: string): boolean {
 }
 
 /**
- * `192.168.1.0/24` → every usable host except the phone itself.
+ * The phone's own octets, or `null` when there is nothing to scan.
  *
- * Returns an empty list for the addresses `expo-network` uses to say "no
- * address" (`0.0.0.0`) and for loopback, so a scan on a disconnected phone
- * does nothing rather than hammering nothing.
+ * `0.0.0.0` is what `expo-network` returns for "no address" and `127.x` is
+ * loopback; a scan on a disconnected phone should do nothing rather than
+ * hammer nothing. Both {@link subnetHosts} and {@link subnetLabel} start here,
+ * so "is this address scannable" has exactly one answer.
+ */
+function scannableOctets(ownIp: string): [number, number, number, number] | null {
+  const match = IPV4.exec(ownIp.trim())
+  if (!match) return null
+  const [a, b, c, d] = match.slice(1).map(Number)
+  if ([a, b, c, d].some((octet) => octet > 255)) return null
+  if (a === 0 || a === 127) return null
+  return [a, b, c, d]
+}
+
+/**
+ * `192.168.1.0/24` → every usable host except the phone itself.
  */
 export function subnetHosts(ownIp: string): string[] {
-  const match = IPV4.exec(ownIp.trim())
-  if (!match) return []
-  const [a, b, c, d] = match.slice(1).map(Number)
-  if ([a, b, c, d].some((octet) => octet > 255)) return []
-  if (a === 0 || a === 127) return []
+  const octets = scannableOctets(ownIp)
+  if (!octets) return []
+  const [a, b, c, d] = octets
 
   const hosts: string[] = []
   for (let host = 1; host <= 254; host += 1) {
@@ -44,6 +55,20 @@ export function subnetHosts(ownIp: string): string[] {
     hosts.push(`${a}.${b}.${c}.${host}`)
   }
   return hosts
+}
+
+/**
+ * `192.168.1.37` → `192.168.1.0/24`, the range {@link subnetHosts} will walk.
+ *
+ * Shown while a scan runs: 254 hosts take a few seconds, and a progress line
+ * that names the network being swept reads as work rather than as a hang.
+ * Returns `null` for an address that has no scannable subnet.
+ */
+export function subnetLabel(ownIp: string): string | null {
+  const octets = scannableOctets(ownIp)
+  if (!octets) return null
+  const [a, b, c] = octets
+  return `${a}.${b}.${c}.0/24`
 }
 
 export interface DiscoverOptions extends ProbeOptions {
