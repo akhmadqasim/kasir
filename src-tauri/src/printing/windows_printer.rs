@@ -1,14 +1,16 @@
-/// Windows printer API for GDI-based text printing
-/// Uses GDI pipeline (through printer driver) for reliable USB thermal printing
+//! Windows printer API: enumerate print queues and send raw ESC/POS bytes
+//! through the spooler (winspool, datatype "RAW").
+
 use std::ffi::OsStr;
 use std::mem::{align_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 
-use windows::core::PCWSTR;
-use windows::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, SelectObject, HDC, HFONT, HGDIOBJ};
+use windows::core::{HRESULT, PCWSTR, PWSTR};
+use windows::Win32::Foundation::GetLastError;
 use windows::Win32::Graphics::Printing::{
-    EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL,
-    PRINTER_INFO_2W,
+    AbortPrinter, ClosePrinter, EndDocPrinter, EndPagePrinter, EnumPrintersW, GetDefaultPrinterW,
+    OpenPrinterW, StartDocPrinterW, StartPagePrinter, WritePrinter, DOC_INFO_1W,
+    PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_HANDLE, PRINTER_INFO_2W,
 };
 
 /// Printer information returned to frontend
@@ -108,250 +110,106 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     }
 }
 
-// GDI document management functions (not exposed in windows crate v0.62)
-#[link(name = "gdi32")]
-extern "system" {
-    #[link_name = "StartDocW"]
-    fn GdiStartDocW(hdc: isize, lpdi: *const GdiDocInfoW) -> i32;
-    #[link_name = "EndDoc"]
-    fn GdiEndDoc(hdc: isize) -> i32;
-    #[link_name = "StartPage"]
-    fn GdiStartPage(hdc: isize) -> i32;
-    #[link_name = "EndPage"]
-    fn GdiEndPage(hdc: isize) -> i32;
-}
+/// Send raw bytes to a named print queue with datatype "RAW", so the spooler
+/// hands them to the device untouched instead of letting the driver rasterise
+/// them. This is what makes ESC/POS text print in the printer's own font.
+pub fn send_raw_data(printer_name: &str, data: &[u8]) -> Result<(), String> {
+    unsafe {
+        let printer_name_wide = to_wide(printer_name);
+        let mut handle = PRINTER_HANDLE::default();
 
-/// DOCINFO struct for GDI StartDocW
-#[repr(C)]
-struct GdiDocInfoW {
-    cb_size: i32,
-    lpsz_doc_name: *const u16,
-    lpsz_output: *const u16,
-    lpsz_datatype: *const u16,
-    fw_type: u32,
-}
+        // pDefault stays None so the spooler grants PRINTER_ACCESS_USE. Passing
+        // a PRINTER_DEFAULTSW whose DesiredAccess is left at 0 yields a handle
+        // with no rights, and the job then fails with ERROR_ACCESS_DENIED for
+        // non-elevated users. The datatype is set per job in DOC_INFO_1W below.
+        OpenPrinterW(PCWSTR(printer_name_wide.as_ptr()), &mut handle, None)
+            .map_err(|e| format!("Gagal membuka printer '{}': {}", printer_name, e))?;
 
-// --- RAII guards ---
-//
-// `send_gdi_text` has five exit paths (DC creation, font creation, StartDoc,
-// StartPage, success). Each one repeated its own cleanup, and each one got the
-// order wrong: `DeleteObject` was called on both fonts while one of them was
-// still selected into the DC. Windows refuses to delete a selected object, and
-// the failure was swallowed by `let _ =`, so every receipt leaked one or two
-// GDI objects out of the 10.000-per-process limit — a busy shop eventually
-// cannot print until the app is restarted.
-//
-// Drop runs in reverse declaration order, so declaring the DC first, then the
-// fonts, then the selection guard gives exactly the required order: restore the
-// DC's original object, delete the fonts, delete the DC.
+        let result = write_job(handle, data);
 
-struct GdiDc(HDC);
-
-impl Drop for GdiDc {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = DeleteDC(self.0);
-        }
+        let _ = ClosePrinter(handle);
+        result
     }
 }
 
-struct GdiFont(HFONT);
+/// Run one spooler job on an already-open printer handle. Kept separate from
+/// `send_raw_data` so its early returns cannot skip `ClosePrinter`.
+unsafe fn write_job(handle: PRINTER_HANDLE, data: &[u8]) -> Result<(), String> {
+    let mut doc_name = to_wide("POS Receipt");
+    let mut datatype = to_wide("RAW");
 
-impl Drop for GdiFont {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = DeleteObject(self.0.into());
-        }
-    }
-}
-
-/// Puts the object a DC held before `SelectObject` back when dropped, so the
-/// fonts are no longer selected by the time they are deleted.
-struct SelectedGdiObject {
-    hdc: HDC,
-    previous: HGDIOBJ,
-}
-
-impl Drop for SelectedGdiObject {
-    fn drop(&mut self) {
-        unsafe {
-            SelectObject(self.hdc, self.previous);
-        }
-    }
-}
-
-/// How many lines of `line_height` device units fit on a page `page_height` tall,
-/// or `None` when the driver's metrics cannot be trusted.
-///
-/// The printing loop used to increment `y` forever without ever comparing it to
-/// `GetDeviceCaps(hdc, VERTRES)`, inside a single `StartPage`/`EndPage` pair, so
-/// everything past the bottom of the first page was silently dropped —
-/// `CLAUDE.md` allows a cart of up to 100 items, which is well past that.
-///
-/// `None` (print everything on one page, the old behaviour) is returned when the
-/// reported page height cannot hold at least two lines. Some continuous-roll
-/// thermal drivers report a zero or nominal height, and turning that into "one
-/// line per page" would eject a page per line, which is worse than the bug.
-fn max_lines_per_page(page_height: i32, line_height: i32) -> Option<usize> {
-    if line_height <= 0 || page_height < line_height * 2 {
-        return None;
-    }
-    Some((page_height / line_height) as usize)
-}
-
-/// Send receipt text lines to printer using GDI pipeline (goes through printer driver).
-/// This is more reliable than RAW for cheap USB thermal printers.
-pub fn send_gdi_text(
-    printer_name: &str,
-    lines: &[super::receipt::ReceiptTextLine],
-) -> Result<(), String> {
-    use windows::Win32::Graphics::Gdi::{
-        CreateDCW, CreateFontW, GetDeviceCaps, GetTextMetricsW, CLIP_DEFAULT_PRECIS,
-        DEFAULT_CHARSET, DEFAULT_QUALITY, FIXED_PITCH, FW_BOLD, FW_NORMAL, LOGPIXELSY,
-        OUT_DEFAULT_PRECIS, TEXTMETRICW, VERTRES,
+    let doc_info = DOC_INFO_1W {
+        pDocName: PWSTR(doc_name.as_mut_ptr()),
+        pDatatype: PWSTR(datatype.as_mut_ptr()),
+        pOutputFile: PWSTR::null(),
     };
 
-    unsafe {
-        let printer_wide = to_wide(printer_name);
-        let hdc = CreateDCW(
-            PCWSTR::null(),
-            PCWSTR(printer_wide.as_ptr()),
-            PCWSTR::null(),
-            None,
-        );
-
-        if hdc.0.is_null() {
-            return Err(format!("Gagal membuat printer DC untuk '{}'", printer_name));
-        }
-        let hdc_raw = hdc.0 as isize;
-        let _dc = GdiDc(hdc);
-
-        let dpi_y = GetDeviceCaps(Some(hdc), LOGPIXELSY);
-        let font_height = -(7 * dpi_y / 72); // 7pt
-
-        eprintln!(
-            "[gdi] DC created for '{}', DPI_Y={}, font_height={}",
-            printer_name, dpi_y, font_height
-        );
-
-        let font_name_wide = to_wide("Consolas");
-        let make_font = |weight: i32| {
-            CreateFontW(
-                font_height,
-                0,
-                0,
-                0,
-                weight,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,
-                CLIP_DEFAULT_PRECIS,
-                DEFAULT_QUALITY,
-                FIXED_PITCH.0 as u32,
-                PCWSTR(font_name_wide.as_ptr()),
-            )
-        };
-
-        let normal_font = GdiFont(make_font(FW_NORMAL.0 as i32));
-        let bold_font = GdiFont(make_font(FW_BOLD.0 as i32));
-
-        if normal_font.0.is_invalid() || bold_font.0.is_invalid() {
-            return Err("Gagal membuat font untuk struk".to_string());
-        }
-
-        // Select normal font and get text metrics for line height. The object the
-        // DC held first has to go back before the fonts are deleted.
-        let previous = SelectObject(hdc, normal_font.0.into());
-        let _selection = SelectedGdiObject { hdc, previous };
-
-        let mut tm = TEXTMETRICW::default();
-        let _ = GetTextMetricsW(hdc, &mut tm);
-        let line_height = tm.tmHeight + tm.tmExternalLeading;
-        let lines_per_page = max_lines_per_page(GetDeviceCaps(Some(hdc), VERTRES), line_height);
-
-        // Start document using manually linked GDI functions
-        let doc_name_wide = to_wide("POS Receipt");
-        let doc_info = GdiDocInfoW {
-            cb_size: size_of::<GdiDocInfoW>() as i32,
-            lpsz_doc_name: doc_name_wide.as_ptr(),
-            lpsz_output: std::ptr::null(),
-            lpsz_datatype: std::ptr::null(),
-            fw_type: 0,
-        };
-
-        if GdiStartDocW(hdc_raw, &doc_info) <= 0 {
-            return Err("StartDocW gagal".to_string());
-        }
-
-        let printed = print_pages(
-            hdc,
-            hdc_raw,
-            lines,
-            normal_font.0,
-            bold_font.0,
-            line_height,
-            lines_per_page,
-        );
-        GdiEndDoc(hdc_raw);
-        printed?;
-
-        eprintln!("[gdi] Print completed, {} lines", lines.len());
-        Ok(())
+    if StartDocPrinterW(handle, 1, &doc_info) == 0 {
+        return Err(format!("Gagal memulai dokumen print: {}", last_error()));
     }
+
+    if !StartPagePrinter(handle).as_bool() {
+        let err = last_error();
+        let _ = EndDocPrinter(handle);
+        return Err(format!("Gagal memulai halaman print: {}", err));
+    }
+
+    // A half-written job must be discarded, not committed: a truncated receipt
+    // still comes out of the printer, and the cashier — who only sees the error
+    // — reprints and hands the customer two receipts.
+    if let Err(e) = write_all(handle, data) {
+        let _ = AbortPrinter(handle);
+        return Err(e);
+    }
+
+    if !EndPagePrinter(handle).as_bool() {
+        let err = last_error();
+        let _ = AbortPrinter(handle);
+        return Err(format!("Gagal menutup halaman print: {}", err));
+    }
+
+    // Only EndDocPrinter tells us the spooler actually accepted the job, so its
+    // failure must surface rather than be reported to the cashier as success.
+    if !EndDocPrinter(handle).as_bool() {
+        return Err(format!(
+            "Gagal menyelesaikan dokumen print: {}",
+            last_error()
+        ));
+    }
+
+    Ok(())
 }
 
-/// Emit every line, starting a new page each time `lines_per_page` is reached.
-///
-/// The caller owns the document (`StartDoc`/`EndDoc`); this owns the pages.
-unsafe fn print_pages(
-    hdc: HDC,
-    hdc_raw: isize,
-    lines: &[super::receipt::ReceiptTextLine],
-    normal_font: HFONT,
-    bold_font: HFONT,
-    line_height: i32,
-    lines_per_page: Option<usize>,
-) -> Result<(), String> {
-    use windows::Win32::Graphics::Gdi::TextOutW;
-
-    if GdiStartPage(hdc_raw) <= 0 {
-        return Err("StartPage gagal".to_string());
-    }
-
-    let mut y = 0i32;
-    let mut on_page = 0usize;
-
-    for line in lines {
-        if lines_per_page.is_some_and(|limit| on_page >= limit) {
-            GdiEndPage(hdc_raw);
-            if GdiStartPage(hdc_raw) <= 0 {
-                return Err("StartPage gagal".to_string());
-            }
-            y = 0;
-            on_page = 0;
-        }
-
-        SelectObject(
-            hdc,
-            if line.bold {
-                bold_font.into()
-            } else {
-                normal_font.into()
-            },
+/// `WritePrinter` may accept fewer bytes than asked for, so keep writing until
+/// the whole buffer is in the spool file.
+unsafe fn write_all(handle: PRINTER_HANDLE, data: &[u8]) -> Result<(), String> {
+    let mut offset = 0usize;
+    while offset < data.len() {
+        let chunk = &data[offset..];
+        let mut written: u32 = 0;
+        let ok = WritePrinter(
+            handle,
+            chunk.as_ptr() as *const std::ffi::c_void,
+            chunk.len() as u32,
+            &mut written,
         );
 
-        let text_wide: Vec<u16> = OsStr::new(&line.text).encode_wide().collect();
-        if !text_wide.is_empty() {
-            let _ = TextOutW(hdc, 0, y, &text_wide);
+        if !ok.as_bool() {
+            return Err("Gagal mengirim data ke printer".to_string());
         }
-        y += line_height;
-        on_page += 1;
+        if written == 0 {
+            return Err("Printer berhenti menerima data sebelum selesai".to_string());
+        }
+        offset += written as usize;
     }
-
-    GdiEndPage(hdc_raw);
     Ok(())
+}
+
+/// The calling thread's last Win32 error, rendered as a readable message, for
+/// the messages a user may have to relay when a print fails in the field.
+fn last_error() -> windows::core::Error {
+    let code = unsafe { GetLastError() };
+    windows::core::Error::from_hresult(HRESULT::from_win32(code.0))
 }
 
 /// Get the default Windows printer name
@@ -365,7 +223,7 @@ fn get_default_printer() -> Option<String> {
         }
 
         let mut buffer = vec![0u16; size as usize];
-        let result = GetDefaultPrinterW(Some(windows::core::PWSTR(buffer.as_mut_ptr())), &mut size);
+        let result = GetDefaultPrinterW(Some(PWSTR(buffer.as_mut_ptr())), &mut size);
 
         if result.as_bool() {
             // Remove trailing null
@@ -378,7 +236,7 @@ fn get_default_printer() -> Option<String> {
 }
 
 /// Convert PWSTR to Rust String
-unsafe fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
+unsafe fn pwstr_to_string(ptr: PWSTR) -> String {
     if ptr.is_null() {
         return String::new();
     }
@@ -390,28 +248,8 @@ unsafe fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A 300-DPI A4 page at ~46 device units per line: a 100-item receipt must
-    /// not be cut off at the bottom of page one.
-    #[test]
-    fn pagination_splits_a_long_receipt() {
-        assert_eq!(max_lines_per_page(3508, 46), Some(76));
-        assert_eq!(max_lines_per_page(1000, 100), Some(10));
-        assert_eq!(max_lines_per_page(1050, 100), Some(10));
-    }
-
-    /// Continuous-roll drivers can report no usable page height. Turning that
-    /// into one line per page would eject a page per line, so those fall back to
-    /// a single page.
-    #[test]
-    fn pagination_gives_up_on_nonsense_metrics() {
-        assert_eq!(max_lines_per_page(0, 46), None);
-        assert_eq!(max_lines_per_page(-1, 46), None);
-        assert_eq!(max_lines_per_page(3508, 0), None);
-        assert_eq!(max_lines_per_page(3508, -46), None);
-        // Room for one line only — indistinguishable from a bogus height.
-        assert_eq!(max_lines_per_page(50, 46), None);
-    }
+    use crate::printing::escpos::encode_lines;
+    use crate::printing::receipt::format_test_page_text;
 
     #[test]
     fn aligned_buffer_is_aligned_for_printer_info() {
@@ -424,5 +262,24 @@ mod tests {
                 "buffer of {len} bytes is misaligned"
             );
         }
+    }
+
+    /// Physical smoke test: pushes a real test page through the whole encode →
+    /// spool path. Ignored by default because it needs the hardware attached;
+    /// run it with `cargo test -- --ignored` on a machine with that queue.
+    #[test]
+    #[ignore = "needs a physical POS58 printer attached"]
+    fn sends_a_test_page_to_the_pos58_queue() {
+        let bytes = encode_lines(&format_test_page_text("Toko Test", 58));
+        send_raw_data("POS58 Printer", &bytes).expect("test page should reach the printer");
+    }
+
+    /// A queue that does not exist must surface an error, so a successful
+    /// `send_raw_data` really means the spooler accepted the job.
+    #[test]
+    fn an_unknown_queue_reports_an_error() {
+        let err = send_raw_data("No Such Printer XYZ", b"\x1B\x40test\n")
+            .expect_err("opening a missing queue must fail");
+        assert!(err.contains("Gagal membuka printer"), "unexpected: {}", err);
     }
 }

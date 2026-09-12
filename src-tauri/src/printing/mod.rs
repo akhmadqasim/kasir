@@ -1,3 +1,4 @@
+pub mod escpos;
 pub mod receipt;
 
 #[cfg(windows)]

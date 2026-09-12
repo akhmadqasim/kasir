@@ -60,11 +60,14 @@ fn get_printer_settings(additional_info: &Option<String>) -> PrinterSettings {
         })
 }
 
-/// Send text lines to printer via GDI pipeline (reliable for USB thermal printers)
-fn send_to_printer_gdi(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<(), String> {
+/// Encode text lines as ESC/POS and send them to the print queue as RAW data,
+/// so the printer renders them with its own built-in font instead of the driver
+/// rasterising a bitmap (which printed thin and stuttered).
+fn send_to_printer(printer_id: &str, lines: &[ReceiptTextLine]) -> Result<(), String> {
     #[cfg(windows)]
     {
-        crate::printing::windows_printer::send_gdi_text(printer_id, lines)
+        let bytes = crate::printing::escpos::encode_lines(lines);
+        crate::printing::windows_printer::send_raw_data(printer_id, &bytes)
     }
     #[cfg(not(windows))]
     {
@@ -210,12 +213,12 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
     let text_lines = format_receipt_text(&receipt_data, paper_width);
 
     eprintln!(
-        "[print_receipt] Generated {} text lines for GDI printer '{}'",
+        "[print_receipt] Generated {} text lines for printer '{}'",
         text_lines.len(),
         printer_id
     );
 
-    tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
+    tokio::task::spawn_blocking(move || send_to_printer(&printer_id, &text_lines))
         .await
         .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
         .map_err(AppError::Internal)?;
@@ -239,7 +242,7 @@ pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
 
     let text_lines = format_test_page_text(&store.name, paper_width);
 
-    tokio::task::spawn_blocking(move || send_to_printer_gdi(&printer_id, &text_lines))
+    tokio::task::spawn_blocking(move || send_to_printer(&printer_id, &text_lines))
         .await
         .map_err(|e| AppError::Internal(format!("Print task error: {}", e)))?
         .map_err(AppError::Internal)?;

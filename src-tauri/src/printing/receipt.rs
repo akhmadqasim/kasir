@@ -1,4 +1,4 @@
-//! Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
+//! Receipt formatter: takes store info + transaction data and produces text lines for ESC/POS printing
 
 /// All data needed to generate a receipt
 pub struct ReceiptData {
@@ -83,7 +83,7 @@ fn payment_method_label_with_bank(method: &str, bank_name: Option<&str>) -> Stri
     }
 }
 
-/// A single line of receipt text for GDI printing
+/// A single line of receipt text for ESC/POS printing
 pub struct ReceiptTextLine {
     pub text: String,
     pub bold: bool,
@@ -104,7 +104,7 @@ fn two_col_text(left: &str, right: &str, width: usize) -> String {
     format!("{}{}{}", left, " ".repeat(spaces), right)
 }
 
-/// Generate receipt as text lines for GDI printing
+/// Generate receipt as text lines for ESC/POS printing
 pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
     let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
     let mut lines = Vec::new();
@@ -305,18 +305,10 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         });
     }
 
-    // Feed lines
-    for _ in 0..6 {
-        lines.push(ReceiptTextLine {
-            text: String::new(),
-            bold: false,
-        });
-    }
-
     lines
 }
 
-/// Generate test page as text lines for GDI printing
+/// Generate test page as text lines for ESC/POS printing
 pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
     let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
     let mut lines = Vec::new();
@@ -369,13 +361,6 @@ pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<Receip
         text: center_text("Printer OK!", cpl),
         bold: false,
     });
-
-    for _ in 0..6 {
-        lines.push(ReceiptTextLine {
-            text: String::new(),
-            bold: false,
-        });
-    }
 
     lines
 }
