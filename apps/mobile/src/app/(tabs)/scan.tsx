@@ -1,28 +1,19 @@
 import { canEditProduct, id } from "@kasir/shared";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
-import {
-  Alert,
-  Button,
-  GlassView,
-  Input,
-  Label,
-  Spinner,
-  TextField,
-  Typography,
-} from "heroui-native";
+import { Alert, Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
 import { useCallback, useRef, useState, type JSX } from "react";
-import { View } from "react-native";
+import { View, type LayoutChangeEvent } from "react-native";
 
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
+import { ScanFrame } from "@/components/scan-frame";
 import { ScrollScreen } from "@/components/screen";
 import { InlineError } from "@/components/state-view";
 import { useAppActive } from "@/hooks/use-app-active";
 import { useProductLookup } from "@/hooks/use-product-lookup";
 import { useCurrentUser } from "@/hooks/use-session";
 import { hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
-import { hasLiquidGlass, isIOS } from "@/lib/platform";
 import { useScannerStore } from "@/stores/scanner-store";
 
 /**
@@ -47,6 +38,7 @@ export default function ScanTab(): JSX.Element {
   const appActive = useAppActive();
 
   const [manual, setManual] = useState("");
+  const [frameHeight, setFrameHeight] = useState(0);
   const lastScan = useRef<{ code: string; at: number } | null>(null);
 
   useFocusEffect(
@@ -58,13 +50,21 @@ export default function ScanTab(): JSX.Element {
   );
 
   const notFound = lookup.data && lookup.data.product === null ? lookup.data.code : null;
+  const granted = permission?.granted === true;
 
   /**
    * The preview is mounted only while it is both wanted and useful: the user has
    * not switched it off, the tab is on screen, and the app is in the foreground.
    * Unmounting rather than hiding is what actually releases the camera.
    */
-  const cameraLive = cameraEnabled && isFocused && appActive && permission?.granted === true;
+  const cameraLive = cameraEnabled && isFocused && appActive && granted;
+
+  const lookupCode = (code: string) => {
+    lookup.mutate(code, {
+      onSuccess: ({ product }) => (product ? hapticSuccess() : hapticWarning()),
+      onError: () => hapticWarning(),
+    });
+  };
 
   const onScanned = ({ data }: BarcodeScanningResult) => {
     const now = Date.now();
@@ -73,13 +73,6 @@ export default function ScanTab(): JSX.Element {
     if (previous && previous.code === data && now - previous.at < RESCAN_COOLDOWN_MS) return;
     lastScan.current = { code: data, at: now };
     lookupCode(data);
-  };
-
-  const lookupCode = (code: string) => {
-    lookup.mutate(code, {
-      onSuccess: ({ product }) => (product ? hapticSuccess() : hapticWarning()),
-      onError: () => hapticWarning(),
-    });
   };
 
   const submitManual = () => {
@@ -98,24 +91,31 @@ export default function ScanTab(): JSX.Element {
     toggleCamera();
   };
 
+  const measureFrame = (event: LayoutChangeEvent) =>
+    setFrameHeight(event.nativeEvent.layout.height);
+
   return (
     <ScrollScreen headerless>
       <PageHeader title={id.scan.title} />
 
-      {permission?.granted ? (
-        <View className="aspect-[3/4] w-full overflow-hidden rounded-3xl bg-surface-secondary">
+      {granted ? (
+        <View
+          onLayout={measureFrame}
+          className="aspect-[3/4] w-full overflow-hidden rounded-3xl border border-border bg-surface-secondary"
+        >
           {cameraLive ? (
-            <CameraView
-              style={{ flex: 1 }}
-              facing="back"
-              barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }}
-              onBarcodeScanned={notFound || lookup.isPending ? undefined : onScanned}
-            />
+            <>
+              <CameraView
+                style={{ flex: 1 }}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }}
+                onBarcodeScanned={notFound || lookup.isPending ? undefined : onScanned}
+              />
+              <ScanFrame height={frameHeight} active={!lookup.isPending && !notFound} />
+            </>
           ) : (
             <View className="flex-1 items-center justify-center gap-3 px-6">
-              {/* SF Symbols 7 has no `camera.slash`; the hollow `camera` reads as
-                  "off" next to the filled one on the toggle. */}
-              <PlatformIcon sf="camera" md="camera-off-outline" size={32} />
+              <PlatformIcon sf="camera" md="camera-off-outline" size={36} />
               {/* Switched off on purpose — the other reasons (tab in the
                   background, app in the background) are never on screen long
                   enough to read, and resolve themselves. */}
@@ -125,18 +125,13 @@ export default function ScanTab(): JSX.Element {
                   <Typography type="body-sm" color="muted" align="center">
                     {id.scan.cameraPausedBody}
                   </Typography>
-                  <Button variant="secondary" onPress={onToggleCamera}>
-                    <Button.Label>{id.scan.cameraOn}</Button.Label>
-                  </Button>
                 </>
               )}
             </View>
           )}
 
-          {cameraLive ? <CameraToggle onPress={onToggleCamera} /> : null}
-
           {lookup.isPending ? (
-            <View className="absolute inset-0 items-center justify-center">
+            <View className="absolute inset-0 items-center justify-center bg-backdrop/40">
               <Spinner />
             </View>
           ) : null}
@@ -151,7 +146,28 @@ export default function ScanTab(): JSX.Element {
         </Alert>
       )}
 
-      {!permission?.granted && permission?.canAskAgain !== false ? (
+      {/*
+       * The camera switch is a full-width labelled button, not an icon floating
+       * over the preview: the first version put it in the corner as a glass
+       * circle and the user could not find it at all. A tab screen has no
+       * navigation bar to hang a trailing item on, and a floating toolbar would
+       * land on top of the tab bar — so it sits in the flow, directly under the
+       * thing it controls, with both an icon and a sentence.
+       */}
+      {granted ? (
+        <Button
+          variant={cameraEnabled ? "secondary" : "primary"}
+          accessibilityLabel={cameraEnabled ? id.scan.cameraOff : id.scan.cameraOn}
+          onPress={onToggleCamera}
+        >
+          <PlatformIcon
+            sf={cameraEnabled ? "camera.fill" : "camera"}
+            md={cameraEnabled ? "camera" : "camera-off-outline"}
+            size={18}
+          />
+          <Button.Label>{cameraEnabled ? id.scan.cameraOff : id.scan.cameraOn}</Button.Label>
+        </Button>
+      ) : permission?.canAskAgain !== false ? (
         <Button variant="secondary" onPress={() => void requestPermission()}>
           {id.scan.permissionButton}
         </Button>
@@ -217,43 +233,5 @@ export default function ScanTab(): JSX.Element {
         </View>
       </TextField>
     </ScrollScreen>
-  );
-}
-
-/**
- * Switch the preview off without leaving the tab.
- *
- * iOS 26 floats controls over content on glass, so the button is a glass circle;
- * Android uses a tonal icon button, which is Material 3's answer for the same
- * "secondary action on top of media" job.
- */
-function CameraToggle({ onPress }: { onPress: () => void }): JSX.Element {
-  const button = (
-    <Button
-      variant={isIOS ? "ghost" : "secondary"}
-      size="sm"
-      isIconOnly
-      className="rounded-full"
-      accessibilityLabel={id.scan.cameraOff}
-      onPress={onPress}
-    >
-      <PlatformIcon sf="camera.fill" md="camera" size={20} />
-    </Button>
-  );
-
-  return (
-    <View className="absolute right-3 top-3">
-      {isIOS ? (
-        <GlassView
-          className="overflow-hidden rounded-full"
-          forceFallbackColor={!hasLiquidGlass}
-          fallbackColor="overlay"
-        >
-          {button}
-        </GlassView>
-      ) : (
-        button
-      )}
-    </View>
   );
 }
