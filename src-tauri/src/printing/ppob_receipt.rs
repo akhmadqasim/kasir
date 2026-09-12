@@ -19,7 +19,8 @@
 //! It also carries a handful of judgements about what the provider *meant* —
 //! that a twenty-digit run of digits is a PLN token and a reference number is
 //! not, that a fused `TerdekatDownload` was two words before their own wrapper
-//! got to it, that a slip's table ends at its last labelled line. They live
+//! got to it, that a table ends at its last labelled line only when the
+//! provider left a blank line under it. They live
 //! here rather than in the service layer because each one is a decision about
 //! what belongs on the paper, and because the fixtures that justify them are the
 //! ones in this file's tests.
@@ -200,6 +201,17 @@ fn split_body_footer(block: Vec<String>, cpl: usize) -> (Vec<String>, Vec<String
     let Some(end) = last_pair else {
         return (block, Vec::new());
     };
+
+    // A blank line is how the provider says "the table ends here". Without one,
+    // what follows the last labelled line is more table — Telkom Indihome closes
+    // with `--Detail Tagihan 1--` / `Periode 09-2026` / `Nilai 316350` straight
+    // after `Nama Pelanggan`, and those are figures, not a sign-off.
+    if !block
+        .get(end + 1)
+        .is_some_and(|line| line.trim().is_empty())
+    {
+        return (block, Vec::new());
+    }
 
     let mut body = block;
     let footer = body.split_off(end + 1);
@@ -1123,32 +1135,32 @@ Cahaya",
         assert!(footer.iter().all(|line| !line.trim().is_empty()));
     }
 
-    /// Payment point ends its slip with three unlabelled lines of bill detail,
-    /// so the rule — body ends at the last `label : value` line — puts them
-    /// below our totals rather than above.
-    ///
-    /// Pinned rather than fixed: the split is specified this way, and the three
-    /// lines are still on the paper in the provider's own order. Whether
-    /// `--Detail Tagihan 1--` should be dragged back above `Total` is a question
-    /// about Mitra's own layout, not about this function.
+    /// Telkom Indihome closes its slip with three unlabelled lines of bill
+    /// detail, straight after `Nama Pelanggan` with no blank line between. They
+    /// are figures, not a sign-off, and they belong above the totals with the
+    /// rest of the table.
     #[test]
-    fn payment_point_bill_detail_falls_below_the_totals() {
+    fn bill_detail_that_follows_no_blank_line_stays_above_the_totals() {
         let rows: Vec<String> = format_ppob_receipt(&payment_point(), 58)
             .iter()
             .map(|line| line.text.clone())
             .collect();
 
-        let totals = rows
+        let rule = rows
             .iter()
-            .position(|row| row.starts_with("Grand Total"))
-            .expect("totals printed");
-        let detail = rows
-            .iter()
-            .position(|row| row.contains("Detail Tagihan"))
-            .expect("bill detail printed");
+            .position(|row| *row == "-".repeat(31))
+            .expect("totals rule");
 
-        assert!(detail > totals, "the specified split puts detail last");
-        assert!(rows.iter().any(|row| row.contains("Nilai")));
+        for detail in ["--Detail Tagihan 1--", "Periode 09-2026", "Nilai   316350"] {
+            let at = rows
+                .iter()
+                .position(|row| row == detail)
+                .unwrap_or_else(|| panic!("{} printed", detail));
+            assert!(at < rule, "{} fell below the totals", detail);
+        }
+
+        // And nothing was left over to print under them.
+        assert_eq!(rows.len(), rule + 4);
     }
 
     /// A slip with no key/value line at all — payment point writes `Nilai
