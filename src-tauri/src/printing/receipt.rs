@@ -1,4 +1,4 @@
-//! Receipt formatter: takes store info + transaction data and produces text lines for GDI printing
+//! Receipt formatter: takes store info + transaction data and produces text lines for ESC/POS printing
 
 /// All data needed to generate a receipt
 pub struct ReceiptData {
@@ -36,7 +36,7 @@ pub struct ReceiptItem {
 }
 
 /// Format currency in Indonesian style: 100.000
-fn format_rupiah(amount: f64) -> String {
+pub(super) fn format_rupiah(amount: f64) -> String {
     let rounded = amount.round() as i64;
     if rounded == 0 {
         return "0".to_string();
@@ -83,153 +83,262 @@ fn payment_method_label_with_bank(method: &str, bank_name: Option<&str>) -> Stri
     }
 }
 
-/// A single line of receipt text for GDI printing
+/// Character size for one printed line.
+///
+/// `Double` is ESC/POS double width *and* double height, so the line only fits
+/// half the columns the paper otherwise holds — 16 on 58mm. The PLN token block
+/// is the only thing that asks for it, and it is the reason a customer can read
+/// the token off the paper at arm's length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineSize {
+    #[default]
+    Normal,
+    Double,
+}
+
+/// A single line of receipt text for ESC/POS printing
+#[derive(Debug, Clone, Default)]
 pub struct ReceiptTextLine {
     pub text: String,
     pub bold: bool,
+    pub size: LineSize,
+}
+
+impl ReceiptTextLine {
+    /// Normal weight, normal size — the great majority of every receipt.
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Emphasised, still normal size.
+    pub fn bold(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            bold: true,
+            ..Self::default()
+        }
+    }
+
+    /// Double width and height. Callers must wrap the text to half the usual
+    /// column count themselves; the printer will not do it for them.
+    pub fn double(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            size: LineSize::Double,
+            ..Self::default()
+        }
+    }
+}
+
+/// How a receipt reaches the paper.
+///
+/// `Text` sends characters for the printer's own font engine to set. It is the
+/// default because it is what the Mitra Indogrosir app does — its print job,
+/// captured off the phone, is plain Font A — and because it is a few kilobytes
+/// where a picture is sixty. `Raster` draws the text with GDI in a bundled
+/// typewriter face and sends the picture: one uniform face across the slip, at
+/// the cost of speed and of being Windows-only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrintMode {
+    Raster,
+    #[default]
+    Text,
+}
+
+impl PrintMode {
+    /// What the settings JSON calls it.
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            Some("raster") => Self::Raster,
+            _ => Self::Text,
+        }
+    }
+
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Self::Raster => "raster",
+            Self::Text => "text",
+        }
+    }
+}
+
+/// Width of one character cell when a receipt is drawn rather than typeset.
+///
+/// Font A is twelve dots wide at 203 dpi and the renderer matches it, which is
+/// what lets one set of column counts serve both modes.
+pub const CELL_DOTS: usize = 12;
+
+/// Printable columns for a paper width.
+///
+/// Font A on 58mm paper is 32 characters wide and on 80mm 42, and the same
+/// counts serve a raster: the cell the renderer draws into is [`CELL_DOTS`]
+/// wide, so 32 of them come to exactly the 384 dots the narrow paper is. The
+/// wide paper has 576 and Font A only ever used 504 of them, so the renderer
+/// centres the block and leaves the difference as a margin either side rather
+/// than inventing six columns the text formatters have never had.
+///
+/// Every column is used. The Mitra app's own job prints `STRUK PEMBELIAN
+/// LISTRIK PRABAYAR` — exactly 32 characters — as one line, and so do we.
+pub fn columns(paper_width_mm: u8) -> usize {
+    if paper_width_mm >= 80 {
+        42
+    } else {
+        32
+    }
 }
 
 /// Center text within given width using space padding (monospace)
-fn center_text(text: &str, width: usize) -> String {
+pub(super) fn center_text(text: &str, width: usize) -> String {
     let text_len = text.chars().count();
     let pad = width.saturating_sub(text_len) / 2;
     format!("{}{}", " ".repeat(pad), text)
 }
 
 /// Two-column text padded to given width (left-aligned left, right-aligned right)
-fn two_col_text(left: &str, right: &str, width: usize) -> String {
+pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
     let left_len = left.chars().count();
     let right_len = right.chars().count();
     let spaces = width.saturating_sub(left_len + right_len).max(1);
     format!("{}{}{}", left, " ".repeat(spaces), right)
 }
 
-/// Generate receipt as text lines for GDI printing
+/// The shop's own name and contact details, between two rules.
+///
+/// The sales receipt alone. A PPOB struk opens with the store's name and nothing
+/// else, because it is the provider's document and Mitra's own slip carries no
+/// address either.
+pub(super) fn push_store_banner(
+    lines: &mut Vec<ReceiptTextLine>,
+    store_name: &str,
+    store_address: Option<&str>,
+    store_phone: Option<&str>,
+    cpl: usize,
+) {
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::bold(center_text(store_name, cpl)));
+
+    if let Some(address) = store_address.map(str::trim).filter(|a| !a.is_empty()) {
+        lines.push(ReceiptTextLine::plain(center_text(address, cpl)));
+    }
+    if let Some(phone) = store_phone.map(str::trim).filter(|p| !p.is_empty()) {
+        lines.push(ReceiptTextLine::plain(center_text(
+            &format!("Telp: {}", phone),
+            cpl,
+        )));
+    }
+
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+}
+
+/// Which sale this is: its number, when it happened, who rang it up.
+pub(super) fn push_sale_details(
+    lines: &mut Vec<ReceiptTextLine>,
+    receipt_number: &str,
+    date_time: &str,
+    cashier_name: &str,
+    cpl: usize,
+) {
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "No:",
+        receipt_number,
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Tanggal:", date_time, cpl,
+    )));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Kasir:",
+        cashier_name,
+        cpl,
+    )));
+}
+
+/// Generate receipt as text lines for ESC/POS printing
 pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
-    // Header
-    lines.push(ReceiptTextLine {
-        text: "=".repeat(cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: center_text(&data.store_name, cpl),
-        bold: true,
-    });
-
-    if let Some(ref addr) = data.store_address {
-        if !addr.is_empty() {
-            lines.push(ReceiptTextLine {
-                text: center_text(addr, cpl),
-                bold: false,
-            });
-        }
-    }
-    if let Some(ref phone) = data.store_phone {
-        if !phone.is_empty() {
-            lines.push(ReceiptTextLine {
-                text: center_text(&format!("Telp: {}", phone), cpl),
-                bold: false,
-            });
-        }
-    }
-
-    lines.push(ReceiptTextLine {
-        text: "=".repeat(cpl),
-        bold: false,
-    });
+    push_store_banner(
+        &mut lines,
+        &data.store_name,
+        data.store_address.as_deref(),
+        data.store_phone.as_deref(),
+        cpl,
+    );
     if data.is_deleted {
-        lines.push(ReceiptTextLine {
-            text: center_text("RECEIPT SALINAN (VOID)", cpl),
-            bold: true,
-        });
-        lines.push(ReceiptTextLine {
-            text: "=".repeat(cpl),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::bold(center_text(
+            "RECEIPT SALINAN (VOID)",
+            cpl,
+        )));
+        lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
     }
 
-    // Transaction info
-    lines.push(ReceiptTextLine {
-        text: two_col_text("No:", &data.receipt_number, cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: two_col_text("Tanggal:", &data.date_time, cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: two_col_text("Kasir:", &data.cashier_name, cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: "-".repeat(cpl),
-        bold: false,
-    });
+    push_sale_details(
+        &mut lines,
+        &data.receipt_number,
+        &data.date_time,
+        &data.cashier_name,
+        cpl,
+    );
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Items
     for item in &data.items {
         let price_str = format_rupiah(item.price);
         let subtotal_str = format_rupiah(item.subtotal);
         let qty_price = format!("  {} x {}", item.quantity, price_str);
-        lines.push(ReceiptTextLine {
-            text: item.name.clone(),
-            bold: false,
-        });
-        lines.push(ReceiptTextLine {
-            text: two_col_text(&qty_price, &subtotal_str, cpl),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::plain(item.name.clone()));
+        lines.push(ReceiptTextLine::plain(two_col_text(
+            &qty_price,
+            &subtotal_str,
+            cpl,
+        )));
     }
 
-    lines.push(ReceiptTextLine {
-        text: "-".repeat(cpl),
-        bold: false,
-    });
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Totals
     if data.discount_amount > 0.0 {
-        lines.push(ReceiptTextLine {
-            text: two_col_text("Subtotal", &format_rupiah(data.subtotal_amount), cpl),
-            bold: false,
-        });
-        lines.push(ReceiptTextLine {
-            text: two_col_text(
-                "Diskon",
-                &format!("-{}", format_rupiah(data.discount_amount)),
-                cpl,
-            ),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::plain(two_col_text(
+            "Subtotal",
+            &format_rupiah(data.subtotal_amount),
+            cpl,
+        )));
+        lines.push(ReceiptTextLine::plain(two_col_text(
+            "Diskon",
+            &format!("-{}", format_rupiah(data.discount_amount)),
+            cpl,
+        )));
     }
-    lines.push(ReceiptTextLine {
-        text: two_col_text("TOTAL", &format_rupiah(data.original_total_amount), cpl),
-        bold: true,
-    });
+    lines.push(ReceiptTextLine::bold(two_col_text(
+        "TOTAL",
+        &format_rupiah(data.original_total_amount),
+        cpl,
+    )));
     if data.payment_breakdown.len() > 1 {
         for split in &data.payment_breakdown {
             let method_label =
                 payment_method_label_with_bank(&split.payment_method, split.bank_name.as_deref());
-            lines.push(ReceiptTextLine {
-                text: two_col_text(
-                    &format!("Bayar ({})", method_label),
-                    &format_rupiah(split.amount),
-                    cpl,
-                ),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain(two_col_text(
+                &format!("Bayar ({})", method_label),
+                &format_rupiah(split.amount),
+                cpl,
+            )));
         }
         if data.change_amount > 0.0 {
-            lines.push(ReceiptTextLine {
-                text: two_col_text("Dibayar", &format_rupiah(data.payment_amount), cpl),
-                bold: false,
-            });
-            lines.push(ReceiptTextLine {
-                text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain(two_col_text(
+                "Dibayar",
+                &format_rupiah(data.payment_amount),
+                cpl,
+            )));
+            lines.push(ReceiptTextLine::plain(two_col_text(
+                "Kembalian",
+                &format_rupiah(data.change_amount),
+                cpl,
+            )));
         }
     } else {
         let method_label = payment_method_label_with_bank(
@@ -238,144 +347,84 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
                 .first()
                 .and_then(|split| split.bank_name.as_deref()),
         );
-        lines.push(ReceiptTextLine {
-            text: two_col_text(
-                &format!("Bayar ({})", method_label),
-                &format_rupiah(data.payment_amount),
-                cpl,
-            ),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::plain(two_col_text(
+            &format!("Bayar ({})", method_label),
+            &format_rupiah(data.payment_amount),
+            cpl,
+        )));
         if data.payment_method == "cash" && data.change_amount > 0.0 {
-            lines.push(ReceiptTextLine {
-                text: two_col_text("Kembalian", &format_rupiah(data.change_amount), cpl),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain(two_col_text(
+                "Kembalian",
+                &format_rupiah(data.change_amount),
+                cpl,
+            )));
         }
     }
 
     if data.is_deleted {
-        lines.push(ReceiptTextLine {
-            text: "-".repeat(cpl),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
         if let Some(ref deleted_by_name) = data.deleted_by_name {
-            lines.push(ReceiptTextLine {
-                text: two_col_text("Void By:", deleted_by_name, cpl),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain(two_col_text(
+                "Void By:",
+                deleted_by_name,
+                cpl,
+            )));
         }
         if let Some(ref deleted_reason) = data.deleted_reason {
-            lines.push(ReceiptTextLine {
-                text: "Alasan Void:".to_string(),
-                bold: false,
-            });
-            lines.push(ReceiptTextLine {
-                text: deleted_reason.clone(),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain("Alasan Void:".to_string()));
+            lines.push(ReceiptTextLine::plain(deleted_reason.clone()));
         }
     }
 
-    lines.push(ReceiptTextLine {
-        text: "=".repeat(cpl),
-        bold: false,
-    });
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
 
     // Footer
     if let Some(ref footer) = data.footer_text {
         for line in footer.lines() {
-            lines.push(ReceiptTextLine {
-                text: center_text(line, cpl),
-                bold: false,
-            });
+            lines.push(ReceiptTextLine::plain(center_text(line, cpl)));
         }
     } else {
-        lines.push(ReceiptTextLine {
-            text: center_text("Terima kasih!", cpl),
-            bold: false,
-        });
-        lines.push(ReceiptTextLine {
-            text: center_text("Barang yang sudah dibeli", cpl),
-            bold: false,
-        });
-        lines.push(ReceiptTextLine {
-            text: center_text("tidak dapat dikembalikan", cpl),
-            bold: false,
-        });
-    }
-
-    // Feed lines
-    for _ in 0..6 {
-        lines.push(ReceiptTextLine {
-            text: String::new(),
-            bold: false,
-        });
+        lines.push(ReceiptTextLine::plain(center_text("Terima kasih!", cpl)));
+        lines.push(ReceiptTextLine::plain(center_text(
+            "Barang yang sudah dibeli",
+            cpl,
+        )));
+        lines.push(ReceiptTextLine::plain(center_text(
+            "tidak dapat dikembalikan",
+            cpl,
+        )));
     }
 
     lines
 }
 
-/// Generate test page as text lines for GDI printing
+/// Generate test page as text lines for ESC/POS printing
 pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
-    lines.push(ReceiptTextLine {
-        text: center_text("TEST PRINT", cpl),
-        bold: true,
-    });
-    lines.push(ReceiptTextLine {
-        text: "=".repeat(cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: center_text(store_name, cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: center_text(&format!("Lebar: {}mm", paper_width_mm), cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: center_text(&format!("{} karakter/baris", cpl), cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: "-".repeat(cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: "Normal text".to_string(),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: "Bold text".to_string(),
-        bold: true,
-    });
-    lines.push(ReceiptTextLine {
-        text: two_col_text("Kiri", "Kanan", cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: two_col_text("Item panjang sekali", "100.000", cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: "=".repeat(cpl),
-        bold: false,
-    });
-    lines.push(ReceiptTextLine {
-        text: center_text("Printer OK!", cpl),
-        bold: false,
-    });
-
-    for _ in 0..6 {
-        lines.push(ReceiptTextLine {
-            text: String::new(),
-            bold: false,
-        });
-    }
+    lines.push(ReceiptTextLine::bold(center_text("TEST PRINT", cpl)));
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain(center_text(store_name, cpl)));
+    lines.push(ReceiptTextLine::plain(center_text(
+        &format!("Lebar: {}mm", paper_width_mm),
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain(center_text(
+        &format!("{} karakter/baris", cpl),
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain("Normal text".to_string()));
+    lines.push(ReceiptTextLine::bold("Bold text".to_string()));
+    lines.push(ReceiptTextLine::plain(two_col_text("Kiri", "Kanan", cpl)));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Item panjang sekali",
+        "100.000",
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain(center_text("Printer OK!", cpl)));
 
     lines
 }

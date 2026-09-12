@@ -325,3 +325,64 @@ Riwayat top-up saldo.
 - Harga bisa berupa number atau string (e.g., `"5283.00"` atau `50600`)
 - `is_trouble` > 0 berarti produk sedang gangguan
 - `promo_id` != null berarti ada diskon (`nominal_cut_price` = potongan, `last_price` = harga final)
+
+---
+
+## Receipt / struk
+
+Respons pembayaran yang sukses membawa bahan struk, dan namanya berbeda-beda per
+layanan. Yang dipakai `printing/ppob_receipt.rs` (lewat `services/receipt.rs`,
+dari tabel `ppob_receipts` — JSON respons mentah, satu baris per item, disimpan
+migrasi 023):
+
+| Field | Isi |
+|---|---|
+| `receipt_text` / `invoice_string` | Blok key/value yang **sudah diformat provider** (`NO METER`, `IDPEL`, `TARIF/DAYA`, `JML KWH`, …). Kalau ada, dicetak apa adanya; baris yang lebih panjang dari lebar kertas dibungkus di kolom nilai. |
+| `token_number` | Token PLN prabayar, 20 digit. Dicetak double width+height, dikelompokkan per 4 digit. |
+| `serial_number` / `sn` / `token` | Nomor seri layanan non-PLN. Dicetak tebal, ukuran normal. |
+| `no_ref` / `ref` / `reference` / `trx_id` | Nomor referensi transaksi. |
+| `customer_name` / `nama_pelanggan` | Nama pelanggan. |
+| `amount`, `admin_fee`, `total` | Nominal, admin bank, dan total yang ditagih provider. |
+| `footer` / `footer_text` | Baris penutup provider (call center, dsb). |
+
+Letaknya juga berbeda: `pulsa/v2/topup` membalas `{ "history_payment": { ... } }`,
+`confirm-payment` membalas `{ "receipt_data": { ... } }`, endpoint `*/payment`
+membalas rata di root. Pembacanya mencoba root dan setiap wrapper yang dikenal,
+bukan mencabang per service type.
+
+**Cek terhadap Mitra app 8.25.8:** permukaan API untuk endpoint yang kita pakai
+tidak berubah. Yang berubah di luar pemakaian kita: Pelni pindah ke `v2/pelni/*`
+dan `pln/advice` dihapus — keduanya tidak dipakai aplikasi ini.
+
+### Bentuk `receipt_text` (dari 20 transaksi nyata)
+
+- **CRLF.** Semua baris dipisah `\r\n`; `\r` dibuang sebelum apa pun.
+- **Sudah dibungkus provider di ~32 kolom, dan dibungkus per karakter** — jadi
+  memotong di tengah kata: `NAMA : ABDUL MUKTI RI` disambung baris
+  `                  AD`. Baris sambungan diawali 18 spasi (kadang 19 kalau spasi
+  ke-19 itu bagian dari nilai, seperti pada token). Aturan pembacanya: baris yang
+  diawali ≥10 spasi adalah sambungan baris sebelumnya; buang tepat 18 karakter
+  pertama, gabung tanpa spasi, lalu bungkus ulang di lebar kertas kita.
+- **PLN sudah membawa judulnya sendiri** (`STRUK PEMBELIAN LISTRIK PRABAYAR`,
+  `STRUK PEMBAYARAN TAGIHAN LISTRIK`) plus dua baris kosong di depan. PDAM, BPJS,
+  dan Payment Point tidak punya judul sama sekali.
+- **Footer PLN pascabayar berbentuk pipe:**
+  `MKM|"Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :"|Download PLN Mobile`,
+  diikuti baris jejak `[I001IGR1-(11/09/2026 10:11:51)-CA]`. Segmen pendek huruf
+  besar (`MKM`) adalah kode kanal, bukan untuk pelanggan.
+- **Placeholder "tidak ada token" berbeda per layanan:** PLN pascabayar `""`,
+  PDAM `"-"`, Payment Point `"0"`. Token PLN prabayar datang sebagai
+  `4617 5400 1832 5962 7611` (kelompok spasi), bukan digit rapat.
+- **`amount` sudah termasuk admin.** Contoh PLN: `base_price` 20.000 +
+  `admin_fee` 3.500 = `amount` 23.500 — dan 23.500 itu yang disebut total di
+  invoice PDF Mitra. Menjumlahkan `amount + admin_fee` menghitung admin dua kali.
+- **Angka di dalam `receipt_text` tidak konsisten** antar layanan (`69,163` di
+  PDAM/BPJS, `Rp 69.729,00` di PLN). Dicetak apa adanya; hanya baris milik kita
+  yang lewat `format_rupiah`.
+- **Judul Payment Point** diambil dari `description` sebelum `" - "` (mis.
+  `Telkom Indihome - 161312001945` → `STRUK PEMBAYARAN Telkom Indihome`), karena
+  ratusan biller berbagi satu service type dan `igr_desc`-nya `null`.
+
+Catatan lapangan: `GET /api/ppob/history/{trx_id}` membalas 500 di akun live
+(`{"code":"internal"}`), jadi detail per transaksi diambil dari daftar
+`/ppob/history`. Di luar scope struk.

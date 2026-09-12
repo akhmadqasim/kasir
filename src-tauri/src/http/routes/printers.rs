@@ -31,6 +31,7 @@ pub fn session() -> Router<AppState> {
         .route("/printers/settings", get(settings))
         .route("/printers/test", post(test_print))
         .route("/transactions/{id}/print", post(print_receipt))
+        .route("/transaction-items/{id}/ppob/print", post(print_ppob_struk))
 }
 
 pub fn admin() -> Router<AppState> {
@@ -69,5 +70,23 @@ async fn print_receipt(
     Path(id): Path<i64>,
 ) -> ApiResult<StatusCode> {
     services::receipt::print(&state.db, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Reprint the struk for one fulfilled PPOB line.
+///
+/// The id is a `transaction_items` id, not a transaction's, because the struk
+/// belongs to the line: a cart can hold two PPOB purchases and each carries its
+/// own token.
+///
+/// This is the route that reliably produces one. Printing the sale receipt adds
+/// a struk for every line already fulfilled, but at auto-print time they are
+/// usually still in flight, so the detail dialog calls this once per fulfilled
+/// line afterwards.
+async fn print_ppob_struk(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    services::receipt::print_ppob_item(&state.db, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,6 +1,7 @@
 //! Ringing up a sale: resolving the cart, splitting the money, writing the
 //! rows, and chasing PPOB fulfilment afterwards.
 
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, QueryFilter, Set, Statement, TransactionTrait,
@@ -22,7 +23,9 @@ use crate::domain::transactions::{
     CheckoutTransactionInput, PaymentSplit, TransactionItemInput, TransactionResult,
 };
 use crate::domain::Actor;
-use crate::entity::{products, transaction_items, transaction_payments, transactions};
+use crate::entity::{
+    ppob_receipts, products, transaction_items, transaction_payments, transactions,
+};
 use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::services::ppob::MitraClient;
 use crate::utils::AppError;
@@ -610,12 +613,52 @@ fn build_ppob_success_message(payment_result: &PaymentResult) -> String {
     "Fulfillment PPOB berhasil".to_string()
 }
 
+/// Everything the provider's answer changes on a PPOB line. The four columns
+/// move together — a success carries a serial and a struk, a failure carries
+/// neither — so they are written as one value rather than four arguments whose
+/// order nobody can remember.
+struct PpobOutcome {
+    status: &'static str,
+    message: Option<String>,
+    serial_number: Option<String>,
+    /// The provider's whole payment response, as JSON text, so the struk can be
+    /// printed again days later. See migration 023.
+    receipt_data: Option<String>,
+}
+
+impl PpobOutcome {
+    fn success(payment_result: &PaymentResult) -> Self {
+        let receipt_data = if payment_result.receipt_data.is_null() {
+            None
+        } else {
+            // A `Value` parsed from a response always serialises back, so the
+            // `ok()` is belt and braces: losing the struk data must not cost the
+            // cashier the far more important `success` status.
+            serde_json::to_string(&payment_result.receipt_data).ok()
+        };
+
+        Self {
+            status: PPOB_STATUS_SUCCESS,
+            message: Some(build_ppob_success_message(payment_result)),
+            serial_number: payment_result.serial_number.clone(),
+            receipt_data,
+        }
+    }
+
+    fn failure(message: String) -> Self {
+        Self {
+            status: PPOB_STATUS_FAILED,
+            message: Some(message),
+            serial_number: None,
+            receipt_data: None,
+        }
+    }
+}
+
 async fn update_ppob_item_status(
     db: &DatabaseConnection,
     item_id: i64,
-    ppob_status: &str,
-    ppob_message: Option<String>,
-    ppob_serial_number: Option<String>,
+    outcome: PpobOutcome,
 ) -> Result<(), AppError> {
     let item = transaction_items::Entity::find_by_id(item_id)
         .one(db)
@@ -623,10 +666,52 @@ async fn update_ppob_item_status(
         .ok_or_else(|| AppError::NotFound("Item transaksi PPOB tidak ditemukan".into()))?;
 
     let mut active_item: transaction_items::ActiveModel = item.into();
-    active_item.ppob_status = Set(Some(ppob_status.to_string()));
-    active_item.ppob_message = Set(ppob_message);
-    active_item.ppob_serial_number = Set(ppob_serial_number);
+    active_item.ppob_status = Set(Some(outcome.status.to_string()));
+    active_item.ppob_message = Set(outcome.message);
+    active_item.ppob_serial_number = Set(outcome.serial_number);
     active_item.update(db).await?;
+
+    // The provider's whole answer goes in its own table, keyed by the item, so
+    // that everything else reading `transaction_items` never carries it. A
+    // failure clears any earlier blob: only a failed line can be retried, so
+    // whatever is there belongs to an attempt that no longer stands.
+    match outcome.receipt_data {
+        Some(data) => store_ppob_receipt(db, item_id, data).await?,
+        None => {
+            ppob_receipts::Entity::delete_by_id(item_id)
+                .exec(db)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Write the provider's response, replacing anything already stored for the
+/// item. `insert` alone would fail on a retry that follows a stored success,
+/// which cannot happen today but would be a silent loss of the struk if it did.
+async fn store_ppob_receipt(
+    db: &DatabaseConnection,
+    item_id: i64,
+    data: String,
+) -> Result<(), AppError> {
+    let receipt = ppob_receipts::ActiveModel {
+        transaction_item_id: Set(item_id),
+        data: Set(data),
+        created_at: Set(Some(now_timestamp())),
+    };
+
+    ppob_receipts::Entity::insert(receipt)
+        .on_conflict(
+            OnConflict::column(ppob_receipts::Column::TransactionItemId)
+                .update_columns([
+                    ppob_receipts::Column::Data,
+                    ppob_receipts::Column::CreatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec(db)
+        .await?;
 
     Ok(())
 }
@@ -684,24 +769,12 @@ where
 
         match fulfill_ppob(request).await {
             Ok(payment_result) => {
-                update_ppob_item_status(
-                    db,
-                    ppob_item_id,
-                    PPOB_STATUS_SUCCESS,
-                    Some(build_ppob_success_message(&payment_result)),
-                    payment_result.serial_number.clone(),
-                )
-                .await?;
+                update_ppob_item_status(db, ppob_item_id, PpobOutcome::success(&payment_result))
+                    .await?;
             }
             Err(error) => {
-                update_ppob_item_status(
-                    db,
-                    ppob_item_id,
-                    PPOB_STATUS_FAILED,
-                    Some(error.to_string()),
-                    None,
-                )
-                .await?;
+                update_ppob_item_status(db, ppob_item_id, PpobOutcome::failure(error.to_string()))
+                    .await?;
             }
         }
     }
@@ -761,9 +834,7 @@ pub async fn checkout(
                         let _ = update_ppob_item_status(
                             &bg_conn,
                             ppob_item_id,
-                            PPOB_STATUS_SUCCESS,
-                            Some(build_ppob_success_message(&payment_result)),
-                            payment_result.serial_number.clone(),
+                            PpobOutcome::success(&payment_result),
                         )
                         .await;
                     }
@@ -771,9 +842,7 @@ pub async fn checkout(
                         let _ = update_ppob_item_status(
                             &bg_conn,
                             ppob_item_id,
-                            PPOB_STATUS_FAILED,
-                            Some(error.to_string()),
-                            None,
+                            PpobOutcome::failure(error.to_string()),
                         )
                         .await;
                     }
@@ -865,9 +934,7 @@ pub async fn retry_ppob_fulfillment(
                 let _ = update_ppob_item_status(
                     &bg_conn,
                     item_id,
-                    PPOB_STATUS_SUCCESS,
-                    Some(build_ppob_success_message(&payment_result)),
-                    payment_result.serial_number.clone(),
+                    PpobOutcome::success(&payment_result),
                 )
                 .await;
             }
@@ -875,9 +942,7 @@ pub async fn retry_ppob_fulfillment(
                 let _ = update_ppob_item_status(
                     &bg_conn,
                     item_id,
-                    PPOB_STATUS_FAILED,
-                    Some(error.to_string()),
-                    None,
+                    PpobOutcome::failure(error.to_string()),
                 )
                 .await;
             }
@@ -980,7 +1045,7 @@ mod tests {
                 assert_eq!(request.service_type, "pulsa");
                 Ok(PaymentResult {
                     success: true,
-                    receipt_data: serde_json::json!({}),
+                    receipt_data: serde_json::json!({ "receipt_text": "STRUK", "no_ref": "R-9" }),
                     service_type: "pulsa".to_string(),
                     customer_id: request.customer_id.unwrap_or_default(),
                     amount: 10_000.0,
@@ -1001,6 +1066,42 @@ mod tests {
             result.items[0].ppob_serial_number.as_deref(),
             Some("SN-123")
         );
+
+        // The provider's whole answer is kept, in its own table, so the struk
+        // can be printed again next week.
+        let stored = ppob_receipts::Entity::find_by_id(result.items[0].id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("provider response stored");
+        assert!(stored.data.contains("STRUK"));
+        assert!(stored.data.contains("R-9"));
+    }
+
+    /// A line that failed has nothing to print, and whatever a previous attempt
+    /// left behind describes an attempt that no longer stands.
+    #[tokio::test]
+    async fn a_failed_fulfilment_leaves_no_provider_response_behind() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_SUCCESS).await;
+
+        store_ppob_receipt(&conn, item.id, "{\"receipt_text\":\"STRUK\"}".to_string())
+            .await
+            .expect("store");
+
+        update_ppob_item_status(
+            &conn,
+            item.id,
+            PpobOutcome::failure("Provider timeout".to_string()),
+        )
+        .await
+        .expect("mark failed");
+
+        assert!(ppob_receipts::Entity::find_by_id(item.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .is_none());
     }
 
     #[tokio::test]
@@ -1284,7 +1385,7 @@ mod tests {
     /// A completed sale with one PPOB line, left in `ppob_status`.
     async fn seed_ppob_sale(
         conn: &DatabaseConnection,
-        ppob_status: &str,
+        ppob_status: &'static str,
     ) -> transaction_items::Model {
         let result = checkout_with_executor(
             conn,
@@ -1323,9 +1424,18 @@ mod tests {
             .find(|item| item.service_type.is_some())
             .expect("ppob line");
 
-        update_ppob_item_status(conn, item.id, ppob_status, None, None)
-            .await
-            .expect("set ppob status");
+        update_ppob_item_status(
+            conn,
+            item.id,
+            PpobOutcome {
+                status: ppob_status,
+                message: None,
+                serial_number: None,
+                receipt_data: None,
+            },
+        )
+        .await
+        .expect("set ppob status");
 
         transaction_items::Entity::find_by_id(item.id)
             .one(conn)

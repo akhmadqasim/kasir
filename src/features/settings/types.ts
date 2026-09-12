@@ -3,6 +3,8 @@ export interface PrinterSettings {
   paper_width: number | null
   auto_print: boolean | null
   footer_text: string | null
+  /** `"raster"` menggambar struk lalu mengirim gambarnya; `"text"` mengirim huruf. */
+  print_mode: string | null
 }
 
 export interface PrinterInfo {

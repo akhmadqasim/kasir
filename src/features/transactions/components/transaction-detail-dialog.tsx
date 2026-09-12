@@ -31,7 +31,7 @@ import {
   updateTransactionPaymentMethod,
   voidTransaction,
 } from "@/lib/api/transactions"
-import { printReceipt } from "@/lib/api/printers"
+import { printPpobReceipt, printReceipt } from "@/lib/api/printers"
 import { errorMessage } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useAuthStore } from "@/features/auth"
@@ -47,7 +47,12 @@ import {
 } from "@/lib/labels"
 import { id } from "@/i18n/id"
 import { isDiscountedLine, lineDiscountAmount, netLineAmount } from "../line-amounts"
-import { isPpobInFlight, isPpobRetryable, ppobStatusConfig } from "../ppob-status"
+import {
+  isPpobInFlight,
+  isPpobPrintable,
+  isPpobRetryable,
+  ppobStatusConfig,
+} from "../ppob-status"
 import { refundBlockedReason } from "../refund-window"
 import type { TransactionDetail, TransactionListItem } from "../types"
 
@@ -98,6 +103,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isPrintingPpob, setIsPrintingPpob] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteReason, setDeleteReason] = useState("")
   const [isDeleting, setIsDeleting] = useState(false)
@@ -114,6 +120,8 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
+  const ppobPrintableItems =
+    detail?.items.filter((item) => isPpobPrintable(item.ppob_status)) ?? []
   const isDeleted = detail?.transaction.status === "deleted"
   const hasRefundAction =
     !!detail && !detail.has_ppob && detail.transaction.status !== "refunded" && !isDeleted
@@ -177,6 +185,28 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
       toast.success("Struk dicetak")
     } catch (e) {
       toast.error(`Gagal cetak: ${errorMessage(e)}`)
+    }
+  }
+
+  // Satu struk per baris PPOB yang berhasil, bukan hanya baris pertama:
+  // satu keranjang bisa memuat dua pembelian PPOB dan masing-masing punya
+  // token sendiri yang dibawa pelanggan.
+  const handlePrintPpobReceipt = async () => {
+    if (ppobPrintableItems.length === 0) return
+    setIsPrintingPpob(true)
+    try {
+      for (const item of ppobPrintableItems) {
+        await printPpobReceipt(item.id)
+      }
+      toast.success(
+        ppobPrintableItems.length > 1
+          ? `${ppobPrintableItems.length} struk PPOB dicetak`
+          : "Struk PPOB dicetak",
+      )
+    } catch (e) {
+      toast.error(`Gagal cetak struk PPOB: ${errorMessage(e)}`)
+    } finally {
+      setIsPrintingPpob(false)
     }
   }
 
@@ -465,6 +495,16 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                       >
                         <RefreshCcw />
                         Retry PPOB
+                      </PendingButton>
+                    )}
+                    {ppobPrintableItems.length > 0 && (
+                      <PendingButton
+                        isPending={isPrintingPpob}
+                        variant="secondary"
+                        onPress={handlePrintPpobReceipt}
+                      >
+                        <Printer />
+                        Cetak Struk PPOB
                       </PendingButton>
                     )}
                     {hasRefundAction && (

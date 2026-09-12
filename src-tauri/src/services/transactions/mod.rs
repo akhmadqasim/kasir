@@ -33,7 +33,7 @@ const MIXED_PAYMENT_METHOD: &str = "mixed";
 /// mean "a provider call is in flight", so neither may be retried.
 const PPOB_STATUS_PENDING: &str = "pending";
 const PPOB_STATUS_PROCESSING: &str = "processing";
-const PPOB_STATUS_SUCCESS: &str = "success";
+pub(crate) const PPOB_STATUS_SUCCESS: &str = "success";
 const PPOB_STATUS_FAILED: &str = "failed";
 
 fn now_timestamp() -> String {

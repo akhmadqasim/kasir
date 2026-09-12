@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::domain::ppob::{HistoryDetailItem, HistoryPaymentItem, MutasiItem};
 use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::MitraClient;
-use crate::services::ppob::parsers::{get_num_field, get_str_field};
+use crate::services::ppob::parsers::{get_num_field, get_str_field, unwrap_response};
 use crate::utils::AppError;
 
 pub async fn list(
@@ -202,12 +202,7 @@ pub async fn detail(
                     continue;
                 }
 
-                let detail_value = result
-                    .get("history_payment")
-                    .or_else(|| result.get("detail"))
-                    .or_else(|| result.get("data"))
-                    .or_else(|| result.get("transaction"))
-                    .unwrap_or(&result);
+                let detail_value = unwrap_response(&result);
 
                 if detail_value.is_null() {
                     last_result = Some(result);

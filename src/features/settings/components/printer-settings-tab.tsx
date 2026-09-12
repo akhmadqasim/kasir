@@ -31,6 +31,15 @@ const PAPER_WIDTHS = [
   { key: "80", label: "80mm (42 karakter/baris)" },
 ]
 
+// Teks adalah bawaannya: font printer sendiri, persis cara aplikasi Mitra
+// Indogrosir mencetak struknya di printer yang sama, dan datanya kecil sehingga
+// cepat. Gambar menggambar struk dengan satu font mesin tik lalu mengirim
+// gambarnya — seragam, tapi lebih lambat dan hanya jalan di Windows.
+const PRINT_MODES = [
+  { key: "text", label: "Teks (font printer)" },
+  { key: "raster", label: "Gambar (font mesin tik)" },
+]
+
 export function PrinterSettingsTab() {
   const queryClient = useQueryClient()
 
@@ -38,6 +47,7 @@ export function PrinterSettingsTab() {
   const [paperWidth, setPaperWidth] = useState<string>("58")
   const [autoPrint, setAutoPrint] = useState(false)
   const [footerText, setFooterText] = useState("")
+  const [printMode, setPrintMode] = useState<string>("text")
   const [initialized, setInitialized] = useState(false)
 
   // Printers are the ones the *till's* operating system can see: the server
@@ -55,6 +65,7 @@ export function PrinterSettingsTab() {
     if (s.paper_width) setPaperWidth(String(s.paper_width))
     if (s.auto_print !== null) setAutoPrint(s.auto_print ?? false)
     if (s.footer_text) setFooterText(s.footer_text)
+    if (s.print_mode) setPrintMode(s.print_mode)
     setInitialized(true)
   }
 
@@ -90,6 +101,7 @@ export function PrinterSettingsTab() {
       paper_width: Number(paperWidth) || null,
       auto_print: autoPrint,
       footer_text: footerText,
+      print_mode: printMode,
     })
   }
 
@@ -139,6 +151,16 @@ export function PrinterSettingsTab() {
           value={paperWidth}
           variant="secondary"
           onChange={(value) => value !== null && setPaperWidth(value)}
+        />
+
+        <OptionSelect
+          fullWidth
+          label="Mode cetak"
+          options={PRINT_MODES}
+          value={printMode}
+          variant="secondary"
+          description="Gambar: huruf seragam seperti struk Mitra. Teks: lebih cepat, tapi tebal dan ukurannya tidak seragam."
+          onChange={(value) => value !== null && setPrintMode(value)}
         />
 
         {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,

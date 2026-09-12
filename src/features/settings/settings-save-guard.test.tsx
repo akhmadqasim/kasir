@@ -68,6 +68,7 @@ const PRINTER_SETTINGS: PrinterSettings = {
   paper_width: 58,
   auto_print: true,
   footer_text: "Terima kasih",
+  print_mode: "raster",
 }
 
 const STORE: StoreInfo = {
@@ -256,6 +257,7 @@ describe("penjaga tombol simpan pengaturan", () => {
         paper_width: 58,
         auto_print: true,
         footer_text: "Terima kasih",
+        print_mode: "raster",
       })
     })
   })
