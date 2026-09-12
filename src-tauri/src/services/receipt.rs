@@ -244,8 +244,8 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         store_address: store.address.clone(),
         store_phone: store.phone.clone(),
         receipt_number: transaction.receipt_number.clone(),
-        date_time: date_time.clone(),
-        cashier_name: cashier_name.clone(),
+        date_time,
+        cashier_name,
         items: receipt_items,
         subtotal_amount: transaction.subtotal_amount,
         discount_amount: transaction.discount_amount,
@@ -292,14 +292,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
 
     let mut jobs = vec![text_lines];
     jobs.extend(fulfilled.into_iter().map(|item| {
-        let data = build_ppob_receipt_data(
-            &store,
-            &transaction,
-            &cashier_name,
-            &date_time,
-            item,
-            blobs.get(&item.id).map(String::as_str),
-        );
+        let data = build_ppob_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
         format_ppob_receipt(&data, paper_width)
     }));
 
@@ -358,36 +351,15 @@ pub async fn print_ppob_item(
         ..
     } = print_target(db).await?;
 
-    let transaction = transactions::Entity::find_by_id(item.transaction_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
-
-    let cashier_name = users::Entity::find_by_id(transaction.user_id)
-        .one(db)
-        .await?
-        .map(|user| user.full_name)
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    let date_time = transaction
-        .created_at
-        .as_deref()
-        .map(utc_to_local_formatted)
-        .unwrap_or_else(|| "N/A".to_string());
-
+    // The struk carries nothing about the sale itself — no receipt number, no
+    // cashier — so the transaction row is never read here. See
+    // `printing::ppob_receipt` for why: it is the provider's document.
     let blob = ppob_receipts::Entity::find_by_id(item.id)
         .one(db)
         .await?
         .map(|row| row.data);
 
-    let data = build_ppob_receipt_data(
-        &store,
-        &transaction,
-        &cashier_name,
-        &date_time,
-        &item,
-        blob.as_deref(),
-    );
+    let data = build_ppob_receipt_data(&store, &item, blob.as_deref());
     let lines = format_ppob_receipt(&data, paper_width);
 
     send_jobs(printer_id, vec![lines]).await
@@ -436,9 +408,6 @@ fn stored(column: &Option<String>) -> Option<String> {
 /// from the columns we control.
 fn build_ppob_receipt_data(
     store: &store_info::Model,
-    transaction: &transactions::Model,
-    cashier_name: &str,
-    date_time: &str,
     item: &transaction_items::Model,
     provider_response: Option<&str>,
 ) -> PpobReceiptData {
@@ -472,11 +441,6 @@ fn build_ppob_receipt_data(
 
     PpobReceiptData {
         store_name: store.name.clone(),
-        store_address: store.address.clone(),
-        store_phone: store.phone.clone(),
-        receipt_number: transaction.receipt_number.clone(),
-        date_time: date_time.to_string(),
-        cashier_name: cashier_name.to_string(),
         service_type: item.service_type.clone().unwrap_or_default(),
         flag_id: item.ppob_flag_id.clone(),
         product_name: Some(item.product_name.clone()),
@@ -504,7 +468,6 @@ fn build_ppob_receipt_data(
         reference_number: provider_field(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
         payment_code: stored(&item.ppob_payment_code)
             .or_else(|| provider_field(&raw, &["payment_code", "raw_paymentcode"])),
-        service_description: provider_field(&raw, &["description", "plu_desc"]),
         provider_description: provider_field(&raw, &["igr_desc"]),
         provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
         amount: if bill_amount > 0.0 {
@@ -517,7 +480,6 @@ fn build_ppob_receipt_data(
         // What the customer actually handed over for this line, discounts and
         // our markup already in it.
         grand_total: item.net_subtotal,
-        footer_text: provider_field(&raw, &["footer", "footer_text"]),
     }
 }
 

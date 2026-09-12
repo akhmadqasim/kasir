@@ -9,15 +9,17 @@
 //! `invoice_string`), and when they do the honest thing is to print it verbatim
 //! rather than re-derive it from fields whose names change per service.
 //!
-//! This module therefore wraps our own header and totals around that block,
-//! re-lays out any provider line too long for the paper, and synthesises a
-//! minimal block from the fields we did capture when the provider sent no
-//! preformatted text at all.
+//! So the struk is the provider's slip with the store's name over it and three
+//! total lines cut into it, and nothing else of ours: no receipt number, no
+//! cashier, no heading we wrote. This module re-lays out any provider line too
+//! long for the paper, splits their table from their closing prose so our totals
+//! can sit between the two, and synthesises a minimal block from the fields we
+//! did capture when the provider sent no slip at all.
 //!
 //! It also carries a handful of judgements about what the provider *meant* —
 //! that a twenty-digit run of digits is a PLN token and a reference number is
-//! not, that what BPJS returns as a serial is the payer's phone, that a fused
-//! `TerdekatDownload` was two words before their wrapper got to it. They live
+//! not, that a fused `TerdekatDownload` was two words before their own wrapper
+//! got to it, that a slip's table ends at its last labelled line. They live
 //! here rather than in the service layer because each one is a decision about
 //! what belongs on the paper, and because the fixtures that justify them are the
 //! ones in this file's tests.
@@ -25,12 +27,7 @@
 //! Pure and side-effect free: it takes a [`PpobReceiptData`] and returns lines.
 //! Loading that struct out of the database is `services::receipt`'s job.
 
-use std::borrow::Cow;
-
-use super::receipt::{
-    center_text, columns, format_rupiah, push_sale_details, push_store_banner, two_col_text,
-    ReceiptTextLine,
-};
+use super::receipt::{center_text, columns, format_rupiah, two_col_text, ReceiptTextLine};
 
 /// A field worth printing: present, and something other than whitespace.
 ///
@@ -47,19 +44,6 @@ fn meaningful(value: Option<&str>) -> Option<&str> {
     non_empty(value).filter(|text| *text != "-" && *text != "0")
 }
 
-/// An Indonesian mobile number: `08` or `62` and ten to thirteen digits in all.
-///
-/// A twenty-digit PLN token cannot be mistaken for one, and neither can a pulsa
-/// serial, which is longer and mixes in letters.
-fn looks_like_phone_number(value: &str) -> bool {
-    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
-    if digits.len() != value.chars().filter(|c| !c.is_whitespace()).count() {
-        return false;
-    }
-
-    (10..=13).contains(&digits.len()) && (digits.starts_with("08") || digits.starts_with("62"))
-}
-
 /// Width of the key column in the fallback block. Sized to the widest key we
 /// emit, `NO PELANGGAN`, so a normal-length value still fits on 32 columns —
 /// the Mitra app's own 17-column keys leave too little room for ours.
@@ -68,12 +52,9 @@ const KEY_WIDTH: usize = 12;
 /// Everything a PPOB struk needs. Every provider-sourced field is optional
 /// because every one of them is missing for some service.
 pub struct PpobReceiptData {
+    /// The only thing on the struk that says where it was printed, exactly as
+    /// Mitra's own slip carries nothing but `CAHAYA513 MM`.
     pub store_name: String,
-    pub store_address: Option<String>,
-    pub store_phone: Option<String>,
-    pub receipt_number: String,
-    pub date_time: String,
-    pub cashier_name: String,
     /// `pln`, `pulsa`, `data`, `pdam`, `bpjs`, `pp`, `transfer`, `emoney`.
     pub service_type: String,
     /// PLN only: `"0"` prepaid (token), `"1"` postpaid (bill).
@@ -86,10 +67,6 @@ pub struct PpobReceiptData {
     pub reference_number: Option<String>,
     /// Mitra's `payment_code`, e.g. `L14337486261-1-260910124538`.
     pub payment_code: Option<String>,
-    /// The provider's `description`, e.g. `Telkom Indihome - 161312001945`.
-    /// The part before the dash is the biller a payment-point struk is titled
-    /// after; there is no other field that names it.
-    pub service_description: Option<String>,
     /// The provider's `igr_desc`, e.g. `Pre paid dengan nomor meter`.
     pub provider_description: Option<String>,
     /// The provider's preformatted key/value block, printed verbatim.
@@ -103,8 +80,6 @@ pub struct PpobReceiptData {
     /// What the customer handed us for this line. The difference from `total`
     /// is our own margin, or a discount when the sale carried one.
     pub grand_total: f64,
-    /// Free text the provider wants at the bottom (call centre, etc).
-    pub footer_text: Option<String>,
 }
 
 impl PpobReceiptData {
@@ -158,81 +133,85 @@ impl PpobReceiptData {
         let digits: String = serial.chars().filter(char::is_ascii_digit).collect();
         (digits.len() == 20).then_some(digits)
     }
-
-    /// The serial number, when there is one worth printing.
-    ///
-    /// BPJS answers with the payer's mobile number in both `serial_number` and
-    /// `token_number` — `08125520208`, the number on the account — which is not
-    /// a serial and is not proof of anything. Pulsa and data return a real SN,
-    /// so the block is worth keeping for them.
-    fn printable_serial(&self) -> Option<&str> {
-        if self.service_type == "bpjs" {
-            return None;
-        }
-
-        let serial = meaningful(self.serial_number.as_deref())?;
-        if looks_like_phone_number(serial) {
-            return None;
-        }
-        if meaningful(self.customer_id.as_deref()) == Some(serial) {
-            return None;
-        }
-
-        Some(serial)
-    }
-
-    /// The heading, for the services whose `receipt_text` does not carry one.
-    fn title(&self) -> Cow<'static, str> {
-        match self.service_type.as_str() {
-            "pln" if self.is_pln_prepaid() => Cow::Borrowed("STRUK PEMBELIAN LISTRIK PRABAYAR"),
-            "pln" => Cow::Borrowed("STRUK PEMBAYARAN TAGIHAN LISTRIK"),
-            "pulsa" => Cow::Borrowed("STRUK PEMBELIAN PULSA"),
-            "data" => Cow::Borrowed("STRUK PEMBELIAN PAKET DATA"),
-            "pdam" => Cow::Borrowed("STRUK PEMBAYARAN PDAM"),
-            "bpjs" => Cow::Borrowed("STRUK PEMBAYARAN BPJS KESEHATAN"),
-            "transfer" => Cow::Borrowed("STRUK TRANSFER UANG"),
-            "emoney" => Cow::Borrowed("STRUK TOP UP E-MONEY"),
-            // Payment point is a hundred billers behind one service code, so the
-            // heading has to come from the transaction: `Telkom Indihome -
-            // 161312001945` is titled after the half before the dash.
-            _ => match self.biller() {
-                Some(biller) => Cow::Owned(format!("STRUK PEMBAYARAN {}", biller)),
-                None => Cow::Borrowed("STRUK PEMBAYARAN"),
-            },
-        }
-    }
-
-    fn biller(&self) -> Option<&str> {
-        let described = meaningful(self.service_description.as_deref())
-            .map(|desc| desc.split(" - ").next().unwrap_or(desc));
-
-        described.or_else(|| meaningful(self.product_name.as_deref()))
-    }
 }
 
-/// Render a PPOB struk. `paper_width_mm` picks the column count the same way
-/// [`super::receipt::format_receipt_text`] does: 32 for 58mm, 42 for 80mm.
+/// Render a PPOB struk: the store's name, the token if there is one, the
+/// provider's own slip, our totals, and the provider's closing lines.
+///
+/// The shape is the Mitra app's, deliberately. A customer who has taken one of
+/// their slips to a PLN counter before should not have to work out that this is
+/// the same document — so nothing of ours goes on it beyond the store name and
+/// the three total lines. No receipt number, no cashier, no heading we wrote, no
+/// rules boxing it in. `paper_width_mm` picks the column count through
+/// [`super::receipt::columns`].
 pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
     let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
-    // The provider's block, folded back into whole lines, is needed twice: once
-    // to print, and once to know where its labels sit so ours can line up.
-    let block = non_empty(data.provider_receipt_text.as_deref()).map(unfold_provider_text);
+    // Bold is double height on this printer, which is what the app's own
+    // letterhead looks like.
+    lines.push(ReceiptTextLine::bold(center_text(&data.store_name, cpl)));
+    lines.push(ReceiptTextLine::plain(String::new()));
 
-    push_header(&mut lines, data, cpl);
-    push_serial_block(&mut lines, data, cpl);
-    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-    let layout = LabelLayout::of(block.as_deref().unwrap_or(&[]), cpl);
+    push_token_block(&mut lines, data, cpl);
 
-    push_detail_block(&mut lines, data, block.as_deref(), layout, cpl);
-    if block.is_some() {
-        push_reference_block(&mut lines, data, layout, cpl);
+    let (body, footer) = match non_empty(data.provider_receipt_text.as_deref()) {
+        Some(text) => split_body_footer(unfold_provider_text(text), cpl),
+        None => (Vec::new(), Vec::new()),
+    };
+
+    if body.is_empty() {
+        push_fallback_body(&mut lines, data, cpl);
+    } else {
+        lines.extend(layout_block(&body, repad_width(&body, cpl), cpl));
     }
+
     push_totals(&mut lines, data, cpl);
-    push_footer(&mut lines, data, cpl);
+
+    // Only the closing prose gets tidied: the pipes flattened and the word the
+    // provider's own wrapper fused put back together. The table above is theirs
+    // and goes out as they wrote it.
+    for line in footer {
+        for segment in expand_pipe_segments(&line) {
+            for row in wrap_words(&unglue_prose(&segment), cpl) {
+                lines.push(ReceiptTextLine::plain(row));
+            }
+        }
+    }
 
     lines
+}
+
+/// Split the provider's slip where its table of figures ends.
+///
+/// Everything up to and including the last `label : value` line is the body,
+/// which belongs above our totals; whatever follows is the closing prose — the
+/// call-centre line, the app's own advertisement, the trace stamp — which
+/// belongs below them, exactly where Mitra puts it. A slip with no key/value
+/// line at all is all body and no footer.
+fn split_body_footer(block: Vec<String>, cpl: usize) -> (Vec<String>, Vec<String>) {
+    // The same test the layout uses, so a line the table prints as a labelled
+    // one is a line the split counts. PLN's pipe-delimited footer has a colon
+    // fifty-five columns in and is prose, not a label, by both.
+    let last_pair = block
+        .iter()
+        .rposition(|line| split_pair(line, cpl).is_some());
+
+    let Some(end) = last_pair else {
+        return (block, Vec::new());
+    };
+
+    let mut body = block;
+    let footer = body.split_off(end + 1);
+
+    // Blank lines inside the table separate its sections and are kept; blank
+    // lines under it are just the provider's own spacing, and paper costs money.
+    let footer = footer
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+
+    (body, footer)
 }
 
 /// A provider line long enough to have been wrapped starts its continuation
@@ -247,48 +226,32 @@ const MIN_CONTINUATION_SPACES: usize = 10;
 /// drops the padding.
 const CONTINUATION_INDENT: usize = 18;
 
-fn push_header(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    push_store_banner(
-        lines,
-        &data.store_name,
-        data.store_address.as_deref(),
-        data.store_phone.as_deref(),
-        cpl,
-    );
-    push_sale_details(
-        lines,
-        &data.receipt_number,
-        &data.date_time,
-        &data.cashier_name,
-        cpl,
-    );
-}
-
-/// The token (PLN prepaid) or the serial number (everything else).
+/// The PLN token, and only for PLN prepaid.
 ///
-/// A PLN token is the whole reason the customer keeps the paper — they type
-/// twenty digits into a meter on a wall — so it prints in double-size
-/// characters, grouped in fours. Every other service's serial is a reference
-/// nobody retypes under pressure, so bold at normal size is enough.
-fn push_serial_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    if let Some(token) = data.token().filter(|_| data.is_pln_prepaid()) {
-        lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-        lines.push(ReceiptTextLine::plain(center_text("Stroom / Token", cpl)));
-        // Double-size characters are twice as wide, so they fit half the columns.
-        for row in group_token(&token, cpl / 2) {
-            lines.push(ReceiptTextLine::double(center_text(&row, cpl / 2)));
-        }
-        return;
-    }
-
-    let Some(serial) = data.printable_serial() else {
+/// It is the whole reason the customer keeps the paper — twenty digits to type
+/// into a meter on a wall — so it prints double width, grouped in fours, under
+/// the label the Mitra app uses. No other service gets a block here: what they
+/// return as a serial is a reference nobody retypes, or the payer's own phone
+/// number, and Mitra prints neither.
+fn push_token_block(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+    let Some(token) = data.token().filter(|_| data.is_pln_prepaid()) else {
         return;
     };
 
-    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-    lines.push(ReceiptTextLine::plain(center_text("No. Seri", cpl)));
-    for row in wrap_words(serial, cpl) {
-        lines.push(ReceiptTextLine::bold(center_text(&row, cpl)));
+    lines.push(ReceiptTextLine::plain(center_text("Stroom / Token", cpl)));
+    // Double-width characters take two columns each, so they fit half of them.
+    for row in group_token(&token, cpl / 2) {
+        lines.push(ReceiptTextLine::double(center_text(&row, cpl / 2)));
+    }
+    lines.push(ReceiptTextLine::plain(String::new()));
+}
+
+/// What we can print when the provider sent no slip of its own.
+fn push_fallback_body(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
+    for (key, value) in fallback_fields(data) {
+        for line in label_value_lines(key, &value, KEY_WIDTH, cpl) {
+            lines.push(ReceiptTextLine::plain(line));
+        }
     }
 }
 
@@ -338,11 +301,7 @@ fn unfold_provider_text(text: &str) -> Vec<String> {
         if blank && (out.is_empty() || out.last().is_some_and(|last| last.trim().is_empty())) {
             continue;
         }
-        out.extend(
-            expand_pipe_segments(&line)
-                .into_iter()
-                .map(|segment| unglue_prose(&segment)),
-        );
+        out.push(line);
     }
     while out.last().is_some_and(|last| last.trim().is_empty()) {
         out.pop();
@@ -440,37 +399,6 @@ fn expand_pipe_segments(line: &str) -> Vec<String> {
     vec![joined]
 }
 
-/// The provider's own block if they sent one, our reconstruction otherwise.
-///
-/// PLN's text already opens with its own heading, so ours would be the second
-/// one on the paper; the other services send no heading at all and get one.
-fn push_detail_block(
-    lines: &mut Vec<ReceiptTextLine>,
-    data: &PpobReceiptData,
-    block: Option<&[String]>,
-    layout: LabelLayout,
-    cpl: usize,
-) {
-    let Some(block) = block else {
-        push_title(lines, data, cpl);
-        for (key, value) in fallback_fields(data) {
-            for line in label_value_lines(key, &value, KEY_WIDTH, cpl) {
-                lines.push(ReceiptTextLine::plain(line));
-            }
-        }
-        // `fallback_fields` is the whole block in this case, reference and admin
-        // fee included, so there is nothing left for `push_reference_block` to
-        // add and no way for it to print either of them twice.
-        return;
-    };
-
-    if !block.iter().any(|line| is_title_line(line)) {
-        push_title(lines, data, cpl);
-    }
-
-    lines.extend(layout_block(block, layout, cpl));
-}
-
 /// A `LABEL : VALUE` line, split into its parts.
 ///
 /// The colon has to be early enough in the line to plausibly end a label, and
@@ -499,7 +427,7 @@ fn split_pair(line: &str, cpl: usize) -> Option<(&str, usize, &str)> {
 ///
 /// A value that still does not fit goes on its own indented lines rather than
 /// in a narrow ravine down the right-hand side.
-fn layout_block(block: &[String], layout: LabelLayout, cpl: usize) -> Vec<ReceiptTextLine> {
+fn layout_block(block: &[String], repad: Option<usize>, cpl: usize) -> Vec<ReceiptTextLine> {
     let mut out = Vec::with_capacity(block.len());
     for line in block {
         // A key the provider had no value for is a colon and nothing else. On a
@@ -508,23 +436,14 @@ fn layout_block(block: &[String], layout: LabelLayout, cpl: usize) -> Vec<Receip
             continue;
         }
 
-        // Weight is decided by the line the provider sent, not by the rows it
-        // was cut into, so a heading that has to wrap stays bold throughout.
-        let emphasise = is_title_line(line);
-        let rows = match (layout, split_pair(line, cpl)) {
-            (LabelLayout::Repad(width), Some((label, _, value))) => {
-                label_value_lines(label, value, width, cpl)
-            }
+        // The provider's slip is printed as the provider wrote it, its own
+        // heading included and in the same weight as the rest of it.
+        let rows = match (repad, split_pair(line, cpl)) {
+            (Some(width), Some((label, _, value))) => label_value_lines(label, value, width, cpl),
             _ => wrap_line(line, cpl),
         };
 
-        out.extend(rows.into_iter().map(|row| {
-            if emphasise {
-                ReceiptTextLine::bold(row)
-            } else {
-                ReceiptTextLine::plain(row)
-            }
-        }));
+        out.extend(rows.into_iter().map(ReceiptTextLine::plain));
     }
 
     out
@@ -550,57 +469,30 @@ fn label_value_lines(label: &str, value: &str, width: usize, cpl: usize) -> Vec<
     out
 }
 
-/// Where the labels of a block sit, and whether we chose that or the provider did.
-#[derive(Clone, Copy)]
-enum LabelLayout {
-    /// The provider's own column, left exactly as it came.
-    AsSent(usize),
-    /// Our column, because the provider's wasted too much of the paper.
-    Repad(usize),
-}
+/// The label column to re-pad a block to, or `None` to leave it as it came.
+///
+/// Mitra pads its labels to a column of its own choosing — 19 for PDAM, 18 for
+/// BPJS — which on 58mm paper leaves eleven or twelve columns for the value and
+/// breaks `Kota Samarinda` across two lines. Where it padded wider than its own
+/// longest label ever needed, and wider than we would have chosen, the column
+/// comes back in to the longest label — never narrower than that, since a label
+/// that did not fit would push its own colon out and take the alignment with it.
+/// PLN prepaid pads to 16 for a longest label of 15, so it is left alone.
+fn repad_width(block: &[String], cpl: usize) -> Option<usize> {
+    let target = if cpl >= 41 { 18 } else { 14 };
+    let pairs: Vec<(&str, usize, &str)> = block
+        .iter()
+        .filter_map(|line| split_pair(line, cpl))
+        .collect();
 
-impl LabelLayout {
-    fn of(block: &[String], cpl: usize) -> Self {
-        let target = if cpl >= 41 { 18 } else { 14 };
-        let pairs: Vec<(&str, usize, &str)> = block
-            .iter()
-            .filter_map(|line| split_pair(line, cpl))
-            .collect();
+    let column = pairs.iter().map(|(_, column, _)| *column).max()?;
+    let widest = pairs
+        .iter()
+        .map(|(label, ..)| label.chars().count())
+        .max()
+        .unwrap_or(0);
 
-        let Some(column) = pairs.iter().map(|(_, column, _)| *column).max() else {
-            return Self::AsSent(KEY_WIDTH);
-        };
-        let widest = pairs
-            .iter()
-            .map(|(label, ..)| label.chars().count())
-            .max()
-            .unwrap_or(0);
-
-        // Re-lay out only when the provider padded wider than its own longest
-        // label ever needed, and wider than the column we would have chosen.
-        // PLN prepaid pads to 16 for a longest label of 15 and is left exactly
-        // as it came; PDAM pads to 19 for a longest of 13.
-        //
-        // The new column is the longest label itself, never narrower: a label
-        // that did not fit would push its own colon out and take the block's
-        // alignment — the very thing being fixed — with it.
-        if column > widest + 1 && column > target {
-            Self::Repad(widest)
-        } else {
-            Self::AsSent(column)
-        }
-    }
-
-    /// The column our own added lines should line up with.
-    fn column(self) -> usize {
-        match self {
-            Self::AsSent(column) | Self::Repad(column) => column,
-        }
-    }
-}
-
-fn is_title_line(line: &str) -> bool {
-    line.trim_start().starts_with("STRUK ")
+    (column > widest + 1 && column > target).then_some(widest)
 }
 
 /// `Periode         : ` — a key, a colon, and nothing after it. A separator such
@@ -609,55 +501,6 @@ fn is_empty_pair(line: &str) -> bool {
     match line.split_once(':') {
         Some((key, value)) => !key.trim().is_empty() && value.trim().is_empty(),
         None => false,
-    }
-}
-
-fn push_title(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    for wrapped in wrap_words(&data.title(), cpl) {
-        lines.push(ReceiptTextLine::bold(wrapped));
-    }
-}
-
-/// What the provider's own block leaves out.
-///
-/// PLN prints its admin fee and its reference inside `receipt_text`; PDAM, BPJS
-/// and payment point print neither, and a struk with no reference on it is no
-/// use at the counter when the customer comes back to query the payment.
-fn push_reference_block(
-    lines: &mut Vec<ReceiptTextLine>,
-    data: &PpobReceiptData,
-    layout: LabelLayout,
-    cpl: usize,
-) {
-    let text = data.provider_receipt_text.as_deref().unwrap_or("");
-    // Line our labels up with the block above, whether that column is the
-    // provider's or the one we chose for it, so the two read as one table.
-    let key_width = layout.column();
-    let upper = text.to_uppercase();
-    let shows_admin = upper.contains("ADMIN");
-    let shows_reference = upper.contains("NO REF");
-
-    let mut extras: Vec<(&str, String)> = Vec::new();
-    if !shows_admin && data.admin_fee > 0.0 {
-        extras.push(("Admin Fee", format!("Rp {}", format_rupiah(data.admin_fee))));
-    }
-    // Both of these hang off the same question — did the provider already give
-    // the customer something to quote back? Where it did, ours would be a second
-    // number under a near-identical label, and the shop can find the payment
-    // from the provider's own reference anyway. PLN is the only one that does.
-    if !shows_reference {
-        if let Some(reference) = meaningful(data.reference_number.as_deref()) {
-            extras.push(("No. Ref", reference.to_string()));
-        }
-        if let Some(code) = meaningful(data.payment_code.as_deref()) {
-            extras.push(("Kode Bayar", code.to_string()));
-        }
-    }
-
-    for (key, value) in extras {
-        for line in label_value_lines(key, &value, key_width, cpl) {
-            lines.push(ReceiptTextLine::plain(line));
-        }
     }
 }
 
@@ -725,29 +568,6 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
         &format!("Rp {}", format_rupiah(data.grand_total)),
         cpl,
     )));
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
-}
-
-fn push_footer(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: usize) {
-    let footer = non_empty(data.footer_text.as_deref());
-
-    let Some(footer) = footer else {
-        lines.push(ReceiptTextLine::plain(center_text(
-            "Simpan struk ini sebagai",
-            cpl,
-        )));
-        lines.push(ReceiptTextLine::plain(center_text(
-            "bukti pembayaran yang sah",
-            cpl,
-        )));
-        return;
-    };
-
-    for raw in footer.lines() {
-        for wrapped in wrap_line(raw.trim(), cpl) {
-            lines.push(ReceiptTextLine::plain(center_text(&wrapped, cpl)));
-        }
-    }
 }
 
 /// Split a PLN token into groups of four digits joined by dashes, packed into
@@ -877,11 +697,6 @@ mod tests {
     fn base() -> PpobReceiptData {
         PpobReceiptData {
             store_name: "Cahaya513 Mini Mart".to_string(),
-            store_address: Some("Jl. Raya No. 1".to_string()),
-            store_phone: Some("08123456789".to_string()),
-            receipt_number: "TRX-20260912-0007".to_string(),
-            date_time: "12/09/2026 14:30".to_string(),
-            cashier_name: "Ahmad".to_string(),
             service_type: "pln".to_string(),
             flag_id: None,
             product_name: None,
@@ -890,14 +705,12 @@ mod tests {
             serial_number: None,
             reference_number: None,
             payment_code: None,
-            service_description: None,
             provider_description: None,
             provider_receipt_text: None,
             amount: 0.0,
             admin_fee: 0.0,
             total: 0.0,
             grand_total: 0.0,
-            footer_text: None,
         }
     }
 
@@ -909,7 +722,6 @@ mod tests {
             serial_number: Some("1111 2222 3333 4444 5555".to_string()),
             reference_number: Some("13514299".to_string()),
             payment_code: Some("L14300000001-1-260910124538".to_string()),
-            service_description: Some("PLN - 14300000001".to_string()),
             provider_description: Some("Pre paid dengan nomor meter".to_string()),
             provider_receipt_text: Some(PLN_PREPAID_TEXT.to_string()),
             amount: 20000.0,
@@ -927,7 +739,6 @@ mod tests {
             serial_number: Some(String::new()),
             reference_number: Some("13516345".to_string()),
             payment_code: Some("L231000000002-2-260911101150".to_string()),
-            service_description: Some("PLN - 231000000002".to_string()),
             provider_description: Some("Post paid".to_string()),
             provider_receipt_text: Some(PLN_POSTPAID_TEXT.to_string()),
             amount: 69729.0,
@@ -945,7 +756,6 @@ mod tests {
             serial_number: Some("-".to_string()),
             reference_number: Some("1212031".to_string()),
             payment_code: Some("A1100001-80-260911101312".to_string()),
-            service_description: Some("PDAM - 1100001".to_string()),
             provider_receipt_text: Some(PDAM_TEXT.to_string()),
             amount: 69163.0,
             admin_fee: 2500.0,
@@ -962,7 +772,6 @@ mod tests {
             serial_number: Some("08120000001".to_string()),
             reference_number: Some("E86846143A9C74D4".to_string()),
             payment_code: Some("B01100000001-1-260911083601".to_string()),
-            service_description: Some("BPJSKES - 01100000001".to_string()),
             provider_description: Some("BPJSKES".to_string()),
             provider_receipt_text: Some(BPJS_TEXT.to_string()),
             amount: 150000.0,
@@ -980,7 +789,6 @@ mod tests {
             serial_number: Some("0".to_string()),
             reference_number: Some("4323384".to_string()),
             payment_code: Some("PP161300000001-354-260911094954".to_string()),
-            service_description: Some("Telkom Indihome - 161300000001".to_string()),
             provider_receipt_text: Some(PAYMENT_POINT_TEXT.to_string()),
             amount: 316350.0,
             admin_fee: 3000.0,
@@ -1062,10 +870,10 @@ mod tests {
             .any(|line| line.contains("11002500AAA1A1111AA111AA1111AA11")));
     }
 
-    /// Mitra's own text opens with `STRUK PEMBELIAN LISTRIK PRABAYAR`. Printing
-    /// ours as well would put two headings on one slip.
+    /// PLN's own text opens with its heading, and it prints as the provider
+    /// wrote it — once, in the body, at body weight.
     #[test]
-    fn a_provider_title_is_not_doubled_up_and_prints_bold() {
+    fn the_providers_own_heading_prints_once_and_unchanged() {
         let lines = format_ppob_receipt(&pln_prepaid(), 58);
 
         assert_eq!(
@@ -1078,47 +886,55 @@ mod tests {
             .iter()
             .find(|line| line.text.contains("STRUK PEMBELIAN"))
             .expect("title printed");
-        assert!(title.bold);
-    }
-
-    /// PDAM, BPJS and payment point send no heading at all.
-    #[test]
-    fn services_without_a_provider_title_get_ours() {
-        assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("STRUK PEMBAYARAN PDAM"));
         assert!(
-            text_of(&format_ppob_receipt(&bpjs(), 58)).contains("STRUK PEMBAYARAN BPJS KESEHATAN")
+            !title.bold,
+            "the provider's heading is not ours to embolden"
         );
-        // A hundred billers hide behind one payment-point code, so the heading
-        // is taken from the transaction's own description.
-        assert!(flat(&format_ppob_receipt(&payment_point(), 58))
-            .contains("STRUK PEMBAYARAN Telkom Indihome"));
     }
 
+    /// PDAM, BPJS and payment point send no heading, and we do not invent one:
+    /// the struk is the provider's document, and a heading we wrote would be a
+    /// claim about it that the provider never made.
     #[test]
-    fn a_payment_point_with_no_description_falls_back_to_a_bare_heading() {
-        let mut data = payment_point();
-        data.service_description = None;
-        data.product_name = None;
-        let text = text_of(&format_ppob_receipt(&data, 58));
-
-        assert!(text.contains("STRUK PEMBAYARAN\n"));
+    fn no_heading_of_ours_is_added_to_a_service_that_sent_none() {
+        for data in [pdam(), bpjs(), payment_point()] {
+            let text = text_of(&format_ppob_receipt(&data, 58));
+            assert!(
+                !text.contains("STRUK"),
+                "{} got a heading we wrote: {}",
+                data.service_type,
+                text
+            );
+        }
     }
 
-    /// The provider's leading blank lines, and its double blank before the
-    /// footer, are feed nobody paid for.
+    /// Two blank lines on the whole struk: one under the store name, one under
+    /// the token. The provider's own spacing inside its table survives; its
+    /// spacing around the closing prose does not, and paper costs money.
     #[test]
-    fn leading_and_repeated_blank_lines_are_dropped() {
+    fn blank_lines_are_spent_only_where_the_layout_asks_for_them() {
         let lines = format_ppob_receipt(&pln_prepaid(), 58);
-        let body: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+        let rows: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
 
-        let title = body
-            .iter()
-            .position(|line| line.contains("STRUK PEMBELIAN"))
-            .expect("title printed");
-        assert!(!body[title - 1].trim().is_empty(), "blank above the title");
-        assert!(!body
-            .windows(2)
-            .any(|pair| pair[0].trim().is_empty() && pair[1].trim().is_empty()));
+        assert!(rows[1].trim().is_empty(), "blank under the store name");
+        assert!(
+            !rows
+                .windows(2)
+                .any(|pair| pair[0].trim().is_empty() && pair[1].trim().is_empty()),
+            "no two blanks in a row"
+        );
+
+        // A service with no token spends no blank on one: PDAM's body starts
+        // immediately, and the blanks it does have are the provider's own,
+        // inside its table.
+        let water = format_ppob_receipt(&pdam(), 58);
+        assert!(
+            !water[2].text.trim().is_empty(),
+            "no token, no blank for it"
+        );
+        // The three it does have are the provider's own, between the sections
+        // of its table, and every one of them separates two printed lines.
+        assert_eq!(water.iter().filter(|line| line.text.is_empty()).count(), 3);
     }
 
     #[test]
@@ -1138,46 +954,20 @@ mod tests {
     /// mean the same thing and none of them belongs on paper.
     #[test]
     fn the_placeholders_mitra_uses_for_no_token_print_nothing() {
-        for data in [pln_postpaid(), pdam(), payment_point()] {
+        // Pulsa is here for the other half of it: a real serial, but not PLN, so
+        // still no token block.
+        for data in [pln_postpaid(), pdam(), payment_point(), pulsa()] {
             let text = text_of(&format_ppob_receipt(&data, 58));
             assert!(!text.contains("Stroom / Token"), "{}", data.service_type);
-            assert!(!text.contains("No. Seri"), "{}", data.service_type);
         }
     }
 
-    /// Pulsa returns a serial that really is one, so it prints — bold, at normal
-    /// size, since nobody retypes it into a meter on a wall.
+    /// What BPJS returns as a serial is the payer's own mobile number, and the
+    /// struk has no serial block for it to go in. Nothing of the sort reaches
+    /// the paper.
     #[test]
-    fn a_real_serial_prints_bold_at_normal_size() {
-        let lines = format_ppob_receipt(&pulsa(), 58);
-        let serial = lines
-            .iter()
-            .find(|line| line.text.contains("SN0001234567890123"))
-            .expect("serial printed");
-
-        assert!(serial.bold);
-        assert_eq!(serial.size, LineSize::Normal);
-        assert!(text_of(&lines).contains("No. Seri"));
-    }
-
-    /// What BPJS returns as a serial is the payer's mobile number — it matches
-    /// the phone on the account — and printing it under `No. Seri` tells the
-    /// customer their own number back while implying it proves something.
-    #[test]
-    fn a_phone_number_dressed_as_a_serial_is_not_printed() {
-        let text = text_of(&format_ppob_receipt(&bpjs(), 58));
-        assert!(!text.contains("No. Seri"));
-        assert!(!text.contains("08120000001"));
-
-        // Not just BPJS: any service answering with a mobile number.
-        let mut phoned = pulsa();
-        phoned.serial_number = Some("081200000001".to_string());
-        assert!(!text_of(&format_ppob_receipt(&phoned, 58)).contains("No. Seri"));
-
-        // And not a serial that merely happens to be numeric.
-        let mut numeric = pulsa();
-        numeric.serial_number = Some("770012345678901".to_string());
-        assert!(text_of(&format_ppob_receipt(&numeric, 58)).contains("No. Seri"));
+    fn the_payers_phone_number_never_reaches_the_paper() {
+        assert!(!text_of(&format_ppob_receipt(&bpjs(), 58)).contains("08120000001"));
     }
 
     fn pulsa() -> PpobReceiptData {
@@ -1188,7 +978,6 @@ mod tests {
             serial_number: Some("SN0001234567890123".to_string()),
             reference_number: Some("4323384".to_string()),
             payment_code: Some("TS25-1-260911094954".to_string()),
-            service_description: Some("PULSA - 081200000002".to_string()),
             amount: 25000.0,
             admin_fee: 0.0,
             total: 25000.0,
@@ -1208,31 +997,6 @@ mod tests {
         assert!(!text.contains('"'));
         assert!(text.contains("Informasi Hubungi Call Center"));
         assert!(text.contains("Download PLN Mobile"));
-    }
-
-    /// PLN prints its own admin fee and reference; the others print neither, and
-    /// a struk with no reference is no use when the customer comes back to ask
-    /// about the payment.
-    #[test]
-    fn only_the_services_that_omit_them_get_our_reference_lines() {
-        // PLN prints its own admin fee and its own reference, so ours would be
-        // a second line saying the same thing — or worse, a different number
-        // under the same word. The payment code no service prints, and it is
-        // the one the shop quotes back to Mitra.
-        let pln = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
-        assert!(!pln.contains("Admin Fee"));
-        assert!(!pln.contains("No. Ref          :"));
-        assert!(!pln.contains("Kode Bayar"));
-
-        // Our labels line up with the block above them, at the column the block
-        // was laid out to — 13 for PDAM, pulled in from the provider's 19.
-        let water = text_of(&format_ppob_receipt(&pdam(), 58));
-        assert!(water.contains("Admin Fee    : Rp 2.500"));
-        assert!(water.contains("No. Ref      : 1212031"));
-        assert!(water.contains(
-            "Kode Bayar   :
-  A1100001-80-260911101312"
-        ));
     }
 
     /// `amount` from the provider already includes the admin fee — 23.500 is
@@ -1317,16 +1081,124 @@ mod tests {
         assert_eq!(rows[3], "                  WIJAYA");
     }
 
+    /// The store's name is the only thing on the struk that came from us, just
+    /// as Mitra's own slip carries nothing but `CAHAYA513 MM`. It is centred and
+    /// bold, which this printer renders double height.
     #[test]
-    fn the_header_carries_the_shop_and_the_sale() {
-        let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
+    fn the_store_name_is_all_that_identifies_us() {
+        let lines = format_ppob_receipt(&pln_prepaid(), 58);
 
-        assert!(text.contains("Cahaya513 Mini Mart"));
-        assert!(text.contains("Jl. Raya No. 1"));
-        assert!(text.contains("Telp: 08123456789"));
-        assert!(text.contains("TRX-20260912-0007"));
-        assert!(text.contains("12/09/2026 14:30"));
-        assert!(text.contains("Ahmad"));
+        assert_eq!(lines[0].text, center_text("Cahaya513 Mini Mart", 31));
+        assert!(lines[0].bold);
+        assert_eq!(lines[0].size, LineSize::Normal);
+
+        // None of the furniture a sales receipt carries.
+        let text = text_of(&lines);
+        for absent in [
+            "Telp:",
+            "=",
+            "Cahaya513 Mini Mart
+Cahaya",
+        ] {
+            assert!(!text.contains(absent), "{} is on the struk", absent);
+        }
+    }
+
+    /// The provider's table ends at its last `label : value` line; everything
+    /// after it is closing prose and belongs under our totals, where Mitra puts
+    /// it. The trace stamp is part of that prose.
+    #[test]
+    fn the_provider_slip_is_split_at_its_last_labelled_line() {
+        let (body, footer) = split_body_footer(unfold_provider_text(PLN_PREPAID_TEXT), 31);
+
+        assert_eq!(
+            body.last().map(String::as_str),
+            Some("ADMIN BANK      : Rp 3.500")
+        );
+        assert!(body.iter().any(|line| line.contains("STRUK PEMBELIAN")));
+        assert!(body.iter().all(|line| !line.contains("Informasi Hubungi")));
+
+        assert!(footer[0].starts_with("Informasi Hubungi"));
+        assert!(footer.iter().any(|line| line.contains("[I001IGR1-")));
+        assert!(footer.iter().all(|line| !line.trim().is_empty()));
+    }
+
+    /// Payment point ends its slip with three unlabelled lines of bill detail,
+    /// so the rule — body ends at the last `label : value` line — puts them
+    /// below our totals rather than above.
+    ///
+    /// Pinned rather than fixed: the split is specified this way, and the three
+    /// lines are still on the paper in the provider's own order. Whether
+    /// `--Detail Tagihan 1--` should be dragged back above `Total` is a question
+    /// about Mitra's own layout, not about this function.
+    #[test]
+    fn payment_point_bill_detail_falls_below_the_totals() {
+        let rows: Vec<String> = format_ppob_receipt(&payment_point(), 58)
+            .iter()
+            .map(|line| line.text.clone())
+            .collect();
+
+        let totals = rows
+            .iter()
+            .position(|row| row.starts_with("Grand Total"))
+            .expect("totals printed");
+        let detail = rows
+            .iter()
+            .position(|row| row.contains("Detail Tagihan"))
+            .expect("bill detail printed");
+
+        assert!(detail > totals, "the specified split puts detail last");
+        assert!(rows.iter().any(|row| row.contains("Nilai")));
+    }
+
+    /// A slip with no key/value line at all — payment point writes `Nilai
+    /// 316350` — is all table and has no closing prose to move.
+    #[test]
+    fn a_slip_with_no_labelled_line_is_all_body() {
+        let (body, footer) = split_body_footer(
+            vec![
+                "--Detail Tagihan 1--".to_string(),
+                "Nilai   316350".to_string(),
+            ],
+            31,
+        );
+
+        assert_eq!(body.len(), 2);
+        assert!(footer.is_empty());
+    }
+
+    /// The whole struk, in order, for the transaction the customer is most
+    /// likely to bring back to a counter.
+    #[test]
+    fn a_pln_prepaid_struk_reads_in_the_mitra_order() {
+        let lines = format_ppob_receipt(&pln_prepaid(), 58);
+        let rows: Vec<&str> = lines.iter().map(|line| line.text.trim_end()).collect();
+
+        assert_eq!(rows[0].trim(), "Cahaya513 Mini Mart");
+        assert_eq!(rows[1], "");
+        assert_eq!(rows[2].trim(), "Stroom / Token");
+        assert_eq!(rows[3].trim(), "1111-2222-3333-");
+        assert_eq!(rows[4].trim(), "4444-5555");
+        assert_eq!(rows[5], "");
+        // The provider's own heading, 32 characters against 31 of paper, so it
+        // wraps on its own word boundary rather than off the edge.
+        assert_eq!(rows[6], "STRUK PEMBELIAN LISTRIK");
+        assert_eq!(rows[7], "PRABAYAR");
+
+        let rule = rows
+            .iter()
+            .position(|row| *row == "-".repeat(31))
+            .expect("totals rule");
+        assert_eq!(rows[rule - 1], "ADMIN BANK      : Rp 3.500");
+        assert_eq!(rows[rule + 1], two_col_text("Total", "Rp 23.500", 31));
+        assert_eq!(
+            rows[rule + 2],
+            two_col_text("Biaya Layanan", "Rp 1.500", 31)
+        );
+        assert_eq!(rows[rule + 3], two_col_text("Grand Total", "Rp 25.000", 31));
+        assert!(rows[rule + 4].starts_with("Informasi Hubungi"));
+        assert!(rows.iter().any(|row| row.contains("[I001IGR1-")));
+        assert!(rows.last().expect("last row").ends_with("CA]"));
     }
 
     /// An item stored before migration 023 has no provider text at all.
@@ -1337,7 +1209,6 @@ mod tests {
         data.customer_name = Some("BUDI SANTOSA".to_string());
         let text = text_of(&format_ppob_receipt(&data, 58));
 
-        assert!(flat(&format_ppob_receipt(&data, 58)).contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
         assert!(text.contains("PRODUK      : Token PLN 20.000"));
         assert!(text.contains("NO PELANGGAN: 14300000001"));
         assert!(text.contains("NAMA        : BUDI SANTOSA"));
@@ -1350,14 +1221,9 @@ mod tests {
         // The token block does not depend on the provider's text.
         assert!(text.contains("1111-2222-3333-"));
 
-        // This block *is* the reference block here, so nothing may supplement
-        // it: a struk carrying both `NO REF` and `No. Ref` with the same number
-        // under two spellings is the sort of thing a customer queries.
+        // Each field appears once; there is no second block to supplement it.
         assert_eq!(text.matches("NO REF").count(), 1);
         assert_eq!(text.matches("ADMIN BANK").count(), 1);
-        assert!(!text.contains("Admin Fee"));
-        assert!(!text.contains("No. Ref"));
-        assert!(!text.contains("Kode Bayar"));
     }
 
     #[test]
@@ -1366,7 +1232,7 @@ mod tests {
 
         assert!(lines
             .iter()
-            .any(|line| line.text == "=".repeat(columns(80))));
+            .any(|line| line.text == "-".repeat(columns(80))));
         let token_rows: Vec<&str> = lines
             .iter()
             .filter(|line| line.size == LineSize::Double)
@@ -1498,11 +1364,6 @@ mod sample_output {
 
         PpobReceiptData {
             store_name: "Cahaya513 Mini Mart".to_string(),
-            store_address: None,
-            store_phone: None,
-            receipt_number: format!("TRX-{}", text("trxId").unwrap_or_default()),
-            date_time: text("createdAt").unwrap_or_default(),
-            cashier_name: "Kasir".to_string(),
             service_type: service_type.to_string(),
             flag_id: None,
             product_name: text("productName"),
@@ -1511,14 +1372,12 @@ mod sample_output {
             serial_number: text("tokenNumber").or_else(|| text("serialNumber")),
             reference_number: text("noRef"),
             payment_code: text("paymentCode"),
-            service_description: text("description"),
             provider_description: text("igrDesc"),
             provider_receipt_text: text("receiptText"),
             amount: number("basePrice"),
             admin_fee: number("adminFee"),
             total,
             grand_total: total,
-            footer_text: None,
         }
     }
 }

@@ -168,9 +168,9 @@ pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
 
 /// The shop's own name and contact details, between two rules.
 ///
-/// Shared with the PPOB struk, which opens exactly the same way: a customer
-/// holding both pieces of paper should be in no doubt they came from the same
-/// till, and one copy of this means an address line added here appears on both.
+/// The sales receipt alone. A PPOB struk opens with the store's name and nothing
+/// else, because it is the provider's document and Mitra's own slip carries no
+/// address either.
 pub(super) fn push_store_banner(
     lines: &mut Vec<ReceiptTextLine>,
     store_name: &str,
