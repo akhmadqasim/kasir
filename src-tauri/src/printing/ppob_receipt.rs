@@ -28,7 +28,8 @@
 use std::borrow::Cow;
 
 use super::receipt::{
-    center_text, format_rupiah, push_sale_details, push_store_banner, two_col_text, ReceiptTextLine,
+    center_text, columns, format_rupiah, push_sale_details, push_store_banner, two_col_text,
+    ReceiptTextLine,
 };
 
 /// A field worth printing: present, and something other than whitespace.
@@ -212,7 +213,7 @@ impl PpobReceiptData {
 /// Render a PPOB struk. `paper_width_mm` picks the column count the same way
 /// [`super::receipt::format_receipt_text`] does: 32 for 58mm, 42 for 80mm.
 pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
     // The provider's block, folded back into whole lines, is needed twice: once
@@ -560,7 +561,7 @@ enum LabelLayout {
 
 impl LabelLayout {
     fn of(block: &[String], cpl: usize) -> Self {
-        let target = if cpl >= 42 { 18 } else { 14 };
+        let target = if cpl >= 41 { 18 } else { 14 };
         let pairs: Vec<(&str, usize, &str)> = block
             .iter()
             .filter_map(|line| split_pair(line, cpl))
@@ -997,6 +998,16 @@ mod tests {
             .join("\n")
     }
 
+    /// The receipt as one line of single-spaced words, for asserting on text
+    /// that the formatter may legitimately wrap: the 32-character PLN title no
+    /// longer fits a 31-column line in one piece.
+    pub(super) fn flat(lines: &[ReceiptTextLine]) -> String {
+        text_of(lines)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     fn all_fixtures() -> Vec<PpobReceiptData> {
         vec![
             pln_prepaid(),
@@ -1011,7 +1022,7 @@ mod tests {
     fn every_line_of_every_service_fits_the_paper() {
         for data in all_fixtures() {
             for paper in [58_u8, 80] {
-                let cpl = if paper >= 80 { 42 } else { 32 };
+                let cpl = columns(paper);
                 for line in format_ppob_receipt(&data, paper) {
                     let limit = if line.size == LineSize::Double {
                         cpl / 2
@@ -1056,9 +1067,13 @@ mod tests {
     #[test]
     fn a_provider_title_is_not_doubled_up_and_prints_bold() {
         let lines = format_ppob_receipt(&pln_prepaid(), 58);
-        let text = text_of(&lines);
 
-        assert_eq!(text.matches("STRUK PEMBELIAN LISTRIK PRABAYAR").count(), 1);
+        assert_eq!(
+            flat(&lines)
+                .matches("STRUK PEMBELIAN LISTRIK PRABAYAR")
+                .count(),
+            1
+        );
         let title = lines
             .iter()
             .find(|line| line.text.contains("STRUK PEMBELIAN"))
@@ -1075,7 +1090,7 @@ mod tests {
         );
         // A hundred billers hide behind one payment-point code, so the heading
         // is taken from the transaction's own description.
-        assert!(text_of(&format_ppob_receipt(&payment_point(), 58))
+        assert!(flat(&format_ppob_receipt(&payment_point(), 58))
             .contains("STRUK PEMBAYARAN Telkom Indihome"));
     }
 
@@ -1227,9 +1242,9 @@ mod tests {
     fn the_totals_block_matches_what_the_provider_billed() {
         let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
 
-        assert!(text.contains(&two_col_text("Total", "Rp 23.500", 32)));
-        assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", 32)));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 25.000", 32)));
+        assert!(text.contains(&two_col_text("Total", "Rp 23.500", columns(58))));
+        assert!(text.contains(&two_col_text("Biaya Layanan", "Rp 1.500", columns(58))));
+        assert!(text.contains(&two_col_text("Grand Total", "Rp 25.000", columns(58))));
     }
 
     /// A cart-wide discount is shared out over every line, PPOB included, so the
@@ -1241,9 +1256,9 @@ mod tests {
         data.grand_total = 23_000.0;
         let text = text_of(&format_ppob_receipt(&data, 58));
 
-        assert!(text.contains(&two_col_text("Diskon", "-Rp 500", 32)));
+        assert!(text.contains(&two_col_text("Diskon", "-Rp 500", columns(58))));
         assert!(!text.contains("Biaya Layanan"));
-        assert!(text.contains(&two_col_text("Grand Total", "Rp 23.000", 32)));
+        assert!(text.contains(&two_col_text("Grand Total", "Rp 23.000", columns(58))));
     }
 
     /// Numbers inside the provider's block are theirs: they mix `69,163` and
@@ -1322,7 +1337,7 @@ mod tests {
         data.customer_name = Some("BUDI SANTOSA".to_string());
         let text = text_of(&format_ppob_receipt(&data, 58));
 
-        assert!(text.contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
+        assert!(flat(&format_ppob_receipt(&data, 58)).contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
         assert!(text.contains("PRODUK      : Token PLN 20.000"));
         assert!(text.contains("NO PELANGGAN: 14300000001"));
         assert!(text.contains("NAMA        : BUDI SANTOSA"));
@@ -1349,7 +1364,9 @@ mod tests {
     fn eighty_millimetre_paper_uses_the_wider_column_count() {
         let lines = format_ppob_receipt(&pln_prepaid(), 80);
 
-        assert!(lines.iter().any(|line| line.text == "=".repeat(42)));
+        assert!(lines
+            .iter()
+            .any(|line| line.text == "=".repeat(columns(80))));
         let token_rows: Vec<&str> = lines
             .iter()
             .filter(|line| line.size == LineSize::Double)

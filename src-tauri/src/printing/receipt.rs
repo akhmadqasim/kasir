@@ -133,6 +133,24 @@ impl ReceiptTextLine {
     }
 }
 
+/// Printable columns for a paper width.
+///
+/// Font A on 58mm paper is 32 characters wide and on 80mm 42 — and this returns
+/// one less on purpose. A line that fills the row exactly (32 characters then
+/// a line feed) makes the POS58 (TECH CLA58) on this till reset: its USB
+/// device drops out for about a second, the printer power-cycles and whatever
+/// was left of the job is gone. A 148-byte job of three full-width rules
+/// reproduced it while jobs with 31- and 33-character lines did not, so every
+/// formatter stays one column short of the edge and `"=".repeat(cpl)` never
+/// reaches it.
+pub fn columns(paper_width_mm: u8) -> usize {
+    if paper_width_mm >= 80 {
+        41
+    } else {
+        31
+    }
+}
+
 /// Center text within given width using space padding (monospace)
 pub(super) fn center_text(text: &str, width: usize) -> String {
     let text_len = text.chars().count();
@@ -201,7 +219,7 @@ pub(super) fn push_sale_details(
 
 /// Generate receipt as text lines for ESC/POS printing
 pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
     push_store_banner(
@@ -343,7 +361,7 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
 
 /// Generate test page as text lines for ESC/POS printing
 pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
-    let cpl: usize = if paper_width_mm >= 80 { 42 } else { 32 };
+    let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
     lines.push(ReceiptTextLine::bold(center_text("TEST PRINT", cpl)));
