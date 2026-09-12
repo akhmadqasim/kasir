@@ -258,7 +258,18 @@ fn fit_verbatim(line: &str, cpl: usize) -> Vec<String> {
 
 /// The provider's closing prose, under our totals.
 fn push_footer(lines: &mut Vec<ReceiptTextLine>, footer: Vec<String>, mode: PrintMode, cpl: usize) {
+    if footer.is_empty() {
+        return;
+    }
+    // One line of air between the totals and the prose, as on the Mitra print.
+    lines.push(ReceiptTextLine::plain(""));
+
     for line in footer {
+        if line.trim().is_empty() {
+            lines.push(ReceiptTextLine::plain(""));
+            continue;
+        }
+
         if mode == PrintMode::Raster {
             lines.extend(
                 fit_verbatim(&line, cpl)
@@ -311,14 +322,22 @@ fn split_body_footer(block: Vec<String>, cpl: usize) -> (Vec<String>, Vec<String
     let mut body = block;
     let footer = body.split_off(end + 1);
 
-    // Blank lines inside the table separate its sections and are kept; blank
-    // lines under it are just the provider's own spacing, and paper costs money.
-    let footer = footer
-        .into_iter()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
+    // The prose keeps the provider's own paragraph breaks — one blank line
+    // between the call-centre note and the trace stamp, as on the Mitra print —
+    // but not the blank that separated it from the table, nor any trailing air.
+    let mut trimmed: Vec<String> = Vec::new();
+    for line in footer {
+        let blank = line.trim().is_empty();
+        if blank && trimmed.last().is_none_or(|last| last.trim().is_empty()) {
+            continue;
+        }
+        trimmed.push(line);
+    }
+    while trimmed.last().is_some_and(|last| last.trim().is_empty()) {
+        trimmed.pop();
+    }
 
-    (body, footer)
+    (body, trimmed)
 }
 
 /// A provider line long enough to have been wrapped starts its continuation
@@ -657,7 +676,8 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
         &fee_amount,
         cpl,
     )));
-    lines.push(ReceiptTextLine::bold(two_col_text(
+    // Plain, like the rest of the totals: the Mitra print does not weight it.
+    lines.push(ReceiptTextLine::plain(two_col_text(
         "Grand Total",
         &format!("Rp {}", format_rupiah(data.grand_total)),
         cpl,
@@ -667,9 +687,8 @@ fn push_totals(lines: &mut Vec<ReceiptTextLine>, data: &PpobReceiptData, cpl: us
 /// Split a PLN token into groups of four digits joined by dashes, packed into
 /// rows no wider than `width`.
 ///
-/// `69915243803067642910` at width 16 becomes `6991-5243-8030-` / `6764-2910`,
-/// which is what the Mitra app prints: the dash stays at the end of the row it
-/// broke on, so a customer reading the rows in order never loses their place.
+/// `69915243803067642910` at width 16 becomes `6991-5243-8030` / `6764-2910`,
+/// which is what the Mitra app prints: no dash hangs off the end of a row.
 /// Anything that is not a plain run of digits is handed back wrapped as-is —
 /// grouping a reference number would only corrupt it.
 fn group_token(serial: &str, width: usize) -> Vec<String> {
@@ -686,17 +705,21 @@ fn group_token(serial: &str, width: usize) -> Vec<String> {
 
     let mut rows: Vec<String> = Vec::new();
     let mut row = String::new();
-    for (index, group) in groups.iter().enumerate() {
-        let is_last = index + 1 == groups.len();
-        // Every group but the last is followed by the dash that joins it to
-        // the next one, and that dash has to fit on the same row.
-        let piece = if is_last {
-            group.clone()
+    for group in &groups {
+        // Groups on one row are joined by dashes; a row never ends in one —
+        // the Mitra print breaks `4617-5400-1832` / `5962-7611`, not
+        // `4617-5400-1832-`.
+        let piece = group.clone();
+        let needed = if row.is_empty() {
+            piece.chars().count()
         } else {
-            format!("{}-", group)
+            row.chars().count() + 1 + piece.chars().count()
         };
-        if !row.is_empty() && row.chars().count() + piece.chars().count() > width {
+        if !row.is_empty() && needed > width {
             rows.push(std::mem::take(&mut row));
+        }
+        if !row.is_empty() {
+            row.push('-');
         }
         row.push_str(&piece);
     }
@@ -1020,7 +1043,11 @@ mod tests {
             .expect("totals rule");
         assert_eq!(rows[rule + 1], two_col_text("Total", "Rp 23.500", 32));
         assert_eq!(rows[rule + 3], two_col_text("Grand Total", "Rp 25.000", 32));
-        assert!(rows[rule + 4].starts_with("Informasi Hubungi"));
+        assert!(
+            rows[rule + 4].trim().is_empty(),
+            "one line of air before the prose"
+        );
+        assert!(rows[rule + 5].starts_with("Informasi Hubungi"));
     }
 
     /// PLN's own text opens with its heading, and it prints as the provider
@@ -1099,7 +1126,7 @@ mod tests {
             .map(|line| line.text.trim())
             .collect();
 
-        assert_eq!(token_rows, vec!["1111-2222-3333-", "4444-5555"]);
+        assert_eq!(token_rows, vec!["1111-2222-3333", "4444-5555"]);
         assert!(text_of(&lines).contains("Stroom / Token"));
     }
 
@@ -1298,7 +1325,10 @@ Cahaya",
 
         assert!(footer[0].starts_with("Informasi Hubungi"));
         assert!(footer.iter().any(|line| line.contains("[I001IGR1-")));
-        assert!(footer.iter().all(|line| !line.trim().is_empty()));
+        // Paragraph breaks survive; the edges do not.
+        assert!(footer.iter().any(|line| line.trim().is_empty()));
+        assert!(!footer.first().unwrap().trim().is_empty());
+        assert!(!footer.last().unwrap().trim().is_empty());
     }
 
     /// Telkom Indihome closes its slip with three unlabelled lines of bill
@@ -1355,7 +1385,7 @@ Cahaya",
         assert_eq!(rows[0].trim(), "Cahaya513 Mini Mart");
         assert_eq!(rows[1], "");
         assert_eq!(rows[2].trim(), "Stroom / Token");
-        assert_eq!(rows[3].trim(), "1111-2222-3333-");
+        assert_eq!(rows[3].trim(), "1111-2222-3333");
         assert_eq!(rows[4].trim(), "4444-5555");
         assert_eq!(rows[5], "");
         // The provider's own heading, 32 characters against 31 of paper, so it
@@ -1374,7 +1404,11 @@ Cahaya",
             two_col_text("Biaya Layanan", "Rp 1.500", 31)
         );
         assert_eq!(rows[rule + 3], two_col_text("Grand Total", "Rp 25.000", 31));
-        assert!(rows[rule + 4].starts_with("Informasi Hubungi"));
+        assert!(
+            rows[rule + 4].trim().is_empty(),
+            "one line of air before the prose"
+        );
+        assert!(rows[rule + 5].starts_with("Informasi Hubungi"));
         assert!(rows.iter().any(|row| row.contains("[I001IGR1-")));
         assert!(rows.last().expect("last row").ends_with("CA]"));
     }
@@ -1397,7 +1431,7 @@ Cahaya",
   L14300000001-1-260910124538"
         ));
         // The token block does not depend on the provider's text.
-        assert!(text.contains("1111-2222-3333-"));
+        assert!(text.contains("1111-2222-3333"));
 
         // Each field appears once; there is no second block to supplement it.
         assert_eq!(text.matches("NO REF").count(), 1);
@@ -1416,7 +1450,7 @@ Cahaya",
             .filter(|line| line.size == LineSize::Double)
             .map(|line| line.text.trim())
             .collect();
-        assert_eq!(token_rows, vec!["1111-2222-3333-4444-", "5555"]);
+        assert_eq!(token_rows, vec!["1111-2222-3333-4444", "5555"]);
         // Wider paper re-wraps the provider's 32-column text to 42.
         assert!(text_of(&lines).contains("NAMA            : BUDI SANTOSA WIJAYA"));
     }

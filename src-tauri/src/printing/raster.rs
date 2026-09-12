@@ -23,7 +23,7 @@ use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC, DeleteObject, GdiFlush, GetDC,
     GetTextExtentPoint32W, GetTextMetricsW, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
     TextOutW, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DIB_RGB_COLORS, FF_MODERN,
-    FIXED_PITCH, FW_BOLD, FW_SEMIBOLD, HBITMAP, HDC, HFONT, NONANTIALIASED_QUALITY, OUT_TT_PRECIS,
+    FIXED_PITCH, FW_BOLD, FW_NORMAL, HBITMAP, HDC, HFONT, NONANTIALIASED_QUALITY, OUT_TT_PRECIS,
     TEXTMETRICW, TRANSPARENT,
 };
 
@@ -37,9 +37,15 @@ pub const DOTS_80MM: u32 = 576;
 /// column counts come from: 12 dots across is what makes 32 of them come to
 /// exactly the 384 dots 58mm paper is.
 const CELL_WIDTH: u32 = super::receipt::CELL_DOTS as u32;
-/// Cell height, giving the line spacing Mitra's own print has: a little air
-/// above and below a roughly 19-dot glyph.
-const CELL_HEIGHT: u32 = 24;
+/// Cell height. Measured off the Mitra app's own print on this paper: its line
+/// pitch is about 5 mm, forty dots at 203 dpi, and its glyphs are tall and
+/// narrow — roughly 32 dots high on a 12-dot advance. A 24-dot cell with a
+/// glyph sized to fit the advance came out squat and half as long, which is
+/// what the shop noticed first.
+const CELL_HEIGHT: u32 = 40;
+/// Glyph height (cap height plus descender, excluding internal leading) inside
+/// a normal cell. `CreateFontW` takes it negative to mean exactly that.
+const GLYPH_HEIGHT: i32 = 32;
 
 /// The face to draw with, best first. Both are monospace and both ship with
 /// Windows; `Consolas` is the cleaner of the two at this size.
@@ -155,9 +161,9 @@ unsafe fn draw(
     let _ = SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, windows::Win32::Foundation::COLORREF(0x00_00_00));
 
-    let normal = font_for(dc, CELL_WIDTH, FW_SEMIBOLD.0);
-    let emphasised = font_for(dc, CELL_WIDTH, FW_BOLD.0);
-    let doubled = font_for(dc, CELL_WIDTH * 2, FW_SEMIBOLD.0);
+    let normal = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_NORMAL.0);
+    let emphasised = font_for(dc, CELL_WIDTH, GLYPH_HEIGHT, FW_BOLD.0);
+    let doubled = font_for(dc, CELL_WIDTH * 2, GLYPH_HEIGHT * 2, FW_NORMAL.0);
 
     let mut y = 0_i32;
     for line in lines {
@@ -205,55 +211,44 @@ unsafe fn draw(
     })
 }
 
-/// A font whose characters advance exactly `advance` dots.
+/// A font `glyph_height` dots tall whose characters advance exactly `advance`
+/// dots.
 ///
-/// The em size that produces a given advance is a property of the face, not
-/// something to hard-code: `Consolas` and `Courier New` disagree about it, and
-/// so do two Windows versions of the same face. So it is measured — walk the
-/// heights, keep the last one that still fits the cell.
-unsafe fn font_for(dc: HDC, advance: u32, weight: u32) -> HFONT {
-    let mut best: Option<HFONT> = None;
-
+/// Height and width are asked for separately: GDI scales a TrueType face
+/// horizontally to the requested average width, which is what gives the tall,
+/// narrow glyphs the Mitra print has instead of a face sized down until it fits
+/// the advance. The advance is then measured rather than trusted — faces round
+/// differently — and the width walked down a dot at a time until a run of
+/// characters really does fit the cell.
+unsafe fn font_for(dc: HDC, advance: u32, glyph_height: i32, weight: u32) -> HFONT {
     for face in FACES {
-        // A face's advance grows with its em size, so the walk can stop at the
-        // first size too wide for the cell and keep the one before it — the
-        // largest that still fits, which is the one whose glyphs fill the cell.
-        for height in 8..=(advance as i32 * 4) {
-            let font = create_font(face, height, weight);
+        for width in (1..=advance as i32).rev() {
+            let font = create_font(face, -glyph_height, width, weight);
             if font.is_invalid() {
                 continue;
             }
 
             match measured_advance(dc, font) {
-                Some(width) if width <= advance => {
-                    if let Some(previous) = best.replace(font) {
-                        let _ = DeleteObject(previous.into());
-                    }
-                }
+                Some(measured) if measured <= advance => return font,
                 _ => {
                     let _ = DeleteObject(font.into());
-                    break;
                 }
             }
-        }
-
-        if best.is_some() {
-            break;
         }
     }
 
     // Nothing measurable at all — no face installed, or a DC that answers
     // nothing. The mapper will substitute something for this; a receipt in the
     // wrong font beats no receipt.
-    best.unwrap_or_else(|| create_font(FACES[1], advance as i32, weight))
+    create_font(FACES[1], -glyph_height, advance as i32, weight)
 }
 
-unsafe fn create_font(face: &str, height: i32, weight: u32) -> HFONT {
+unsafe fn create_font(face: &str, height: i32, width: i32, weight: u32) -> HFONT {
     let name: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
 
     CreateFontW(
         height,
-        0,
+        width,
         0,
         0,
         weight as i32,
@@ -391,7 +386,7 @@ mod tests {
         let bitmap = render_lines(&[ReceiptTextLine::plain("X")], 32, DOTS_58MM).expect("rendered");
         let pbm = bitmap.to_pbm();
 
-        assert!(pbm.starts_with(b"P4\n384 24\n"));
-        assert_eq!(pbm.len(), 10 + 48 * 24);
+        assert!(pbm.starts_with(b"P4\n384 40\n"));
+        assert_eq!(pbm.len(), 10 + 48 * 40);
     }
 }
