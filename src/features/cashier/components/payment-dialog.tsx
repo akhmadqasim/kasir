@@ -462,11 +462,12 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
       },
       {
         onSuccess: (result) => {
-          // A sale moves stock, the transaction list, the shift's drawer and
-          // every dashboard panel. The keys are prefixes, so one call each
-          // covers the whole resource.
+          // A sale moves the transaction list, the shift's drawer and every
+          // dashboard panel. The keys are prefixes, so one call each covers the
+          // whole resource. Products are not here: that key has a live
+          // observer on this very screen, and `CashierPage` refreshes it once
+          // the success dialog closes instead of during its animation.
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
           queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
           queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
           onSuccess(result)
