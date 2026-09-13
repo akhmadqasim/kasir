@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react"
 import { Input, Label, TextField } from "@heroui/react"
 
 import { formatNumber } from "@/lib/format"
@@ -13,6 +14,7 @@ interface RupiahFieldProps {
   placeholder?: string
   isDisabled?: boolean
   className?: string
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
 }
 
 /** `-10.000` → -10000; digits only, one optional leading minus. */
@@ -46,6 +48,7 @@ export function RupiahField({
   placeholder,
   isDisabled,
   className,
+  onKeyDown,
 }: RupiahFieldProps) {
   return (
     <TextField
@@ -58,7 +61,7 @@ export function RupiahField({
       onChange={(text) => onChange(parseTyped(text, allowNegative))}
     >
       <Label>{label}</Label>
-      <Input className="text-right tabular-nums" placeholder={placeholder} />
+      <Input className="text-right tabular-nums" placeholder={placeholder} onKeyDown={onKeyDown} />
     </TextField>
   )
 }

@@ -14,6 +14,7 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { isEmptyNumberFieldValue } from "@/lib/number-field"
 import { toast } from "@/lib/toast"
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
@@ -329,7 +330,7 @@ export function PpobSettingsTab() {
                       value={config.value > 0 ? config.value : Number.NaN}
                       variant="secondary"
                       onChange={(value) => {
-                        const next = value === undefined || Number.isNaN(value) ? 0 : value
+                        const next = isEmptyNumberFieldValue(value) ? 0 : value
                         setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], value: next } }))
                       }}
                     >
