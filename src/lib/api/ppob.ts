@@ -146,6 +146,8 @@ export interface PaymentPointInquiryInput {
   customerId: string
   paymentPointGroupId: number
   productCode?: string
+  /** Only for an `inputAmt` biller — the nominal the cashier typed in. */
+  amount?: number
 }
 
 export function paymentPointInquiry(input: PaymentPointInquiryInput): Promise<InquiryResult> {

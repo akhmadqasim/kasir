@@ -2,10 +2,12 @@ import { useApiMutation } from "@/hooks/use-api"
 import {
   bpjsInquiry,
   emoneyInquiry,
+  paymentPointInquiry,
   pdamInquiry,
   plnInquiry,
   type BpjsInquiryInput,
   type EmoneyInquiryInput,
+  type PaymentPointInquiryInput,
   type PdamInquiryInput,
   type PlnInquiryInput,
 } from "@/lib/api/ppob"
@@ -31,4 +33,8 @@ export function useBpjsInquiry() {
 
 export function useEmoneyInquiry() {
   return useApiMutation<InquiryResult, EmoneyInquiryInput>(emoneyInquiry)
+}
+
+export function usePaymentPointInquiry() {
+  return useApiMutation<InquiryResult, PaymentPointInquiryInput>(paymentPointInquiry)
 }

@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Button } from "@heroui/react"
 import { ArrowLeft } from "lucide-react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { id } from "@/i18n/id"
-import { getPpobMarkup } from "@/lib/api/settings"
 import { toast } from "@/lib/toast"
 import { useCartStore } from "@/stores/cart-store"
-import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../../pricing"
+import { usePpobMarkup } from "../../hooks"
+import { resolvePpobSellPrice } from "../../pricing"
 import {
   PPOB_SERVICE_COLORS,
   QUICK_ACCESS_SERVICES,
   QUICK_ACCESS_SERVICE_BY_KEY,
 } from "../../constants"
-import type { PpobMarkup, PpobMarkupConfig } from "../../types/auth"
 import { ServiceGrid } from "../service-grid"
 import { BpjsInput } from "./bpjs-input"
 import { EmoneyInput } from "./emoney-input"
@@ -39,36 +38,8 @@ export function PpobQuickAccess({
   wideLayout = false,
 }: PpobQuickAccessProps = {}) {
   const [selectedService, setSelectedService] = useState<ServiceType | null>(initialService ?? null)
-  const [markup, setMarkup] = useState<PpobMarkup | null>(null)
-  const [customPrices, setCustomPrices] = useState<Record<string, number>>({})
+  const { getMarkupConfig, customPrices } = usePpobMarkup()
   const addPpobItem = useCartStore((s) => s.addPpobItem)
-
-  /**
-   * The shop's PPOB markup, which is what turns the provider's cost into the
-   * price on the counter.
-   *
-   * Fetched from the session-scoped `/settings/ppob/markup` endpoint rather
-   * than `/settings`, which is admin-only. `/settings` used to be the only
-   * source and 403'd for a cashier, silently falling back to
-   * `DEFAULT_PPOB_MARKUP` — zero — so every top-up sold at cost.
-   */
-  useEffect(() => {
-    getPpobMarkup()
-      .then((markup) => {
-        setMarkup(markup)
-        if (markup.custom_prices) {
-          setCustomPrices(markup.custom_prices)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  const getMarkupConfig = (serviceType: string): PpobMarkupConfig => {
-    if (!markup) return DEFAULT_PPOB_MARKUP
-    return (
-      (markup as unknown as Record<string, PpobMarkupConfig>)[serviceType] ?? DEFAULT_PPOB_MARKUP
-    )
-  }
 
   const resolveSellPrice: ResolveSellPrice = ({ name, serviceType, vendorCost }) =>
     resolvePpobSellPrice({

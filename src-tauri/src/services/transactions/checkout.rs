@@ -1078,6 +1078,70 @@ mod tests {
         assert!(stored.data.contains("R-9"));
     }
 
+    /// A Payment Point line reaches the executor the same way PDAM and PLN do —
+    /// an inquiry made beforehand, `customer_id`/`product_code` carried on the
+    /// item, and nothing PP-specific (no `flag_id`, `phone_number`, or `amount`
+    /// forwarded at pay time; those are only for PLN and BPJS).
+    #[tokio::test]
+    async fn ppob_checkout_success_fulfills_a_payment_point_line() {
+        let conn = setup_test_db().await;
+
+        let result = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: None,
+                    quantity: 1,
+                    product_name: Some("Indihome - 1234567890".to_string()),
+                    product_price: Some(302_500.0),
+                    buy_price: Some(302_500.0),
+                    service_type: Some("pp".to_string()),
+                    service_ref: Some("1234567890".to_string()),
+                    ppob_product_id: None,
+                    ppob_product_code: Some("121900061".to_string()),
+                    ppob_inquiry_id: Some("INQ-1".to_string()),
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 302_500.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+            },
+            |request| async move {
+                assert_eq!(request.service_type, "pp");
+                assert_eq!(request.customer_id.as_deref(), Some("1234567890"));
+                assert_eq!(request.inquiry_id.as_deref(), Some("INQ-1"));
+                assert_eq!(request.product_code.as_deref(), Some("121900061"));
+                assert_eq!(request.payment_code, None);
+                assert_eq!(request.flag_id, None);
+                assert_eq!(request.phone_number, None);
+                assert_eq!(request.amount, None);
+                Ok(PaymentResult {
+                    success: true,
+                    receipt_data: serde_json::json!({ "receipt_text": "STRUK PP" }),
+                    service_type: "pp".to_string(),
+                    customer_id: request.customer_id.unwrap_or_default(),
+                    amount: 300_000.0,
+                    admin_fee: 2_500.0,
+                    total: 302_500.0,
+                    product_name: Some("Indihome".to_string()),
+                    customer_name: Some("BUDI SANTOSO".to_string()),
+                    serial_number: None,
+                })
+            },
+        )
+        .await
+        .expect("payment point checkout success");
+
+        assert_eq!(result.transaction.status, STATUS_COMPLETED);
+        assert_eq!(result.items[0].ppob_status.as_deref(), Some("success"));
+    }
+
     /// A line that failed has nothing to print, and whatever a previous attempt
     /// left behind describes an attempt that no longer stands.
     #[tokio::test]

@@ -325,6 +325,7 @@ struct PpInquiryBody {
     customer_id: String,
     payment_point_group_id: i64,
     product_code: Option<String>,
+    amount: Option<f64>,
 }
 
 async fn pp_inquiry(
@@ -338,6 +339,7 @@ async fn pp_inquiry(
             body.customer_id,
             body.payment_point_group_id,
             body.product_code,
+            body.amount,
         )
         .await?,
     ))

@@ -2,7 +2,7 @@
 //! [`crate::services::ppob::payment`]'s job.
 
 use sea_orm::{DatabaseConnection, EntityTrait};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -287,12 +287,25 @@ pub async fn bpjs(
     })
 }
 
+/// The bill amount a payment-point inquiry should report.
+///
+/// Most billers echo their own `amount`/`tagihan`, but an `input_amt` biller
+/// (the cashier types the nominal, e.g. a top-up-style Payment Point product)
+/// may just confirm success without restating it — the same reason
+/// [`pln`]'s total falls back to the amount it was asked to inquire with.
+/// Without this fallback the confirmation card would show Rp 0 for exactly
+/// the billers that need the nominal to be visible.
+fn resolve_pp_amount(result: &Value, input_amount: Option<f64>) -> f64 {
+    extract_f64(result, &["amount", "tagihan"]).max(input_amount.unwrap_or(0.0))
+}
+
 pub async fn payment_point(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
     customer_id: String,
     payment_point_group_id: i64,
     product_code: Option<String>,
+    amount: Option<f64>,
 ) -> Result<InquiryResult, AppError> {
     let client = get_mitra_request_context(db, mitra).await?;
 
@@ -303,19 +316,22 @@ pub async fn payment_point(
     if let Some(pc) = &product_code {
         body["product_code"] = json!(pc);
     }
+    if let Some(amt) = amount {
+        body["amount"] = json!(amt);
+    }
 
     let result = client.post("pp/inquiry", body).await?;
 
-    let amount = extract_f64(&result, &["amount", "tagihan"]);
+    let bill_amount = resolve_pp_amount(&result, amount);
 
     Ok(InquiryResult {
         inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
         customer_name: extract_optional_string(&result, &["nama_pelanggan", "customer_name"]),
         customer_id: customer_id.clone(),
         product_name: extract_optional_string(&result, &["product_name", "description"]),
-        amount,
+        amount: bill_amount,
         admin_fee: extract_f64(&result, &["admin_fee", "admin"]),
-        total: extract_f64(&result, &["total"]).max(amount),
+        total: extract_f64(&result, &["total"]).max(bill_amount),
         service_type: "pp".to_string(),
         raw_data: result,
     })
@@ -434,4 +450,37 @@ pub async fn pulsa_purchase(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn resolve_pp_amount_prefers_the_providers_own_amount() {
+        let result = json!({ "amount": 150_000 });
+        assert_eq!(resolve_pp_amount(&result, Some(50_000.0)), 150_000.0);
+    }
+
+    #[test]
+    fn resolve_pp_amount_reads_the_tagihan_alias() {
+        let result = json!({ "tagihan": 75_000 });
+        assert_eq!(resolve_pp_amount(&result, None), 75_000.0);
+    }
+
+    #[test]
+    fn resolve_pp_amount_falls_back_to_the_input_amount_biller_typed() {
+        // An `input_amt` biller that just confirms success without restating
+        // the nominal — the confirmation card must still show what the
+        // cashier typed in, not Rp 0.
+        let result = json!({ "message": "OK" });
+        assert_eq!(resolve_pp_amount(&result, Some(25_000.0)), 25_000.0);
+    }
+
+    #[test]
+    fn resolve_pp_amount_is_zero_without_either() {
+        let result = json!({});
+        assert_eq!(resolve_pp_amount(&result, None), 0.0);
+    }
 }

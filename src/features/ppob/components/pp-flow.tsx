@@ -4,14 +4,20 @@ import { Alert, Breadcrumbs, Button, Card, Input, Label, Skeleton, TextField } f
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
+import { PendingButton } from "@/components/pending-button"
 import { RupiahField } from "@/components/rupiah-field"
 import { SearchInput } from "@/components/search-input"
 import { StatusBadge } from "@/components/status-badge"
+import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
+import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
-import { usePpobMenu, usePpSubMenu } from "../hooks"
-import type { PpSearchGroupRef, PpobMenuGroup, PpSubMenuItem } from "../types"
+import { useCartStore } from "@/stores/cart-store"
+import { usePpobMenu, usePpSubMenu, usePpobMarkup, usePaymentPointInquiry } from "../hooks"
+import { resolvePpobSellPrice } from "../pricing"
+import type { InquiryResult, PpSearchGroupRef, PpobMenuGroup, PpSubMenuItem } from "../types"
 import { ConfirmCard } from "./quick-access/confirm-card"
+import { markupItem } from "./quick-access/markup-item"
 import { FlowColumns } from "./flow-columns"
 import { PaymentPointIcon } from "./payment-point-icon"
 import { TileButton } from "./tile-button"
@@ -28,6 +34,33 @@ function groupFromPreselect(group: PpSearchGroupRef): PpobMenuGroup {
   return { id: group.id, group: group.name, imageUrl: null, pathIcon: null }
 }
 
+/**
+ * "Periode" is not a field on `InquiryResult` — only a handful of billers
+ * (postpaid subscriptions) carry one, buried in whatever shape the upstream
+ * answered with. Read defensively from the raw response and say nothing when
+ * it is not there, the same way the admin fee row disappears for a biller
+ * that does not charge one.
+ */
+function extractPeriodLabel(rawData: InquiryResult["rawData"] | undefined): string | null {
+  if (!rawData) return null
+  const nested = rawData.data
+  const sources = [
+    rawData,
+    typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>) : null,
+  ]
+
+  for (const source of sources) {
+    if (!source) continue
+    for (const key of ["period", "periode"]) {
+      const value = source[key]
+      if (typeof value === "string" && value.trim()) return value
+      if (typeof value === "number") return String(value)
+    }
+  }
+
+  return null
+}
+
 export function PpFlow() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -40,6 +73,7 @@ export function PpFlow() {
   const [merchantSearch, setMerchantSearch] = useState("")
   const [paymentCode, setPaymentCode] = useState("")
   const [amount, setAmount] = useState<number | null>(null)
+  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
 
   const { data: groups, isLoading: groupsLoading } = usePpobMenu()
   const {
@@ -48,6 +82,9 @@ export function PpFlow() {
     isError: subMenuIsError,
     error: subMenuError,
   } = usePpSubMenu(selectedGroup?.id ?? 0)
+  const { getMarkupConfig, customPrices } = usePpobMarkup()
+  const paymentPointInquiry = usePaymentPointInquiry()
+  const addPpobItem = useCartStore((s) => s.addPpobItem)
 
   // The group half of a preselect is known synchronously (search already had
   // its id and name) and is applied above, as the state initializer. The
@@ -81,12 +118,14 @@ export function PpFlow() {
     setMerchantSearch("")
     setPaymentCode("")
     setAmount(null)
+    setInquiryResult(null)
   }
 
   const goToMerchants = () => {
     setSelectedMerchant(null)
     setPaymentCode("")
     setAmount(null)
+    setInquiryResult(null)
   }
 
   const handleBack = () => {
@@ -105,9 +144,76 @@ export function PpFlow() {
       ? selectedGroup.group
       : id.ppob.pp
 
-  const codeReady = paymentCode.length >= 6
+  const trimmedCode = paymentCode.trim()
+  const codeReady = trimmedCode.length > 0
   const amountReady = !selectedMerchant?.inputAmt || (amount ?? 0) > 0
-  const canConfirm = !!selectedMerchant && codeReady && amountReady
+  const canInquiry = !!selectedMerchant && codeReady && amountReady
+
+  const handleInquiry = () => {
+    if (!selectedMerchant || !canInquiry) return
+    paymentPointInquiry.mutate(
+      {
+        customerId: trimmedCode,
+        paymentPointGroupId: selectedMerchant.paymentPointGroupId,
+        productCode: selectedMerchant.plu,
+        ...(selectedMerchant.inputAmt ? { amount: amount ?? 0 } : {}),
+      },
+      {
+        onSuccess: (result) => setInquiryResult(result),
+        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+      },
+    )
+  }
+
+  // Yang dibayar toko ke vendor = tagihan + biaya admin.
+  const vendorCost = inquiryResult?.total ?? 0
+  const itemName = selectedMerchant ? `${selectedMerchant.merchant} - ${trimmedCode}` : ""
+  const sellPrice = inquiryResult
+    ? resolvePpobSellPrice({
+        name: itemName,
+        serviceType: "pp",
+        vendorCost,
+        markup: getMarkupConfig("pp"),
+        customPrices,
+      })
+    : 0
+  const period = extractPeriodLabel(inquiryResult?.rawData)
+
+  const handleConfirm = () => {
+    if (!inquiryResult || !selectedMerchant) return
+    addPpobItem({
+      name: itemName,
+      price: sellPrice,
+      service_type: "pp",
+      service_ref: trimmedCode,
+      buy_price: vendorCost,
+      ppob_product_code: selectedMerchant.plu,
+      ppob_inquiry_id: inquiryResult.inquiryId,
+    })
+    toast.success(`${itemName} ditambahkan ke keranjang`)
+    navigate("/cashier")
+  }
+
+  const confirmItems: SummaryItem[] | null =
+    selectedMerchant && inquiryResult
+      ? [
+          { label: id.ppob.selectGroup, value: selectedGroup?.group ?? "-" },
+          { label: id.ppob.selectMerchant, value: selectedMerchant.merchant },
+          {
+            label: selectedMerchant.label || id.ppob.paymentCode,
+            value: trimmedCode,
+            tone: "mono",
+          },
+          { label: "Nama", value: inquiryResult.customerName ?? "-" },
+          ...(period ? [{ label: id.ppob.period, value: period }] : []),
+          { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
+          ...(inquiryResult.adminFee > 0
+            ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
+            : []),
+          ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
+          { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
+        ]
+      : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -125,27 +231,15 @@ export function PpFlow() {
 
       <FlowColumns
         aside={
-          selectedMerchant && canConfirm ? (
+          confirmItems ? (
             <ConfirmCard
+              scrollIntoView
               footer={
-                // Pembayaran PP belum tersambung ke backend; tombolnya tetap ada
-                // supaya bentuk kartunya sama dengan flow lain.
-                <Button fullWidth isDisabled size="lg">
-                  {id.ppob.notAvailable}
+                <Button fullWidth size="lg" onPress={handleConfirm}>
+                  Tambah ke Keranjang
                 </Button>
               }
-              items={[
-                { label: id.ppob.selectGroup, value: selectedGroup?.group ?? "-" },
-                { label: id.ppob.selectMerchant, value: selectedMerchant.merchant },
-                {
-                  label: selectedMerchant.label || id.ppob.paymentCode,
-                  value: paymentCode,
-                  tone: "mono",
-                },
-                ...(selectedMerchant.inputAmt
-                  ? [{ label: id.ppob.nominal, value: formatRupiah(amount ?? 0) }]
-                  : []),
-              ]}
+              items={confirmItems}
               title={id.ppob.confirm}
             />
           ) : groups ? (
@@ -246,15 +340,36 @@ export function PpFlow() {
                 fullWidth
                 value={paymentCode}
                 variant="secondary"
-                onChange={setPaymentCode}
+                onChange={(value) => {
+                  setPaymentCode(value)
+                  setInquiryResult(null)
+                }}
               >
                 <Label>{selectedMerchant.label || id.ppob.paymentCode}</Label>
                 <Input className="tabular-nums" placeholder={id.ppob.paymentCodePlaceholder} />
               </TextField>
 
               {selectedMerchant.inputAmt ? (
-                <RupiahField label={id.ppob.nominal} value={amount} onChange={setAmount} />
+                <RupiahField
+                  label={id.ppob.nominal}
+                  value={amount}
+                  onChange={(value) => {
+                    setAmount(value)
+                    setInquiryResult(null)
+                  }}
+                />
               ) : null}
+
+              {!inquiryResult && (
+                <PendingButton
+                  fullWidth
+                  isDisabled={!canInquiry}
+                  isPending={paymentPointInquiry.isPending}
+                  onPress={handleInquiry}
+                >
+                  Cek Tagihan
+                </PendingButton>
+              )}
             </Card.Content>
           </Card>
         )}

@@ -135,4 +135,36 @@ describe("resolvePpobSellPrice", () => {
       }),
     ).toBe(87500)
   })
+
+  /**
+   * Payment Point has no block of its own in `PpobMarkup` — `getMarkupConfig`
+   * in `usePpobMarkup` falls back to `DEFAULT_PPOB_MARKUP` for it, the same
+   * as a service the shop never configured. Beyond that fallback, PP is an
+   * ordinary bill-based service to this function: no nominal is extracted
+   * from its name (that is `pulsa`-only), so a custom price never applies to
+   * it even if a biller's typed nominal happens to collide with a configured
+   * one.
+   */
+  it("treats payment point as an ordinary bill service with no custom-price matching", () => {
+    expect(
+      resolvePpobSellPrice({
+        name: "Indihome - 1234567890",
+        serviceType: "pp",
+        vendorCost: 302_500,
+        customPrices: { "302500": 250_000 },
+      }),
+    ).toBe(302_500)
+  })
+
+  it("applies the shop's markup to a payment point bill exactly like any other bill service", () => {
+    expect(
+      resolvePpobSellPrice({
+        name: "Griya Voucher - VC123456",
+        serviceType: "pp",
+        vendorCost: 51_500,
+        markup: { type: "fixed", value: 1_500 },
+        customPrices: {},
+      }),
+    ).toBe(53_000)
+  })
 })
