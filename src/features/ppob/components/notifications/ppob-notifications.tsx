@@ -1,16 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Badge,
-  Button,
-  Description,
-  Label,
-  ListBox,
-  Modal,
-  Skeleton,
-  Spinner,
-  Surface,
-} from "@heroui/react"
+import { Badge, Button, Card, Modal, Skeleton, Spinner } from "@heroui/react"
+import { cardVariants } from "@heroui/styles"
 import { RefreshCw, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
@@ -19,6 +10,7 @@ import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { id as i18n } from "@/i18n/id"
+import { cn } from "@/lib/utils"
 import { usePpobNotifications, usePpobMarkAllRead, usePpobMarkNotificationRead } from "../../hooks"
 import type { NotificationItem } from "../../types"
 
@@ -28,15 +20,6 @@ const isTransaction = (category: string) => category.toUpperCase() === "TRANSAKS
 
 /** `inboxId` pernah datang kosong dari vendor; indeksnya jadi cadangan kunci. */
 const rowId = (item: NotificationItem, idx: number) => item.inboxId || `notif-${idx}`
-
-/** Transaksi dan pengumuman dibedakan warnanya, bukan cuma teksnya. */
-function CategoryBadge({ category }: { category: string }) {
-  return (
-    <StatusBadge size="sm" status={isTransaction(category) ? "info" : "warning"}>
-      {category}
-    </StatusBadge>
-  )
-}
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "-"
@@ -52,6 +35,68 @@ function formatDate(dateStr: string | null): string {
   } catch {
     return dateStr
   }
+}
+
+/**
+ * One notification as a pressable card, after the docs' notification card:
+ * a tinted icon on the left, the category as a small uppercase label, the
+ * message as the title, the date underneath. Unread ones sit on the stronger
+ * surface with a dot on the icon; read ones fade to the default surface.
+ *
+ * The card element is a `button` styled with `cardVariants` — the docs'
+ * pattern for an interactive card — so it is one tab stop that Enter and
+ * Space open, without a ListBox wrapped around it.
+ */
+function NotificationCard({ item, onPress }: { item: NotificationItem; onPress: () => void }) {
+  const unread = item.status === "unread"
+  const transaction = isTransaction(item.category)
+  const Icon = transaction ? CreditCard : Info
+
+  const icon = (
+    <span
+      className={cn(
+        "flex size-10 shrink-0 items-center justify-center rounded-xl",
+        transaction
+          ? "bg-accent-soft text-accent-soft-foreground"
+          : "bg-warning-soft text-warning-soft-foreground",
+      )}
+    >
+      <Icon className="size-5" />
+    </span>
+  )
+
+  return (
+    <button
+      className={cn(
+        cardVariants({ variant: unread ? "secondary" : "default" }).base(),
+        "w-full cursor-pointer text-left transition-colors outline-none",
+        "hover:bg-surface-tertiary focus-visible:ring-2 focus-visible:ring-focus",
+      )}
+      type="button"
+      onClick={onPress}
+    >
+      <Card.Header className="flex-row items-start gap-3">
+        {unread ? (
+          <Badge.Anchor>
+            {icon}
+            <Badge aria-label="Belum dibaca" color="danger" size="sm" />
+          </Badge.Anchor>
+        ) : (
+          icon
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-xs font-medium text-muted uppercase">{item.category}</span>
+          <Card.Title className={cn("line-clamp-2 text-sm", !unread && "font-normal text-muted")}>
+            {item.title && item.title !== item.category ? item.title : item.message}
+          </Card.Title>
+          {item.title && item.title !== item.category && (
+            <Card.Description className="line-clamp-2 text-xs">{item.message}</Card.Description>
+          )}
+          <Card.Description className="text-xs">{formatDate(item.createdAt)}</Card.Description>
+        </div>
+      </Card.Header>
+    </button>
+  )
 }
 
 function NotificationDetailDialog({
@@ -187,7 +232,7 @@ export function PpobNotifications() {
       {isLoading ? (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
+            <Skeleton key={i} className="h-24 w-full rounded-3xl" />
           ))}
         </div>
       ) : error ? (
@@ -200,46 +245,15 @@ export function PpobNotifications() {
         </NoData>
       ) : (
         <>
-          {/* Daftar aksi seperti contoh "With Sections" ListBox: `Surface`
-              membingkainya, `onAction` membuka rinciannya. */}
-          <Surface>
-            <ListBox
-              aria-label={i18n.ppob.notifications}
-              className="p-2"
-              selectionMode="none"
-              onAction={(key) => {
-                const item = items.find((candidate, idx) => rowId(candidate, idx) === key)
-                if (item) handleItemPress(item)
-              }}
-            >
-              {items.map((item, idx) => {
-                const isUnread = item.status === "unread"
-                return (
-                  <ListBox.Item
-                    key={rowId(item, idx)}
-                    id={rowId(item, idx)}
-                    textValue={item.message}
-                  >
-                    <div className="flex min-w-0 flex-col items-start gap-1">
-                      {/* Titik belum-dibaca ditempel ke label kategorinya. */}
-                      {isUnread ? (
-                        <Badge.Anchor>
-                          <CategoryBadge category={item.category} />
-                          <Badge aria-label="Belum dibaca" color="danger" size="sm" />
-                        </Badge.Anchor>
-                      ) : (
-                        <CategoryBadge category={item.category} />
-                      )}
-                      <Label className={isUnread ? "line-clamp-2" : "line-clamp-2 text-muted"}>
-                        {item.message}
-                      </Label>
-                      <Description>{formatDate(item.createdAt)}</Description>
-                    </div>
-                  </ListBox.Item>
-                )
-              })}
-            </ListBox>
-          </Surface>
+          <div className="flex flex-col gap-3">
+            {items.map((item, idx) => (
+              <NotificationCard
+                key={rowId(item, idx)}
+                item={item}
+                onPress={() => handleItemPress(item)}
+              />
+            ))}
+          </div>
 
           <TablePagination
             page={currentPage}

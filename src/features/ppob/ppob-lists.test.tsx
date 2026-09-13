@@ -101,15 +101,14 @@ describe("ppob mutasi", () => {
 })
 
 describe("ppob notifications", () => {
-  /** Kotak masuk adalah `ListBox` beraksi, dan yang belum dibaca membawa titik. */
-  it("renders the inbox as a listbox and opens a notification from its option", async () => {
+  /** Kotak masuk adalah kartu-kartu yang bisa ditekan; yang belum dibaca membawa titik. */
+  it("renders the inbox as pressable cards and opens a notification from one", async () => {
     renderPage(<PpobNotifications />)
 
-    const list = await screen.findByRole("listbox", { name: "Pemberitahuan" })
-    expect(list).toBeInTheDocument()
+    const card = await screen.findByRole("button", { name: /Transaksi PLN berhasil/ })
     expect(screen.getByLabelText("Belum dibaca")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("option", { name: /Transaksi PLN berhasil/ }))
+    fireEvent.click(card)
 
     expect(await screen.findByRole("dialog", { name: "TRANSAKSI" })).toBeInTheDocument()
   })
