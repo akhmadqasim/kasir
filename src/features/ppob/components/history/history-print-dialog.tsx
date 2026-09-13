@@ -61,7 +61,10 @@ export function HistoryPrintDialog({ item, onClose }: HistoryPrintDialogProps) {
   const trxId = item?.trxId ?? null
   const providerTotal = item ? getProviderTotal(item) : null
 
+  // Only once there is something to price: the dialog is mounted with the
+  // table, and most visits to the history never print anything.
   const markupQuery = useApiQuery<PpobMarkup>(queryKeys.ppob.markup, getPpobMarkup, {
+    enabled: item != null,
     staleTime: 5 * 60_000,
     retry: false,
   })

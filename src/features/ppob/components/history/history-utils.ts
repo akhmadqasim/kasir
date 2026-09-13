@@ -17,12 +17,9 @@ import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../../pricing"
 import type { HistoryPaymentItem } from "../../types"
 import type { PpobMarkup, PpobMarkupConfig } from "../../types/auth"
 
-/** The services PPOB settings carry a markup block for. */
-type MarkupServiceKey = {
-  [K in keyof PpobMarkup]: PpobMarkup[K] extends PpobMarkupConfig ? K : never
-}[keyof PpobMarkup]
-
 export interface ServiceInfo {
+  /** The canonical service, or `null` for a row nothing here recognises. */
+  key: PpobServiceKey | null
   icon: LucideIcon
   bg: string
   text: string
@@ -31,7 +28,7 @@ export interface ServiceInfo {
 
 function fromKey(key: PpobServiceKey, icon: LucideIcon, label: string): ServiceInfo {
   const c = PPOB_SERVICE_COLORS[key]
-  return { icon, bg: c.bgMuted, text: c.text, label }
+  return { key, icon, bg: c.bgMuted, text: c.text, label }
 }
 
 const SERVICE_MAP: Record<string, ServiceInfo> = {
@@ -49,6 +46,7 @@ const SERVICE_MAP: Record<string, ServiceInfo> = {
 }
 
 const FALLBACK_SERVICE: ServiceInfo = {
+  key: null,
   icon: Package,
   bg: "bg-default",
   text: "text-muted",
@@ -281,14 +279,30 @@ export function getProviderTotal(item: HistoryPaymentItem): number | null {
   return null
 }
 
-/** The markup block in PPOB settings that applies to a history row, if any. */
-const MARKUP_KEY_BY_LABEL: Record<string, MarkupServiceKey> = {
-  PULSA: "pulsa",
-  "PAKET DATA": "data",
-  PLN: "pln",
-  PDAM: "pdam",
-  BPJS: "bpjs",
-  "E-MONEY": "emoney",
+/** The services PPOB settings carry a markup block for. */
+type MarkupServiceKey = {
+  [K in keyof PpobMarkup]: PpobMarkup[K] extends PpobMarkupConfig ? K : never
+}[keyof PpobMarkup]
+
+const MARKUP_SERVICES: readonly MarkupServiceKey[] = [
+  "pulsa",
+  "data",
+  "pln",
+  "pdam",
+  "bpjs",
+  "emoney",
+]
+
+function hasMarkupBlock(key: PpobServiceKey): key is MarkupServiceKey {
+  return (MARKUP_SERVICES as readonly string[]).includes(key)
+}
+
+/** The markup block in PPOB settings that applies to a service, if it has one. */
+function markupFor(
+  key: PpobServiceKey | null,
+  markup: PpobMarkup | null | undefined,
+): PpobMarkupConfig {
+  return key && markup && hasMarkupBlock(key) ? markup[key] : DEFAULT_PPOB_MARKUP
 }
 
 /**
@@ -303,12 +317,12 @@ export function getDefaultSellPrice(
   providerTotal: number,
   markup: PpobMarkup | null | undefined,
 ): number {
-  const key = MARKUP_KEY_BY_LABEL[detectServiceType(item).label]
+  const { key } = detectServiceType(item)
   return resolvePpobSellPrice({
     name: buildDescription(item),
     serviceType: key ?? "",
     vendorCost: providerTotal,
-    markup: key && markup ? markup[key] : DEFAULT_PPOB_MARKUP,
+    markup: markupFor(key, markup),
     customPrices: markup?.custom_prices ?? {},
   })
 }

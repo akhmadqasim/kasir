@@ -676,6 +676,10 @@ fn ppob_item_receipt_data(
 /// from its Riwayat, the outlet sees what it paid, sets a "Harga Jual", and
 /// prints. The sell price is the struk's `Grand Total`; the difference from
 /// the provider's total prints as `Biaya Layanan`.
+///
+/// `sell_price` is taken as given: the route already refused a negative or
+/// non-finite one as a malformed request, and a struk sold at a loss is the
+/// outlet's call to make.
 async fn ppob_history_receipt_data(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
@@ -683,12 +687,6 @@ async fn ppob_history_receipt_data(
     trx_id: String,
     sell_price: f64,
 ) -> Result<PpobReceiptData, AppError> {
-    if !sell_price.is_finite() || sell_price < 0.0 {
-        return Err(AppError::Validation(
-            "Harga jual tidak boleh negatif".into(),
-        ));
-    }
-
     let item = services::ppob::history::detail(db, mitra, trx_id).await?;
     if !services::ppob::history::is_success(&item) {
         return Err(AppError::Validation(

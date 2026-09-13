@@ -138,11 +138,11 @@ fn parse_history_item(obj: &serde_json::Map<String, Value>) -> HistoryPaymentIte
     }
 }
 
-async fn fetch_list(
+pub async fn list(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
-    start_date: &str,
-    end_date: &str,
+    start_date: String,
+    end_date: String,
 ) -> Result<Vec<HistoryPaymentItem>, AppError> {
     let client = get_mitra_request_context(db, mitra).await?;
     let result = client
@@ -155,19 +155,21 @@ async fn fetch_list(
         )
         .await?;
 
-    Ok(history_rows(&result)
+    let items: Vec<HistoryPaymentItem> = history_rows(&result)
         .into_iter()
         .map(parse_history_item)
-        .collect())
-}
+        .collect();
 
-pub async fn list(
-    db: &DatabaseConnection,
-    mitra: &Arc<Mutex<MitraClient>>,
-    start_date: String,
-    end_date: String,
-) -> Result<Vec<HistoryPaymentItem>, AppError> {
-    fetch_list(db, mitra, &start_date, &end_date).await
+    // The table the cashier is looking at is where the next print comes
+    // from; remembering its settled rows now saves [`detail`] a second fetch
+    // of the same list a moment later. A transaction still in flight may
+    // change its mind, so only a settled one is worth remembering.
+    items
+        .iter()
+        .filter(|item| is_success(item))
+        .for_each(remember_detail);
+
+    Ok(items)
 }
 
 /// How far back [`detail`] looks for a transaction.
@@ -187,11 +189,15 @@ type DetailCache = HashMap<String, (Instant, HistoryPaymentItem)>;
 static DETAIL_CACHE: LazyLock<std::sync::Mutex<DetailCache>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+fn is_fresh(fetched_at: &Instant) -> bool {
+    fetched_at.elapsed() < DETAIL_CACHE_TTL
+}
+
 fn cached_detail(trx_id: &str) -> Option<HistoryPaymentItem> {
     let cache = DETAIL_CACHE.lock().ok()?;
     cache
         .get(trx_id)
-        .filter(|(fetched_at, _)| fetched_at.elapsed() < DETAIL_CACHE_TTL)
+        .filter(|(fetched_at, _)| is_fresh(fetched_at))
         .map(|(_, item)| item.clone())
 }
 
@@ -200,17 +206,19 @@ fn remember_detail(item: &HistoryPaymentItem) {
         return;
     };
     if let Ok(mut cache) = DETAIL_CACHE.lock() {
-        cache.retain(|_, (fetched_at, _)| fetched_at.elapsed() < DETAIL_CACHE_TTL);
+        cache.retain(|_, (fetched_at, _)| is_fresh(fetched_at));
         cache.insert(trx_id, (Instant::now(), item.clone()));
     }
 }
 
-/// Mitra's own word for a transaction that went through.
+/// Mitra's own words for a transaction that went through — the same set the
+/// history table's `normalizeStatus` reads as `sukses`, so a row offered a
+/// "Cetak Struk" button is one this side will print.
 pub fn is_success(item: &HistoryPaymentItem) -> bool {
     item.status.as_deref().is_some_and(|status| {
         matches!(
             status.trim().to_lowercase().as_str(),
-            "sukses" | "success" | "berhasil"
+            "sukses" | "success" | "berhasil" | "done" | "completed"
         )
     })
 }
@@ -250,7 +258,8 @@ pub async fn detail(
         .format("%Y-%m-%d")
         .to_string();
 
-    let item = fetch_list(db, mitra, &start, &end)
+    // `list` remembers every settled row it saw, this one included.
+    list(db, mitra, start, end)
         .await?
         .into_iter()
         .find(|item| item.trx_id.as_deref() == Some(trx_id.as_str()))
@@ -258,14 +267,7 @@ pub async fn detail(
             AppError::NotFound(format!(
                 "Transaksi {trx_id} tidak ditemukan di riwayat {DETAIL_LOOKBACK_DAYS} hari terakhir"
             ))
-        })?;
-
-    // A transaction still in flight may change its mind; only a settled one
-    // is worth remembering.
-    if is_success(&item) {
-        remember_detail(&item);
-    }
-    Ok(item)
+        })
 }
 
 pub async fn mutasi(
