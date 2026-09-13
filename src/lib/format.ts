@@ -16,6 +16,13 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value)
 }
 
+const percentFormatter = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 })
+
+/** Persentase satu desimal dengan koma Indonesia, tanpa tanda `%`: `12,5`. */
+export function formatPercent(value: number): string {
+  return percentFormatter.format(value)
+}
+
 const compactRupiahFormatter = new Intl.NumberFormat("id-ID", {
   notation: "compact",
   maximumFractionDigits: 1,
