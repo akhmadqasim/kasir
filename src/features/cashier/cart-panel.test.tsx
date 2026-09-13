@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
@@ -56,6 +56,25 @@ function renderPanel(props: Partial<Parameters<typeof CartPanel>[0]> = {}) {
 /** Shortcut kasir selalu datang dari window, bukan dari elemen yang sedang fokus. */
 function pressFunctionKey(key: string) {
   fireEvent.keyDown(window, { key })
+}
+
+/**
+ * Tombol di dalam dialog transaksi tersimpan diterima elemen yang sedang fokus —
+ * baris listbox — dan menjalar ke atas, seperti tombol sungguhan; listener
+ * `window` tidak lagi menangkap panah dan Enter di sana.
+ */
+async function openHeldCartsDialog() {
+  pressFunctionKey("F9")
+  const dialog = await screen.findByRole("dialog")
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  return dialog
+}
+
+function pressInDialog(key: string) {
+  const target = document.activeElement ?? document.body
+  // React Aria menjalankan aksi Enter pada keyup, seperti tombol asli.
+  fireEvent.keyDown(target, { key })
+  fireEvent.keyUp(target, { key })
 }
 
 beforeEach(() => {
@@ -155,12 +174,17 @@ describe("cart panel", () => {
     useCartStore.setState({ recallCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
     // Sorotan mulai di baris pertama; satu panah bawah memindahkannya ke kedua.
-    fireEvent.keyDown(window, { key: "ArrowDown" })
-    fireEvent.keyDown(window, { key: "Enter" })
+    pressInDialog("ArrowDown")
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Pelanggan 2/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    )
+    pressInDialog("Enter")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -173,10 +197,9 @@ describe("cart panel", () => {
     useCartStore.setState({ recallCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
-    fireEvent.keyDown(window, { key: "2" })
+    pressInDialog("2")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -189,10 +212,9 @@ describe("cart panel", () => {
     useCartStore.setState({ removeHeldCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
-    fireEvent.keyDown(window, { key: "Delete" })
+    pressInDialog("Delete")
 
     expect(removeHeldCart).toHaveBeenCalledWith("hold-1")
   })
