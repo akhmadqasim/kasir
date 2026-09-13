@@ -77,9 +77,16 @@ pub enum UpdatePhase {
         total: Option<u64>,
     },
     /// Downloaded and signature-verified; waiting for someone to say "now".
-    Ready { version: String },
-    Installing { version: String },
-    Failed { step: UpdateStep, message: String },
+    Ready {
+        version: String,
+    },
+    Installing {
+        version: String,
+    },
+    Failed {
+        step: UpdateStep,
+        message: String,
+    },
 }
 
 /// What `GET /api/updates` answers.
@@ -156,27 +163,22 @@ impl Updater {
         let _serial = self.check_lock.lock().await;
 
         {
-            let mut inner = self.lock();
-            match inner.phase {
-                UpdatePhase::Downloading { .. } | UpdatePhase::Installing { .. } => {
-                    return Ok(status_of(&inner));
-                }
-                _ => inner.phase = UpdatePhase::Checking,
+            let inner = self.lock();
+            if matches!(
+                inner.phase,
+                UpdatePhase::Downloading { .. } | UpdatePhase::Installing { .. }
+            ) {
+                return Ok(status_of(&inner));
             }
         }
+        // Before the phase moves: an updater nobody attached is a programming
+        // error, not a failed check, and leaves the status alone.
+        let builder = self.builder()?;
+        self.lock().phase = UpdatePhase::Checking;
 
-        let result = match self.builder() {
-            Ok(builder) => match builder.timeout(CHECK_TIMEOUT).build() {
-                Ok(updater) => updater.check().await,
-                Err(e) => Err(e),
-            },
-            Err(e) => {
-                self.fail(
-                    UpdateStep::Check,
-                    "Pembaruan belum siap. Coba lagi sebentar.".into(),
-                );
-                return Err(e);
-            }
+        let result = match builder.timeout(CHECK_TIMEOUT).build() {
+            Ok(updater) => updater.check().await,
+            Err(e) => Err(e),
         };
 
         let mut inner = self.lock();
@@ -324,7 +326,8 @@ impl Updater {
             ));
             // Blocking: writes the temp file, launches the installer and, on
             // Windows, never returns because it exits the process.
-            let outcome = tauri::async_runtime::spawn_blocking(move || update.install(&bytes)).await;
+            let outcome =
+                tauri::async_runtime::spawn_blocking(move || update.install(&bytes)).await;
             let error = match outcome {
                 Ok(Ok(())) => return,
                 Ok(Err(e)) => e.to_string(),
@@ -372,7 +375,9 @@ impl Updater {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         // A poisoned lock means a panic while holding it; the phase is still
         // the best information there is, so recover rather than propagate.
-        self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -447,17 +452,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_without_an_app_handle_fails_as_an_internal_error() {
+    async fn check_without_an_app_handle_is_an_internal_error_that_leaves_the_phase_alone() {
         let updater = updater();
         let err = updater.check().await.expect_err("no handle");
         assert!(matches!(err, AppError::Internal(_)), "{err:?}");
-        assert!(matches!(
-            updater.status().phase,
-            UpdatePhase::Failed {
-                step: UpdateStep::Check,
-                ..
-            }
-        ));
+        assert_eq!(updater.status().phase, UpdatePhase::Idle);
     }
 
     #[tokio::test]
@@ -537,24 +536,24 @@ mod tests {
             serde_json::from_value(manifest).expect("the plugin parses the manifest");
         assert_eq!(release.version.to_string(), "0.6.0");
         assert!(release.pub_date.is_some());
-        for target in ["windows-x86_64-nsis", "windows-x86_64-msi", "windows-x86_64"] {
+        for target in [
+            "windows-x86_64-nsis",
+            "windows-x86_64-msi",
+            "windows-x86_64",
+        ] {
             release.download_url(target).expect(target);
             release.signature(target).expect(target);
         }
-        assert!(
-            release
-                .download_url("windows-x86_64-nsis")
-                .unwrap()
-                .path()
-                .ends_with("-setup.exe")
-        );
-        assert!(
-            release
-                .download_url("windows-x86_64-msi")
-                .unwrap()
-                .path()
-                .ends_with(".msi")
-        );
+        assert!(release
+            .download_url("windows-x86_64-nsis")
+            .unwrap()
+            .path()
+            .ends_with("-setup.exe"));
+        assert!(release
+            .download_url("windows-x86_64-msi")
+            .unwrap()
+            .path()
+            .ends_with(".msi"));
     }
 
     /// `v0.6.0` — the tag name — is accepted as a version too, so a script

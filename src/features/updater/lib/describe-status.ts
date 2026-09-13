@@ -24,23 +24,6 @@ export function describeStatus(status: UpdateStatus): string {
 }
 
 /**
- * The version a banner or a button is about, or `null` when there is none —
- * the phases that carry one are exactly the phases with something to act on.
- */
-export function pendingVersion(status: UpdateStatus | undefined): string | null {
-  if (!status) return null
-  switch (status.phase) {
-    case "available":
-    case "downloading":
-    case "ready":
-    case "installing":
-      return status.version
-    default:
-      return null
-  }
-}
-
-/**
  * A failed check that nobody asked for stays quiet; a failed download or
  * install always shows, because a person pressed the button that started it.
  */

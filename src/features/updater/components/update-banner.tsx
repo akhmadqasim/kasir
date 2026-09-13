@@ -4,8 +4,9 @@ import { Alert, Button, Spinner } from "@heroui/react"
 import { PendingButton } from "@/components/pending-button"
 import { useAuthStore } from "@/features/auth"
 import { id as t } from "@/i18n/id"
+import { useInstallConfirmation } from "../hooks/use-install-confirmation"
 import { useUpdateActions, useUpdateStatus } from "../hooks/use-update-status"
-import { isVisibleFailure, pendingVersion } from "../lib/describe-status"
+import { isVisibleFailure } from "../lib/describe-status"
 import { InstallUpdateDialog } from "./install-update-dialog"
 import { UpdateProgress } from "./update-progress"
 
@@ -25,24 +26,18 @@ export function UpdateBanner() {
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const { data: status } = useUpdateStatus()
   const { download, install } = useUpdateActions()
+  const confirmation = useInstallConfirmation(install)
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
-  const [confirmVersion, setConfirmVersion] = useState<string | null>(null)
 
   if (!isAdmin || !status) return null
 
-  const version = pendingVersion(status)
-  const isDismissed =
-    version !== null &&
-    version === dismissedVersion &&
-    (status.phase === "available" || status.phase === "ready")
+  // Only the two phases that wait on a person can be put off; a download or
+  // an install in progress is shown regardless.
+  const dismissable =
+    status.phase === "available" || status.phase === "ready" ? status.version : null
+  if (dismissable !== null && dismissable === dismissedVersion) return null
 
-  if (isDismissed) return null
-
-  const dismiss = () => setDismissedVersion(version)
-  const confirmInstall = () => {
-    setConfirmVersion(null)
-    install.mutate()
-  }
+  const dismiss = () => setDismissedVersion(dismissable)
 
   let alert: ReactNode = null
 
@@ -99,7 +94,7 @@ export function UpdateBanner() {
               <PendingButton
                 isPending={install.isPending}
                 size="sm"
-                onPress={() => setConfirmVersion(status.version)}
+                onPress={() => confirmation.request(status.version)}
               >
                 {t.updater.restartToFinish}
               </PendingButton>
@@ -160,11 +155,7 @@ export function UpdateBanner() {
   return (
     <>
       {alert}
-      <InstallUpdateDialog
-        version={confirmVersion}
-        onClose={() => setConfirmVersion(null)}
-        onConfirm={confirmInstall}
-      />
+      <InstallUpdateDialog {...confirmation.dialogProps} />
     </>
   )
 }

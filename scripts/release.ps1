@@ -166,9 +166,10 @@ function New-PlatformEntry($installer) {
     url       = "https://github.com/$repoSlug/releases/download/$Tag/$($installer.Name)"
   }
 }
-$platforms = [ordered]@{ "windows-x86_64-nsis" = New-PlatformEntry $nsis }
+$nsisEntry = New-PlatformEntry $nsis
+$platforms = [ordered]@{ "windows-x86_64-nsis" = $nsisEntry }
 if ($msi) { $platforms["windows-x86_64-msi"] = New-PlatformEntry $msi }
-$platforms["windows-x86_64"] = New-PlatformEntry $nsis
+$platforms["windows-x86_64"] = $nsisEntry
 
 $manifest = [ordered]@{
   version   = $Version

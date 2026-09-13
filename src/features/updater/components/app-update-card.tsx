@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Card } from "@heroui/react"
 import { RefreshCw } from "lucide-react"
 
@@ -8,6 +8,7 @@ import { useAuthStore } from "@/features/auth"
 import { id as t } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { useInstallConfirmation } from "../hooks/use-install-confirmation"
 import { isBusyPhase, useUpdateActions, useUpdateStatus } from "../hooks/use-update-status"
 import { describeStatus, isVisibleFailure } from "../lib/describe-status"
 import { InstallUpdateDialog } from "./install-update-dialog"
@@ -25,13 +26,9 @@ export function AppUpdateCard() {
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const { data: status } = useUpdateStatus()
   const { check, download, install } = useUpdateActions()
-  const [confirmVersion, setConfirmVersion] = useState<string | null>(null)
+  const confirmation = useInstallConfirmation(install)
 
   const runCheck = () => check.mutate(undefined, { onError: (error) => toast.error(error.message) })
-  const confirmInstall = () => {
-    setConfirmVersion(null)
-    install.mutate()
-  }
 
   const statusText = status ? describeStatus(status) : "—"
   const statusTone: SummaryItem["tone"] = isVisibleFailure(status) ? "danger" : "default"
@@ -58,7 +55,7 @@ export function AppUpdateCard() {
       primary = (
         <PendingButton
           isPending={install.isPending}
-          onPress={() => setConfirmVersion(status.version)}
+          onPress={() => confirmation.request(status.version)}
         >
           {t.updater.restartToFinish}
         </PendingButton>
@@ -104,11 +101,7 @@ export function AppUpdateCard() {
         </PendingButton>
       </Card.Footer>
 
-      <InstallUpdateDialog
-        version={confirmVersion}
-        onClose={() => setConfirmVersion(null)}
-        onConfirm={confirmInstall}
-      />
+      <InstallUpdateDialog {...confirmation.dialogProps} />
     </Card>
   )
 }

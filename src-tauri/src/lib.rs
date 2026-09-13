@@ -137,12 +137,11 @@ fn start_http_server(
     // login attempt against an unknown username is not the request that pays it.
     services::auth::warm_password_verifier();
 
-    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env())
-        .sharing(
-            mitra_client.clone(),
-            backup_scheduler.clone(),
-            updater.clone(),
-        );
+    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env()).sharing(
+        mitra_client.clone(),
+        backup_scheduler.clone(),
+        updater.clone(),
+    );
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => server,
         Err(e) => {

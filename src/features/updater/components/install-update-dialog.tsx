@@ -2,7 +2,7 @@ import { AlertDialog, Button } from "@heroui/react"
 
 import { id as t } from "@/i18n/id"
 
-interface InstallUpdateDialogProps {
+export interface InstallUpdateDialogProps {
   /** The version about to be installed; `null` closes the dialog. */
   version: string | null
   onClose: () => void

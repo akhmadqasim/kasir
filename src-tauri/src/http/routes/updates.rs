@@ -18,6 +18,7 @@ use axum::Router;
 use crate::http::error::ApiResult;
 use crate::http::AppState;
 use crate::updater::UpdateStatus;
+use crate::utils::AppError;
 
 pub fn session() -> Router<AppState> {
     Router::new()
@@ -35,18 +36,20 @@ async fn status(State(state): State<AppState>) -> axum::Json<UpdateStatus> {
     axum::Json(state.updater.status())
 }
 
-async fn check(State(state): State<AppState>) -> ApiResult<(StatusCode, axum::Json<UpdateStatus>)> {
-    Ok((StatusCode::ACCEPTED, axum::Json(state.updater.check().await?)))
+type Accepted = ApiResult<(StatusCode, axum::Json<UpdateStatus>)>;
+
+fn accepted(moved_to: Result<UpdateStatus, AppError>) -> Accepted {
+    Ok((StatusCode::ACCEPTED, axum::Json(moved_to?)))
 }
 
-async fn download(
-    State(state): State<AppState>,
-) -> ApiResult<(StatusCode, axum::Json<UpdateStatus>)> {
-    Ok((StatusCode::ACCEPTED, axum::Json(state.updater.download()?)))
+async fn check(State(state): State<AppState>) -> Accepted {
+    accepted(state.updater.check().await)
 }
 
-async fn install(
-    State(state): State<AppState>,
-) -> ApiResult<(StatusCode, axum::Json<UpdateStatus>)> {
-    Ok((StatusCode::ACCEPTED, axum::Json(state.updater.install()?)))
+async fn download(State(state): State<AppState>) -> Accepted {
+    accepted(state.updater.download())
+}
+
+async fn install(State(state): State<AppState>) -> Accepted {
+    accepted(state.updater.install())
 }

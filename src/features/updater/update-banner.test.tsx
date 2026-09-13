@@ -8,7 +8,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { User } from "@/features/auth/types"
 import { AppUpdateCard } from "./components/app-update-card"
 import { UpdateBanner } from "./components/update-banner"
-import { describeStatus, isVisibleFailure, pendingVersion } from "./lib/describe-status"
+import { describeStatus, isVisibleFailure } from "./lib/describe-status"
 import type { UpdateStatus } from "./types"
 
 const ADMIN: User = {
@@ -193,10 +193,5 @@ describe("describeStatus", () => {
       isVisibleFailure({ current_version: "1", phase: "failed", step: "download", message: "" }),
     ).toBe(true)
     expect(isVisibleFailure(undefined)).toBe(false)
-  })
-
-  it("mengambil versi dari fase yang membawanya", () => {
-    expect(pendingVersion(AVAILABLE)).toBe("0.6.0")
-    expect(pendingVersion({ current_version: "1", phase: "up_to_date" })).toBeNull()
   })
 })

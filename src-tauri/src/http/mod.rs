@@ -69,11 +69,13 @@ const SWEEP_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Everything the transport needs and nothing it does not.
 ///
-/// `mitra` and `backup_scheduler` are the two pieces of process-wide mutable
-/// state the services own: the cached PPOB upstream session, and the clock the
-/// daily backup runs on. They are shared handles rather than fresh instances
-/// because the Tauri command layer holds the same two — a second `MitraClient`
-/// would hold a second upstream session, and logging one in logs the other out.
+/// `mitra`, `backup_scheduler` and `updater` are process-wide mutable state
+/// that outlives any one request: the cached PPOB upstream session, the clock
+/// the daily backup runs on, and the self-update state machine. `run()` builds
+/// each once and hands the same handles in through [`AppState::sharing`], so
+/// the transport can never hold a second copy that disagrees with the first —
+/// a second `MitraClient` would hold a second upstream session, and logging
+/// one in logs the other out.
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
