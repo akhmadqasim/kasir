@@ -18,6 +18,7 @@ import { ProductAutocomplete } from "@/components/product-autocomplete"
 import { SummaryList } from "@/components/summary-list"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
+import { isEmptyNumberFieldValue } from "@/lib/number-field"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useCreateWriteoff } from "../hooks/use-stock-writeoffs"
 import type { Product } from "@/features/products/types"
@@ -156,7 +157,7 @@ function WriteoffFormBody({ onOpenChange }: { onOpenChange: (open: boolean) => v
             variant="secondary"
             value={quantity ?? Number.NaN}
             onChange={(value) => {
-              setQuantity(value === undefined || Number.isNaN(value) ? null : value)
+              setQuantity(isEmptyNumberFieldValue(value) ? null : value)
               clearError("quantity")
             }}
           >

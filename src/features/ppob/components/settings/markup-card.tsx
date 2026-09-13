@@ -4,6 +4,7 @@ import { Card, Description, Fieldset, NumberField } from "@heroui/react"
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
+import { isEmptyNumberFieldValue } from "@/lib/number-field"
 import { PpobCustomPrices } from "./ppob-custom-prices"
 import type { PpobSettingsForm } from "./use-ppob-settings-form"
 
@@ -68,7 +69,7 @@ export function MarkupCard({ form }: { form: PpobSettingsForm }) {
                     value={config.value > 0 ? config.value : Number.NaN}
                     variant="secondary"
                     onChange={(value) => {
-                      const next = value === undefined || Number.isNaN(value) ? 0 : value
+                      const next = isEmptyNumberFieldValue(value) ? 0 : value
                       updateMarkup((prev) => ({ ...prev, [key]: { ...prev[key], value: next } }))
                     }}
                   >

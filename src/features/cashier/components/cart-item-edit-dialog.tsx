@@ -1,22 +1,34 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Input, Modal, TextField } from "@heroui/react"
-import { Minus, Plus } from "lucide-react"
+import type { FormEvent, KeyboardEvent } from "react"
+import { Button, Description, Form, Label, Modal, NumberField } from "@heroui/react"
 
 import { OptionSelect } from "@/components/option-select"
+import { RupiahField } from "@/components/rupiah-field"
 import { SummaryList } from "@/components/summary-list"
+import { isEmptyNumberFieldValue } from "@/lib/number-field"
 import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
 import type { CartItem } from "../types"
-import { formatRupiah, getQuantityWarning } from "../utils"
-
-const DISCOUNT_TYPES = [
-  { key: "fixed", label: "Nominal (Rp)" },
-  { key: "percentage", label: "Persen (%)" },
-] as const
+import { DISCOUNT_TYPES, formatRupiah, getQuantityWarning } from "../utils"
 
 interface CartItemEditDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   item: CartItem | null
+}
+
+/**
+ * Enter di kolom manapun mengirim form lewat `requestSubmit`, alih-alih
+ * mengandalkan submit-implisit bawaan browser saat Enter ditekan di kolom
+ * teks. Tidak menyentuh state komponen sama sekali — `requestSubmit`
+ * men-dispatch event `submit` baru ke elemen `<form>`, dan React membaca
+ * closure `onSubmit` terbaru untuk event itu, bukan closure yang sudah
+ * dipasang saat `keydown` ini dimulai. Itu penting khusus untuk `NumberField`:
+ * ia meng-commit angka yang diketik pada `keydown`-nya sendiri lebih dulu,
+ * jadi kalau di sini kita membaca state secara langsung (bukan lewat submit
+ * baru), yang terbaca adalah nilai sebelum commit itu selesai.
+ */
+function submitOnEnter(e: KeyboardEvent<HTMLInputElement>) {
+  if (e.key === "Enter") e.currentTarget.form?.requestSubmit()
 }
 
 export function CartItemEditDialog({ open, onOpenChange, item }: CartItemEditDialogProps) {
@@ -26,6 +38,7 @@ export function CartItemEditDialog({ open, onOpenChange, item }: CartItemEditDia
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label={item.product_name}>
+          <Modal.CloseTrigger />
           {/* Body hanya hidup selama dialog terbuka dan di-key per baris keranjang,
               jadi state form-nya lahir dari item yang benar tanpa perlu efek
               penyelaras yang bisa menimpa ketikan kasir. */}
@@ -48,83 +61,54 @@ function CartItemEditBody({
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
 
   const disc = itemDiscounts[item.cart_id]
+  // Jumlah valid terakhir — dipakai untuk total dan peringatan. Batasnya
+  // (1..MAX_CART_QUANTITY, kelipatan 1) sudah dijaga oleh `minValue`/`maxValue`/
+  // `step` pada `NumberField` di bawah; state ini cuma menyaring nilai
+  // kosong/NaN yang muncul saat kolomnya sedang dikosongkan.
   const [qty, setQty] = useState(item.quantity)
-  const [qtyRaw, setQtyRaw] = useState(String(item.quantity))
   const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
-  const [discRaw, setDiscRaw] = useState(disc ? String(disc.value) : "")
+  const [discValue, setDiscValue] = useState<number | null>(disc?.value ?? null)
   const qtyInputRef = useRef<HTMLInputElement>(null)
 
   const lineTotal = item.product_price * qty
   const quantityWarning = getQuantityWarning(item, qty)
-  const discValue = Number(discRaw) || 0
+  const rawDisc = discValue ?? 0
   const discAmount =
     discType === "percentage"
-      ? Math.round((lineTotal * Math.min(discValue, 100)) / 100)
-      : Math.min(discValue, lineTotal)
+      ? Math.round((lineTotal * Math.min(rawDisc, 100)) / 100)
+      : Math.min(rawDisc, lineTotal)
   const finalTotal = Math.max(0, lineTotal - discAmount)
 
-  const clampQty = (value: number) => Math.min(Math.max(1, value), MAX_CART_QUANTITY)
-
-  const handleQtyChange = (newQty: number) => {
-    const validated = clampQty(newQty)
-    setQty(validated)
-    setQtyRaw(String(validated))
-  }
-
-  const handleQtyInputChange = (value: string) => {
-    // Batasi panjang input agar barcode 13 digit tidak bisa jadi jumlah
-    const cleaned = value.replace(/[^\d]/g, "").slice(0, String(MAX_CART_QUANTITY).length)
-    setQtyRaw(cleaned)
-
-    if (!cleaned) return
-
-    const parsed = parseInt(cleaned, 10)
-    if (!isNaN(parsed)) {
-      setQty(clampQty(parsed))
-    }
-  }
-
-  const handleDiscChange = (value: string) => {
-    setDiscRaw(value.replace(/[^\d]/g, ""))
-  }
-
-  const formatDiscDisplay = (raw: string): string => {
-    if (!raw || discType === "percentage") return raw
-    const num = Number(raw)
-    if (isNaN(num) || num === 0) return raw
-    return num.toLocaleString("id-ID")
+  const handleQtyChange = (value: number | undefined) => {
+    if (isEmptyNumberFieldValue(value)) return
+    setQty(value)
   }
 
   const handleTypeChange = (newType: "fixed" | "percentage") => {
     setDiscType(newType)
-    setDiscRaw("")
+    setDiscValue(null)
   }
 
-  const handleSave = () => {
-    const normalizedQty = clampQty(parseInt(qtyRaw || String(qty), 10) || qty)
-    setQty(normalizedQty)
-    setQtyRaw(String(normalizedQty))
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
 
-    // Update quantity
     if (!item.is_ppob) {
-      updateQuantity(item.cart_id, normalizedQty)
+      updateQuantity(item.cart_id, qty)
     }
 
-    // Update discount
-    const parsedDisc = Number(discRaw) || 0
-    const clampedDisc = discType === "percentage" ? Math.min(parsedDisc, 100) : parsedDisc
-    if (clampedDisc > 0) {
-      setItemDiscount(item.cart_id, { type: discType, value: clampedDisc })
-    } else {
-      setItemDiscount(item.cart_id, null)
-    }
+    // Persen dijepit ke 100 di sini juga, bukan cuma di `discAmount`:
+    // `setItemDiscount` sendiri tidak memvalidasi batas atas, jadi ini satu-
+    // satunya penjaga kalau nilainya datang dari diskon lama yang sudah lewat
+    // 100 tanpa sempat diketik ulang di kolom ini.
+    const savedDisc = discType === "percentage" ? Math.min(rawDisc, 100) : rawDisc
+    setItemDiscount(item.cart_id, savedDisc > 0 ? { type: discType, value: savedDisc } : null)
 
     onOpenChange(false)
   }
 
   const handleReset = () => {
     setDiscType("fixed")
-    setDiscRaw("")
+    setDiscValue(null)
     setItemDiscount(item.cart_id, null)
   }
 
@@ -144,8 +128,7 @@ function CartItemEditBody({
   }, [item.is_ppob])
 
   return (
-    <>
-      <Modal.CloseTrigger />
+    <Form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
       <Modal.Header>
         <Modal.Heading>{item.product_name}</Modal.Heading>
       </Modal.Header>
@@ -155,80 +138,71 @@ function CartItemEditBody({
           Harga: {formatRupiah(item.product_price)} / {item.unit ?? "pcs"}
         </p>
 
-        {/* Quantity */}
         {!item.is_ppob && (
-          <div className="flex flex-col gap-2">
-            {/* Judul blok, bukan label kolom: kolomnya sendiri diberi `aria-label`
-                supaya tidak ada `<label>` yang menggantung tanpa kolom. */}
-            <p className="font-medium text-foreground">Jumlah</p>
-            <div className="flex items-center gap-2">
-              <Button
-                aria-label="Kurangi jumlah"
-                isDisabled={qty <= 1}
-                isIconOnly
-                variant="secondary"
-                onPress={() => handleQtyChange(qty - 1)}
-              >
-                <Minus />
-              </Button>
-              <TextField
-                aria-label="Jumlah"
-                value={qtyRaw}
-                variant="secondary"
-                onChange={handleQtyInputChange}
-              >
-                <Input
-                  ref={qtyInputRef}
-                  className="w-20 text-center tabular-nums"
-                  inputMode="numeric"
-                  onBlur={() => setQtyRaw(String(qty))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSave()
-                  }}
-                />
-              </TextField>
-              <Button
-                aria-label="Tambah jumlah"
-                isDisabled={qty >= MAX_CART_QUANTITY}
-                isIconOnly
-                variant="secondary"
-                onPress={() => handleQtyChange(qty + 1)}
-              >
-                <Plus />
-              </Button>
-            </div>
-            {quantityWarning && <p className="text-warning">{quantityWarning}</p>}
-          </div>
+          <NumberField
+            fullWidth
+            maxValue={MAX_CART_QUANTITY}
+            minValue={1}
+            step={1}
+            value={qty}
+            variant="secondary"
+            onChange={handleQtyChange}
+          >
+            <Label>Jumlah</Label>
+            <NumberField.Group>
+              <NumberField.DecrementButton aria-label="Kurangi jumlah" />
+              <NumberField.Input
+                ref={qtyInputRef}
+                className="text-center tabular-nums"
+                onKeyDown={submitOnEnter}
+              />
+              <NumberField.IncrementButton aria-label="Tambah jumlah" />
+            </NumberField.Group>
+            {quantityWarning && (
+              <Description className="text-warning">{quantityWarning}</Description>
+            )}
+          </NumberField>
         )}
 
-        {/* Discount */}
-        <div className="flex flex-col gap-2">
-          <p className="font-medium text-foreground">Diskon</p>
-          <div className="flex items-center gap-2">
-            <OptionSelect
-              aria-label="Jenis diskon"
-              variant="secondary"
-              options={DISCOUNT_TYPES}
-              value={discType}
-              onChange={(key) => handleTypeChange(key as "fixed" | "percentage")}
+        {/* Jenis dan nilai diskon berdampingan, seperti dialog diskon transaksi. */}
+        <div className="grid grid-cols-2 gap-3">
+          <OptionSelect
+            label="Jenis diskon"
+            options={DISCOUNT_TYPES}
+            value={discType}
+            variant="secondary"
+            onChange={(key) => handleTypeChange(key as "fixed" | "percentage")}
+          />
+
+          {discType === "fixed" ? (
+            <RupiahField
+              label="Nilai diskon"
+              placeholder="0"
+              value={discValue}
+              onChange={setDiscValue}
+              onKeyDown={submitOnEnter}
             />
-            <TextField
-              aria-label="Nilai diskon"
-              className="flex-1"
+          ) : (
+            <NumberField
+              fullWidth
+              maxValue={100}
+              minValue={0}
+              value={discValue ?? Number.NaN}
               variant="secondary"
-              value={formatDiscDisplay(discRaw)}
-              onChange={handleDiscChange}
+              onChange={(value) => setDiscValue(isEmptyNumberFieldValue(value) ? null : value)}
             >
-              <Input
-                className="text-right tabular-nums"
-                inputMode="numeric"
-                placeholder={discType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave()
-                }}
-              />
-            </TextField>
-          </div>
+              <Label>Nilai diskon (%)</Label>
+              <NumberField.Group>
+                <NumberField.DecrementButton />
+                <NumberField.Input
+                  className="text-right tabular-nums"
+                  placeholder="0"
+                  onKeyDown={submitOnEnter}
+                />
+                <NumberField.IncrementButton />
+              </NumberField.Group>
+            </NumberField>
+          )}
         </div>
 
         <SummaryList
@@ -250,12 +224,12 @@ function CartItemEditBody({
 
       <Modal.Footer>
         {discAmount > 0 && (
-          <Button variant="tertiary" onPress={handleReset}>
+          <Button type="button" variant="tertiary" onPress={handleReset}>
             Reset Diskon
           </Button>
         )}
-        <Button onPress={handleSave}>Simpan</Button>
+        <Button type="submit">Simpan</Button>
       </Modal.Footer>
-    </>
+    </Form>
   )
 }

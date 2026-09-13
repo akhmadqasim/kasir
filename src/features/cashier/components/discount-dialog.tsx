@@ -4,12 +4,7 @@ import { Button, Input, Modal, TextField } from "@heroui/react"
 import { OptionSelect } from "@/components/option-select"
 import { SummaryList } from "@/components/summary-list"
 import { useCartStore } from "@/stores/cart-store"
-import { formatRupiah } from "../utils"
-
-const DISCOUNT_TYPES = [
-  { key: "fixed", label: "Nominal (Rp)" },
-  { key: "percentage", label: "Persen (%)" },
-] as const
+import { DISCOUNT_TYPES, formatRupiah } from "../utils"
 
 interface DiscountDialogProps {
   open: boolean

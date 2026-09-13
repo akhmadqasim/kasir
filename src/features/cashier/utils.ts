@@ -3,6 +3,12 @@ import type { CartItem } from "./types"
 
 export { formatRupiah } from "@/lib/format"
 
+/** Dipakai baik untuk diskon per baris (`CartItemEditDialog`) maupun diskon transaksi (`DiscountDialog`). */
+export const DISCOUNT_TYPES = [
+  { key: "fixed", label: "Nominal (Rp)" },
+  { key: "percentage", label: "Persen (%)" },
+] as const
+
 /**
  * Peringatan (bukan blokir) untuk jumlah yang tidak wajar. Backend mengizinkan
  * stok minus, jadi kasir tetap boleh melanjutkan setelah membaca peringatannya.

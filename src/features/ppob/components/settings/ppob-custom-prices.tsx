@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Button, Chip, Description, Fieldset, Input, NumberField, TextField } from "@heroui/react"
 
 import { formatRupiah, parseIndonesianInteger } from "@/lib/format"
+import { isEmptyNumberFieldValue } from "@/lib/number-field"
 
 interface PpobCustomPricesProps {
   customPrices: Record<string, number>
@@ -107,10 +108,7 @@ export function PpobCustomPrices({
                 value={hasPrice ? sellPrice : Number.NaN}
                 variant="secondary"
                 onChange={(value) =>
-                  handlePriceChange(
-                    nominal,
-                    value === undefined || Number.isNaN(value) ? undefined : value,
-                  )
+                  handlePriceChange(nominal, isEmptyNumberFieldValue(value) ? undefined : value)
                 }
               >
                 <NumberField.Group>
