@@ -11,12 +11,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
 use crate::domain::store_logo::LogoFormat;
 use crate::domain::Actor;
 use crate::entity::store_info;
 use crate::services::guard;
+use crate::services::settings::{get_store_info, now_ts, require_store_info};
 use crate::utils::paths::get_data_dir;
 use crate::utils::AppError;
 
@@ -47,20 +48,10 @@ fn resolve(logo_path: &str) -> Option<(PathBuf, LogoFormat)> {
     Some((logo_dir().join(name), format))
 }
 
-async fn store_row(db: &DatabaseConnection) -> Result<store_info::Model, AppError> {
-    store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))
-}
-
-fn now_ts() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
 /// Delete every `logo.<ext>` the module could have written. Called before a
 /// new one lands so a PNG replaced by an SVG does not leave the PNG behind.
-fn remove_all_files(dir: &Path) -> Result<(), AppError> {
+fn remove_all_files() -> Result<(), AppError> {
+    let dir = logo_dir();
     for format in LogoFormat::ALL {
         let path = dir.join(file_name(format));
         match fs::remove_file(&path) {
@@ -88,7 +79,7 @@ pub async fn save(
 ) -> Result<store_info::Model, AppError> {
     guard::require_admin(actor)?;
     let format = LogoFormat::sniff(bytes)?;
-    let store = store_row(db).await?;
+    let store = require_store_info(db).await?;
 
     let dir = logo_dir();
     fs::create_dir_all(&dir).map_err(|e| {
@@ -102,7 +93,7 @@ pub async fn save(
     fs::write(&tmp_path, bytes).map_err(|e| {
         AppError::Internal(format!("gagal menulis logo {}: {e}", tmp_path.display()))
     })?;
-    remove_all_files(&dir)?;
+    remove_all_files()?;
     fs::rename(&tmp_path, &final_path).map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         AppError::Internal(format!("gagal memasang logo {}: {e}", final_path.display()))
@@ -118,9 +109,9 @@ pub async fn save(
 /// logo ends up exactly where it started.
 pub async fn remove(db: &DatabaseConnection, actor: &Actor) -> Result<(), AppError> {
     guard::require_admin(actor)?;
-    let store = store_row(db).await?;
+    let store = require_store_info(db).await?;
 
-    remove_all_files(&logo_dir())?;
+    remove_all_files()?;
 
     if store.logo_path.is_some() {
         let mut active: store_info::ActiveModel = store.into();
@@ -134,7 +125,7 @@ pub async fn remove(db: &DatabaseConnection, actor: &Actor) -> Result<(), AppErr
 /// The logo bytes and format, or `None` when the store has no logo — or claims
 /// one whose file is gone, which the sidebar treats the same way.
 pub async fn load(db: &DatabaseConnection) -> Result<Option<StoredLogo>, AppError> {
-    let Some(store) = store_info::Entity::find_by_id(1_i64).one(db).await? else {
+    let Some(store) = get_store_info(db).await? else {
         return Ok(None);
     };
     let Some((path, format)) = store.logo_path.as_deref().and_then(resolve) else {

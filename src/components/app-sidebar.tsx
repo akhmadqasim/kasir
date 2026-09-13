@@ -18,7 +18,7 @@ import {
 } from "@/components/layout/sidebar"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import { useStoreInfo } from "@/hooks/use-store-info"
+import { useStoreInfo } from "@/features/settings"
 
 /**
  * Sidebar aplikasi: merek di kepala, menu di tengah, pengguna di kaki.

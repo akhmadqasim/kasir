@@ -5,8 +5,10 @@
 //! malformed request would be the one failure a client could not parse the same
 //! way as every other. These exist purely so that never happens.
 
+use axum::body::Bytes;
+use axum::extract::multipart::MultipartError;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::{FromRequest, FromRequestParts, Request};
+use axum::extract::{FromRequest, FromRequestParts, Multipart, Request};
 use axum::http::request::Parts;
 use serde::de::DeserializeOwned;
 
@@ -77,4 +79,42 @@ pub fn json_from_slice<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiError> 
         }
         _ => ApiError::bad_request(format!("Format data tidak valid: {err}")),
     })
+}
+
+/// The bytes of the one part named `file` in a `multipart/form-data` body.
+///
+/// Both uploads the API takes — a database image and the store logo — want
+/// exactly this and nothing else. The part's `filename` and `Content-Type` are
+/// deliberately not exposed: both are attacker-controlled, and every caller
+/// decides what the bytes are by looking at the bytes.
+pub struct UploadedFile(pub Bytes);
+
+impl<S> FromRequest<S> for UploadedFile
+where
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let unreadable = |e: MultipartError| {
+            ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
+        };
+
+        let mut multipart = Multipart::from_request(req, state).await.map_err(|e| {
+            ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
+        })?;
+
+        while let Some(field) = multipart.next_field().await.map_err(unreadable)? {
+            // Only the field named `file` is considered, so a stray text field
+            // cannot be mistaken for the upload.
+            if field.name() != Some("file") {
+                continue;
+            }
+            return Ok(Self(field.bytes().await.map_err(unreadable)?));
+        }
+
+        Err(ApiError::validation(
+            "Unggahan harus berisi berkas pada field bernama 'file'.",
+        ))
+    }
 }

@@ -26,7 +26,7 @@
 //!
 //! [`PublicAppSettings`]: crate::domain::settings::PublicAppSettings
 
-use axum::extract::{DefaultBodyLimit, Multipart, State};
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -41,7 +41,7 @@ use crate::domain::store_logo::MAX_LOGO_BYTES;
 use crate::domain::Actor;
 use crate::entity::store_info;
 use crate::http::error::{ApiError, ApiResult};
-use crate::http::extract::Json;
+use crate::http::extract::{Json, UploadedFile};
 use crate::http::AppState;
 use crate::services;
 
@@ -90,9 +90,9 @@ async fn update_store(
 
 /// The logo file, or 404 when the store has none.
 ///
-/// Served with a `Content-Security-Policy` that forbids scripts: an SVG with a
-/// `<script>` is refused at upload, but the header costs nothing and means a
-/// logo opened directly in a tab still cannot run anything under the app's
+/// Served with a `Content-Security-Policy` that forbids scripts. That, not the
+/// upload check, is what makes an SVG safe here: an `<img>` never runs one, and
+/// a logo opened directly in a tab cannot run anything under the app's
 /// origin. `nosniff` keeps the browser from second-guessing the type.
 async fn get_store_logo(State(state): State<AppState>) -> ApiResult<Response> {
     let Some(logo) = services::store_logo::load(&state.db).await? else {
@@ -123,28 +123,8 @@ async fn get_store_logo(State(state): State<AppState>) -> ApiResult<Response> {
 async fn upload_store_logo(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
-    mut multipart: Multipart,
+    UploadedFile(data): UploadedFile,
 ) -> ApiResult<axum::Json<store_info::Model>> {
-    let mut data = None;
-
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
-    })? {
-        if field.name() != Some("file") {
-            continue;
-        }
-        data = Some(field.bytes().await.map_err(|e| {
-            ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
-        })?);
-        break;
-    }
-
-    let Some(data) = data else {
-        return Err(ApiError::validation(
-            "Unggahan harus berisi berkas gambar pada field bernama 'file'.",
-        ));
-    };
-
     Ok(axum::Json(
         services::store_logo::save(&state.db, &actor, &data).await?,
     ))

@@ -63,9 +63,10 @@ impl LogoFormat {
     /// Decide what `bytes` are from their content, or refuse them.
     ///
     /// Raster formats are recognised by their signatures. SVG has none, so it
-    /// has to parse as XML whose root element is `svg`; a `<script>` element
-    /// anywhere inside is refused too, because the same file is later served
-    /// from the app's own origin.
+    /// has to parse as XML whose root element is `svg`. That is a format
+    /// check, not sanitisation: an SVG can carry scripts in more ways than a
+    /// tag denylist would catch, so the route that serves it forbids script
+    /// execution with a `Content-Security-Policy` instead.
     pub fn sniff(bytes: &[u8]) -> Result<Self, AppError> {
         if bytes.is_empty() {
             return Err(AppError::Validation("Berkas logo kosong".into()));
@@ -93,9 +94,9 @@ impl LogoFormat {
     }
 }
 
-/// True when `bytes` are well-formed XML with an `svg` root and no `script`
-/// element. Anything the parser trips over — a truncated file, a stray `<`,
-/// a binary that happens to be text — is simply not an SVG.
+/// True when `bytes` are well-formed XML whose root element is `svg`. Anything
+/// the parser trips over — a truncated file, a stray `<`, a binary that happens
+/// to be text — is simply not an SVG.
 fn is_svg(bytes: &[u8]) -> bool {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return false;
@@ -106,18 +107,11 @@ fn is_svg(bytes: &[u8]) -> bool {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(tag)) | Ok(Event::Empty(tag)) => {
-                let name = tag.local_name();
-                let name = name.as_ref();
-                if name.eq_ignore_ascii_case(b"script") {
+            Ok(Event::Start(tag)) | Ok(Event::Empty(tag)) if !root_seen => {
+                if !tag.local_name().as_ref().eq_ignore_ascii_case(b"svg") {
                     return false;
                 }
-                if !root_seen {
-                    if !name.eq_ignore_ascii_case(b"svg") {
-                        return false;
-                    }
-                    root_seen = true;
-                }
+                root_seen = true;
             }
             Ok(Event::Eof) => return root_seen,
             Ok(_) => {}
@@ -152,12 +146,6 @@ mod tests {
 <!-- toko -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle r="8"/></svg>"#;
         assert_eq!(LogoFormat::sniff(svg).unwrap(), LogoFormat::Svg);
-    }
-
-    #[test]
-    fn an_svg_with_a_script_is_refused() {
-        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>";
-        assert!(LogoFormat::sniff(svg).is_err());
     }
 
     #[test]

@@ -183,6 +183,12 @@ butuh lebarnya.
 `lucide-react` saja. Ukurannya diwarisi dari komponen HeroUI; hanya beri `className="size-*"`
 kalau ikonnya berdiri di luar tombol atau chip.
 
+Satu pengecualian yang disengaja: logo toko bawaan adalah `LogoRustore` dari
+`@gravity-ui/icons` (set ikon yang dipakai dokumentasi HeroUI sendiri), digambar oleh
+`src/components/store-logo.tsx` sebagai `Avatar.Fallback` di sidebar dan di pratinjau
+pengaturan. Ia tampil hanya sampai pemilik toko mengunggah logonya sendiri di Pengaturan →
+Toko. Jangan mengimpor ikon lain dari paket itu.
+
 ## 4. Komponen
 
 **HeroUI v3 untuk semua komponen dasar.** Satu-satunya pengecualian adalah

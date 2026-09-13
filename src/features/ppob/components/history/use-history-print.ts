@@ -42,9 +42,10 @@ export function useHistoryPrint(item: HistoryPaymentItem | null, onPrinted?: () 
   }
 
   // A negative fee is a discount and prints as one; below the cost it would
-  // be a struk for money nobody paid.
-  const sellPrice = fee != null && providerTotal != null ? providerTotal + fee : null
-  const hasPrice = sellPrice != null && Number.isFinite(sellPrice) && sellPrice >= 0
+  // be a struk for money nobody paid — so that, and a cleared field, are
+  // both simply "no price", not a price plus a flag saying whether to trust it.
+  const rawPrice = fee != null && providerTotal != null ? providerTotal + fee : null
+  const sellPrice = rawPrice != null && Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : null
 
   const print = useApiMutation(() => printPpobHistoryReceipt(trxId ?? "", sellPrice ?? 0), {
     onSuccess: () => {
@@ -54,7 +55,7 @@ export function useHistoryPrint(item: HistoryPaymentItem | null, onPrinted?: () 
     onError: (error) => toast.error(`${t.ppob.receiptPrintFailed}: ${error.message}`),
   })
 
-  return { providerTotal, fee, setFee, sellPrice, hasPrice, print }
+  return { providerTotal, fee, setFee, sellPrice, print }
 }
 
 export type HistoryPrintControl = ReturnType<typeof useHistoryPrint>

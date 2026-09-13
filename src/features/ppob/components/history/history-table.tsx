@@ -149,7 +149,7 @@ export function TransactionDetailDialog({
             </Button>
             {printable && (
               <PendingButton
-                isDisabled={!printing.hasPrice}
+                isDisabled={printing.sellPrice == null}
                 isPending={printing.print.isPending}
                 onPress={() => printing.print.mutate()}
               >

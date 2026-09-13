@@ -6,13 +6,12 @@ import type { HistoryPrintControl } from "./use-history-print"
 
 /** The fee field and the Grand Total it produces, for the detail dialog's body. */
 export function HistoryPrintFields({ control }: { control: HistoryPrintControl }) {
-  const { fee, setFee, sellPrice, hasPrice } = control
+  const { fee, setFee, sellPrice } = control
 
   const grandTotal: SummaryItem = {
     label: t.ppob.grandTotal,
-    // `hasPrice` already implies non-null; the extra check is for the type checker.
-    value: hasPrice && sellPrice != null ? formatRupiah(sellPrice) : "-",
-    tone: hasPrice && fee != null && fee < 0 ? "danger" : "default",
+    value: sellPrice != null ? formatRupiah(sellPrice) : "-",
+    tone: sellPrice != null && fee != null && fee < 0 ? "danger" : "default",
   }
 
   return (

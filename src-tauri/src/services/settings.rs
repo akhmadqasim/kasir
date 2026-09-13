@@ -22,7 +22,7 @@ fn get_db_path() -> std::path::PathBuf {
     crate::utils::paths::get_db_path()
 }
 
-fn now_ts() -> String {
+pub(crate) fn now_ts() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
@@ -33,6 +33,16 @@ pub async fn get_store_info(
     Ok(info)
 }
 
+/// The singleton store row, or `NotFound` before onboarding has created it.
+/// Every write to store details starts here.
+pub(crate) async fn require_store_info(
+    db: &DatabaseConnection,
+) -> Result<store_info::Model, AppError> {
+    get_store_info(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))
+}
+
 pub async fn update_store_info(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -40,10 +50,7 @@ pub async fn update_store_info(
 ) -> Result<store_info::Model, AppError> {
     guard::require_admin(actor)?;
 
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+    let store = require_store_info(db).await?;
 
     let mut active: store_info::ActiveModel = store.into();
     active.name = Set(input.name);
@@ -157,10 +164,7 @@ pub async fn update_app_settings(
     // both fail silently, so they are refused here rather than discovered later.
     settings.backup.validate()?;
 
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+    let store = require_store_info(db).await?;
 
     let mut info: serde_json::Value = store
         .additional_info

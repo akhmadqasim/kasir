@@ -60,7 +60,9 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
     <Fieldset>
       <Fieldset.Legend>{id.settings.storeLogo}</Fieldset.Legend>
       <Description>{id.settings.storeLogoHint}</Description>
-      <Fieldset.Group className="flex-row items-center gap-4">
+      {/* A plain row, not `Fieldset.Group`: that one stacks fields vertically
+          (`space-y-4`, no flex), and here the preview sits beside its actions. */}
+      <div className="flex items-center gap-4">
         <StoreLogo store={store} className="size-16" />
         {isAdmin && (
           <>
@@ -72,7 +74,7 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
               type="file"
               onChange={handleFileChosen}
             />
-            <Fieldset.Actions className="flex flex-wrap gap-2">
+            <Fieldset.Actions className="flex-wrap pt-0">
               <PendingButton
                 isPending={uploadMutation.isPending}
                 variant="secondary"
@@ -94,7 +96,7 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
             </Fieldset.Actions>
           </>
         )}
-      </Fieldset.Group>
+      </div>
     </Fieldset>
   )
 }

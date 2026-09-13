@@ -1,4 +1,4 @@
-import type { StoreInfo } from "@/features/settings/types"
+import type { StoreInfo } from "../types"
 import { useApiQuery } from "@/hooks/use-api"
 import { getStoreInfo } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
