@@ -49,6 +49,7 @@ use crate::services::backup::BackupScheduler;
 use crate::services::ppob::MitraClient;
 use crate::updater::Updater;
 use crate::utils::{logging, AppError};
+use crate::whatsapp::WhatsappManager;
 use crate::window_icon::WindowIcon;
 use crate::window_zoom::WindowZoom;
 use throttle::LoginThrottle;
@@ -89,6 +90,10 @@ pub struct AppState {
     /// The self-update state machine. Owned by `run()` too, which attaches the
     /// Tauri app handle once the app exists; a test state never gets one.
     pub updater: Arc<Updater>,
+    /// The WhatsApp sidecar process manager, attached the same way as the
+    /// updater — a test state never gets a spawn factory, so it can `enable`
+    /// only far enough to observe the `Internal` refusal that proves it.
+    pub whatsapp: Arc<WhatsappManager>,
     /// The till window's zoom. Attached in `setup` like the updater; a test
     /// state — and a process serving only the LAN — has no window behind it.
     pub window_zoom: Arc<WindowZoom>,
@@ -108,6 +113,9 @@ impl AppState {
             mitra: Arc::new(Mutex::new(MitraClient::new())),
             backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
             updater: Arc::new(Updater::new()),
+            whatsapp: Arc::new(WhatsappManager::new(
+                std::env::temp_dir().join("kasir-test-whatsapp"),
+            )),
             window_zoom: Arc::new(WindowZoom::new()),
             window_icon: Arc::new(WindowIcon::new()),
         }
@@ -119,12 +127,14 @@ impl AppState {
         mitra: Arc<Mutex<MitraClient>>,
         backup_scheduler: Arc<Mutex<BackupScheduler>>,
         updater: Arc<Updater>,
+        whatsapp: Arc<WhatsappManager>,
         window_zoom: Arc<WindowZoom>,
         window_icon: Arc<WindowIcon>,
     ) -> Self {
         self.mitra = mitra;
         self.backup_scheduler = backup_scheduler;
         self.updater = updater;
+        self.whatsapp = whatsapp;
         self.window_zoom = window_zoom;
         self.window_icon = window_icon;
         self

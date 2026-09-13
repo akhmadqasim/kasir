@@ -15,3 +15,4 @@ pub mod transaction_items;
 pub mod transaction_payments;
 pub mod transactions;
 pub mod users;
+pub mod whatsapp_sends;

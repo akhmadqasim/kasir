@@ -2373,12 +2373,14 @@ name = "kasir"
 version = "1.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "bcrypt",
  "chrono",
  "cookie",
  "dirs",
  "flate2",
  "hex",
+ "image",
  "quick-xml",
  "rand 0.9.2",
  "reqwest 0.12.28",

@@ -47,7 +47,7 @@ fn utc_to_local_formatted(utc_str: &str) -> String {
 }
 
 /// Get printer settings from store_info.additional_info JSON
-fn get_printer_settings(additional_info: &Option<String>) -> PrinterSettings {
+pub(crate) fn get_printer_settings(additional_info: &Option<String>) -> PrinterSettings {
     additional_info
         .as_ref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
@@ -128,10 +128,11 @@ struct PrintTarget {
 }
 
 async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> {
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+    let ReceiptRenderSettings {
+        store,
+        paper_width,
+        footer_text,
+    } = receipt_render_settings(db).await?;
 
     let settings = get_printer_settings(&store.additional_info);
     let printer_id = settings
@@ -141,10 +142,133 @@ async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> 
     Ok(PrintTarget {
         store,
         printer_id,
-        paper_width: settings.paper_width.unwrap_or(58),
-        footer_text: settings.footer_text,
+        paper_width,
+        footer_text,
         mode: PrintMode::from_setting(settings.print_mode.as_deref()),
     })
+}
+
+/// The struk's own layout settings — paper width, footer text — without
+/// requiring a printer to be configured at all.
+///
+/// [`print_target`] builds on this and adds the one thing only printing
+/// needs: somewhere to send the bytes. Sending a struk over WhatsApp needs
+/// none of that, so it reads this directly instead.
+pub(crate) struct ReceiptRenderSettings {
+    pub store: store_info::Model,
+    pub paper_width: u8,
+    pub footer_text: Option<String>,
+}
+
+pub(crate) async fn receipt_render_settings(
+    db: &DatabaseConnection,
+) -> Result<ReceiptRenderSettings, AppError> {
+    let store = store_info::Entity::find_by_id(1_i64)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+
+    let settings = get_printer_settings(&store.additional_info);
+
+    Ok(ReceiptRenderSettings {
+        paper_width: settings.paper_width.unwrap_or(58),
+        footer_text: settings.footer_text,
+        store,
+    })
+}
+
+/// Assemble the sale receipt's [`ReceiptData`] — everything
+/// [`crate::printing::receipt::format_receipt_text`] needs — from a
+/// transaction. Shared by [`print`] and by the WhatsApp sender
+/// (`services::whatsapp::receipt_image`), so a struk sent by chat is drawn
+/// from exactly the same data as one printed on the thermal printer.
+pub(crate) async fn build_sale_receipt_data(
+    db: &DatabaseConnection,
+    store: &store_info::Model,
+    footer_text: Option<String>,
+    transaction_id: i64,
+) -> Result<(ReceiptData, Vec<transaction_items::Model>), AppError> {
+    let transaction = transactions::Entity::find_by_id(transaction_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
+
+    let items = transaction_items::Entity::find()
+        .filter(transaction_items::Column::TransactionId.eq(transaction_id))
+        .all(db)
+        .await?;
+
+    let has_ppob = items.iter().any(|item| item.service_type.is_some());
+    if has_ppob && transaction.status != "completed" && transaction.status != "deleted" {
+        return Err(AppError::Validation(
+            "Struk hanya tersedia setelah fulfillment PPOB berhasil".into(),
+        ));
+    }
+
+    let user = users::Entity::find_by_id(transaction.user_id)
+        .one(db)
+        .await?;
+    let cashier_name = user
+        .map(|u| u.full_name)
+        .unwrap_or_else(|| "Unknown".to_string());
+    let deleted_by_name = if let Some(deleted_by) = transaction.deleted_by {
+        users::Entity::find_by_id(deleted_by)
+            .one(db)
+            .await?
+            .map(|u| u.full_name)
+    } else {
+        None
+    };
+
+    let date_time = transaction
+        .created_at
+        .as_ref()
+        .map(|dt| utc_to_local_formatted(dt))
+        .unwrap_or_else(|| "N/A".to_string());
+
+    let receipt_items: Vec<ReceiptItem> = items
+        .iter()
+        .map(|item| ReceiptItem {
+            name: item.product_name.clone(),
+            quantity: item.quantity as i32,
+            price: item.product_price,
+            subtotal: item.subtotal,
+        })
+        .collect();
+    let payment_breakdown = load_payment_breakdown(db, &transaction).await?;
+    let is_deleted = transaction.status == "deleted";
+    let original_total_amount = effective_receipt_total(&transaction);
+    let deleted_reason = transaction.deleted_reason.clone();
+
+    let receipt_data = ReceiptData {
+        store_name: store.name.clone(),
+        store_address: store.address.clone(),
+        store_phone: store.phone.clone(),
+        receipt_number: transaction.receipt_number.clone(),
+        date_time,
+        cashier_name,
+        items: receipt_items,
+        subtotal_amount: transaction.subtotal_amount,
+        discount_amount: transaction.discount_amount,
+        payment_method: transaction.payment_method.clone(),
+        payment_amount: transaction.payment_amount,
+        change_amount: transaction.change_amount.unwrap_or(0.0),
+        payment_breakdown: payment_breakdown
+            .iter()
+            .map(|split| crate::printing::receipt::ReceiptPaymentSplit {
+                payment_method: split.payment_method.clone(),
+                bank_name: split.bank_name.clone(),
+                amount: split.amount,
+            })
+            .collect(),
+        footer_text,
+        is_deleted,
+        deleted_reason,
+        deleted_by_name,
+        original_total_amount,
+    };
+
+    Ok((receipt_data, items))
 }
 
 /// Send already-formatted jobs to the printer, in order, off the async runtime.
@@ -216,105 +340,9 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
         mode,
     } = print_target(db).await?;
 
-    let transaction = transactions::Entity::find_by_id(transaction_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
-
-    let items = transaction_items::Entity::find()
-        .filter(transaction_items::Column::TransactionId.eq(transaction_id))
-        .all(db)
-        .await?;
-
-    let has_ppob = items.iter().any(|item| item.service_type.is_some());
-    if has_ppob && transaction.status != "completed" && transaction.status != "deleted" {
-        return Err(AppError::Validation(
-            "Struk PPOB hanya bisa dicetak setelah fulfillment berhasil".into(),
-        ));
-    }
-
-    let user = users::Entity::find_by_id(transaction.user_id)
-        .one(db)
-        .await?;
-    let cashier_name = user
-        .map(|u| u.full_name)
-        .unwrap_or_else(|| "Unknown".to_string());
-    let deleted_by_name = if let Some(deleted_by) = transaction.deleted_by {
-        users::Entity::find_by_id(deleted_by)
-            .one(db)
-            .await?
-            .map(|u| u.full_name)
-    } else {
-        None
-    };
-
-    let date_time = transaction
-        .created_at
-        .as_ref()
-        .map(|dt| utc_to_local_formatted(dt))
-        .unwrap_or_else(|| "N/A".to_string());
-
-    let receipt_items: Vec<ReceiptItem> = items
-        .iter()
-        .map(|item| ReceiptItem {
-            name: item.product_name.clone(),
-            quantity: item.quantity as i32,
-            price: item.product_price,
-            subtotal: item.subtotal,
-        })
-        .collect();
-    let payment_breakdown = load_payment_breakdown(db, &transaction).await?;
-    let is_deleted = transaction.status == "deleted";
-    let original_total_amount = effective_receipt_total(&transaction);
-    let deleted_reason = transaction.deleted_reason.clone();
-
-    eprintln!(
-        "[print_receipt] Transaction #{}, items count: {}",
-        transaction_id,
-        receipt_items.len()
-    );
-    for (i, item) in receipt_items.iter().enumerate() {
-        eprintln!(
-            "[print_receipt]   Item {}: {} x{} @{} = {}",
-            i, item.name, item.quantity, item.price, item.subtotal
-        );
-    }
-
-    let receipt_data = ReceiptData {
-        store_name: store.name.clone(),
-        store_address: store.address.clone(),
-        store_phone: store.phone.clone(),
-        receipt_number: transaction.receipt_number.clone(),
-        date_time,
-        cashier_name,
-        items: receipt_items,
-        subtotal_amount: transaction.subtotal_amount,
-        discount_amount: transaction.discount_amount,
-        payment_method: transaction.payment_method.clone(),
-        payment_amount: transaction.payment_amount,
-        change_amount: transaction.change_amount.unwrap_or(0.0),
-        payment_breakdown: payment_breakdown
-            .iter()
-            .map(|split| crate::printing::receipt::ReceiptPaymentSplit {
-                payment_method: split.payment_method.clone(),
-                bank_name: split.bank_name.clone(),
-                amount: split.amount,
-            })
-            .collect(),
-        footer_text,
-        is_deleted,
-        deleted_reason,
-        deleted_by_name,
-        original_total_amount,
-    };
-
+    let (receipt_data, items) =
+        build_sale_receipt_data(db, &store, footer_text, transaction_id).await?;
     let text_lines = format_receipt_text(&receipt_data, paper_width);
-
-    eprintln!(
-        "[print_receipt] Generated {} text lines for printer '{}'",
-        text_lines.len(),
-        printer_id
-    );
 
     // The sale first, then one struk per PPOB line that has come back fulfilled
     // by the time the paper is cut.

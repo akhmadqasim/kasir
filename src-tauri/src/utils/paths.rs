@@ -41,3 +41,11 @@ pub fn get_backup_dir() -> PathBuf {
 pub fn get_log_dir() -> PathBuf {
     get_data_dir().join("logs")
 }
+
+/// Where the WhatsApp sidecar's `LocalAuth` keeps the linked session (the
+/// browser profile WhatsApp Web itself stores its keys in). Under the app
+/// data dir, so a "Periksa pembaruan" reinstall does not force the shop to
+/// scan the QR again — only an uninstall does.
+pub fn get_whatsapp_session_dir() -> PathBuf {
+    get_data_dir().join("whatsapp-session")
+}
