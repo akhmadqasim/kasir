@@ -3,13 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-import { installApiMock, type ApiMock, type ApiRoutes } from "@/test-utils/api-mock"
+import { installApiMock, installDeferredApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { SETTINGS, WRITABLE_PPOB } from "@/test-utils/settings-fixture"
 import type { User } from "@/features/auth/types"
-import type { AppSettings, PrinterSettings, StoreInfo } from "./types"
+import type { PrinterSettings, StoreInfo } from "./types"
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { DataTab } from "./components/data-tab"
-import { PpobSettingsTab } from "./components/ppob-settings-tab"
 import { PrinterSettingsTab } from "./components/printer-settings-tab"
 import { SalesSettingsTab } from "./components/sales-settings-tab"
 import { SettingsPage } from "./components/settings-page"
@@ -23,44 +23,6 @@ const ADMIN: User = {
   is_active: true,
   created_at: "2026-01-01 00:00:00",
   updated_at: "2026-01-01 00:00:00",
-}
-
-const MARKUP = {
-  pulsa: { type: "fixed", value: 1000 },
-  data: { type: "fixed", value: 0 },
-  pln: { type: "fixed", value: 0 },
-  pdam: { type: "fixed", value: 0 },
-  bpjs: { type: "fixed", value: 0 },
-  emoney: { type: "fixed", value: 0 },
-  custom_prices: {},
-} as const
-
-/**
- * What `GET /api/settings` actually answers now.
- *
- * The PPOB password and PIN are absent, and not by omission in this fixture:
- * the endpoint stopped sending them. Only `has_credentials` remains, which says
- * whether both are stored without saying what they are.
- */
-const SETTINGS: AppSettings = {
-  sales: { allow_negative_stock: false, default_payment_method: "cash" },
-  security: { session_timeout_minutes: 30 },
-  ppob: {
-    enabled: true,
-    phone_number: "081234567890",
-    device_id: "device-abc",
-    has_credentials: true,
-    markup: { ...MARKUP },
-  },
-  backup: { interval_hours: 3, retention_days: 90 },
-}
-
-/** The same PPOB block as `PUT /api/settings` accepts it: no `has_credentials`. */
-const WRITABLE_PPOB = {
-  enabled: SETTINGS.ppob.enabled,
-  phone_number: SETTINGS.ppob.phone_number,
-  device_id: SETTINGS.ppob.device_id,
-  markup: SETTINGS.ppob.markup,
 }
 
 const PRINTER_SETTINGS: PrinterSettings = {
@@ -85,20 +47,6 @@ const STORE: StoreInfo = {
 
 let api: ApiMock
 
-/**
- * Hold one route open until the test releases it, so the window where the query
- * has not answered — the only moment a form still holds its hardcoded defaults —
- * can be observed instead of slipping past in the first microtask.
- */
-function deferRoute(route: string, value: unknown, others: ApiRoutes = {}) {
-  let release: () => void = () => {}
-  const pending = new Promise((resolve) => {
-    release = () => resolve(value)
-  })
-  api = installApiMock({ ...others, [route]: () => pending })
-  return { release }
-}
-
 function renderTab(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -122,108 +70,21 @@ beforeEach(() => {
  *
  * The PPOB credentials are no longer among the casualties — they cannot travel
  * on this request at all — but the sales, security and backup blocks still can.
+ * The Mitra Indogrosir form itself moved to `/ppob/settings`; its guard is
+ * covered in `features/ppob/ppob-settings.test.tsx`.
  */
 describe("penjaga tombol simpan pengaturan", () => {
-  it("mematikan kedua tombol simpan PPOB sampai pengaturan dimuat", async () => {
-    const { release } = deferRoute("GET /settings", SETTINGS)
-    renderTab(<PpobSettingsTab />)
-
-    const buttons = saveButtons()
-    expect(buttons).toHaveLength(2)
-    buttons.forEach((button) => expect(button).toBeDisabled())
-
-    release()
-    await vi.waitFor(() => {
-      saveButtons().forEach((button) => expect(button).toBeEnabled())
-    })
-  })
-
-  it("tidak mengirim PUT /settings saat tombol PPOB masih mati", async () => {
-    const { release } = deferRoute("GET /settings", SETTINGS, {
-      "PUT /settings": null,
-    })
-    renderTab(<PpobSettingsTab />)
-
-    fireEvent.click(saveButtons()[0])
-    expect(api.callsFor("PUT /settings")).toHaveLength(0)
-
-    release()
-    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
-
-    fireEvent.click(saveButtons()[0])
-    await vi.waitFor(() => {
-      expect(api.lastCall("PUT /settings")?.body).toEqual({
-        sales: SETTINGS.sales,
-        security: SETTINGS.security,
-        backup: SETTINGS.backup,
-        ppob: WRITABLE_PPOB,
-      })
-    })
-  })
-
-  /**
-   * The failure this replaces: the tab used to read the password back out of
-   * `GET /settings`, hold it in a state field, and post it again on every save.
-   * A save that ran before the query answered posted an empty one instead.
-   */
-  it("menyimpan PPOB tanpa menyentuh kredensial saat kolomnya dikosongkan", async () => {
-    api = installApiMock({
-      "GET /settings": SETTINGS,
-      "PUT /settings": null,
-      "PUT /settings/ppob/credentials": null,
-    })
-    renderTab(<PpobSettingsTab />)
-
-    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
-    fireEvent.click(saveButtons()[0])
-
-    await vi.waitFor(() => expect(api.callsFor("PUT /settings")).toHaveLength(1))
-    expect(api.callsFor("PUT /settings/ppob/credentials")).toHaveLength(0)
-  })
-
-  it("mengirim kredensial lewat endpoint sendiri saat keduanya diisi", async () => {
-    api = installApiMock({
-      "GET /settings": SETTINGS,
-      "PUT /settings": null,
-      "PUT /settings/ppob/credentials": null,
-    })
-    renderTab(<PpobSettingsTab />)
-
-    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
-
-    fireEvent.change(screen.getByLabelText("Password Mitra"), {
-      target: { value: "rahasia-baru" },
-    })
-    fireEvent.change(screen.getByLabelText("PIN Transaksi"), {
-      target: { value: "654321" },
-    })
-    fireEvent.click(saveButtons()[0])
-
-    await vi.waitFor(() => {
-      expect(api.lastCall("PUT /settings/ppob/credentials")?.body).toEqual({
-        password: "rahasia-baru",
-        pin: "654321",
-      })
-    })
-    // The settings blob still cannot carry them, whatever was typed.
-    expect(api.lastCall("PUT /settings")?.body).toEqual({
-      sales: SETTINGS.sales,
-      security: SETTINGS.security,
-      backup: SETTINGS.backup,
-      ppob: WRITABLE_PPOB,
-    })
-  })
-
   it("menyimpan tab Penjualan tanpa mengubah blok lain", async () => {
-    const { release } = deferRoute("GET /settings", SETTINGS, {
+    const deferred = installDeferredApiMock("GET /settings", SETTINGS, {
       "PUT /settings": null,
     })
+    api = deferred.api
     renderTab(<SalesSettingsTab />)
 
     expect(saveButtons()[0]).toBeDisabled()
     expect(api.callsFor("PUT /settings")).toHaveLength(0)
 
-    release()
+    deferred.release()
     await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
 
     fireEvent.click(saveButtons()[0])
@@ -237,17 +98,18 @@ describe("penjaga tombol simpan pengaturan", () => {
   })
 
   it("mematikan tombol simpan Printer sampai pengaturan printer dimuat", async () => {
-    const { release } = deferRoute("GET /printers/settings", PRINTER_SETTINGS, {
+    const deferred = installDeferredApiMock("GET /printers/settings", PRINTER_SETTINGS, {
       "GET /printers": [],
       "PUT /printers/settings": null,
     })
+    api = deferred.api
     renderTab(<PrinterSettingsTab />)
 
     fireEvent.click(saveButtons()[0])
     expect(saveButtons()[0]).toBeDisabled()
     expect(api.callsFor("PUT /printers/settings")).toHaveLength(0)
 
-    release()
+    deferred.release()
     await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
 
     fireEvent.click(saveButtons()[0])
@@ -263,14 +125,15 @@ describe("penjaga tombol simpan pengaturan", () => {
   })
 
   it("mematikan tombol simpan Toko sampai informasi toko dimuat", async () => {
-    const { release } = deferRoute("GET /store", STORE, { "PUT /store": STORE })
+    const deferred = installDeferredApiMock("GET /store", STORE, { "PUT /store": STORE })
+    api = deferred.api
     renderTab(<StoreInfoTab isAdmin />)
 
     fireEvent.click(saveButtons()[0])
     expect(saveButtons()[0]).toBeDisabled()
     expect(api.callsFor("PUT /store")).toHaveLength(0)
 
-    release()
+    deferred.release()
     await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
 
     fireEvent.click(saveButtons()[0])
@@ -318,7 +181,13 @@ describe("layar pengaturan", () => {
 
     const tablist = screen.getByRole("tablist", { name: "Pengaturan" })
     expect(within(tablist).getByRole("tab", { selected: true })).toHaveTextContent("Toko")
-    expect(within(tablist).getByRole("tab", { name: /Mitra Indogrosir/ })).toBeInTheDocument()
+    // Mitra Indogrosir lives on its own screen now, not here.
+    expect(within(tablist).queryByRole("tab", { name: /Mitra Indogrosir/ })).toBeNull()
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["Toko", "Penjualan", "Printer", "Data", "Aplikasi"])
     unmount()
 
     useAuthStore.setState({ user: { ...ADMIN, role: "kasir" } })

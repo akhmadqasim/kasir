@@ -268,7 +268,6 @@ export const id = {
     tabPrinter: "Printer",
     tabSecurity: "Keamanan",
     tabData: "Data",
-    tabPpob: "Mitra Indogrosir",
     tabApp: "Aplikasi",
     // Store info
     storeName: "Nama Toko",
@@ -504,9 +503,11 @@ export const id = {
     merchantNotFound: "Merchant tidak ditemukan",
     bankNotFound: "Bank tidak ditemukan",
     notConfigured: "Mitra Indogrosir belum dikonfigurasi",
-    configureInSettings: "Atur kredensial Mitra di Pengaturan → Mitra Indogrosir",
-    // Settings
+    configureInSettings: "Admin dapat mengaturnya lewat tombol Pengaturan di kanan atas",
+    // Settings (sub-halaman /ppob/settings)
     settingsTitle: "Pengaturan Mitra Indogrosir",
+    connectionTitle: "Koneksi",
+    connectionDesc: "Konfigurasi koneksi ke Mitra Indogrosir untuk layanan PPOB",
     enabled: "Aktifkan Mitra Indogrosir",
     enabledDesc: "Aktifkan fitur layanan Mitra Indogrosir",
     mitraPhone: "Nomor HP Mitra",

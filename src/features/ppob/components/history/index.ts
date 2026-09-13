@@ -1,1 +1,1 @@
-export { PpobHistory } from "./ppob-history"
+export { HistoryPanel } from "./history-panel"

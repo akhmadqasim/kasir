@@ -322,7 +322,7 @@ menirukan `Spinner`.
 
 **Sub-halaman memakai `SubpageHeader`** (`src/components/layout/subpage-header.tsx`):
 judul dan tombol kembali `sm tertiary` keduanya di navbar, aksinya lewat prop `actions`.
-Riwayat PPOB, mutasi, notifikasi, buat refund, dan tutup kasir pernah menulis "tombol
+Pengaturan Mitra, mutasi, notifikasi, buat refund, dan tutup kasir pernah menulis "tombol
 kembali + judul" dengan tiga cara berbeda; sekarang satu. **Tidak ada `<h1>` di badan
 halaman** selain pada dokumen cetak — judul halaman sudah ada di navbar, dan `<h1>` kedua
 membuat pembaca layar mengumumkan judul yang sama dua kali.
@@ -621,6 +621,25 @@ primitifnya: `Disclosure` untuk grup yang melipat, `Drawer` untuk mode ponsel, `
 untuk label saat rail menyempit, `Dropdown` + `Avatar` untuk menu pengguna. Baris menunya
 mengikuti bentuk `.list-box-item` HeroUI (`rounded-2xl`, `gap-3`, hover `bg-default`),
 bukan bentuk shadcn yang dipakai sebelumnya.
+
+**Beranda Mitra Indogrosir dibelah dua: menu di kiri, riwayat di kanan.** Riwayat
+transaksi PPOB pernah jadi sub-halaman di balik tombol "Riwayat" di navbar, padahal yang
+ditanyakan kasir setelah menekan satu ubin layanan hampir selalu "sudah masuk belum?" —
+dua layar untuk satu pekerjaan. Sekarang `ppob-home.tsx` menggambar `grid lg:grid-cols-2`:
+saldo dan kisi layanan di kiri (menempel saat digulir, karena kolomnya jauh lebih pendek),
+`HistoryPanel` sebagai `Card` di kanan, dan di bawah `lg` keduanya bertumpuk. Tombol
+"Riwayat" dan rute `/ppob/history` hilang; `SaldoBar` di panel kasir menuju `/ppob`. Kisi
+layanan karena itu memakai `auto-fill`, bukan breakpoint viewport — lebarnya kini
+ditentukan panelnya, sama seperti kisi ringkas di kasir.
+
+**Pengaturan Mitra pindah dari tab Pengaturan ke `/ppob/settings`.** Kredensial, markup,
+dan harga jual pulsa adalah urusan layar PPOB, bukan urusan pengaturan toko; tab itu juga
+membuat pemilik bolak-balik dua menu sidebar untuk satu vendor. Jalan masuknya tombol
+"Pengaturan" `sm tertiary` di kanan atas beranda PPOB, hanya untuk admin; rutenya di
+balik `AdminRouteGuard` yang sama dengan `/settings` (`/ppob/settings` masuk
+`ADMIN_ONLY_PREFIXES`). Formulirnya dipecah: `use-ppob-settings-form.ts` memegang state
+dan kedua mutasi, `connection-card.tsx` dan `markup-card.tsx` menggambarnya, dan tombol
+Simpan di kedua kartu tetap menulis seluruh formulir.
 
 **Persentase porsi dihitung terhadap jumlah nilai mutlak.** Nilai bersih bisa negatif
 ketika retur melampaui penjualan; memakai jumlah bertanda akan membuat porsinya melebihi

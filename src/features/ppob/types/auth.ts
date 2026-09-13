@@ -19,12 +19,3 @@ export interface PpobMarkup {
   emoney: PpobMarkupConfig
   custom_prices: Record<string, number>
 }
-
-export interface PpobSettings {
-  enabled: boolean
-  phone_number: string
-  password: string
-  device_id: string
-  pin: string
-  markup: PpobMarkup
-}

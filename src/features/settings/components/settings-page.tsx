@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { Tabs } from "@heroui/react"
-import { Store, ShoppingCart, Printer, Database, Zap, Download } from "lucide-react"
+import { Store, ShoppingCart, Printer, Database, Download } from "lucide-react"
 
 import { useAuthStore } from "@/features/auth"
 import { AppUpdateCard } from "@/features/updater"
@@ -9,7 +9,6 @@ import { StoreInfoTab } from "./store-info-tab"
 import { SalesSettingsTab } from "./sales-settings-tab"
 import { PrinterSettingsTab } from "./printer-settings-tab"
 import { DataTab } from "./data-tab"
-import { PpobSettingsTab } from "./ppob-settings-tab"
 
 interface SettingsTab {
   key: string
@@ -55,12 +54,6 @@ export function SettingsPage() {
             label: id.settings.tabData,
             icon: <Database aria-hidden="true" className="size-4" />,
             panel: <DataTab />,
-          },
-          {
-            key: "ppob",
-            label: id.settings.tabPpob,
-            icon: <Zap aria-hidden="true" className="size-4" />,
-            panel: <PpobSettingsTab />,
           },
         ]
       : []),

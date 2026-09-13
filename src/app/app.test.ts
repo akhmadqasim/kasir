@@ -15,7 +15,7 @@ describe("resume-route", () => {
 
   it("accepts nested resumable routes", () => {
     expect(isResumableRoute("/reports/sales-daily")).toBe(true)
-    expect(isResumableRoute("/ppob/history")).toBe(true)
+    expect(isResumableRoute("/ppob/mutasi")).toBe(true)
   })
 
   it("rejects non-resumable routes", () => {
@@ -40,6 +40,7 @@ describe("isAdminOnlyRoute", () => {
     expect(isAdminOnlyRoute("/users")).toBe(true)
     expect(isAdminOnlyRoute("/products")).toBe(true)
     expect(isAdminOnlyRoute("/settings")).toBe(true)
+    expect(isAdminOnlyRoute("/ppob/settings")).toBe(true)
   })
 
   it("leaves the routes a cashier needs open", () => {
