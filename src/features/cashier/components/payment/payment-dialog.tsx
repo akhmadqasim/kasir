@@ -152,9 +152,6 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       ]}
                     />
                   )}
-                {!form.allTransferMethodsHaveBank && (
-                  <p className="text-danger">Isi nama bank untuk pembayaran transfer bank.</p>
-                )}
 
                 <TextField
                   fullWidth

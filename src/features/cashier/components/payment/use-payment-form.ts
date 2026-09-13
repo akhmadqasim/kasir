@@ -86,9 +86,6 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
       ? selectedPaymentSplits[0].payment_method
       : requestedPaymentMethod
   const selectedMethodCount = selectedPaymentSplits.length
-  const selectedTransferSplits = selectedPaymentSplits.filter(
-    (split) => split.payment_method === "transfer",
-  )
   const isSingleCashSelection =
     selectedMethodCount === 1 && selectedPaymentSplits[0]?.payment_method === "cash"
   const primaryPaymentMethod = selectedPaymentSplits[0]?.payment_method ?? "cash"
@@ -127,9 +124,6 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const allSelectedMethodsHaveAmount = selectedPaymentSplits.every(
     (split) => (split.amount ?? 0) > 0,
   )
-  const allTransferMethodsHaveBank = selectedTransferSplits.every(
-    (split) => split.bank_name.trim().length > 0,
-  )
   const isSplitSelectionValid =
     normalizedSplits.length > 0 &&
     normalizedSplits.length === selectedPaymentSplits.length &&
@@ -147,7 +141,6 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const canConfirm =
     items.length > 0 &&
     selectedMethodCount > 0 &&
-    allTransferMethodsHaveBank &&
     !hasImplausibleAmount &&
     (isSingleCashSelection ? isCashValid : allSelectedMethodsHaveAmount && isSplitSelectionValid) &&
     !checkoutTransaction.isPending
@@ -409,7 +402,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         handleConfirm()
       }
     },
-    [canConfirm, handleConfirm, updateSplit],
+    [canConfirm, handleConfirm, handleSetRemainingAmount, updateSplit],
   )
 
   const handleOpenChange = useCallback(
@@ -444,7 +437,6 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     cashSplitAmount,
     splitDifference,
     hasCashInSplit,
-    allTransferMethodsHaveBank,
     hasImplausibleAmount,
     // Handlers
     cashInputRef,

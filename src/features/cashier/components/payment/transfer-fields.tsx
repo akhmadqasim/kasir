@@ -17,7 +17,8 @@ function filterBank(itemText: string, query: string): boolean {
 }
 
 /**
- * Nama bank pengirim untuk pembayaran transfer. `ComboBox` dengan
+ * Nama bank pengirim untuk pembayaran transfer — opsional; kosong berarti
+ * struk dan laporan cuma menyebut "Transfer Bank". `ComboBox` dengan
  * `allowsCustomValue`: daftar `BANKS` menyaring lewat nama dan alias saat
  * kasir mengetik (`bsi`, `syariah` → BSI), tapi bank yang tidak ada di
  * daftar tetap bisa diketik dan dipakai apa adanya — BPD kecil dan bank baru
@@ -39,7 +40,7 @@ export function TransferFields({ value, onChange, onFocus, errorMessage }: Trans
       onInputChange={onChange}
     >
       <ComboBox.InputGroup>
-        <Input placeholder="Bank pengirim — pilih atau ketik" />
+        <Input placeholder="Bank pengirim" />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>
       <ComboBox.Popover>

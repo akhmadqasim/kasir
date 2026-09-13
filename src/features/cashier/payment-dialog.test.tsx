@@ -233,16 +233,14 @@ describe("payment dialog", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })
 
-  it("asks for a bank before a transfer can be confirmed", async () => {
+  it("lets a transfer through without a bank; the bank is optional", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
 
     fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
 
-    expect(
-      await screen.findByText("Isi nama bank untuk pembayaran transfer bank."),
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+    expect(screen.queryByText(/Isi nama bank/)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
   })
 
   it("accepts a bank picked from the curated list", async () => {
