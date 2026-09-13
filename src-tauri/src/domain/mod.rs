@@ -21,6 +21,5 @@ pub mod shifts;
 pub mod stock;
 pub mod store_logo;
 pub mod transactions;
-pub mod whatsapp;
 
 pub use actor::Actor;

@@ -12,11 +12,10 @@ export default defineConfig({
     strictPort: true,
     /**
      * The dev app keeps its data under `data/` in the project root — the
-     * SQLite file, backups, and the WhatsApp sidecar's browser profile, which
-     * Edge rewrites constantly. None of it is source; without the ignore every
-     * profile write was a full page reload.
+     * SQLite file and backups. None of it is source; without the ignore every
+     * write there was a full page reload.
      */
-    watch: { ignored: ["**/data/**", "**/src-tauri/**", "**/sidecar/**/dist/**"] },
+    watch: { ignored: ["**/data/**", "**/src-tauri/**"] },
     /**
      * `bun run dev` serves the SPA from 5173 while the API lives inside the
      * running application on 17720, so the two are different origins and the

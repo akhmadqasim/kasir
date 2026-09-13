@@ -38,7 +38,6 @@ pub mod stock;
 pub mod transactions;
 pub mod updates;
 pub mod users;
-pub mod whatsapp;
 pub mod window;
 
 use axum::Router;
@@ -69,7 +68,6 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(ppob::session())
         .merge(logs::session())
         .merge(updates::session())
-        .merge(whatsapp::session())
         .merge(window::session())
         .route_layer(session_layer.clone());
 
@@ -87,7 +85,6 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(printers::admin())
         .merge(ppob::admin())
         .merge(updates::admin())
-        .merge(whatsapp::admin())
         .route_layer(admin_layer)
         .route_layer(session_layer);
 

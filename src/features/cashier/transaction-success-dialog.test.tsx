@@ -75,7 +75,7 @@ interface RenderOptions {
   onNewTransaction?: () => void
 }
 
-/** One `QueryClient` per test, since `SendWhatsappButton` now polls through it. */
+/** One `QueryClient` per test, since `ReceiptPreview` reads receipt lines through it. */
 function newQueryClient() {
   return new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -112,9 +112,6 @@ beforeEach(() => {
   api = installApiMock({
     "POST /transactions/*/print": null,
     "GET /transactions/*/receipt/lines": RECEIPT_LINES,
-    // Polled by `SendWhatsappButton` on every render; the button itself only
-    // shows up once this reports `ready`, which none of these cases need.
-    "GET /whatsapp/status": { enabled: false, state: "off" },
   })
 })
 
@@ -130,11 +127,10 @@ describe("transaction success dialog", () => {
     // repeated above it.
     expect(dialog).not.toHaveTextContent("TRX-20260913-0001")
     // Tidak ada GET pengaturan printer: itu datang dari CashierPage. Yang tersisa
-    // hanya status WhatsApp yang dipoll tombolnya, dan baris struk pratinjau.
-    expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
+    // hanya baris struk pratinjau.
     expect(await screen.findByText("Indomie Goreng")).toBeInTheDocument()
     expect(api.callsFor("GET /transactions/1/receipt/lines")).toHaveLength(1)
-    expect(api.calls).toHaveLength(2)
+    expect(api.calls).toHaveLength(1)
   })
 
   it("hides the change when there is none to hand back", async () => {
@@ -187,10 +183,8 @@ describe("transaction success dialog", () => {
 
     expect(await screen.findByText("Struk otomatis dicetak.")).toBeInTheDocument()
     expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1)
-    // Bukan pengaturan printer — hanya status WhatsApp yang dipoll tombolnya,
-    // dan baris struk pratinjau.
-    expect(api.calls.filter((call) => call.method === "GET")).toHaveLength(2)
-    expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
+    // Bukan pengaturan printer — hanya baris struk pratinjau.
+    expect(api.calls.filter((call) => call.method === "GET")).toHaveLength(1)
     expect(api.callsFor("GET /transactions/1/receipt/lines")).toHaveLength(1)
 
     // Lalu menutup sendiri supaya kasir bisa langsung melayani berikutnya.
