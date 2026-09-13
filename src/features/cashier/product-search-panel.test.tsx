@@ -172,6 +172,37 @@ describe("product search panel", () => {
     expect(cartLines()).toHaveLength(0)
   })
 
+  // Sebelumnya, 6 digit yang diketik cepat lalu Enter jatuh ke lookup barcode
+  // persis, meleset, dan langsung menoast "tidak ditemukan" sambil mengosongkan
+  // kolom — pencarian suffix-nya tidak pernah sempat jalan.
+  it("falls back to the search when a partial barcode misses the exact lookup", async () => {
+    renderPanel()
+
+    scan(searchField(), "567890")
+
+    const listbox = await screen.findByRole("listbox", { name: "Hasil pencarian produk" })
+    expect(within(listbox).getAllByRole("option")).toHaveLength(1)
+    expect(toastError).not.toHaveBeenCalled()
+    expect(searchField()).toHaveValue("567890")
+  })
+
+  // Setiap panjang barcode sungguhan tetap harus dilaporkan hilang dan
+  // mengosongkan kolom — kalau tidak, scan berikutnya menempel di ekor scan ini.
+  it.each([
+    ["EAN-8", "99999999"],
+    ["UPC-A", "999999999999"],
+    ["EAN-13", "9999999999999"],
+    ["ITF-14", "99999999999999"],
+  ])("still reports a whole %s that misses as not found", async (_label, barcode) => {
+    renderPanel()
+
+    scan(searchField(), barcode)
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(toastError.mock.lastCall![0]).toBe(`Barcode "${barcode}" tidak ditemukan`)
+    expect(searchField()).toHaveValue("")
+  })
+
   it("lists search results and marks the first one active", async () => {
     renderPanel()
 

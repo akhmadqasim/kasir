@@ -40,7 +40,7 @@ Prefix `/api`. Role `session` berarti perlu login; `admin` berarti perlu role ad
 | | `/settings` | GET admin, PUT admin | kredensial PPOB diredaksi di GET |
 | | `/settings/ppob/markup` | GET | session — hanya tabel markup, ditambahkan P5 |
 | | `/settings/database` | GET | admin |
-| **products** | `/products` | GET session, POST admin | |
+| **products** | `/products` | GET session, POST admin | `query` cocok ke nama (substring), barcode/SKU (prefix), harga jual (persis); 3–12 digit juga cocok ke akhir barcode |
 | | `/products/:id` | PUT, DELETE | admin |
 | | `/products/bulk` | POST | admin |
 | | `/products/barcode/:barcode` | GET | session |
