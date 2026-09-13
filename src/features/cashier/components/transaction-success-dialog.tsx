@@ -56,7 +56,10 @@ export function TransactionSuccessDialog({
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
       <Modal.Container size="md">
-        <Modal.Dialog aria-label="Transaksi selesai">
+        {/* `w-fit`: dialognya seramping struknya (atau deretan tombolnya, mana
+            yang lebih lebar), bukan selebar `max-w-md` dengan kertas kecil di
+            tengah kekosongan. */}
+        <Modal.Dialog aria-label="Transaksi selesai" className="w-fit">
           {/* Isi dan status cetaknya ikut penjualannya: `key` mengganti
               keduanya untuk struk berikutnya, dan Modal melepasnya saat tertutup. */}
           <SuccessContent
@@ -224,7 +227,12 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             </p>
           )}
 
-          <ReceiptPreview paperWidth={paperWidth} transactionId={transaction.id} />
+          {/* Struk panjang menggulir di dalam kertasnya; dialognya tetap muat di layar. */}
+          <ReceiptPreview
+            className="max-h-[50vh]"
+            paperWidth={paperWidth}
+            transactionId={transaction.id}
+          />
         </div>
       </Modal.Body>
 
@@ -239,7 +247,8 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
         <SendWhatsappButton transactionId={transaction.id} />
         <Button autoFocus onPress={onNewTransaction}>
           Transaksi baru
-          <Kbd aria-hidden="true" variant="light">
+          {/* Di tombol primary teks abu-abu Kbd tenggelam di biru; ikut warna teks tombolnya. */}
+          <Kbd aria-hidden="true" className="text-accent-foreground" variant="light">
             <Kbd.Content>Esc</Kbd.Content>
           </Kbd>
         </Button>

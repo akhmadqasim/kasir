@@ -19,6 +19,8 @@ interface ReceiptPreviewProps {
    * lebar kolom.
    */
   paperWidth?: number | null
+  /** Dilewatkan ke kotak kertasnya — mis. `max-h-*` supaya struk panjang menggulir di dalamnya. */
+  className?: string
 }
 
 /**
@@ -28,7 +30,7 @@ interface ReceiptPreviewProps {
  * bukan HTML yang ditulis ulang di frontend dan bisa diam-diam berbeda dari
  * hasil cetaknya.
  */
-export function ReceiptPreview({ transactionId, paperWidth }: ReceiptPreviewProps) {
+export function ReceiptPreview({ transactionId, paperWidth, className }: ReceiptPreviewProps) {
   const columns = paperWidth === 80 ? COLUMNS_80MM : COLUMNS_58MM
   const { data: lines, isLoading } = useApiQuery(
     queryKeys.transactions.receiptLines(transactionId, paperWidth ?? null),
@@ -44,7 +46,10 @@ export function ReceiptPreview({ transactionId, paperWidth }: ReceiptPreviewProp
       // `font-mono text-xs` di kotaknya, bukan hanya di teksnya: lebar `ch`
       // dihitung dari huruf elemen ini sendiri, dan dengan huruf sans 16px kotak
       // itu jadi sepertiga lebih lebar dari teksnya lalu meluber keluar dialog.
-      className="mx-auto max-w-full overflow-x-auto rounded-md border border-border bg-white p-3 font-mono text-xs text-black shadow-xs"
+      className={cn(
+        "mx-auto max-w-full overflow-auto rounded-md border border-border bg-white p-3 font-mono text-xs text-black shadow-xs",
+        className,
+      )}
       style={{ width: `calc(${columns}ch + 1.5rem)` }}
     >
       {!lines || isLoading ? (
