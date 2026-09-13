@@ -1,10 +1,10 @@
 //! Product search, CRUD, quick-access shortcuts and bulk import.
 
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, Order};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, Statement, TransactionTrait,
+    DatabaseConnection, DbBackend, EntityTrait, JoinType, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait, Select, Set, Statement, TransactionTrait,
 };
 
 use crate::domain::products::{
@@ -12,7 +12,7 @@ use crate::domain::products::{
     ShortcutProduct, UpdateProductInput,
 };
 use crate::domain::Actor;
-use crate::entity::{product_shortcuts, products};
+use crate::entity::{categories, product_shortcuts, products};
 use crate::services::guard;
 use crate::utils::AppError;
 
@@ -131,6 +131,67 @@ fn build_search_condition(params: &ProductSearchParams) -> Condition {
     condition
 }
 
+/// The columns the product list may be ordered by — the allowlist behind the
+/// `sort_by` query parameter.
+///
+/// The parameter is a string from the URL, so it cannot be spliced into the
+/// `ORDER BY` as it is; it is mapped onto a known column here, and a name that
+/// is not on the list falls back to the default rather than failing the
+/// request. Silent fallback rather than a 400 on purpose: a stale client
+/// asking for a column this build no longer knows should still get its list,
+/// just in the default order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductSort {
+    Name,
+    Barcode,
+    Category,
+    SellPrice,
+    Stock,
+    CreatedAt,
+    UpdatedAt,
+}
+
+impl ProductSort {
+    /// The order the list comes in when no sort is asked for.
+    pub const DEFAULT: ProductSort = ProductSort::Name;
+
+    pub fn from_param(value: Option<&str>) -> ProductSort {
+        match value {
+            Some("name") => ProductSort::Name,
+            Some("barcode") => ProductSort::Barcode,
+            Some("category") => ProductSort::Category,
+            Some("sell_price") => ProductSort::SellPrice,
+            Some("stock") => ProductSort::Stock,
+            Some("created_at") => ProductSort::CreatedAt,
+            Some("updated_at") => ProductSort::UpdatedAt,
+            _ => ProductSort::DEFAULT,
+        }
+    }
+
+    /// Adds this ordering to a product query.
+    ///
+    /// The category lives in another table, so that one sort joins it; the
+    /// join is only paid for when the screen actually sorts by category. An
+    /// uncategorised product has no name to sort on, so SQLite puts it first
+    /// ascending, the same as a product with a blank barcode.
+    fn order(self, query: Select<products::Entity>, order: Order) -> Select<products::Entity> {
+        let column = match self {
+            ProductSort::Name => products::Column::Name,
+            ProductSort::Barcode => products::Column::Barcode,
+            ProductSort::SellPrice => products::Column::SellPrice,
+            ProductSort::Stock => products::Column::Stock,
+            ProductSort::CreatedAt => products::Column::CreatedAt,
+            ProductSort::UpdatedAt => products::Column::UpdatedAt,
+            ProductSort::Category => {
+                return query
+                    .join(JoinType::LeftJoin, products::Relation::Category.def())
+                    .order_by(categories::Column::Name, order);
+            }
+        };
+        query.order_by(column, order)
+    }
+}
+
 pub async fn search(
     db: &DatabaseConnection,
     params: ProductSearchParams,
@@ -150,23 +211,17 @@ pub async fn search(
         (total + per_page - 1) / per_page
     };
 
-    let sort_col = match params.sort_by.as_deref() {
-        Some("created_at") => products::Column::CreatedAt,
-        Some("updated_at") => products::Column::UpdatedAt,
-        Some("name") => products::Column::Name,
-        Some("sell_price") => products::Column::SellPrice,
-        Some("stock") => products::Column::Stock,
-        _ => products::Column::Name,
-    };
-
-    let query = products::Entity::find().filter(build_search_condition(&params));
-
-    let is_desc = params.sort_order.as_deref() == Some("desc");
-    let query = if is_desc {
-        query.order_by_desc(sort_col)
+    let sort = ProductSort::from_param(params.sort_by.as_deref());
+    let order = if params.sort_order.as_deref() == Some("desc") {
+        Order::Desc
     } else {
-        query.order_by_asc(sort_col)
+        Order::Asc
     };
+
+    let query = sort.order(
+        products::Entity::find().filter(build_search_condition(&params)),
+        order.clone(),
+    );
 
     // Every sort needs a tiebreaker, not just the timestamps. `ORDER BY stock`
     // over a catalogue where hundreds of rows sit at `stock = 0` — precisely
@@ -175,11 +230,7 @@ pub async fn search(
     // order twice. `LIMIT/OFFSET` pagination on top of that repeats some rows on
     // page two and skips others entirely. `id` is unique, so appending it makes
     // the order total and the paging stable.
-    let query = if is_desc {
-        query.order_by_desc(products::Column::Id)
-    } else {
-        query.order_by_asc(products::Column::Id)
-    };
+    let query = query.order_by(products::Column::Id, order);
 
     let data = query
         .offset(Some(offset as u64))
@@ -1217,6 +1268,111 @@ mod tests {
 
         assert_eq!(result.data.len(), 1);
         assert_eq!(result.data[0].name, "Tanpa barcode dan kategori");
+    }
+
+    // --- Sort allowlist ---
+
+    async fn seed_category(conn: &DatabaseConnection, name: &str) -> i64 {
+        crate::services::categories::create(
+            &conn,
+            &admin(),
+            crate::domain::categories::CreateCategoryInput {
+                name: name.to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("category")
+        .id
+    }
+
+    async fn seed_in_category(conn: &DatabaseConnection, name: &str, category_id: Option<i64>) {
+        let mut input = make_valid_input();
+        input.name = name.to_string();
+        input.barcode = None;
+        input.sku = None;
+        input.category_id = category_id;
+        create(conn, &admin(), input).await.expect("product");
+    }
+
+    async fn names_sorted_by(conn: &DatabaseConnection, sort_by: &str, order: &str) -> Vec<String> {
+        let mut params = search_params(sort_by, 1, 50);
+        params.sort_order = Some(order.to_string());
+        search(conn, params)
+            .await
+            .expect("search")
+            .data
+            .into_iter()
+            .map(|p| p.name)
+            .collect()
+    }
+
+    #[test]
+    fn every_sortable_column_is_on_the_allowlist_and_nothing_else_is() {
+        for (param, expected) in [
+            ("name", ProductSort::Name),
+            ("barcode", ProductSort::Barcode),
+            ("category", ProductSort::Category),
+            ("sell_price", ProductSort::SellPrice),
+            ("stock", ProductSort::Stock),
+            ("created_at", ProductSort::CreatedAt),
+            ("updated_at", ProductSort::UpdatedAt),
+        ] {
+            assert_eq!(ProductSort::from_param(Some(param)), expected, "{param}");
+        }
+        assert_eq!(ProductSort::from_param(None), ProductSort::DEFAULT);
+        // Not a column, a column that is not sortable, and an injection
+        // attempt all land on the default rather than in the SQL.
+        for junk in ["", "buy_price", "id; DROP TABLE products", "NAME"] {
+            assert_eq!(ProductSort::from_param(Some(junk)), ProductSort::DEFAULT, "{junk:?}");
+        }
+    }
+
+    /// The category is in another table, so this is the one sort that joins.
+    /// Uncategorised products sort as an empty name: first ascending, last
+    /// descending.
+    #[tokio::test]
+    async fn sorting_by_category_orders_by_the_category_name() {
+        let conn = setup_test_db().await;
+        let sembako = seed_category(&conn, "Sembako").await;
+        let minuman = seed_category(&conn, "Minuman").await;
+        seed_in_category(&conn, "Beras", Some(sembako)).await;
+        seed_in_category(&conn, "Teh Botol", Some(minuman)).await;
+        seed_in_category(&conn, "Tanpa kategori", None).await;
+
+        assert_eq!(
+            names_sorted_by(&conn, "category", "asc").await,
+            vec!["Tanpa kategori", "Teh Botol", "Beras"]
+        );
+        assert_eq!(
+            names_sorted_by(&conn, "category", "desc").await,
+            vec!["Beras", "Teh Botol", "Tanpa kategori"]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_sort_column_falls_back_to_the_default_order() {
+        let conn = setup_test_db().await;
+        seed(&conn, "Zebra", 1, None).await;
+        seed(&conn, "Apel", 2, None).await;
+
+        assert_eq!(
+            names_sorted_by(&conn, "tidak_ada", "asc").await,
+            names_sorted_by(&conn, "name", "asc").await
+        );
+        assert_eq!(names_sorted_by(&conn, "name", "asc").await, vec!["Apel", "Zebra"]);
+    }
+
+    /// Anything but `desc` — including a typo — means ascending.
+    #[tokio::test]
+    async fn only_desc_reverses_the_order() {
+        let conn = setup_test_db().await;
+        seed(&conn, "Sedikit", 1, None).await;
+        seed(&conn, "Banyak", 9, None).await;
+
+        assert_eq!(names_sorted_by(&conn, "stock", "desc").await, vec!["Banyak", "Sedikit"]);
+        assert_eq!(names_sorted_by(&conn, "stock", "DESC").await, vec!["Sedikit", "Banyak"]);
+        assert_eq!(names_sorted_by(&conn, "stock", "turun").await, vec!["Sedikit", "Banyak"]);
     }
 
     // --- Barcode suffix search ---
