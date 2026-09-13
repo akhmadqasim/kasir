@@ -47,9 +47,11 @@ export function ReceiptPreview({ transactionId, paperWidth, className }: Receipt
       // dihitung dari huruf elemen ini sendiri, dan dengan huruf sans 16px kotak
       // itu jadi sepertiga lebih lebar dari teksnya lalu meluber keluar dialog.
       className={cn(
-        "mx-auto max-w-full overflow-auto rounded-md border border-border bg-white p-3 font-mono text-xs text-black shadow-xs",
+        "mx-auto max-w-full overflow-auto rounded-md border border-border bg-white px-3 py-6 font-mono text-xs text-black shadow-xs",
         className,
       )}
+      // `+ 1.5rem` = `px-3` kiri dan kanan; atas-bawah lebih lega seperti
+      // sisa kertas yang keluar sebelum dan sesudah cetakan.
       style={{ width: `calc(${columns}ch + 1.5rem)` }}
     >
       {!lines || isLoading ? (
