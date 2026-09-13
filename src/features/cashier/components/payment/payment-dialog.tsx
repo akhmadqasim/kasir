@@ -79,15 +79,6 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             onFocus={() => form.setActivePaymentMethod(split.payment_method)}
                             onKeyDown={form.handleAmountKeyDown(split.payment_method, split.amount)}
                           />
-                          {split.payment_method === "transfer" && (
-                            <TransferFields
-                              value={split.bank_name}
-                              onChange={(value) =>
-                                form.handleBankNameChange(split.payment_method, value)
-                              }
-                              onFocus={() => form.setActivePaymentMethod(split.payment_method)}
-                            />
-                          )}
                         </div>
                       )
                     })}
@@ -192,6 +183,22 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                     })}
                   </div>
                 </div>
+
+                {/* Bank pengirim, seksi sendiri di bawah metode — judulnya
+                    sejajar "Metode Pembayaran" supaya jelas ini bagian dari
+                    Transfer Bank, bukan metode lain. */}
+                {form.selectedPaymentSplits
+                  .filter((split) => split.payment_method === "transfer")
+                  .map((split) => (
+                    <div key={split.payment_method} className="flex flex-col gap-2">
+                      <p>Bank Pengirim</p>
+                      <TransferFields
+                        value={split.bank_name}
+                        onChange={(value) => form.handleBankNameChange(split.payment_method, value)}
+                        onFocus={() => form.setActivePaymentMethod(split.payment_method)}
+                      />
+                    </div>
+                  ))}
 
                 <CashFields
                   onQuickAmount={form.handleQuickRoundAmount}

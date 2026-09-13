@@ -1,4 +1,4 @@
-import { ComboBox, EmptyState, FieldError, Input, Label, ListBox } from "@heroui/react"
+import { ComboBox, EmptyState, FieldError, Input, ListBox } from "@heroui/react"
 
 import { BANKS, bankMatchesQuery } from "../../banks"
 
@@ -25,8 +25,11 @@ function filterBank(itemText: string, query: string): boolean {
  */
 export function TransferFields({ value, onChange, onFocus, errorMessage }: TransferFieldsProps) {
   return (
+    // Tanpa label terlihat: kolom ini menempel di bawah "Nominal Transfer Bank"
+    // dan judul "Bank" sendiri terbaca seperti metode pembayaran lain.
     <ComboBox
       allowsCustomValue
+      aria-label="Bank"
       defaultFilter={filterBank}
       fullWidth
       inputValue={value}
@@ -35,9 +38,8 @@ export function TransferFields({ value, onChange, onFocus, errorMessage }: Trans
       onFocus={onFocus}
       onInputChange={onChange}
     >
-      <Label>Bank</Label>
       <ComboBox.InputGroup>
-        <Input placeholder="Pilih atau ketik nama bank" />
+        <Input placeholder="Bank pengirim — pilih atau ketik" />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>
       <ComboBox.Popover>
