@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
+import { pressKey } from "@/test-utils/keyboard"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore, type HeldCart } from "@/stores/cart-store"
 import { CartPanel } from "./components/cart-panel"
@@ -34,6 +35,10 @@ function heldCart(overrides: Partial<HeldCart> = {}): HeldCart {
   }
 }
 
+// Beberapa test mengganti aksi store dengan `vi.fn()`; Zustand tidak mengembalikannya
+// sendiri antar test, jadi aksi aslinya disimpan di sini dan dipasang kembali.
+const { recallCart: realRecallCart, removeHeldCart: realRemoveHeldCart } = useCartStore.getState()
+
 function resetStore(state: Partial<ReturnType<typeof useCartStore.getState>> = {}) {
   useCartStore.setState({
     items: [],
@@ -41,6 +46,8 @@ function resetStore(state: Partial<ReturnType<typeof useCartStore.getState>> = {
     itemDiscounts: {},
     transactionDiscount: null,
     ppobCounter: 0,
+    recallCart: realRecallCart,
+    removeHeldCart: realRemoveHeldCart,
     ...state,
   })
 }
@@ -56,6 +63,14 @@ function renderPanel(props: Partial<Parameters<typeof CartPanel>[0]> = {}) {
 /** Shortcut kasir selalu datang dari window, bukan dari elemen yang sedang fokus. */
 function pressFunctionKey(key: string) {
   fireEvent.keyDown(window, { key })
+}
+
+/** Dialog transaksi tersimpan membaca tombol dari baris listbox yang fokus, bukan dari `window`. */
+async function openHeldCartsDialog() {
+  pressFunctionKey("F9")
+  const dialog = await screen.findByRole("dialog")
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  return dialog
 }
 
 beforeEach(() => {
@@ -155,12 +170,17 @@ describe("cart panel", () => {
     useCartStore.setState({ recallCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
     // Sorotan mulai di baris pertama; satu panah bawah memindahkannya ke kedua.
-    fireEvent.keyDown(window, { key: "ArrowDown" })
-    fireEvent.keyDown(window, { key: "Enter" })
+    pressKey("ArrowDown")
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Pelanggan 2/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    )
+    pressKey("Enter")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -173,10 +193,9 @@ describe("cart panel", () => {
     useCartStore.setState({ recallCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
-    fireEvent.keyDown(window, { key: "2" })
+    pressKey("2")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -189,12 +208,38 @@ describe("cart panel", () => {
     useCartStore.setState({ removeHeldCart })
     renderPanel()
 
-    pressFunctionKey("F9")
-    await screen.findByRole("dialog")
+    await openHeldCartsDialog()
 
-    fireEvent.keyDown(window, { key: "Delete" })
+    pressKey("Delete")
 
     expect(removeHeldCart).toHaveBeenCalledWith("hold-1")
+  })
+
+  it("keeps the highlight on the row that takes the deleted one's place", async () => {
+    resetStore({
+      heldCarts: [
+        heldCart(),
+        heldCart({ id: "hold-2", label: "Pelanggan 2" }),
+        heldCart({ id: "hold-3", label: "Pelanggan 3" }),
+      ],
+    })
+    renderPanel()
+    await openHeldCartsDialog()
+
+    pressKey("ArrowDown")
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Pelanggan 2/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    )
+    pressKey("Delete")
+
+    // React Aria memfokuskan baris ketiga yang naik menggantikan yang dihapus;
+    // sorotan dan fokus harus menunjuk baris yang sama.
+    const next = await screen.findByRole("option", { name: /Pelanggan 3/ })
+    await waitFor(() => expect(next).toHaveAttribute("aria-selected", "true"))
+    expect(screen.queryByRole("option", { name: /Pelanggan 2/ })).not.toBeInTheDocument()
   })
 
   it("opens the line editor on F10 and closes it on the second press", async () => {

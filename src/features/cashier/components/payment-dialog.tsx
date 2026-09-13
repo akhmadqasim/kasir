@@ -465,8 +465,13 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
           // A sale moves stock, the transaction list, the shift's drawer and
           // every dashboard panel. The keys are prefixes, so one call each
           // covers the whole resource.
+          //
+          // Products are marked stale but not refetched here: the only live
+          // observer is the catalog beside this dialog, and reloading its 30
+          // tiles while the success dialog animates in is the jank the cashier
+          // sees. `CashierPage` refetches it when that dialog closes.
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+          queryClient.invalidateQueries({ queryKey: queryKeys.products.all, refetchType: "none" })
           queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
           queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
           onSuccess(result)

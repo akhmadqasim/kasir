@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Button, Surface } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
 import { NavbarActions } from "@/components/layout/app-navbar"
+import { useApiQuery } from "@/hooks/use-api"
+import { getPrinterSettings } from "@/lib/api/printers"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useCartStore } from "@/stores/cart-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
@@ -10,6 +14,7 @@ import { ProductSearchPanel } from "./product-search-panel"
 import { PaymentDialog } from "./payment-dialog"
 import { TransactionSuccessDialog } from "./transaction-success-dialog"
 import { OpenShiftDialog } from "@/features/shift/components/open-shift-dialog"
+import type { PrinterSettings } from "@/features/settings/types"
 import type { TransactionResult } from "../types"
 
 export function CashierPage() {
@@ -26,6 +31,18 @@ export function CashierPage() {
   const user = useAuthStore((s) => s.user)
   const activeShift = useShiftStore((s) => s.activeShift)
   const fetchActiveShift = useShiftStore((s) => s.fetchActiveShift)
+  const queryClient = useQueryClient()
+
+  // Dibaca sekali di sini dan disimpan di cache, supaya dialog sukses tidak
+  // menunggu satu permintaan lagi sebelum bisa mulai mencetak. Halaman
+  // Pengaturan membatalkan kuncinya saat menyimpan, jadi perubahan tetap sampai.
+  const { data: printerSettings } = useApiQuery<PrinterSettings>(
+    queryKeys.printers.settings,
+    getPrinterSettings,
+  )
+  const autoPrint = printerSettings
+    ? !!printerSettings.auto_print && !!printerSettings.printer_id
+    : undefined
 
   // Fetch active shift on mount / user change
   useEffect(() => {
@@ -63,7 +80,12 @@ export function CashierPage() {
     clear()
     setSuccessResult(null)
     requestProductSearchFocus()
-  }, [clear, requestProductSearchFocus])
+    // Checkout menandai katalog basi tanpa memuatnya ulang (lihat
+    // `PaymentDialog`); di sinilah ia dimuat ulang — dialognya sudah tertutup,
+    // dan hasil pencarian harus menampilkan stok yang baru berkurang sebelum
+    // kasir menyentuhnya lagi.
+    queryClient.refetchQueries({ queryKey: queryKeys.products.all, type: "active", stale: true })
+  }, [clear, queryClient, requestProductSearchFocus])
 
   const openPayment = useCallback(() => {
     if (needsShift) return
@@ -133,6 +155,7 @@ export function CashierPage() {
       <TransactionSuccessDialog
         open={successResult !== null}
         result={successResult}
+        autoPrint={autoPrint}
         onNewTransaction={handleNewTransaction}
       />
 

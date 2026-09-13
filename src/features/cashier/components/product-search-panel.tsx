@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
+import { memo, useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
 import { Button, InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
 import { Search, Pin, Trash2, TrendingUp } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -53,8 +53,15 @@ interface ProductSearchPanelProps {
  * pada kolomnya, `aria-activedescendant` yang menunjuk baris aktif, dan panah
  * atas/bawah yang memindahkan baris aktif tanpa memindahkan fokus. Persis yang
  * dulu dikerjakan `cmdk`.
+ *
+ * `memo`: satu-satunya prop-nya `focusKey`, sedangkan `CashierPage` mengubah
+ * state-nya setiap dialog dibuka atau ditutup — pembayaran, struk sukses, buka
+ * kasir. Tanpa ini 30 ubin produk dirender ulang tepat saat dialog sukses
+ * beranimasi masuk; dengan ini commit pembukaannya turun hampir separuh.
  */
-export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
+export const ProductSearchPanel = memo(function ProductSearchPanel({
+  focusKey = 0,
+}: ProductSearchPanelProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [pickedProductValue, setPickedProductValue] = useState<string | undefined>()
@@ -560,4 +567,4 @@ export function ProductSearchPanel({ focusKey = 0 }: ProductSearchPanelProps) {
       )}
     </div>
   )
-}
+})
