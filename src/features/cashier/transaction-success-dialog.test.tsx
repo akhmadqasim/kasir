@@ -6,6 +6,7 @@ vi.mock("@/lib/toast", () => ({
 }))
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { pressKey } from "@/test-utils/keyboard"
 import { TransactionSuccessDialog } from "./components/transaction-success-dialog"
 import type { TransactionItem, TransactionResult } from "./types"
 
@@ -78,13 +79,6 @@ function renderDialog({
   )
 }
 
-/** React Aria menjalankan aksi Enter pada keyup, seperti tombol asli. */
-function pressEnterOnFocused() {
-  const target = document.activeElement ?? document.body
-  fireEvent.keyDown(target, { key: "Enter" })
-  fireEvent.keyUp(target, { key: "Enter" })
-}
-
 let api: ApiMock
 
 beforeEach(() => {
@@ -128,7 +122,7 @@ describe("transaction success dialog", () => {
     const newSale = await screen.findByRole("button", { name: "Transaksi baru" })
     await waitFor(() => expect(newSale).toHaveFocus())
 
-    pressEnterOnFocused()
+    pressKey("Enter")
 
     expect(onNewTransaction).toHaveBeenCalledTimes(1)
   })

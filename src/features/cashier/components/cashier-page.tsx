@@ -80,12 +80,11 @@ export function CashierPage() {
     clear()
     setSuccessResult(null)
     requestProductSearchFocus()
-    // Katalog di sebelah dialog memuat ulang di sini, bukan saat penjualan
-    // tercatat: hasil pencarian menampilkan stok yang baru berkurang, tapi
-    // memuatnya ulang sambil dialog sukses muncul membuat 30 ubin produk
-    // dirender ulang tepat di tengah animasinya. Dialognya modal, jadi kasir
-    // tidak bisa menyentuh katalog sebelum baris ini berjalan.
-    queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
+    // Checkout menandai katalog basi tanpa memuatnya ulang (lihat
+    // `PaymentDialog`); di sinilah ia dimuat ulang — dialognya sudah tertutup,
+    // dan hasil pencarian harus menampilkan stok yang baru berkurang sebelum
+    // kasir menyentuhnya lagi.
+    queryClient.refetchQueries({ queryKey: queryKeys.products.all, type: "active", stale: true })
   }, [clear, queryClient, requestProductSearchFocus])
 
   const openPayment = useCallback(() => {

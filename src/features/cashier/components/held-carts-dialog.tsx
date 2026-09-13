@@ -87,7 +87,7 @@ function HeldCartsList({
 
   // Fase capture supaya angka tidak sempat menjadi typeahead listbox.
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    const index = event.key.length === 1 ? Number(event.key) : NaN
+    const index = Number(event.key)
     if (index >= 1 && index <= heldCarts.length) {
       event.preventDefault()
       event.stopPropagation()

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
+import { pressKey } from "@/test-utils/keyboard"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore, type HeldCart } from "@/stores/cart-store"
 import { CartPanel } from "./components/cart-panel"
@@ -58,23 +59,12 @@ function pressFunctionKey(key: string) {
   fireEvent.keyDown(window, { key })
 }
 
-/**
- * Tombol di dalam dialog transaksi tersimpan diterima elemen yang sedang fokus —
- * baris listbox — dan menjalar ke atas, seperti tombol sungguhan; listener
- * `window` tidak lagi menangkap panah dan Enter di sana.
- */
+/** Dialog transaksi tersimpan membaca tombol dari baris listbox yang fokus, bukan dari `window`. */
 async function openHeldCartsDialog() {
   pressFunctionKey("F9")
   const dialog = await screen.findByRole("dialog")
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
   return dialog
-}
-
-function pressInDialog(key: string) {
-  const target = document.activeElement ?? document.body
-  // React Aria menjalankan aksi Enter pada keyup, seperti tombol asli.
-  fireEvent.keyDown(target, { key })
-  fireEvent.keyUp(target, { key })
 }
 
 beforeEach(() => {
@@ -177,14 +167,14 @@ describe("cart panel", () => {
     await openHeldCartsDialog()
 
     // Sorotan mulai di baris pertama; satu panah bawah memindahkannya ke kedua.
-    pressInDialog("ArrowDown")
+    pressKey("ArrowDown")
     await waitFor(() =>
       expect(screen.getByRole("option", { name: /Pelanggan 2/ })).toHaveAttribute(
         "aria-selected",
         "true",
       ),
     )
-    pressInDialog("Enter")
+    pressKey("Enter")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -199,7 +189,7 @@ describe("cart panel", () => {
 
     await openHeldCartsDialog()
 
-    pressInDialog("2")
+    pressKey("2")
 
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
@@ -214,7 +204,7 @@ describe("cart panel", () => {
 
     await openHeldCartsDialog()
 
-    pressInDialog("Delete")
+    pressKey("Delete")
 
     expect(removeHeldCart).toHaveBeenCalledWith("hold-1")
   })
