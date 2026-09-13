@@ -7,21 +7,23 @@
 //!
 //! The text path is modelled on the Mitra Indogrosir app's own print job,
 //! captured off the phone with the till's Bluetooth posing as the printer. It
-//! is plain Font A at single weight, thirty-two columns wide, `FS .` to cancel
-//! Kanji mode, and `GS ! 0x11` — double width *and* height — for the token.
-//! Nothing in it is emphasised. Line width is handled upstream by the
-//! formatters (32 columns on 58mm, 42 on 80mm); weight and size come from one
-//! `ESC !` print-mode byte per line, and the formatter that asks for a
-//! double-size line is also the one that halved the width it wrapped to.
+//! is plain Font A, thirty-two columns wide, `FS .` to cancel Kanji mode, and
+//! `GS ! 0x11` — double width *and* height — for the token. Line width is
+//! handled upstream by the formatters (32 columns on 58mm, 42 on 80mm); weight
+//! and size come from one `ESC !` print-mode byte per line, and the formatter
+//! that asks for a double-size line is also the one that halved the width it
+//! wrapped to.
 //!
 //! An earlier version of this encoder emphasised every line, and the POS58
 //! (TECH CLA58) on this till kept resetting mid-job — its USB device dropping
-//! out for a second and the paper stopping. That was blamed in turn on `GS !`,
-//! on setting both size bits, and on lines of exactly 32 characters. Probing the
-//! head directly over USB found the real cause: the printer's supply browns out
-//! when a run of rows each light more than roughly 180–200 dots at full speed,
-//! which is what a bold 32-column line of capitals does. Plain Font A stays
-//! well under that, as the Mitra print proves every day.
+//! out for a second and the paper stopping. Emphasis was blamed along with
+//! `GS !`, setting both size bits, and lines of exactly 32 characters, so
+//! `bold: true` lines were dropped back to plain weight while the others were
+//! ruled out one at a time. The real cause turned out to be the till's power
+//! adapter; with it replaced, emphasis is safe again. A `bold: true` line now
+//! prints emphasised *and* double height (`ESC ! 0x18`) — a heading stands out
+//! by both weight and size. Plain lines are never emphasised, so the body of a
+//! receipt stays exactly the weight the Mitra print always was.
 //!
 //! Trailing feed and cut are this module's job alone — the formatters emit no
 //! blank filler lines, so there is one place to tune how much paper a receipt
@@ -38,26 +40,27 @@ const CANCEL_KANJI: [u8; 2] = [0x1C, 0x2E];
 /// once, so one command says everything about how the next line looks and there
 /// is no way for two toggles to disagree.
 const PRINT_MODE: [u8; 2] = [0x1B, 0x21];
-/// Bit 4 of the print-mode byte: double height. This is what a `bold: true` line
-/// gets — a heading stands out by size, not weight, because weight is what
-/// this printer's supply cannot carry (see the module docs).
+/// Bit 4 of the print-mode byte: double height.
 const MODE_TALL: u8 = 0x10;
 /// Bit 5 of the print-mode byte: double width.
 const MODE_WIDE: u8 = 0x20;
+/// Bit 3 of the print-mode byte: emphasis (bold weight). Safe again now the
+/// till's power adapter has been replaced — see the module docs — but still
+/// reserved for headings; a plain line never sets it.
+const MODE_EMPHASIS: u8 = 0x08;
 /// The power-on print mode, what an ordinary line prints in, and what the
 /// printer is left in after a job.
 const MODE_PLAIN: u8 = 0x00;
-/// The mode a `bold: true` line prints in.
-const MODE_HEADING: u8 = MODE_TALL;
+/// The mode a `bold: true` line prints in: emphasised and double height.
+const MODE_HEADING: u8 = MODE_TALL | MODE_EMPHASIS;
 /// The mode a `LineSize::Double` line prints in: both size bits, the same
 /// character size the Mitra app's `GS ! 0x11` gives its token. `bold` is
-/// ignored for these — there is no weight to add.
+/// ignored for these — there is no weight to add on top of double width.
 const MODE_TOKEN: u8 = MODE_TALL | MODE_WIDE;
-/// ESC d 6 — feed 6 lines so the last printed line clears the cutter or tear
-/// bar (roughly 15-20mm past the print head on a 58mm unit). Six matches the
-/// blank filler lines the text formatters used to append, so consolidating the
-/// feed here does not change how much paper a receipt spends.
-const FEED_LINES: [u8; 3] = [0x1B, 0x64, 0x06];
+/// ESC d 3 — feed 3 lines so the last printed line clears the tear bar. Six
+/// left a thumb-length of blank paper under every receipt on the POS58; three
+/// is the least that still lets the last line tear off cleanly.
+const FEED_LINES: [u8; 3] = [0x1B, 0x64, 0x03];
 /// GS V 1 — partial cut. Printers with no cutter treat it as an unknown
 /// command and skip it, which is why the feed above has to stand on its own.
 const PARTIAL_CUT: [u8; 3] = [0x1D, 0x56, 0x01];
@@ -181,7 +184,7 @@ mod tests {
         assert_eq!(&bytes[..4], &[0x1B, 0x40, 0x1C, 0x2E]);
         assert_eq!(
             &bytes[bytes.len() - 6..],
-            &[0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
+            &[0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]
         );
     }
 
@@ -192,7 +195,7 @@ mod tests {
         let bytes = encode_lines(&[line("AB", false), line("CD", false)]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2EAB\nCD\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2EAB\nCD\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -201,7 +204,7 @@ mod tests {
         let bytes = encode_lines(&[line("", false)]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2E\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2E\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -217,7 +220,7 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x10b\nc\n\x1B\x21\x00d\n\x1B\x64\x06\x1D\x56\x01"
+            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x18b\nc\n\x1B\x21\x00d\n\x1B\x64\x03\x1D\x56\x01"
                 .to_vec()
         );
     }
@@ -230,7 +233,7 @@ mod tests {
         assert_eq!(mode_bytes(&bytes), vec![MODE_HEADING, MODE_PLAIN]);
         assert_eq!(
             &bytes[bytes.len() - 9..],
-            &[0x1B, 0x21, 0x00, 0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
+            &[0x1B, 0x21, 0x00, 0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]
         );
     }
 
@@ -245,7 +248,7 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x30T\n\x1B\x21\x00b\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x30T\n\x1B\x21\x00b\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -269,7 +272,7 @@ mod tests {
         }]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2E\x1B\x21\x30X\n\x1B\x21\x00\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2E\x1B\x21\x30X\n\x1B\x21\x00\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -291,10 +294,14 @@ mod tests {
         );
     }
 
-    /// Nothing is ever emphasised: bit 3 of the mode byte stays clear on every
-    /// line, because a bold 32-column line is what browns this printer out.
+    /// A heading (`bold: true`, normal size) is emphasised — bit 3 of its
+    /// print-mode byte is set, as `MODE_HEADING`'s value of `0x18` says. Plain
+    /// lines and the double-size token never set it: emphasis is a heading's
+    /// alone, not something every line picks up.
     #[test]
-    fn no_mode_byte_ever_asks_for_emphasis() {
+    fn only_heading_lines_ask_for_emphasis() {
+        assert_eq!(MODE_HEADING, 0x18, "heading mode is tall + emphasised");
+
         let bytes = encode_lines(&[
             line("plain", false),
             line("heading", true),
@@ -306,9 +313,9 @@ mod tests {
             },
         ]);
 
-        assert!(
-            mode_bytes(&bytes).iter().all(|mode| mode & 0x08 == 0),
-            "no print-mode byte may set the emphasis bit"
+        assert_eq!(
+            mode_bytes(&bytes),
+            vec![MODE_HEADING, MODE_TOKEN, MODE_PLAIN]
         );
     }
 
@@ -363,12 +370,12 @@ mod tests {
         }
 
         assert_eq!(rows_seen, bitmap.height as usize);
-        assert_eq!(&bytes[at..], &[0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]);
+        assert_eq!(&bytes[at..], &[0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]);
     }
 
     #[test]
     fn no_lines_still_produces_init_feed_and_cut() {
         let bytes = encode_lines(&[]);
-        assert_eq!(bytes, b"\x1B\x40\x1C\x2E\x1B\x64\x06\x1D\x56\x01".to_vec());
+        assert_eq!(bytes, b"\x1B\x40\x1C\x2E\x1B\x64\x03\x1D\x56\x01".to_vec());
     }
 }

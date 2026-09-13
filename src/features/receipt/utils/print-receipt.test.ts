@@ -128,7 +128,7 @@ describe("generateReceiptHtml", () => {
       58,
     )
 
-    expect(html).toContain("<td>Kembalian</td>")
+    expect(html).toContain("<td>Kembali</td>")
     expect(html).toContain("20.000")
   })
 
@@ -143,6 +143,21 @@ describe("generateReceiptHtml", () => {
       58,
     )
 
-    expect(html).not.toContain("<td>Kembalian</td>")
+    expect(html).not.toContain("<td>Kembali</td>")
+  })
+
+  it("prints the payment method label without a 'Bayar (...)' wrapper", () => {
+    const html = generateReceiptHtml(makeReceiptData(), 58)
+
+    expect(html).toContain("<td>Tunai</td>")
+    expect(html).not.toContain("Bayar (")
+  })
+
+  it("prints only the default 'Terima kasih!' footer line", () => {
+    const html = generateReceiptHtml(makeReceiptData(), 58)
+
+    expect(html).toContain("<div>Terima kasih!</div>")
+    expect(html).not.toContain("Barang yang sudah dibeli")
+    expect(html).not.toContain("tidak dapat dikembalikan")
   })
 })
