@@ -10,6 +10,7 @@ use axum::extract::multipart::MultipartError;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{FromRequest, FromRequestParts, Multipart, Request};
 use axum::http::request::Parts;
+use axum::http::StatusCode;
 use serde::de::DeserializeOwned;
 
 use crate::http::error::ApiError;
@@ -96,8 +97,20 @@ where
     type Rejection = ApiError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        // A body that runs past the route's `DefaultBodyLimit` surfaces here as
+        // a multipart read error with a 413 status. A phone photo dropped on the
+        // logo picker is that case, and "unreadable upload" would send the admin
+        // looking for a corrupt file instead of a smaller one.
         let unreadable = |e: MultipartError| {
-            ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
+            if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                ApiError::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "validation",
+                    "Berkas terlalu besar untuk diunggah.",
+                )
+            } else {
+                ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
+            }
         };
 
         let mut multipart = Multipart::from_request(req, state).await.map_err(|e| {

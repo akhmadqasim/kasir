@@ -2653,3 +2653,22 @@ async fn the_logo_upload_and_removal_are_closed_to_a_cashier() {
         .expect("response");
     assert_eq!(removed.status(), StatusCode::FORBIDDEN);
 }
+
+/// A photo straight off a phone is several megabytes. That has to fail as a
+/// size problem the settings screen can explain, not as an unreadable upload.
+#[tokio::test]
+async fn a_logo_far_over_the_route_limit_is_refused_as_too_large() {
+    scratch_data_dir();
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, false).await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+    let state = state(db);
+
+    let mut huge = fake_png();
+    huge.resize(3 * 1024 * 1024, 0);
+
+    let response = upload_logo(&state, &token, "foto.png", &huge).await;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body_json(response).await["code"], json!("validation"));
+}

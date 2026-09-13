@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { stubLoadedImages } from "@/test-utils/loaded-image"
+import { id } from "@/i18n/id"
 import type { StoreInfo } from "./types"
 
 import { StoreInfoTab } from "./components/store-info-tab"
@@ -102,7 +103,7 @@ describe("blok logo toko di Info Toko", () => {
   it("hanya memperlihatkan pratinjau kepada kasir", async () => {
     const { container } = renderTab(WITH_LOGO, false)
 
-    await screen.findByText("Logo Toko")
+    await screen.findByText(id.settings.storeLogo)
     expect(logoAvatar(container)).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Unggah logo" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Hapus logo" })).toBeNull()
