@@ -4,8 +4,10 @@ import { Button, Modal, Separator, Table } from "@heroui/react"
 import { NoData } from "@/components/no-data"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
+import { id as t } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import type { HistoryPaymentItem } from "../../types"
+import { HistoryPrintDialog } from "./history-print-dialog"
 import {
   detectServiceType,
   normalizeStatus,
@@ -56,9 +58,12 @@ function detailItem(
 function TransactionDetailDialog({
   item,
   onClose,
+  onPrint,
 }: {
   item: HistoryPaymentItem | null
   onClose: () => void
+  /** Open the "Ringkasan Transaksi" dialog for this row. */
+  onPrint: (item: HistoryPaymentItem) => void
 }) {
   const service = item ? detectServiceType(item) : null
   const nominal = item ? getNominal(item) : null
@@ -132,8 +137,13 @@ function TransactionDetailDialog({
           )}
           <Modal.Footer>
             <Button slot="close" variant="tertiary">
-              Tutup
+              {t.common.close}
             </Button>
+            {/* Only a settled transaction has a struk worth printing; the
+                server refuses the others, so the button is not offered. */}
+            {item && normalizeStatus(item.status) === "sukses" ? (
+              <Button onPress={() => onPrint(item)}>{t.transactions.printReceipt}</Button>
+            ) : null}
           </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
@@ -147,6 +157,7 @@ interface HistoryTableProps {
 
 export function HistoryTable({ items }: HistoryTableProps) {
   const [selectedItem, setSelectedItem] = useState<HistoryPaymentItem | null>(null)
+  const [printItem, setPrintItem] = useState<HistoryPaymentItem | null>(null)
 
   return (
     <>
@@ -203,7 +214,15 @@ export function HistoryTable({ items }: HistoryTableProps) {
         </Table.ScrollContainer>
       </Table>
 
-      <TransactionDetailDialog item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <TransactionDetailDialog
+        item={selectedItem}
+        onClose={() => setSelectedItem(null)}
+        onPrint={(item) => {
+          setSelectedItem(null)
+          setPrintItem(item)
+        }}
+      />
+      <HistoryPrintDialog item={printItem} onClose={() => setPrintItem(null)} />
     </>
   )
 }

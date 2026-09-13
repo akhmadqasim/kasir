@@ -13,7 +13,14 @@ import {
 } from "lucide-react"
 import { toLocalDateString } from "@/lib/format"
 import { PPOB_SERVICE_COLORS, type PpobServiceKey } from "../../constants"
+import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../../pricing"
 import type { HistoryPaymentItem } from "../../types"
+import type { PpobMarkup, PpobMarkupConfig } from "../../types/auth"
+
+/** The services PPOB settings carry a markup block for. */
+type MarkupServiceKey = {
+  [K in keyof PpobMarkup]: PpobMarkup[K] extends PpobMarkupConfig ? K : never
+}[keyof PpobMarkup]
 
 export interface ServiceInfo {
   icon: LucideIcon
@@ -256,4 +263,52 @@ export function matchesProductFilter(item: HistoryPaymentItem, filter: string): 
   }
 
   return detected.label === (filterToLabel[filter] ?? "")
+}
+
+/**
+ * What the outlet paid the provider for this row, admin fee included — the
+ * struk's `Total`, and the "Harga Modal" the sell price is measured against.
+ *
+ * Mirrors the server's reading of a history row: `amount` already carries the
+ * admin fee (`basePrice` 20.000 + `adminFee` 3.500 = `amount` 23.500), `total`
+ * is what other shapes call the same figure, and failing both the two parts
+ * are added up.
+ */
+export function getProviderTotal(item: HistoryPaymentItem): number | null {
+  if (item.amount != null) return item.amount
+  if (item.total != null) return item.total
+  if (item.basePrice != null) return item.basePrice + (item.adminFee ?? 0)
+  return null
+}
+
+/** The markup block in PPOB settings that applies to a history row, if any. */
+const MARKUP_KEY_BY_LABEL: Record<string, MarkupServiceKey> = {
+  PULSA: "pulsa",
+  "PAKET DATA": "data",
+  PLN: "pln",
+  PDAM: "pdam",
+  BPJS: "bpjs",
+  "E-MONEY": "emoney",
+}
+
+/**
+ * The default "Harga Jual" for printing a history row: the provider's total
+ * plus the shop's markup for that service, or a custom price for the nominal
+ * — the same rule that prices the line at the counter. Services with no
+ * markup block (payment point, transfer) start at cost, and so does every
+ * row until the settings have loaded.
+ */
+export function getDefaultSellPrice(
+  item: HistoryPaymentItem,
+  providerTotal: number,
+  markup: PpobMarkup | null | undefined,
+): number {
+  const key = MARKUP_KEY_BY_LABEL[detectServiceType(item).label]
+  return resolvePpobSellPrice({
+    name: buildDescription(item),
+    serviceType: key ?? "",
+    vendorCost: providerTotal,
+    markup: key && markup ? markup[key] : DEFAULT_PPOB_MARKUP,
+    customPrices: markup?.custom_prices ?? {},
+  })
 }

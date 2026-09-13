@@ -480,6 +480,15 @@ export const id = {
     price: "Harga Jual",
     basePrice: "Harga Modal",
     margin: "Margin",
+    // Ringkasan Transaksi — cetak struk dari riwayat dengan harga jual sendiri
+    summaryTitle: "Ringkasan Transaksi",
+    summaryHint:
+      "Harga jual dicetak sebagai Grand Total di struk; selisihnya dari harga modal menjadi keuntungan toko.",
+    profit: "Keuntungan",
+    receiptPreview: "Pratinjau struk",
+    receiptPreviewFailed: "Gagal memuat pratinjau struk",
+    receiptPrinted: "Struk dicetak",
+    receiptPrintFailed: "Gagal cetak struk",
     confirm: "Konfirmasi Pembelian",
     success: "Transaksi berhasil",
     failed: "Transaksi gagal",
