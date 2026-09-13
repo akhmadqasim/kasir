@@ -57,11 +57,10 @@ const MODE_HEADING: u8 = MODE_TALL | MODE_EMPHASIS;
 /// character size the Mitra app's `GS ! 0x11` gives its token. `bold` is
 /// ignored for these — there is no weight to add on top of double width.
 const MODE_TOKEN: u8 = MODE_TALL | MODE_WIDE;
-/// ESC d 6 — feed 6 lines so the last printed line clears the cutter or tear
-/// bar (roughly 15-20mm past the print head on a 58mm unit). Six matches the
-/// blank filler lines the text formatters used to append, so consolidating the
-/// feed here does not change how much paper a receipt spends.
-const FEED_LINES: [u8; 3] = [0x1B, 0x64, 0x06];
+/// ESC d 3 — feed 3 lines so the last printed line clears the tear bar. Six
+/// left a thumb-length of blank paper under every receipt on the POS58; three
+/// is the least that still lets the last line tear off cleanly.
+const FEED_LINES: [u8; 3] = [0x1B, 0x64, 0x03];
 /// GS V 1 — partial cut. Printers with no cutter treat it as an unknown
 /// command and skip it, which is why the feed above has to stand on its own.
 const PARTIAL_CUT: [u8; 3] = [0x1D, 0x56, 0x01];
@@ -185,7 +184,7 @@ mod tests {
         assert_eq!(&bytes[..4], &[0x1B, 0x40, 0x1C, 0x2E]);
         assert_eq!(
             &bytes[bytes.len() - 6..],
-            &[0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
+            &[0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]
         );
     }
 
@@ -196,7 +195,7 @@ mod tests {
         let bytes = encode_lines(&[line("AB", false), line("CD", false)]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2EAB\nCD\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2EAB\nCD\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -205,7 +204,7 @@ mod tests {
         let bytes = encode_lines(&[line("", false)]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2E\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2E\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -221,7 +220,7 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x18b\nc\n\x1B\x21\x00d\n\x1B\x64\x06\x1D\x56\x01"
+            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x18b\nc\n\x1B\x21\x00d\n\x1B\x64\x03\x1D\x56\x01"
                 .to_vec()
         );
     }
@@ -234,7 +233,7 @@ mod tests {
         assert_eq!(mode_bytes(&bytes), vec![MODE_HEADING, MODE_PLAIN]);
         assert_eq!(
             &bytes[bytes.len() - 9..],
-            &[0x1B, 0x21, 0x00, 0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]
+            &[0x1B, 0x21, 0x00, 0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]
         );
     }
 
@@ -249,7 +248,7 @@ mod tests {
         ]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x30T\n\x1B\x21\x00b\n\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2Ea\n\x1B\x21\x30T\n\x1B\x21\x00b\n\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -273,7 +272,7 @@ mod tests {
         }]);
         assert_eq!(
             bytes,
-            b"\x1B\x40\x1C\x2E\x1B\x21\x30X\n\x1B\x21\x00\x1B\x64\x06\x1D\x56\x01".to_vec()
+            b"\x1B\x40\x1C\x2E\x1B\x21\x30X\n\x1B\x21\x00\x1B\x64\x03\x1D\x56\x01".to_vec()
         );
     }
 
@@ -371,12 +370,12 @@ mod tests {
         }
 
         assert_eq!(rows_seen, bitmap.height as usize);
-        assert_eq!(&bytes[at..], &[0x1B, 0x64, 0x06, 0x1D, 0x56, 0x01]);
+        assert_eq!(&bytes[at..], &[0x1B, 0x64, 0x03, 0x1D, 0x56, 0x01]);
     }
 
     #[test]
     fn no_lines_still_produces_init_feed_and_cut() {
         let bytes = encode_lines(&[]);
-        assert_eq!(bytes, b"\x1B\x40\x1C\x2E\x1B\x64\x06\x1D\x56\x01".to_vec());
+        assert_eq!(bytes, b"\x1B\x40\x1C\x2E\x1B\x64\x03\x1D\x56\x01".to_vec());
     }
 }
