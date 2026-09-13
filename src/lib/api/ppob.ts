@@ -7,6 +7,7 @@ import type {
   PaymentResult,
   PdamProduct,
   PlnDenom,
+  PpSearchResult,
   PpSubMenuItem,
   PpobMenuGroup,
   PpobReceiptLine,
@@ -84,6 +85,16 @@ export function getEmoneyDenominations(productId: number): Promise<EmoneyDenom[]
 
 export function getPaymentPointSubMenu(paymentPointId: number): Promise<PpSubMenuItem[]> {
   return apiGet<PpSubMenuItem[]>(`/ppob/catalog/payment-points/${paymentPointId}/sub-menu`)
+}
+
+/**
+ * One box, every payment-point group: "Indihome" instead of "pick a
+ * category, then scroll for it". The server fetches every group's sub-menu
+ * once and keeps the flattened list for 12 hours, so this never fans out to
+ * the provider per keystroke.
+ */
+export function getPaymentPointSearch(query: string): Promise<PpSearchResult[]> {
+  return apiGet<PpSearchResult[]>("/ppob/catalog/payment-points/search", { q: query })
 }
 
 export function getTransferChannels(): Promise<TransferChannelGroup[]> {

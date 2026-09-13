@@ -14,5 +14,6 @@ pub mod menu;
 pub mod notifications;
 pub mod parsers;
 pub mod payment;
+pub mod search;
 
 pub use client::MitraClient;

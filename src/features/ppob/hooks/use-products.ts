@@ -1,6 +1,9 @@
+import { keepPreviousData } from "@tanstack/react-query"
+
 import { useApiQuery } from "@/hooks/use-api"
 import {
   getEmoneyDenominations,
+  getPaymentPointSearch,
   getPaymentPointSubMenu,
   getPdamProducts,
   getPlnDenominations,
@@ -18,6 +21,7 @@ import type {
   PlnDenom,
   PdamProduct,
   EmoneyDenom,
+  PpSearchResult,
   PpSubMenuItem,
   TransferChannelGroup,
   VoucherGroup,
@@ -84,6 +88,32 @@ export function usePpSubMenu(ppId: number) {
     {
       enabled: ppId > 0,
       staleTime: 300000,
+      retry: false,
+    },
+  )
+}
+
+/**
+ * Search across every payment-point group at once — "Indihome" instead of
+ * "pick a category, then scroll for it". Debounced the same 300 ms as every
+ * other search box (`CLAUDE.md`); `enabled` only once there is something to
+ * search for, so clearing the box does not fire one last empty request.
+ *
+ * `placeholderData: keepPreviousData` keeps the previous keystroke's results
+ * on screen while the next debounced one is in flight — without it, every
+ * settled keystroke re-keys the query and the kisi would flash to "Tidak ada
+ * layanan" for the gap between requests.
+ */
+export function usePaymentPointSearch(query: string) {
+  const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
+
+  return useApiQuery<PpSearchResult[]>(
+    queryKeys.ppob.paymentPointSearch(debouncedQuery),
+    () => getPaymentPointSearch(debouncedQuery),
+    {
+      enabled: debouncedQuery.trim().length > 0,
+      placeholderData: keepPreviousData,
+      staleTime: 60000,
       retry: false,
     },
   )

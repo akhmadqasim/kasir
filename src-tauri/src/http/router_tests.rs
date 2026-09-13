@@ -1041,6 +1041,29 @@ async fn the_ppob_markup_route_requires_a_session() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// The payment-point search is a catalogue route like every other `/ppob/*`
+/// endpoint: any logged-in user, but not an anonymous one. It never reaches
+/// the Mitra client here — `require_session` rejects the request first — so
+/// this needs no PPOB credentials fixture at all.
+#[tokio::test]
+async fn the_ppob_payment_point_search_route_requires_a_session() {
+    let db = setup_test_db().await;
+
+    let response = router(&state(db))
+        .oneshot(
+            same_origin(
+                Method::GET,
+                "/api/ppob/catalog/payment-points/search?q=indihome",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 /// Because the client never receives the credentials, it cannot send them back
 /// — so a settings save must not read their absence as "clear them".
 #[tokio::test]
