@@ -22,7 +22,7 @@ export function SalesSettingsTab() {
 
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState("cash")
-  const [sessionTimeout, setSessionTimeout] = useState(12 * 60)
+  const [sessionTimeout, setSessionTimeout] = useState(TIMEOUT_MAX)
   const [initialized, setInitialized] = useState(false)
 
   const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
