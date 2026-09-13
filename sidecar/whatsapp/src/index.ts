@@ -48,6 +48,11 @@ async function main(): Promise<void> {
   }
   process.on("SIGTERM", handleSignal)
   process.on("SIGINT", handleSignal)
+  // The one signal Windows does deliver: when the app dies — the dev
+  // watcher's rebuild, a crash, Task Manager — the pipe behind stdin closes.
+  // Close the browser and go, rather than outlive the app as an orphan on the
+  // profile the next sidecar will need.
+  rl.on("close", handleSignal)
 
   await session.start(sessionDir)
 }

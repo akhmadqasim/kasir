@@ -11,6 +11,7 @@ import { join } from "node:path"
 import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js"
 
 import { findBrowserExecutable } from "./chrome-finder"
+import { killOrphansUsing } from "./orphans"
 import { normalizePhoneNumber, toChatId } from "./phone-number"
 import { ack, emit, type IncomingCommand, type SendCommand } from "./protocol"
 
@@ -25,6 +26,30 @@ function randomDelayMs(): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** How long one WhatsApp Web call may take before the send is given up. */
+const STEP_TIMEOUT_MS = 20_000
+
+/**
+ * A send is three calls into WhatsApp Web, any of which can hang silently when
+ * the page is in a bad state; each gets its own deadline and its own name, so
+ * the failure the cashier sees says which step stalled. Progress goes to
+ * stderr, which the app writes to its error log.
+ */
+async function step<T>(name: string, work: Promise<T>): Promise<T> {
+  const started = Date.now()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${name} tidak menjawab dalam ${STEP_TIMEOUT_MS / 1000} detik`)), STEP_TIMEOUT_MS)
+  })
+  try {
+    const result = await Promise.race([work, deadline])
+    console.error(`[send] ${name} ok (${Date.now() - started} ms)`)
+    return result
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function describeError(error: unknown): string {
@@ -43,6 +68,9 @@ export class WhatsAppSession {
    * report how it went, not this promise.
    */
   async start(sessionDir: string): Promise<void> {
+    // Nothing from an earlier sidecar may still hold the profile — see
+    // `orphans.ts` for why there can be one.
+    await killOrphansUsing(sessionDir)
     const executablePath = findBrowserExecutable()
     if (!executablePath) {
       emit({
@@ -141,7 +169,7 @@ export class WhatsAppSession {
     }
 
     try {
-      const numberId = await this.client.getNumberId(toChatId(normalized))
+      const numberId = await step("Cek nomor", this.client.getNumberId(toChatId(normalized)))
       if (!numberId) {
         ack(id, { ok: false, error: "Nomor ini tidak terdaftar di WhatsApp." })
         return
@@ -153,9 +181,9 @@ export class WhatsAppSession {
 
       if (imagePngBase64) {
         const media = new MessageMedia("image/png", imagePngBase64, "struk.png")
-        await this.client.sendMessage(numberId._serialized, media, { caption: text })
+        await step("Kirim gambar", this.client.sendMessage(numberId._serialized, media, { caption: text }))
       } else {
-        await this.client.sendMessage(numberId._serialized, text ?? "")
+        await step("Kirim pesan", this.client.sendMessage(numberId._serialized, text ?? ""))
       }
 
       ack(id, { ok: true })
