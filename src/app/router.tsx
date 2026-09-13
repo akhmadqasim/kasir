@@ -4,6 +4,7 @@ import { Spinner } from "@heroui/react"
 import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
+import { RouteErrorPage } from "./route-error-page"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
 const OnboardingPage = lazy(() =>
@@ -128,223 +129,258 @@ function ResumeRedirect() {
   return <Navigate to={target} replace />
 }
 
+/**
+ * Alamat yang tidak cocok dengan rute mana pun. Loader-nya melempar 404 supaya
+ * `RouteErrorPage` di rute ini yang menggambarnya — di dalam `AppLayout`, jadi
+ * sidebar tetap ada dan pengguna bisa langsung pindah halaman.
+ */
+function throwNotFound(): never {
+  throw new Response(null, { status: 404, statusText: "Not Found" })
+}
+
+/** Hanya di `bun run dev`: buka `/__error` untuk melihat halaman error tanpa merusak apa pun. */
+function CrashForQa(): never {
+  throw new Error("Contoh kesalahan dari /__error untuk menguji halaman error")
+}
+
 const router = createBrowserRouter([
   {
-    path: "/onboarding",
-    element: (
-      <LazyPage>
-        <OnboardingPage />
-      </LazyPage>
-    ),
-  },
-  {
-    path: "/login",
-    element: (
-      <LazyPage>
-        <LoginPage />
-      </LazyPage>
-    ),
-  },
-  {
-    path: "/",
-    element: <AppGuard />,
+    // Rute tanpa path di puncak: satu errorElement untuk apa pun yang jatuh di
+    // luar halaman — guard, layout, layar login/onboarding, dan alamat yang
+    // tidak cocok sama sekali. Halaman di dalam AppLayout punya penangkap
+    // sendiri di bawah supaya sidebar tidak ikut hilang.
+    errorElement: <RouteErrorPage />,
     children: [
       {
-        element: <AppLayout />,
+        path: "/onboarding",
+        element: (
+          <LazyPage>
+            <OnboardingPage />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "/login",
+        element: (
+          <LazyPage>
+            <LoginPage />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "/",
+        element: <AppGuard />,
         children: [
           {
-            index: true,
-            element: <ResumeRedirect />,
-          },
-          {
-            path: "cashier",
-            element: (
-              <LazyPage>
-                <CashierPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "close-shift",
-            element: (
-              <LazyPage>
-                <CloseShiftPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "dashboard",
-            element: (
-              <LazyPage>
-                <DashboardPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "ppob/*",
-            element: (
-              <LazyPage>
-                <PpobPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "transactions",
-            element: (
-              <LazyPage>
-                <TransactionsPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "refunds",
-            element: (
-              <LazyPage>
-                <RefundsPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "refund/:transactionId",
-            element: (
-              <LazyPage>
-                <CreateRefundPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "stock",
-            element: (
-              <LazyPage>
-                <StockWriteoffPage />
-              </LazyPage>
-            ),
-          },
-          {
-            path: "reports",
-            element: (
-              <LazyPage>
-                <ReportsPage />
-              </LazyPage>
-            ),
+            element: <AppLayout />,
             children: [
               {
-                path: "sales-daily",
-                element: (
-                  <LazyPage>
-                    <SalesDailyPage />
-                  </LazyPage>
-                ),
+                index: true,
+                element: <ResumeRedirect />,
               },
               {
-                path: "sales-monthly",
-                element: (
-                  <LazyPage>
-                    <SalesMonthlyPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "sales-period",
-                element: (
-                  <LazyPage>
-                    <SalesPeriodPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "sales-receipt",
-                element: (
-                  <LazyPage>
-                    <SalesReceiptPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "payment-methods",
-                element: (
-                  <LazyPage>
-                    <PaymentMethodsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "cash-flows",
-                element: (
-                  <LazyPage>
-                    <CashFlowsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "product-sales",
-                element: (
-                  <LazyPage>
-                    <ProductSalesPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "popular-products",
-                element: (
-                  <LazyPage>
-                    <PopularProductsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "returns",
-                element: (
-                  <LazyPage>
-                    <ReturnsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "current-stock",
-                element: (
-                  <LazyPage>
-                    <CurrentStockPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "losses",
-                element: (
-                  <LazyPage>
-                    <LossesPage />
-                  </LazyPage>
-                ),
-              },
-            ],
-          },
-          {
-            // Screens whose commands are admin-only in the Rust layer.
-            element: <AdminRouteGuard />,
-            children: [
-              {
-                path: "products",
-                element: (
-                  <LazyPage>
-                    <ProductsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "settings",
-                element: (
-                  <LazyPage>
-                    <SettingsPage />
-                  </LazyPage>
-                ),
-              },
-              {
-                path: "users",
-                element: (
-                  <LazyPage>
-                    <UsersPage />
-                  </LazyPage>
-                ),
+                // Rute tanpa path: hanya untuk memasang errorElement yang dirender
+                // di tempat halaman, di dalam Outlet AppLayout.
+                errorElement: <RouteErrorPage />,
+                children: [
+                  ...(import.meta.env.DEV ? [{ path: "__error", element: <CrashForQa /> }] : []),
+                  {
+                    path: "cashier",
+                    element: (
+                      <LazyPage>
+                        <CashierPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "close-shift",
+                    element: (
+                      <LazyPage>
+                        <CloseShiftPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "dashboard",
+                    element: (
+                      <LazyPage>
+                        <DashboardPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "ppob/*",
+                    element: (
+                      <LazyPage>
+                        <PpobPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "transactions",
+                    element: (
+                      <LazyPage>
+                        <TransactionsPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "refunds",
+                    element: (
+                      <LazyPage>
+                        <RefundsPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "refund/:transactionId",
+                    element: (
+                      <LazyPage>
+                        <CreateRefundPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "stock",
+                    element: (
+                      <LazyPage>
+                        <StockWriteoffPage />
+                      </LazyPage>
+                    ),
+                  },
+                  {
+                    path: "reports",
+                    element: (
+                      <LazyPage>
+                        <ReportsPage />
+                      </LazyPage>
+                    ),
+                    children: [
+                      {
+                        path: "sales-daily",
+                        element: (
+                          <LazyPage>
+                            <SalesDailyPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "sales-monthly",
+                        element: (
+                          <LazyPage>
+                            <SalesMonthlyPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "sales-period",
+                        element: (
+                          <LazyPage>
+                            <SalesPeriodPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "sales-receipt",
+                        element: (
+                          <LazyPage>
+                            <SalesReceiptPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "payment-methods",
+                        element: (
+                          <LazyPage>
+                            <PaymentMethodsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "cash-flows",
+                        element: (
+                          <LazyPage>
+                            <CashFlowsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "product-sales",
+                        element: (
+                          <LazyPage>
+                            <ProductSalesPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "popular-products",
+                        element: (
+                          <LazyPage>
+                            <PopularProductsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "returns",
+                        element: (
+                          <LazyPage>
+                            <ReturnsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "current-stock",
+                        element: (
+                          <LazyPage>
+                            <CurrentStockPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "losses",
+                        element: (
+                          <LazyPage>
+                            <LossesPage />
+                          </LazyPage>
+                        ),
+                      },
+                    ],
+                  },
+                  {
+                    // Screens whose commands are admin-only in the Rust layer.
+                    element: <AdminRouteGuard />,
+                    children: [
+                      {
+                        path: "products",
+                        element: (
+                          <LazyPage>
+                            <ProductsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "settings",
+                        element: (
+                          <LazyPage>
+                            <SettingsPage />
+                          </LazyPage>
+                        ),
+                      },
+                      {
+                        path: "users",
+                        element: (
+                          <LazyPage>
+                            <UsersPage />
+                          </LazyPage>
+                        ),
+                      },
+                    ],
+                  },
+                  {
+                    path: "*",
+                    loader: throwNotFound,
+                  },
+                ],
               },
             ],
           },

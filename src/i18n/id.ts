@@ -134,6 +134,23 @@ export const id = {
     reload: "Muat ulang",
     close: "Tutup",
   },
+  errorPage: {
+    notFoundTitle: "Halaman tidak ditemukan",
+    notFoundDescription:
+      "Alamat yang dibuka tidak ada di aplikasi ini. Mungkin tautannya sudah lama atau salah ketik.",
+    forbiddenTitle: "Tidak punya akses",
+    forbiddenDescription:
+      "Halaman ini hanya bisa dibuka oleh peran tertentu. Masuk dengan akun lain kalau memang perlu membukanya.",
+    crashTitle: "Terjadi kesalahan",
+    crashDescription:
+      "Halaman ini berhenti karena ada kesalahan di aplikasi. Coba lagi dulu; kalau masih terjadi, kirim detail teknis di bawah ke admin.",
+    retry: "Coba lagi",
+    homeCashier: "Kembali ke kasir",
+    homeDashboard: "Kembali ke dashboard",
+    homeDefault: "Kembali ke halaman utama",
+    technicalDetails: "Detail teknis",
+    unknownError: "Kesalahan tidak diketahui",
+  },
   transactions: {
     title: "Riwayat Transaksi",
     receiptNumber: "No. Struk",
