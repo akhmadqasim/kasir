@@ -1,3 +1,5 @@
+import type { ProductSortColumn } from "./sort"
+
 export interface Product {
   id: number
   barcode: string | null
@@ -60,7 +62,7 @@ export interface SearchProductsParams {
   quick_filter?: Exclude<ProductQuickFilter, "all">
   page?: number
   per_page?: number
-  sort_by?: string
+  sort_by?: ProductSortColumn
   sort_order?: "asc" | "desc"
 }
 

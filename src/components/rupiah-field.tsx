@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react"
-import { Input, Label, TextField } from "@heroui/react"
+import { FieldError, Input, Label, TextField } from "@heroui/react"
 
 import { formatNumber } from "@/lib/format"
 
@@ -13,6 +13,8 @@ interface RupiahFieldProps {
   /** Shown while the field is empty. */
   placeholder?: string
   isDisabled?: boolean
+  /** A validation message from the form, shown under the field when set. */
+  errorMessage?: string
   className?: string
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
 }
@@ -26,9 +28,15 @@ function parseTyped(text: string, allowNegative: boolean): number | null {
   return negative ? -magnitude : magnitude
 }
 
+/**
+ * A stored amount can carry a fraction (`buy_price` is a REAL and the import
+ * accepts one); it is rounded here because the field only takes digits, and
+ * `1.250,5` re-parsed after one more keystroke would read as `12.505x`.
+ */
 function formatTyped(value: number | null): string {
   if (value == null) return ""
-  return value < 0 ? `-${formatNumber(-value)}` : formatNumber(value)
+  const whole = Math.round(Math.abs(value))
+  return value < 0 ? `-${formatNumber(whole)}` : formatNumber(whole)
 }
 
 /**
@@ -47,6 +55,7 @@ export function RupiahField({
   allowNegative = false,
   placeholder,
   isDisabled,
+  errorMessage,
   className,
   onKeyDown,
 }: RupiahFieldProps) {
@@ -56,12 +65,14 @@ export function RupiahField({
       fullWidth
       inputMode="numeric"
       isDisabled={isDisabled}
+      isInvalid={Boolean(errorMessage)}
       value={formatTyped(value)}
       variant="secondary"
       onChange={(text) => onChange(parseTyped(text, allowNegative))}
     >
       <Label>{label}</Label>
       <Input className="text-right tabular-nums" placeholder={placeholder} onKeyDown={onKeyDown} />
+      {errorMessage ? <FieldError>{errorMessage}</FieldError> : null}
     </TextField>
   )
 }

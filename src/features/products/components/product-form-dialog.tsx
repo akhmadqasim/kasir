@@ -2,21 +2,24 @@ import { useState } from "react"
 import {
   Button,
   ComboBox,
+  Description,
   EmptyState,
   FieldError,
+  Fieldset,
   Form,
   Input,
   Label,
   ListBox,
   Modal,
+  NumberField,
   TextField,
 } from "@heroui/react"
 
-import { InfoPanel } from "@/components/info-panel"
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
+import { RupiahField } from "@/components/rupiah-field"
 import { id } from "@/i18n/id"
-import { formatRupiah } from "@/lib/format"
+import { formatPercent, formatRupiah } from "@/lib/format"
 import { useCreateProduct, useUpdateProduct } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import type { Product, CreateProductInput, UpdateProductInput } from "../types"
@@ -74,9 +77,11 @@ interface FormState {
   sku: string
   skuManual: boolean
   categoryId: string
-  buyPrice: string
-  sellPrice: string
-  margin: string
+  /** Rupiah bulat; `null` selama kolomnya kosong. */
+  buyPrice: number | null
+  sellPrice: number | null
+  /** Persen, boleh pecahan; `null` selama kolomnya kosong. */
+  margin: number | null
   stock: string
   unit: string
   minStock: string
@@ -88,19 +93,23 @@ const emptyForm: FormState = {
   sku: "",
   skuManual: false,
   categoryId: "",
-  buyPrice: "",
-  sellPrice: "",
-  margin: "",
+  buyPrice: null,
+  sellPrice: null,
+  margin: null,
   stock: "",
   unit: "pcs",
   minStock: "",
 }
 
+/** Markup dalam persen dari harga modal ke harga jual, dua desimal. */
+function markupPercent(buyPrice: number, sellPrice: number): number {
+  return Math.round(((sellPrice - buyPrice) / buyPrice) * 10000) / 100
+}
+
 function buildFormFromProduct(p: Product): FormState {
-  let margin = p.margin ? String(p.margin) : ""
+  let margin: number | null = p.margin || null
   if (!p.margin && p.buy_price > 0 && p.sell_price > 0) {
-    const m = ((p.sell_price - p.buy_price) / p.buy_price) * 100
-    margin = m % 1 === 0 ? String(m) : m.toFixed(2)
+    margin = markupPercent(p.buy_price, p.sell_price)
   }
   return {
     name: p.name,
@@ -108,8 +117,8 @@ function buildFormFromProduct(p: Product): FormState {
     sku: p.sku || "",
     skuManual: true,
     categoryId: p.category_id ? String(p.category_id) : "",
-    buyPrice: String(p.buy_price),
-    sellPrice: String(p.sell_price),
+    buyPrice: p.buy_price,
+    sellPrice: p.sell_price,
     margin,
     stock: String(p.stock),
     unit: p.unit,
@@ -139,19 +148,17 @@ function ProductFormBody({
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const recalcSellPrice = (bp: number, m: number) => {
-    if (bp > 0 && m > 0) {
-      setForm((prev) => ({ ...prev, sellPrice: String(Math.round(bp * (1 + m / 100))) }))
+  const recalcSellPrice = (bp: number | null, m: number | null) => {
+    if (bp != null && bp > 0 && m != null && m > 0) {
+      setForm((prev) => ({ ...prev, sellPrice: Math.round(bp * (1 + m / 100)) }))
     }
   }
 
-  const recalcMargin = (bp: number, sp: number) => {
-    if (bp > 0 && sp > 0) {
-      const m = ((sp - bp) / bp) * 100
-      setForm((prev) => ({ ...prev, margin: m % 1 === 0 ? String(m) : m.toFixed(2) }))
-    } else {
-      setForm((prev) => ({ ...prev, margin: "" }))
-    }
+  const recalcMargin = (bp: number | null, sp: number | null) => {
+    setForm((prev) => ({
+      ...prev,
+      margin: bp != null && bp > 0 && sp != null && sp > 0 ? markupPercent(bp, sp) : null,
+    }))
   }
 
   const generateSku = (productName: string): string => {
@@ -161,9 +168,9 @@ function ProductFormBody({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!form.name.trim()) newErrors.name = "Nama produk wajib diisi"
-    if (!form.sellPrice || Number(form.sellPrice) <= 0)
+    if (form.sellPrice == null || form.sellPrice <= 0)
       newErrors.sellPrice = "Harga jual harus lebih dari 0"
-    if (!form.buyPrice || Number(form.buyPrice) < 0) newErrors.buyPrice = "Harga modal tidak valid"
+    if (form.buyPrice == null || form.buyPrice < 0) newErrors.buyPrice = "Harga modal tidak valid"
     if (form.stock === "" || Number(form.stock) < 0) newErrors.stock = "Stok tidak boleh negatif"
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -178,9 +185,9 @@ function ProductFormBody({
       barcode: form.barcode.trim() || null,
       sku: form.sku.trim() || null,
       category_id: form.categoryId ? Number(form.categoryId) : null,
-      buy_price: Number(form.buyPrice),
-      sell_price: Number(form.sellPrice),
-      margin: form.margin ? Number(form.margin) : 0,
+      buy_price: form.buyPrice ?? 0,
+      sell_price: form.sellPrice ?? 0,
+      margin: form.margin ?? 0,
       stock: Number(form.stock),
       unit: form.unit,
       min_stock: form.minStock ? Number(form.minStock) : 0,
@@ -200,11 +207,10 @@ function ProductFormBody({
   }
 
   const isPending = createProduct.isPending || updateProduct.isPending
+  const { buyPrice, sellPrice } = form
   const actualMargin =
-    Number(form.buyPrice) > 0 && Number(form.sellPrice) > 0
-      ? (((Number(form.sellPrice) - Number(form.buyPrice)) / Number(form.buyPrice)) * 100).toFixed(
-          1,
-        )
+    buyPrice != null && buyPrice > 0 && sellPrice != null && sellPrice > 0
+      ? formatPercent(markupPercent(buyPrice, sellPrice))
       : null
 
   return (
@@ -306,73 +312,69 @@ function ProductFormBody({
           </TextField>
         </div>
 
-        {/* Perhitungan Harga. Ketiga kolomnya tetap `TextField type="number"`
-            dan bukan `NumberField`: nilainya saling menghitung ulang tiap
-            ketukan, dan `NumberField` memformat isinya menurut locale — angka
-            yang baru setengah diketik akan dirapikan di tengah pengetikan. */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted">Perhitungan Harga</p>
-          <InfoPanel>
-            <div className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2">
-              <TextField
-                fullWidth
-                isInvalid={Boolean(errors.buyPrice)}
-                type="number"
-                value={form.buyPrice}
-                variant="secondary"
-                onChange={(value) => {
-                  updateField("buyPrice", value)
-                  recalcSellPrice(Number(value), Number(form.margin))
-                }}
-              >
-                <Label>{id.products.buyPrice} *</Label>
-                <Input min="0" placeholder="0" />
-                <FieldError>{errors.buyPrice}</FieldError>
-              </TextField>
+        {/* Ketiga kolom berdiri langsung di atas permukaan dialog, tanpa
+            `InfoPanel`: kolom `secondary` di atas `Surface secondary` menyatu
+            dengan latarnya. Yang mengelompokkan mereka adalah `Fieldset`,
+            bukan kotak abu-abu. */}
+        <Fieldset className="gap-3">
+          <Fieldset.Legend className="text-sm">Perhitungan Harga</Fieldset.Legend>
+          <Fieldset.Group className="grid grid-cols-[1fr_auto_auto_auto_1fr] items-end gap-2 space-y-0">
+            <RupiahField
+              errorMessage={errors.buyPrice}
+              label={`${id.products.buyPrice} *`}
+              placeholder="0"
+              value={form.buyPrice}
+              onChange={(value) => {
+                updateField("buyPrice", value)
+                recalcSellPrice(value, form.margin)
+              }}
+            />
 
-              <span className="pb-2.5 text-base font-medium text-muted">×</span>
+            <span className="pb-2.5 text-base font-medium text-muted">×</span>
 
-              <TextField
-                className="w-20"
-                type="number"
-                value={form.margin}
-                variant="secondary"
-                onChange={(value) => {
-                  updateField("margin", value)
-                  recalcSellPrice(Number(form.buyPrice), Number(value))
-                }}
-              >
-                <Label>Markup (%)</Label>
-                <Input min="0" placeholder="0" step="any" />
-              </TextField>
+            {/* `NumberField` memformat menurut locale aplikasi (`id-ID`, koma
+                desimal) dan baru melaporkan nilainya saat kolom ditinggalkan;
+                harga jual dihitung ulang saat itu. Kolom kosong diwakili `NaN`,
+                bukan `undefined`: `undefined` membuatnya beralih ke mode tak
+                terkendali, dan React Aria tidak mengizinkan berpindah mode. */}
+            <NumberField
+              className="w-24"
+              formatOptions={{ maximumFractionDigits: 2 }}
+              minValue={0}
+              value={form.margin ?? Number.NaN}
+              variant="secondary"
+              onChange={(value) => {
+                const margin = Number.isNaN(value) ? null : value
+                updateField("margin", margin)
+                recalcSellPrice(form.buyPrice, margin)
+              }}
+            >
+              <Label>Markup (%)</Label>
+              <NumberField.Group>
+                <NumberField.Input className="text-right tabular-nums" placeholder="0" />
+              </NumberField.Group>
+            </NumberField>
 
-              <span className="pb-2.5 text-base font-medium text-muted">=</span>
+            <span className="pb-2.5 text-base font-medium text-muted">=</span>
 
-              <TextField
-                fullWidth
-                isInvalid={Boolean(errors.sellPrice)}
-                type="number"
-                value={form.sellPrice}
-                variant="secondary"
-                onChange={(value) => {
-                  updateField("sellPrice", value)
-                  recalcMargin(Number(form.buyPrice), Number(value))
-                }}
-              >
-                <Label>{id.products.sellPrice} *</Label>
-                <Input min="0" placeholder="0" />
-                <FieldError>{errors.sellPrice}</FieldError>
-              </TextField>
-            </div>
-            {actualMargin && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-muted">
-                <span>Margin aktual:</span>
-                <span className="font-semibold text-foreground">{actualMargin}%</span>
-                <span>({formatRupiah(Number(form.sellPrice) - Number(form.buyPrice))} / item)</span>
-              </div>
-            )}
-          </InfoPanel>
-        </div>
+            <RupiahField
+              errorMessage={errors.sellPrice}
+              label={`${id.products.sellPrice} *`}
+              placeholder="0"
+              value={form.sellPrice}
+              onChange={(value) => {
+                updateField("sellPrice", value)
+                recalcMargin(form.buyPrice, value)
+              }}
+            />
+          </Fieldset.Group>
+          {actualMargin && (
+            <Description>
+              Margin aktual <span className="font-semibold text-foreground">{actualMargin}%</span> (
+              {formatRupiah((sellPrice ?? 0) - (buyPrice ?? 0))} / item)
+            </Description>
+          )}
+        </Fieldset>
       </Modal.Body>
 
       <Modal.Footer>

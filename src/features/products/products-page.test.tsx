@@ -206,22 +206,105 @@ describe("halaman produk", () => {
     })
   })
 
-  it("mengurutkan kolom yang bisa diurutkan tanpa mengganggu kolom lain", async () => {
-    renderPage()
-
-    await screen.findByText("Indomie Goreng")
-    const grid = within(screen.getByRole("grid", { name: "Produk" }))
-
-    fireEvent.click(grid.getByRole("columnheader", { name: /Nama Produk/ }))
-
-    await vi.waitFor(() => {
+  /**
+   * Pengurutan mengikuti contoh "Sorting" di dokumentasi Table HeroUI: kolom
+   * `allowsSorting` mengirim `SortDescriptor`, dan halaman meneruskannya ke
+   * server sebagai `sort_by` / `sort_order` — daftarnya dipaginasi di server,
+   * jadi mengurutkan di sisi klien hanya akan mengurutkan satu halaman.
+   */
+  describe("pengurutan", () => {
+    function lastSort() {
       const query = api.lastCall("GET /products")?.query
-      expect(query?.get("sort_by")).toBe("name")
-      expect(query?.get("sort_order")).toBe("asc")
+      return { by: query?.get("sort_by"), order: query?.get("sort_order") }
+    }
+
+    async function renderSorted() {
+      renderPage()
+      await screen.findByText("Indomie Goreng")
+      return within(screen.getByRole("grid", { name: "Produk" }))
+    }
+
+    it("memuat daftar dengan urutan bawaan: yang terbaru dulu, tanpa panah", async () => {
+      const grid = await renderSorted()
+
+      expect(lastSort()).toEqual({ by: "created_at", order: "desc" })
+      for (const header of grid.getAllByRole("columnheader")) {
+        expect(header).not.toHaveAttribute("aria-sort", "ascending")
+        expect(header).not.toHaveAttribute("aria-sort", "descending")
+      }
     })
-    expect(grid.getByRole("columnheader", { name: id.products.barcode })).not.toHaveAttribute(
-      "aria-sort",
-    )
+
+    it("klik kepala kolom mengurutkan naik, klik lagi membalik", async () => {
+      const grid = await renderSorted()
+      const name = grid.getByRole("columnheader", { name: /Nama Produk/ })
+
+      fireEvent.click(name)
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "name", order: "asc" }))
+      expect(name).toHaveAttribute("aria-sort", "ascending")
+
+      fireEvent.click(name)
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "name", order: "desc" }))
+      expect(name).toHaveAttribute("aria-sort", "descending")
+    })
+
+    it("pindah kolom mulai lagi dari naik, dan hanya satu kolom yang berpanah", async () => {
+      const grid = await renderSorted()
+
+      fireEvent.click(grid.getByRole("columnheader", { name: /Harga Jual/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "sell_price", order: "asc" }))
+      fireEvent.click(grid.getByRole("columnheader", { name: /Harga Jual/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "sell_price", order: "desc" }))
+
+      fireEvent.click(grid.getByRole("columnheader", { name: /Kategori/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "category", order: "asc" }))
+
+      expect(grid.getByRole("columnheader", { name: /Kategori/ })).toHaveAttribute(
+        "aria-sort",
+        "ascending",
+      )
+      expect(grid.getByRole("columnheader", { name: /Harga Jual/ })).not.toHaveAttribute(
+        "aria-sort",
+        "descending",
+      )
+      expect(grid.getByRole("columnheader", { name: id.products.action })).not.toHaveAttribute(
+        "aria-sort",
+      )
+    })
+
+    it("filter stok menipis mengurutkan dari yang paling sedikit sampai dipilih kolom lain", async () => {
+      const grid = await renderSorted()
+
+      // Urutan yang dipilih tangan tidak bertahan melewati pergantian filter:
+      // "Stok Rendah" selalu mulai dari yang paling menipis.
+      fireEvent.click(grid.getByRole("columnheader", { name: /Nama Produk/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "name", order: "asc" }))
+
+      fireEvent.click(screen.getByRole("button", { name: "Stok Rendah" }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "stock", order: "asc" }))
+      expect(grid.getByRole("columnheader", { name: /^Stok/ })).toHaveAttribute(
+        "aria-sort",
+        "ascending",
+      )
+
+      fireEvent.click(grid.getByRole("columnheader", { name: /Nama Produk/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "name", order: "asc" }))
+    })
+
+    it("mengurutkan kembali ke halaman pertama", async () => {
+      api.route("GET /products", (call) => ({
+        ...PRODUCTS,
+        page: Number(call.query.get("page") ?? 1),
+        total_pages: 3,
+      }))
+      const grid = await renderSorted()
+
+      fireEvent.click(screen.getByRole("button", { name: /Selanjutnya/ }))
+      await vi.waitFor(() => expect(api.lastCall("GET /products")?.query.get("page")).toBe("2"))
+
+      fireEvent.click(grid.getByRole("columnheader", { name: /Barcode/ }))
+      await vi.waitFor(() => expect(lastSort()).toEqual({ by: "barcode", order: "asc" }))
+      expect(api.lastCall("GET /products")?.query.get("page")).toBe("1")
+    })
   })
 
   // Sheet Radix diganti `Drawer`, jadi yang dijaga: isinya tetap muncul dan
