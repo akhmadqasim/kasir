@@ -1,6 +1,5 @@
 import type {
   EmoneyDenom,
-  HistoryDetailItem,
   HistoryPaymentItem,
   InquiryResult,
   MutasiItem,
@@ -10,6 +9,7 @@ import type {
   PlnDenom,
   PpSubMenuItem,
   PpobMenuGroup,
+  PpobReceiptLine,
   PpobSaldoResponse,
   PulsaDetailsResponse,
   PulsaProduct,
@@ -215,8 +215,33 @@ export function getPpobHistory(startDate: string, endDate: string): Promise<Hist
   return apiGet<HistoryPaymentItem[]>("/ppob/history", { startDate, endDate })
 }
 
-export function getPpobHistoryDetail(trxId: string): Promise<HistoryDetailItem> {
-  return apiGet<HistoryDetailItem>(`/ppob/history/${encodeURIComponent(trxId)}`)
+/** One transaction, by Mitra's `trxId` — the same row the history table shows. */
+export function getPpobHistoryDetail(trxId: string): Promise<HistoryPaymentItem> {
+  return apiGet<HistoryPaymentItem>(`/ppob/history/${encodeURIComponent(trxId)}`)
+}
+
+/**
+ * The struk a history transaction would print at `sellPrice`, line by line —
+ * the same lines `printPpobHistoryReceipt` hands to the printer, so the
+ * screen can show exactly what the paper will say.
+ */
+export function getPpobHistoryReceipt(
+  trxId: string,
+  sellPrice: number,
+): Promise<PpobReceiptLine[]> {
+  return apiGet<PpobReceiptLine[]>(`/ppob/history/${encodeURIComponent(trxId)}/receipt`, {
+    sellPrice,
+  })
+}
+
+/**
+ * Print a history transaction's struk at `sellPrice` — the Mitra app's
+ * "Ringkasan Transaksi" flow, where the outlet sets a "Harga Jual" and then
+ * prints. Like every print route, the paper comes out of the till the server
+ * runs on.
+ */
+export function printPpobHistoryReceipt(trxId: string, sellPrice: number): Promise<void> {
+  return apiPost<void>(`/ppob/history/${encodeURIComponent(trxId)}/print`, { sellPrice })
 }
 
 export function getPpobMutasi(startDate: string, endDate: string): Promise<MutasiItem[]> {

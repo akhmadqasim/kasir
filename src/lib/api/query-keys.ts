@@ -175,6 +175,9 @@ export const queryKeys = {
     voucherGroups: ["ppob", "catalog", "voucher-groups"] as const,
     history: (range: ReportRange) => ["ppob", "history", range] as const,
     historyDetail: (trxId: string) => ["ppob", "history", "detail", trxId] as const,
+    historyReceipt: (trxId: string, sellPrice: number) =>
+      ["ppob", "history", "receipt", trxId, sellPrice] as const,
+    markup: ["ppob", "markup"] as const,
     mutasi: (range: ReportRange) => ["ppob", "mutasi", range] as const,
     notificationsAll: ["ppob", "notifications"] as const,
     notifications: (page: number, perPage: number, forceRefresh: boolean) =>

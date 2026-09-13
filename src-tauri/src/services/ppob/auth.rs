@@ -75,7 +75,11 @@ pub async fn load_tokens(
     }
 }
 
+/// Forget the upstream session — and with it everything remembered from
+/// it, so a struk from the previous account cannot be printed from the cache
+/// after the shop switches accounts.
 pub async fn clear_tokens(db: &DatabaseConnection) -> Result<(), AppError> {
+    super::history::forget_details();
     db.execute(Statement::from_string(
         DbBackend::Sqlite,
         "DELETE FROM mitra_tokens WHERE id = 1".to_string(),

@@ -217,7 +217,7 @@ pub struct PaymentResult {
 
 // --- History types ---
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPaymentItem {
     pub trx_id: Option<String>,
@@ -247,30 +247,6 @@ pub struct HistoryPaymentItem {
     pub invoice_url: Option<String>,
     pub igr_desc: Option<String>,
     pub no_ref: Option<String>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryDetailItem {
-    pub trx_id: Option<String>,
-    pub product_name: Option<String>,
-    pub description: Option<String>,
-    pub serial_number: Option<String>,
-    pub total: Option<f64>,
-    pub amount: Option<f64>,
-    pub admin_fee: Option<f64>,
-    pub status: Option<String>,
-    pub created_at: Option<String>,
-    pub customer_no: Option<String>,
-    pub customer_name: Option<String>,
-    pub reference: Option<String>,
-    pub payment_code: Option<String>,
-    pub service_type: Option<String>,
-    pub provider: Option<String>,
-    pub denom: Option<String>,
-    pub sell_price: Option<f64>,
-    pub base_price: Option<f64>,
-    pub profit: Option<f64>,
 }
 
 // --- Mutation/topup history types ---

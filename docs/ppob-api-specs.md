@@ -293,6 +293,12 @@ Detail satu transaksi.
 
 **Response:** Full transaction detail (service-type specific fields).
 
+**Catatan lapangan (akun live):** endpoint ini membalas
+`{"message":"OK","errorCode":…,"errorMessage":"Inputan tidak sesuai"}` untuk
+semua bentuk parameter yang dicoba (`trx_id`, `id`, string maupun angka).
+Backend tidak memakainya: `GET /api/ppob/history/{trx_id}` mencari baris di
+daftar `/history-payment` (90 hari terakhir, hasil di-cache 5 menit).
+
 ### POST `/history-saldo`
 Riwayat perubahan saldo.
 
@@ -383,6 +389,17 @@ dan `pln/advice` dihapus — keduanya tidak dipakai aplikasi ini.
   `Telkom Indihome - 161312001945` → `STRUK PEMBAYARAN Telkom Indihome`), karena
   ratusan biller berbagi satu service type dan `igr_desc`-nya `null`.
 
-Catatan lapangan: `GET /api/ppob/history/{trx_id}` membalas 500 di akun live
-(`{"code":"internal"}`), jadi detail per transaksi diambil dari daftar
-`/ppob/history`. Di luar scope struk.
+### Cetak dari riwayat (Ringkasan Transaksi)
+
+Meniru layar "Ringkasan Transaksi" app Mitra: dari detail riwayat, kasir
+mengatur "Harga Jual" lalu "Cetak Struk". Dua route, keduanya session-scoped:
+
+- `GET /api/ppob/history/{trx_id}/receipt?sellPrice=…` — baris struk persis
+  seperti yang akan dikirim ke printer (`[{text,bold,size}]`), untuk pratinjau.
+- `POST /api/ppob/history/{trx_id}/print` body `{"sellPrice": …}` — cetak.
+
+`sellPrice` jadi `Grand Total` di struk; selisihnya dari `amount` (total
+provider, sudah termasuk admin) dicetak sebagai `Biaya Layanan`. `sellPrice`
+negatif → 400; transaksi yang bukan `SUKSES` → 422. Harga jual default di UI
+diambil dari markup PPOB per layanan (`resolvePpobSellPrice`), sama dengan yang
+dipakai di kasir.

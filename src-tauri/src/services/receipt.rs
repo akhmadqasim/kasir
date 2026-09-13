@@ -1,12 +1,16 @@
 //! Building a receipt from a transaction and getting it onto paper.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use tokio::sync::Mutex;
 
+use crate::domain::ppob::HistoryPaymentItem;
 use crate::domain::receipt::{
     PrinterInfoItem, PrinterSettings, PrinterSettingsResponse, ReceiptDataResponse,
-    ReceiptItemResponse, ReceiptPaymentSplitResponse, UpdatePrinterSettingsInput,
+    ReceiptItemResponse, ReceiptLineResponse, ReceiptPaymentSplitResponse,
+    UpdatePrinterSettingsInput,
 };
 use crate::entity::{
     ppob_receipts, store_info, transaction_items, transaction_payments, transactions, users,
@@ -16,6 +20,8 @@ use crate::printing::receipt::{
     columns, format_receipt_text, format_test_page_text, PrintMode, ReceiptData, ReceiptItem,
     ReceiptTextLine,
 };
+use crate::services;
+use crate::services::ppob::client::MitraClient;
 use crate::services::ppob::parsers::{get_num_field, parse_string, response_objects};
 use crate::services::transactions::PPOB_STATUS_SUCCESS;
 use crate::utils::AppError;
@@ -327,7 +333,7 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
 
     let mut jobs = vec![text_lines];
     jobs.extend(fulfilled.into_iter().map(|item| {
-        let data = build_ppob_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
+        let data = ppob_item_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
         format_ppob_receipt(&data, paper_width)
     }));
 
@@ -395,7 +401,7 @@ pub async fn print_ppob_item(
         .await?
         .map(|row| row.data);
 
-    let data = build_ppob_receipt_data(&store, &item, blob.as_deref());
+    let data = ppob_item_receipt_data(&store, &item, blob.as_deref());
     let lines = format_ppob_receipt(&data, paper_width);
 
     send_jobs(printer_id, vec![lines], paper_width, mode).await
@@ -438,30 +444,178 @@ fn stored(column: &Option<String>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Assemble a PPOB struk from the sold line and the provider blob stored with
-/// it. Tolerant throughout: an item saved before migration 023, or one whose
-/// provider answered with fields we have never seen, still yields a struk built
-/// from the columns we control.
+/// What the provider said about a line, whichever endpoint said it: the
+/// payment response stored with a line sold here, or a row of Mitra's own
+/// history. Both end up as the same struk, so both are read into this first.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct ProviderSlip {
+    pub customer_id: Option<String>,
+    pub customer_name: Option<String>,
+    /// PLN prepaid's twenty digits, when the provider sent them under that
+    /// name. Kept apart from `serial_number` because it outranks even our own
+    /// stored column — see [`build_ppob_receipt_data`].
+    pub token_number: Option<String>,
+    pub serial_number: Option<String>,
+    pub reference_number: Option<String>,
+    pub payment_code: Option<String>,
+    /// The provider's `igr_desc`, e.g. `Pre paid dengan nomor meter`.
+    pub description: Option<String>,
+    pub receipt_text: Option<String>,
+    /// The bill on its own, before the admin fee.
+    pub bill_amount: Option<f64>,
+    pub admin_fee: Option<f64>,
+    /// What the provider charged, admin fee included.
+    pub total: Option<f64>,
+}
+
+impl ProviderSlip {
+    /// Read from the raw payment response stored with a sold line. Tolerant
+    /// throughout: an item saved before migration 023 has no blob at all, and
+    /// one whose provider answered with fields we have never seen still yields
+    /// the slip's shape with the gaps left open.
+    fn from_response(provider_response: Option<&str>) -> Self {
+        let raw: serde_json::Value = provider_response
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or(serde_json::Value::Null);
+
+        Self {
+            customer_id: provider_field(
+                &raw,
+                &["customer_no", "customer_id", "idpel", "no_meter", "target"],
+            ),
+            customer_name: provider_field(
+                &raw,
+                &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
+            ),
+            token_number: provider_field(&raw, &["token_number"]),
+            serial_number: provider_field(&raw, &["serial_number", "token", "sn"]),
+            reference_number: provider_field(
+                &raw,
+                &["no_ref", "ref", "reference", "trx_id", "trxid"],
+            ),
+            payment_code: provider_field(&raw, &["payment_code", "raw_paymentcode"]),
+            description: provider_field(&raw, &["igr_desc"]),
+            receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
+            // Deliberately not read from `amount`: the payment endpoints mean
+            // the bill by it and the history endpoint means the total, and
+            // from a stored blob there is no telling which shape arrived.
+            // Guessing wrong prints the admin fee twice or not at all, so the
+            // figure is only taken from a field that means one thing.
+            bill_amount: provider_number(&raw, &["base_price", "nominal", "denom"]),
+            admin_fee: provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]),
+            total: provider_number(&raw, &["total", "total_payment", "total_amount"]),
+        }
+    }
+
+    /// Read from a row of `history-payment`, already parsed once by
+    /// `services::ppob::history`. There `amount` is the total the outlet paid,
+    /// admin fee included — `base_price` 20.000 + `admin_fee` 3.500 = `amount`
+    /// 23.500, the figure Mitra's own invoice calls the total.
+    pub(crate) fn from_history(item: &HistoryPaymentItem) -> Self {
+        Self {
+            customer_id: stored(&item.customer_no),
+            customer_name: None,
+            token_number: stored(&item.token_number),
+            serial_number: stored(&item.serial_number),
+            reference_number: stored(&item.no_ref),
+            payment_code: stored(&item.payment_code),
+            description: stored(&item.igr_desc),
+            receipt_text: stored(&item.receipt_text),
+            bill_amount: item.base_price,
+            admin_fee: item.admin_fee,
+            total: item.amount.or(item.total),
+        }
+    }
+}
+
+/// What we know about the line from our own side: what the cashier chose,
+/// what fulfilment actually used, and what the customer paid for it.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct PpobLine {
+    /// `pln`, `pulsa`, `data`, `pdam`, `bpjs`, `pp`, `transfer`, `emoney`.
+    pub service_type: String,
+    /// PLN only: `"0"` prepaid, `"1"` postpaid. Set at checkout; a history row
+    /// never carries it and the formatter falls back to the provider's slip.
+    pub flag_id: Option<String>,
+    pub product_name: Option<String>,
+    pub customer_id: Option<String>,
+    pub serial_number: Option<String>,
+    pub payment_code: Option<String>,
+    /// What the customer hands over for this line, our markup in it.
+    pub grand_total: f64,
+}
+
+impl PpobLine {
+    fn from_item(item: &transaction_items::Model) -> Self {
+        Self {
+            service_type: item.service_type.clone().unwrap_or_default(),
+            flag_id: item.ppob_flag_id.clone(),
+            product_name: Some(item.product_name.clone()),
+            // A column holding `""` counts as absent — `execute_confirm_payment`
+            // copies the provider's empty string into it rather than leaving it
+            // NULL, and an empty column that shadowed the blob would cost the
+            // struk its token.
+            customer_id: stored(&item.service_ref),
+            serial_number: stored(&item.ppob_serial_number),
+            payment_code: stored(&item.ppob_payment_code),
+            grand_total: item.net_subtotal,
+        }
+    }
+
+    /// A history row printed at a sell price chosen now, the way the Mitra
+    /// app's "Ringkasan Transaksi" screen does it. Nothing here was typed by
+    /// our cashier, so every identifying field is left to the provider's slip.
+    pub(crate) fn from_history(item: &HistoryPaymentItem, sell_price: f64) -> Self {
+        Self {
+            service_type: history_service_type(item),
+            flag_id: None,
+            // Mitra fills `product_name` with `-` on most history rows and
+            // says what was bought in `description` instead.
+            product_name: stored(&item.product_name)
+                .filter(|name| name != "-")
+                .or_else(|| stored(&item.description)),
+            customer_id: None,
+            serial_number: None,
+            payment_code: None,
+            grand_total: sell_price,
+        }
+    }
+}
+
+/// Mitra's history names the service in capitals with spaces — `PLN`,
+/// `PAYMENT POINT` — where our lines use the keys the flows were written
+/// with. The struk only turns on `pln`, but the rest are mapped so the data
+/// reads the same whichever side it came from.
+fn history_service_type(item: &HistoryPaymentItem) -> String {
+    let raw = item
+        .service_type
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    match raw.as_str() {
+        "" => String::new(),
+        "payment point" | "payment_point" | "pp" => "pp".to_string(),
+        "e-money" | "emoney" | "e money" => "emoney".to_string(),
+        "paket data" | "data" => "data".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Assemble a PPOB struk from what we know of the line and what the provider
+/// said about it. Our own columns outrank the provider's echo of them — they
+/// are what the cashier typed and what the fulfilment actually used — with one
+/// exception: the token is worth more than the serial, and PLN prepaid answers
+/// with the token in `token_number` and an empty `serial_number`, from which
+/// our column was filled.
 fn build_ppob_receipt_data(
-    store: &store_info::Model,
-    item: &transaction_items::Model,
-    provider_response: Option<&str>,
+    store_name: &str,
+    line: PpobLine,
+    slip: ProviderSlip,
 ) -> PpobReceiptData {
-    let raw: serde_json::Value = provider_response
-        .and_then(|json| serde_json::from_str(json).ok())
-        .unwrap_or(serde_json::Value::Null);
-
-    let admin_fee =
-        provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]).unwrap_or(0.0);
-
-    // The bill on its own, before the admin fee.
-    //
-    // Deliberately not read from `amount`: the payment endpoints mean the bill
-    // by it and the history endpoint means the total, and from a stored blob
-    // there is no telling which shape arrived. Guessing wrong prints the admin
-    // fee twice or not at all, so the figure is only taken from a field that
-    // means one thing.
-    let bill_amount = provider_number(&raw, &["base_price", "nominal", "denom"])
+    let admin_fee = slip.admin_fee.unwrap_or(0.0);
+    let bill_amount = slip
+        .bill_amount
         .filter(|amount| *amount > 0.0)
         .unwrap_or(0.0);
 
@@ -470,42 +624,27 @@ fn build_ppob_receipt_data(
     // they sent one, its two parts added up otherwise, and failing both the
     // rupiah the customer paid — which at worst shows a service fee of zero
     // rather than a wrong figure.
-    let provider_total = provider_number(&raw, &["total", "total_payment", "total_amount"])
+    let provider_total = slip
+        .total
         .filter(|total| *total > 0.0)
         .or_else(|| (bill_amount > 0.0).then_some(bill_amount + admin_fee))
-        .unwrap_or(item.net_subtotal);
+        .unwrap_or(line.grand_total);
 
     PpobReceiptData {
-        store_name: store.name.clone(),
-        service_type: item.service_type.clone().unwrap_or_default(),
-        flag_id: item.ppob_flag_id.clone(),
-        product_name: Some(item.product_name.clone()),
-        // Our own columns first: they are what the cashier typed and what the
-        // fulfilment actually used, whatever the provider echoed back. A column
-        // holding `""` counts as absent — `execute_confirm_payment` copies the
-        // provider's empty string into it rather than leaving it NULL, and an
-        // empty column that shadowed the blob would cost the struk its token.
-        customer_id: stored(&item.service_ref).or_else(|| {
-            provider_field(
-                &raw,
-                &["customer_no", "customer_id", "idpel", "no_meter", "target"],
-            )
-        }),
-        customer_name: provider_field(
-            &raw,
-            &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
-        ),
-        // The token is worth more than the serial: PLN prepaid answers with the
-        // token in `token_number` and an empty `serial_number`, and the column
-        // was filled from the latter.
-        serial_number: provider_field(&raw, &["token_number"])
-            .or_else(|| stored(&item.ppob_serial_number))
-            .or_else(|| provider_field(&raw, &["serial_number", "token", "sn"])),
-        reference_number: provider_field(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
-        payment_code: stored(&item.ppob_payment_code)
-            .or_else(|| provider_field(&raw, &["payment_code", "raw_paymentcode"])),
-        provider_description: provider_field(&raw, &["igr_desc"]),
-        provider_receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
+        store_name: store_name.to_string(),
+        service_type: line.service_type,
+        flag_id: line.flag_id,
+        product_name: line.product_name,
+        customer_id: line.customer_id.or(slip.customer_id),
+        customer_name: slip.customer_name,
+        serial_number: slip
+            .token_number
+            .or(line.serial_number)
+            .or(slip.serial_number),
+        reference_number: slip.reference_number,
+        payment_code: line.payment_code.or(slip.payment_code),
+        provider_description: slip.description,
+        provider_receipt_text: slip.receipt_text,
         amount: if bill_amount > 0.0 {
             bill_amount
         } else {
@@ -513,10 +652,101 @@ fn build_ppob_receipt_data(
         },
         admin_fee,
         total: provider_total,
-        // What the customer actually handed over for this line, discounts and
-        // our markup already in it.
-        grand_total: item.net_subtotal,
+        grand_total: line.grand_total,
     }
+}
+
+/// The struk for a line sold here, from its row and the provider blob stored
+/// with it.
+fn ppob_item_receipt_data(
+    store: &store_info::Model,
+    item: &transaction_items::Model,
+    provider_response: Option<&str>,
+) -> PpobReceiptData {
+    build_ppob_receipt_data(
+        &store.name,
+        PpobLine::from_item(item),
+        ProviderSlip::from_response(provider_response),
+    )
+}
+
+/// The struk for a transaction in Mitra's history, at a sell price chosen now.
+///
+/// This is the Mitra app's "Ringkasan Transaksi" flow: after a payment, or
+/// from its Riwayat, the outlet sees what it paid, sets a "Harga Jual", and
+/// prints. The sell price is the struk's `Grand Total`; the difference from
+/// the provider's total prints as `Biaya Layanan`.
+///
+/// `sell_price` is taken as given: the route already refused a negative or
+/// non-finite one as a malformed request, and a struk sold at a loss is the
+/// outlet's call to make.
+async fn ppob_history_receipt_data(
+    db: &DatabaseConnection,
+    mitra: &Arc<Mutex<MitraClient>>,
+    store_name: &str,
+    trx_id: String,
+    sell_price: f64,
+) -> Result<PpobReceiptData, AppError> {
+    let item = services::ppob::history::detail(db, mitra, trx_id).await?;
+    if !services::ppob::history::is_success(&item) {
+        return Err(AppError::Validation(
+            "Struk hanya bisa dicetak untuk transaksi yang sukses".into(),
+        ));
+    }
+
+    Ok(build_ppob_receipt_data(
+        store_name,
+        PpobLine::from_history(&item, sell_price),
+        ProviderSlip::from_history(&item),
+    ))
+}
+
+/// The lines a history struk would print, for the screen to show before the
+/// paper is spent. Needs the store but not a printer: the preview is useful on
+/// a till whose printer is not set up yet, if only to show what would be lost.
+pub async fn ppob_history_receipt(
+    db: &DatabaseConnection,
+    mitra: &Arc<Mutex<MitraClient>>,
+    trx_id: String,
+    sell_price: f64,
+) -> Result<Vec<ReceiptLineResponse>, AppError> {
+    let store = store_info::Entity::find_by_id(1_i64)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+    let paper_width = get_printer_settings(&store.additional_info)
+        .paper_width
+        .unwrap_or(58);
+
+    let data = ppob_history_receipt_data(db, mitra, &store.name, trx_id, sell_price).await?;
+
+    Ok(format_ppob_receipt(&data, paper_width)
+        .into_iter()
+        .map(ReceiptLineResponse::from)
+        .collect())
+}
+
+/// Print the struk for a transaction in Mitra's history. The same lines the
+/// preview showed: both go through [`ppob_history_receipt_data`] and the same
+/// formatter, so what was on the screen is what lands on the paper.
+pub async fn print_ppob_history(
+    db: &DatabaseConnection,
+    mitra: &Arc<Mutex<MitraClient>>,
+    trx_id: String,
+    sell_price: f64,
+) -> Result<(), AppError> {
+    let PrintTarget {
+        store,
+        printer_id,
+        paper_width,
+        mode,
+        ..
+    } = print_target(db).await?;
+
+    let data = ppob_history_receipt_data(db, mitra, &store.name, trx_id, sell_price).await?;
+    let lines = format_ppob_receipt(&data, paper_width);
+
+    send_jobs(printer_id, vec![lines], paper_width, mode).await
 }
 
 pub async fn test_print(db: &DatabaseConnection) -> Result<(), AppError> {
@@ -804,5 +1034,215 @@ mod tests {
         let raw = serde_json::Value::Null;
         assert_eq!(provider_field(&raw, &["receipt_text"]), None);
         assert_eq!(provider_number(&raw, &["total"]), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // The history path: a row of Mitra's `history-payment`, printed at a sell
+    // price chosen now.
+    // -----------------------------------------------------------------------
+
+    /// An anonymised copy of a real PLN postpaid row as `services::ppob::history`
+    /// parses it: `total` null, `amount` the figure the outlet paid with the
+    /// admin fee already in it, the provider's slip in `receipt_text`.
+    fn pln_postpaid_row() -> HistoryPaymentItem {
+        HistoryPaymentItem {
+            trx_id: Some("111100000001".to_string()),
+            product_name: Some("-".to_string()),
+            description: Some("PLN - 231000000002".to_string()),
+            serial_number: Some(String::new()),
+            total: None,
+            amount: Some(73229.0),
+            admin_fee: Some(3500.0),
+            status: Some("SUKSES".to_string()),
+            created_at: Some("2026-09-11 10:11:50".to_string()),
+            base_price: Some(69729.0),
+            plu: Some("321700758".to_string()),
+            service_type: Some("PLN".to_string()),
+            customer_no: Some("231000000002".to_string()),
+            token_number: Some(String::new()),
+            payment_code: Some("L231000000002-2-260911101150".to_string()),
+            receipt_text: Some(
+                "\r\n\r\nSTRUK PEMBAYARAN TAGIHAN LISTRIK\r\n\r\nIDPEL          : 231000000002\r\nNAMA           : PT.CONTOH SEJA H\r\n                  TERA\r\nTOTAL BAYAR    : Rp 73.229,00\r\n"
+                    .to_string(),
+            ),
+            igr_desc: Some("Post paid".to_string()),
+            no_ref: Some("13516345".to_string()),
+            ..HistoryPaymentItem::default()
+        }
+    }
+
+    /// The row and the sell price become the same [`PpobReceiptData`] a line
+    /// sold here would: the provider's figures as the provider's, the sell
+    /// price as the grand total, and the slip printed verbatim.
+    #[test]
+    fn a_history_row_is_mapped_like_a_line_sold_here() {
+        let row = pln_postpaid_row();
+        let data = build_ppob_receipt_data(
+            "Toko Contoh",
+            PpobLine::from_history(&row, 75000.0),
+            ProviderSlip::from_history(&row),
+        );
+
+        assert_eq!(data.store_name, "Toko Contoh");
+        assert_eq!(data.service_type, "pln");
+        assert_eq!(data.flag_id, None);
+        // `-` is not a product name; the description says what was bought.
+        assert_eq!(data.product_name.as_deref(), Some("PLN - 231000000002"));
+        assert_eq!(data.customer_id.as_deref(), Some("231000000002"));
+        // Both the token and the serial were sent empty: no token block.
+        assert_eq!(data.serial_number, None);
+        assert_eq!(data.reference_number.as_deref(), Some("13516345"));
+        assert_eq!(
+            data.payment_code.as_deref(),
+            Some("L231000000002-2-260911101150")
+        );
+        assert_eq!(data.provider_description.as_deref(), Some("Post paid"));
+        assert!(data
+            .provider_receipt_text
+            .as_deref()
+            .is_some_and(|text| text.contains("STRUK PEMBAYARAN TAGIHAN LISTRIK")));
+        assert_eq!(data.amount, 69729.0);
+        assert_eq!(data.admin_fee, 3500.0);
+        assert_eq!(data.total, 73229.0);
+        assert_eq!(data.grand_total, 75000.0);
+    }
+
+    /// The struk itself ends in the Mitra app's three lines, with the sell
+    /// price as `Grand Total` and the markup as `Biaya Layanan`.
+    #[test]
+    fn a_history_struk_prints_the_sell_price_as_the_grand_total() {
+        let row = pln_postpaid_row();
+        let data = build_ppob_receipt_data(
+            "Toko Contoh",
+            PpobLine::from_history(&row, 75000.0),
+            ProviderSlip::from_history(&row),
+        );
+        let lines: Vec<String> = format_ppob_receipt(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+
+        assert!(lines.contains(&"Total             Rp 73.229".to_string()));
+        assert!(lines.contains(&"Biaya Layanan     Rp 1.771".to_string()));
+        assert!(lines.contains(&"Grand Total       Rp 75.000".to_string()));
+    }
+
+    /// A row that never said its total is summed from the two parts it did
+    /// send, exactly as a stored payment blob is.
+    #[test]
+    fn a_history_row_without_a_total_adds_the_bill_and_the_admin_fee() {
+        let row = HistoryPaymentItem {
+            amount: None,
+            total: None,
+            base_price: Some(20000.0),
+            admin_fee: Some(3500.0),
+            ..pln_postpaid_row()
+        };
+        let data = build_ppob_receipt_data(
+            "Toko Contoh",
+            PpobLine::from_history(&row, 25000.0),
+            ProviderSlip::from_history(&row),
+        );
+
+        assert_eq!(data.total, 23500.0);
+        assert_eq!(data.amount, 20000.0);
+    }
+
+    /// Mitra's capitals-and-spaces service names become the keys our lines use.
+    #[test]
+    fn history_service_names_are_mapped_to_our_keys() {
+        let named = |name: &str| HistoryPaymentItem {
+            service_type: Some(name.to_string()),
+            ..HistoryPaymentItem::default()
+        };
+        assert_eq!(history_service_type(&named("PLN")), "pln");
+        assert_eq!(history_service_type(&named("PAYMENT POINT")), "pp");
+        assert_eq!(history_service_type(&named("E-Money")), "emoney");
+        assert_eq!(history_service_type(&named("BPJS")), "bpjs");
+        assert_eq!(history_service_type(&named("")), "");
+    }
+
+    /// Our own columns outrank the provider's echo of them, with the one
+    /// exception the PLN prepaid response forces: its token arrives under
+    /// `token_number` while our serial column was filled from an empty
+    /// `serial_number`, so the provider's token beats the stored serial.
+    #[test]
+    fn the_line_outranks_the_slip_except_for_the_token() {
+        let line = PpobLine {
+            service_type: "pln".to_string(),
+            customer_id: Some("typed-by-cashier".to_string()),
+            serial_number: Some("stored-serial".to_string()),
+            payment_code: Some("stored-code".to_string()),
+            grand_total: 25000.0,
+            ..PpobLine::default()
+        };
+        let slip = ProviderSlip {
+            customer_id: Some("echoed".to_string()),
+            token_number: Some("1111 2222 3333 4444 5555".to_string()),
+            serial_number: Some("provider-serial".to_string()),
+            payment_code: Some("echoed-code".to_string()),
+            bill_amount: Some(20000.0),
+            admin_fee: Some(3500.0),
+            total: None,
+            ..ProviderSlip::default()
+        };
+
+        let data = build_ppob_receipt_data("Toko", line, slip);
+
+        assert_eq!(data.customer_id.as_deref(), Some("typed-by-cashier"));
+        assert_eq!(data.payment_code.as_deref(), Some("stored-code"));
+        assert_eq!(
+            data.serial_number.as_deref(),
+            Some("1111 2222 3333 4444 5555")
+        );
+        assert_eq!(data.total, 23500.0);
+        assert_eq!(data.grand_total, 25000.0);
+    }
+
+    /// With nothing from the provider at all, the struk still has a total: the
+    /// rupiah the customer paid, which at worst shows a service fee of zero.
+    #[test]
+    fn a_line_with_no_provider_figures_falls_back_to_what_was_paid() {
+        let line = PpobLine {
+            grand_total: 12000.0,
+            ..PpobLine::default()
+        };
+        let data = build_ppob_receipt_data("Toko", line, ProviderSlip::default());
+
+        assert_eq!(data.total, 12000.0);
+        assert_eq!(data.amount, 12000.0);
+        assert_eq!(data.admin_fee, 0.0);
+    }
+
+    /// The stored payment blob is read the way it always was: a wrapped
+    /// response yields the slip with the provider's own spellings resolved.
+    #[test]
+    fn a_stored_payment_response_is_read_into_the_slip() {
+        let blob = json!({
+            "message": "OK",
+            "history_payment": {
+                "token_number": "1111 2222 3333 4444 5555",
+                "serial_number": "",
+                "no_ref": "REF-9",
+                "base_price": "20000.00",
+                "admin_fee": 3500,
+                "receipt_text": "NO METER : 14300000001"
+            }
+        })
+        .to_string();
+
+        let slip = ProviderSlip::from_response(Some(&blob));
+
+        assert_eq!(
+            slip.token_number.as_deref(),
+            Some("1111 2222 3333 4444 5555")
+        );
+        assert_eq!(slip.serial_number, None);
+        assert_eq!(slip.reference_number.as_deref(), Some("REF-9"));
+        assert_eq!(slip.bill_amount, Some(20000.0));
+        assert_eq!(slip.admin_fee, Some(3500.0));
+        assert_eq!(slip.total, None);
+        assert_eq!(slip.receipt_text.as_deref(), Some("NO METER : 14300000001"));
+        assert_eq!(ProviderSlip::from_response(None), ProviderSlip::default());
     }
 }

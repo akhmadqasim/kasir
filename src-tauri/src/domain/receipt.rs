@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::printing::receipt::{LineSize, ReceiptTextLine};
+
 #[derive(Debug, Serialize)]
 pub struct PrinterInfoItem {
     pub id: String,
@@ -76,4 +78,28 @@ pub struct ReceiptPaymentSplitResponse {
     pub payment_method: String,
     pub bank_name: Option<String>,
     pub amount: f64,
+}
+
+/// One line of a struk as the preview draws it: the same text, weight and
+/// size the printer is about to be handed.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct ReceiptLineResponse {
+    pub text: String,
+    pub bold: bool,
+    /// `"normal"`, or `"double"` for a line set at double width and height —
+    /// the PLN token, which fits half the columns of the paper.
+    pub size: &'static str,
+}
+
+impl From<ReceiptTextLine> for ReceiptLineResponse {
+    fn from(line: ReceiptTextLine) -> Self {
+        Self {
+            text: line.text,
+            bold: line.bold,
+            size: match line.size {
+                LineSize::Normal => "normal",
+                LineSize::Double => "double",
+            },
+        }
+    }
 }

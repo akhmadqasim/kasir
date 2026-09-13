@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { isWithinLocalDateRange, normalizeStatus, parseMutasiDate } from "./history-utils"
+import type { HistoryPaymentItem } from "../../types"
+import type { PpobMarkup } from "../../types/auth"
+import {
+  getDefaultSellPrice,
+  getProviderTotal,
+  isWithinLocalDateRange,
+  normalizeStatus,
+  parseMutasiDate,
+} from "./history-utils"
 
 describe("parseMutasiDate", () => {
   // Payment history shape.
@@ -68,5 +76,86 @@ describe("normalizeStatus", () => {
     expect(normalizeStatus("failed")).toBe("gagal")
     expect(normalizeStatus("pending")).toBe("proses")
     expect(normalizeStatus(null)).toBe("unknown")
+  })
+})
+
+/** Only the fields the pricing helpers read; the rest of a row is noise here. */
+function row(fields: Partial<HistoryPaymentItem>): HistoryPaymentItem {
+  return {
+    trxId: "1",
+    inquiryId: null,
+    productName: "-",
+    description: null,
+    serialNumber: null,
+    total: null,
+    amount: null,
+    adminFee: null,
+    status: "SUKSES",
+    createdAt: null,
+    vendorPrice: null,
+    basePrice: null,
+    sellPrice: null,
+    profit: null,
+    margin: null,
+    denom: null,
+    provider: null,
+    merchant: null,
+    plu: null,
+    serviceType: null,
+    customerNo: null,
+    tokenNumber: null,
+    paymentCode: null,
+    receiptText: null,
+    invoiceUrl: null,
+    igrDesc: null,
+    noRef: null,
+    ...fields,
+  }
+}
+
+const MARKUP: PpobMarkup = {
+  pulsa: { type: "fixed", value: 2000 },
+  data: { type: "fixed", value: 2000 },
+  pln: { type: "percentage", value: 10 },
+  pdam: { type: "fixed", value: 2500 },
+  bpjs: { type: "fixed", value: 2500 },
+  emoney: { type: "fixed", value: 1000 },
+  custom_prices: { "10000": 12500 },
+}
+
+describe("getProviderTotal", () => {
+  // The live shape: `total` null, `amount` already carries the admin fee.
+  it("reads amount as the total the outlet paid", () => {
+    expect(getProviderTotal(row({ amount: 73229, basePrice: 69729, adminFee: 3500 }))).toBe(73229)
+  })
+
+  it("falls back to total, then to the bill plus the admin fee", () => {
+    expect(getProviderTotal(row({ total: 23500 }))).toBe(23500)
+    expect(getProviderTotal(row({ basePrice: 20000, adminFee: 3500 }))).toBe(23500)
+    expect(getProviderTotal(row({ basePrice: 20000 }))).toBe(20000)
+    expect(getProviderTotal(row({}))).toBeNull()
+  })
+})
+
+describe("getDefaultSellPrice", () => {
+  it("applies the markup block for the row's service", () => {
+    const pln = row({ serviceType: "PLN", description: "PLN - 231000000002" })
+    expect(getDefaultSellPrice(pln, 73229, MARKUP)).toBe(80552)
+
+    const pdam = row({ serviceType: "PDAM", description: "PDAM - 1100001" })
+    expect(getDefaultSellPrice(pdam, 71663, MARKUP)).toBe(74163)
+  })
+
+  it("prefers a custom price for a pulsa nominal", () => {
+    const pulsa = row({ serviceType: "pulsa", description: "Pulsa Telkomsel 10.000" })
+    expect(getDefaultSellPrice(pulsa, 10450, MARKUP)).toBe(12500)
+  })
+
+  it("starts at cost for a service with no markup block, or before settings load", () => {
+    const pp = row({ serviceType: "PAYMENT POINT", description: "Telkom Indihome - 1" })
+    expect(getDefaultSellPrice(pp, 297150, MARKUP)).toBe(297150)
+
+    const pln = row({ serviceType: "PLN", description: "PLN - 1" })
+    expect(getDefaultSellPrice(pln, 73229, undefined)).toBe(73229)
   })
 })
