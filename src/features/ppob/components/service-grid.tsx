@@ -1,7 +1,7 @@
-import { Button } from "@heroui/react"
-
 import { cn } from "@/lib/utils"
 import { PPOB_SERVICE_COLORS, type PpobServiceDef } from "../constants"
+import { TileButton } from "./tile-button"
+import { TileGrid } from "./tile-grid"
 
 interface ServiceGridProps<S extends PpobServiceDef> {
   services: readonly S[]
@@ -23,36 +23,22 @@ export function ServiceGrid<S extends PpobServiceDef>({
   compact = false,
 }: ServiceGridProps<S>) {
   return (
-    // `auto-rows-fr` menyamakan tinggi ubin sebaris; tanpanya label dua baris
-    // membuat satu ubin lebih tinggi dari tetangganya.
-    //
-    // Keduanya memakai `auto-fill`, bukan breakpoint viewport: lebar kisi
-    // ditentukan panelnya — panel kasir, atau separuh beranda PPOB di sebelah
-    // riwayat — jadi `lg:grid-cols-6` yang menyala di layar lebar justru
-    // memerasnya jadi enam kolom sempit.
-    <div
-      className={cn(
-        "grid auto-rows-fr",
-        compact
-          ? "grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2"
-          : "grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-3",
-      )}
-    >
+    <TileGrid compact={compact}>
       {services.map((service) => (
-        // Bentuk ubinnya dari kelas `.tile` (`index.css`), sama dengan ubin
-        // Favorit di tab sebelahnya.
-        <Button
+        // Bentuk ubinnya `TileButton` (kelas `.tile` di `index.css`), sama
+        // dengan ubin grup/biller Payment Point dan hasil pencarian.
+        <TileButton
           key={service.key}
-          className={cn("tile flex-col px-2", compact ? "gap-1.5 py-3" : "gap-2 py-4")}
-          variant="secondary"
+          compact={compact}
+          icon={
+            <service.icon
+              className={cn(compact ? "size-5" : "size-6", PPOB_SERVICE_COLORS[service.key].text)}
+            />
+          }
+          label={service.label}
           onPress={() => onSelect(service)}
-        >
-          <service.icon
-            className={cn(compact ? "size-5" : "size-6", PPOB_SERVICE_COLORS[service.key].text)}
-          />
-          <span className="line-clamp-2 w-full text-center break-words">{service.label}</span>
-        </Button>
+        />
       ))}
-    </div>
+    </TileGrid>
   )
 }

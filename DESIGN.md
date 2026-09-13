@@ -644,3 +644,27 @@ Simpan di kedua kartu tetap menulis seluruh formulir.
 **Persentase porsi dihitung terhadap jumlah nilai mutlak.** Nilai bersih bisa negatif
 ketika retur melampaui penjualan; memakai jumlah bertanda akan membuat porsinya melebihi
 100% begitu ada satu baris negatif.
+
+**Cari layanan di beranda PPOB mengganti kisi, bukan membuka popover.** "Kalau mau bayar
+Indihome, di Mitra ada fitur cari" — jawabannya bukan `Autocomplete`/`ComboBox` di atas
+kisi "Pilih Layanan", karena hasilnya (biller Payment Point dari lintas grup, plus layanan
+tetap yang namanya cocok) sama-sama "sesuatu yang bisa ditekan untuk membuka satu flow",
+jadi bentuknya harus tetap ubin, bukan baris teks di popover yang mendadak beda dari
+tetangganya begitu ada kueri. `ppob-home.tsx` memasang `SearchField` (`SearchInput`) di
+atas kisi; kisi itu sendiri, saat kosong, tetap `ServiceGrid` seperti biasa, dan saat ada
+kueri berganti ke `SearchResultsGrid` — hasil biller (`GET
+/ppob/catalog/payment-points/search`, di-debounce 300 ms seperti pencarian lain) plus
+tile layanan tetap yang labelnya cocok, digambar dengan `TileButton`/`TileGrid` yang sama,
+supaya mata tidak perlu belajar bentuk kedua untuk "ini juga bisa ditekan". `NoData` untuk
+kueri yang tidak cocok apa pun. Backend membangun daftar biller sekali (satu putaran
+`pp/get-sub-menu` per grup) dan menyimpannya 12 jam
+(`services::ppob::search::payment_point_index`) karena upstream tidak punya pencarian
+sendiri — mengulang putaran itu per ketikan akan mengalikan panggilan ke Mitra dengan
+jumlah huruf yang diketik kasir.
+
+**`TileButton`/`TileGrid` naik dari `ServiceGrid` menjadi milik bersama.** Sebelum ini
+`ServiceGrid` menulis `Button` dengan kelas `.tile` dan kisi `auto-fill`-nya sendiri;
+`SearchResultsGrid` butuh persis bentuk yang sama untuk hasil biller di sebelah tile
+layanan yang cocok, jadi keduanya naik jadi komponen sendiri (`tile-button.tsx`,
+`tile-grid.tsx`) alih-alih ditulis ulang. `ServiceGrid` sendiri tidak berubah bentuknya —
+ia kini menggambar lewat `TileButton`/`TileGrid` alih-alih markup sendiri.

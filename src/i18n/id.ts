@@ -454,6 +454,8 @@ export const id = {
     title: "Mitra Indogrosir",
     saldo: "Saldo Mitra",
     selectService: "Pilih Layanan",
+    searchService: "Cari layanan: Indihome, MyRepublic, PDAM…",
+    searchNoResults: (query: string) => `Tidak ada layanan untuk "${query}"`,
     pulsa: "Pulsa",
     dataPacket: "Paket Data",
     pln: "Token PLN",

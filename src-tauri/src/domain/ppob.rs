@@ -149,6 +149,36 @@ pub struct PpSubMenuItem {
     pub path_icon: Option<String>,
 }
 
+/// The group a [`PpSearchResult`] was found under — just enough to show and to
+/// jump straight back into that group's sub-menu, not the full
+/// [`PpobMenuGroup`] the group tiles render from.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PpSearchGroupRef {
+    pub id: i64,
+    pub name: String,
+}
+
+/// One payment-point biller, found by searching across every group's
+/// sub-menu at once rather than the cashier picking a group first.
+///
+/// A flattened, cached copy of the fields [`PpSubMenuItem`] already carries —
+/// `igr_plu` is the one field left out, because nothing downstream of a search
+/// result reads it before the cashier's own group/sub-menu fetch runs again.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PpSearchResult {
+    pub id: i64,
+    pub plu: String,
+    pub merchant: String,
+    pub description: String,
+    pub label: String,
+    pub input_amt: i32,
+    pub is_trouble: i32,
+    pub path_icon: Option<String>,
+    pub group: PpSearchGroupRef,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferChannelGroup {

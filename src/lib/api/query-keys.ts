@@ -176,6 +176,8 @@ export const queryKeys = {
       ["ppob", "catalog", "emoney-denominations", productId] as const,
     paymentPointSubMenu: (paymentPointId: number) =>
       ["ppob", "catalog", "payment-point-sub-menu", paymentPointId] as const,
+    paymentPointSearch: (query: string) =>
+      ["ppob", "catalog", "payment-point-search", query] as const,
     transferChannels: ["ppob", "catalog", "transfer-channels"] as const,
     voucherGroups: ["ppob", "catalog", "voucher-groups"] as const,
     history: (range: ReportRange) => ["ppob", "history", range] as const,

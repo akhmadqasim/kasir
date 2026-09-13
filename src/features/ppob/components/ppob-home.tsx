@@ -1,13 +1,18 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button, Card } from "@heroui/react"
 import { ArrowUpDown, Bell, Settings } from "lucide-react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
+import { SearchInput } from "@/components/search-input"
 import { useAuthStore } from "@/features/auth"
 import { id } from "@/i18n/id"
-import { PPOB_SERVICES } from "../constants"
+import { PPOB_SERVICES, type PpobServiceDef } from "../constants"
+import { usePaymentPointSearch } from "../hooks"
+import type { PpSearchResult } from "../types"
 import { HistoryPanel } from "./history"
 import { SaldoCard } from "./saldo-card"
+import { SearchResultsGrid } from "./search-results-grid"
 import { ServiceGrid } from "./service-grid"
 
 /**
@@ -23,6 +28,17 @@ import { ServiceGrid } from "./service-grid"
 export function PpobHome() {
   const navigate = useNavigate()
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
+  const [search, setSearch] = useState("")
+  const { data: billers, isLoading: billersLoading } = usePaymentPointSearch(search)
+
+  const handleSelectService = (service: PpobServiceDef) => navigate(service.path)
+
+  // A biller found by search skips the group step: `pp-flow.tsx` reads
+  // `location.state` and starts on that group directly (its id and name are
+  // already known here), then auto-selects the merchant once its own
+  // sub-menu fetch resolves — so the cashier only has to type the payment code.
+  const handleSelectBiller = (item: PpSearchResult) =>
+    navigate("pp", { state: { preselectGroup: item.group, preselectItemId: item.id } })
 
   return (
     <>
@@ -52,11 +68,24 @@ export function PpobHome() {
             <Card.Header>
               <Card.Title>{id.ppob.selectService}</Card.Title>
             </Card.Header>
-            <Card.Content>
-              <ServiceGrid
-                services={PPOB_SERVICES}
-                onSelect={(service) => navigate(service.path)}
+            <Card.Content className="gap-4">
+              <SearchInput
+                aria-label={id.ppob.searchService}
+                placeholder={id.ppob.searchService}
+                value={search}
+                onChange={setSearch}
               />
+              {search.trim() ? (
+                <SearchResultsGrid
+                  billers={billers}
+                  isLoading={billersLoading}
+                  query={search}
+                  onSelectBiller={handleSelectBiller}
+                  onSelectService={handleSelectService}
+                />
+              ) : (
+                <ServiceGrid services={PPOB_SERVICES} onSelect={handleSelectService} />
+              )}
             </Card.Content>
           </Card>
         </div>

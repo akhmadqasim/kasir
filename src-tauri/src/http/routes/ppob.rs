@@ -31,8 +31,8 @@ use serde::Deserialize;
 
 use crate::domain::ppob::{
     EmoneyDenom, HistoryPaymentItem, InquiryResult, MutasiItem, NotificationListResult,
-    PdamProduct, PlnDenom, PpSubMenuItem, PpobMenuGroup, PpobSaldoResponse, PulsaDetailsResponse,
-    PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
+    PdamProduct, PlnDenom, PpSearchResult, PpSubMenuItem, PpobMenuGroup, PpobSaldoResponse,
+    PulsaDetailsResponse, PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
 };
 use crate::domain::receipt::ReceiptLineResponse;
 use crate::domain::Actor;
@@ -62,6 +62,10 @@ pub fn session() -> Router<AppState> {
         .route(
             "/ppob/catalog/payment-points/{id}/sub-menu",
             get(payment_point_sub_menu),
+        )
+        .route(
+            "/ppob/catalog/payment-points/search",
+            get(payment_point_search),
         )
         .route("/ppob/catalog/transfer/channels", get(transfer_channels))
         .route("/ppob/catalog/vouchers/groups", get(voucher_groups))
@@ -196,6 +200,24 @@ async fn payment_point_sub_menu(
 ) -> ApiResult<axum::Json<Vec<PpSubMenuItem>>> {
     Ok(axum::Json(
         services::ppob::menu::pp_sub_menu(&state.db, &state.mitra, id).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// One box, every payment-point group: "Indihome" instead of "Internet & TV,
+/// then scroll". The upstream has no search of its own — see
+/// `services::ppob::search` for how the answer is built once and cached.
+async fn payment_point_search(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> ApiResult<axum::Json<Vec<PpSearchResult>>> {
+    Ok(axum::Json(
+        services::ppob::search::search(&state.db, &state.mitra, &params.q).await?,
     ))
 }
 

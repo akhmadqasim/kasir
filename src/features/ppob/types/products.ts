@@ -72,6 +72,25 @@ export interface PpSubMenuItem {
   pathIcon: string | null
 }
 
+/** The group a `PpSearchResult` was found under — just enough to show and to jump back into it. */
+export interface PpSearchGroupRef {
+  id: number
+  name: string
+}
+
+/** One payment-point biller, found by searching across every group's sub-menu at once. */
+export interface PpSearchResult {
+  id: number
+  plu: string
+  merchant: string
+  description: string
+  label: string
+  inputAmt: number
+  isTrouble: number
+  pathIcon: string | null
+  group: PpSearchGroupRef
+}
+
 export interface TransferChannelDetail {
   channelId: string
   productId: number
