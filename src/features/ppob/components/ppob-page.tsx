@@ -22,8 +22,9 @@ import { PpobNotifications } from "./notifications"
 
 /**
  * Judul "Mitra Indogrosir" sudah digambar navbar dari daftar navigasi; yang
- * naik dari halaman ini hanya tiga jalan pintasnya, sebagai tombol ikon `sm
- * tertiary` (DESIGN.md §5.1).
+ * naik dari halaman ini hanya tiga jalan pintasnya, sebagai tombol `sm
+ * tertiary` berikon dan berlabel (DESIGN.md §5.1) — ikon saja membuat kasir
+ * menebak mana mutasi dan mana riwayat.
  */
 function PpobHome() {
   const navigate = useNavigate()
@@ -31,32 +32,17 @@ function PpobHome() {
   return (
     <>
       <NavbarActions>
-        <Button
-          isIconOnly
-          aria-label={id.ppob.notifications}
-          size="sm"
-          variant="tertiary"
-          onPress={() => navigate("notifications")}
-        >
+        <Button size="sm" variant="tertiary" onPress={() => navigate("notifications")}>
           <Bell />
+          Notifikasi
         </Button>
-        <Button
-          isIconOnly
-          aria-label={id.ppob.mutasi}
-          size="sm"
-          variant="tertiary"
-          onPress={() => navigate("mutasi")}
-        >
+        <Button size="sm" variant="tertiary" onPress={() => navigate("mutasi")}>
           <ArrowUpDown />
+          Mutasi
         </Button>
-        <Button
-          isIconOnly
-          aria-label={id.ppob.history}
-          size="sm"
-          variant="tertiary"
-          onPress={() => navigate("history")}
-        >
+        <Button size="sm" variant="tertiary" onPress={() => navigate("history")}>
           <History />
+          Riwayat
         </Button>
       </NavbarActions>
 
