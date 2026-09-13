@@ -223,6 +223,19 @@ describe("payment dialog", () => {
     expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
   })
 
+  it("toggles a method from Alt+letter, the same as clicking its button", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.keyDown(window, { key: "q", altKey: true })
+
+    expect(await screen.findByLabelText("Nominal QRIS")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /QRIS/ })).toHaveAttribute("aria-pressed", "true")
+    // The bare letter must not fire — it is what the bank field is typed into.
+    fireEvent.keyDown(window, { key: "s" })
+    expect(screen.queryByLabelText("Nominal Transfer")).not.toBeInTheDocument()
+  })
+
   it("closes on Escape", async () => {
     const onOpenChange = vi.fn()
     renderDialog(onOpenChange)
@@ -237,7 +250,7 @@ describe("payment dialog", () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
 
-    fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
 
     expect(screen.queryByText(/Isi nama bank/)).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
@@ -246,7 +259,7 @@ describe("payment dialog", () => {
   it("accepts a bank picked from the curated list", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
-    fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
 
     const bankField = await screen.findByRole("combobox", { name: "Bank" })
     bankField.focus()
@@ -254,7 +267,7 @@ describe("payment dialog", () => {
 
     expect(bankField).toHaveValue("BCA")
 
-    fireEvent.change(await screen.findByLabelText("Nominal Transfer Bank"), {
+    fireEvent.change(await screen.findByLabelText("Nominal Transfer"), {
       target: { value: "6000" },
     })
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
@@ -263,7 +276,7 @@ describe("payment dialog", () => {
   it("accepts a bank name typed free-hand, not just the curated list", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
-    fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
 
     const bankField = await screen.findByRole("combobox", { name: "Bank" })
     fireEvent.change(bankField, { target: { value: "BPR Toko Sebelah" } })
@@ -273,7 +286,7 @@ describe("payment dialog", () => {
       screen.queryByText("Isi nama bank untuk pembayaran transfer bank."),
     ).not.toBeInTheDocument()
 
-    fireEvent.change(await screen.findByLabelText("Nominal Transfer Bank"), {
+    fireEvent.change(await screen.findByLabelText("Nominal Transfer"), {
       target: { value: "6000" },
     })
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()

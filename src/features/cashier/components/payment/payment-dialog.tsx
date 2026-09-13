@@ -1,4 +1,4 @@
-import { Label, Modal, TextArea, TextField, ToggleButton } from "@heroui/react"
+import { Kbd, Label, Modal, TextArea, TextField, ToggleButton } from "@heroui/react"
 import { InfoPanel } from "@/components/info-panel"
 import { NoData } from "@/components/no-data"
 import { PendingButton } from "@/components/pending-button"
@@ -182,11 +182,18 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                         // — aturan radio-lalu-tambah ada di situ.
                         <ToggleButton
                           key={method.value}
-                          className="w-full"
+                          aria-keyshortcuts={`Alt+${method.shortcut}`}
+                          className="w-full justify-between"
                           isSelected={split.selected}
                           onChange={() => form.handleMethodClick(method.value)}
                         >
                           {method.label}
+                          {/* Petunjuk visual saja — nama tombolnya tetap label metode;
+                              pembaca layar dapat tutsnya dari `aria-keyshortcuts`. */}
+                          <Kbd aria-hidden="true">
+                            <Kbd.Abbr keyValue="alt" />
+                            <Kbd.Content>{method.shortcut}</Kbd.Content>
+                          </Kbd>
                         </ToggleButton>
                       )
                     })}

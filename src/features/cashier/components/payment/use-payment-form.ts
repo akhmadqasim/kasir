@@ -15,12 +15,19 @@ import {
 } from "../../payment-behavior"
 import type { PaymentSplitInput, TransactionResult } from "../../types"
 
+/**
+ * `shortcut` is the letter behind Alt that toggles the method — Alt, not
+ * Ctrl, because Ctrl+A/S/W already mean select-all/save/close-tab to the
+ * webview, and not a bare letter because the bank and notes fields take
+ * typing. Q/W/A/S/Z sit under the left hand while the right one is on the
+ * numpad.
+ */
 export const PAYMENT_METHODS = [
-  { value: "cash", label: "Tunai" },
-  { value: "qris", label: "QRIS" },
-  { value: "debit", label: "Debit" },
-  { value: "ewallet", label: "E-Wallet" },
-  { value: "transfer", label: "Transfer Bank" },
+  { value: "cash", label: "Tunai", shortcut: "A" },
+  { value: "qris", label: "QRIS", shortcut: "Q" },
+  { value: "debit", label: "Debit", shortcut: "Z" },
+  { value: "ewallet", label: "E-Wallet", shortcut: "W" },
+  { value: "transfer", label: "Transfer", shortcut: "S" },
 ] as const
 
 export const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
@@ -276,6 +283,27 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     },
     [isSingleCashSelection, paymentSplits, selectedMethodCount, total],
   )
+
+  // Alt+<letter> toggles a method exactly like a click on its button.
+  useEffect(() => {
+    if (!open) return
+
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || !event.altKey || event.ctrlKey || event.metaKey) {
+        return
+      }
+      const method = PAYMENT_METHODS.find(
+        (candidate) => candidate.shortcut === event.key.toUpperCase(),
+      )
+      if (!method) return
+
+      event.preventDefault()
+      handleMethodClick(method.value)
+    }
+
+    window.addEventListener("keydown", handleShortcut)
+    return () => window.removeEventListener("keydown", handleShortcut)
+  }, [handleMethodClick, open])
 
   const recordAmountEntry = (at: number) => {
     amountEntryRef.current = trackAmountEntry(amountEntryRef.current, at)
