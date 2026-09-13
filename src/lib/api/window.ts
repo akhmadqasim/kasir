@@ -1,4 +1,4 @@
-import { apiGet, apiPut } from "./client"
+import { apiDelete, apiGet, apiPut, apiUpload } from "./client"
 
 /**
  * The till window's zoom, driven from the Rust side.
@@ -26,4 +26,18 @@ export function getWindowZoom(): Promise<WindowZoom> {
 /** Answers with the factor as stored — clamped to the range the window accepts. */
 export function setWindowZoom(factor: number): Promise<WindowZoom> {
   return apiPut<WindowZoom>("/window/zoom", { factor })
+}
+
+/**
+ * Paint `png` — the store logo, drawn square by the page — on the window's
+ * title bar and taskbar entry. Refused with a 409 from anything but the till
+ * window itself.
+ */
+export function setWindowIcon(png: Blob): Promise<void> {
+  return apiUpload<void>("/window/icon", png)
+}
+
+/** Back to the icon built into the executable. */
+export function resetWindowIcon(): Promise<void> {
+  return apiDelete<void>("/window/icon")
 }

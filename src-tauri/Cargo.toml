@@ -13,7 +13,8 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `image-png`: the frontend posts the store logo as a PNG for the window icon.
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-shell = "2"
 # Self-update from GitHub Releases, driven from Rust (see `updater/`). The
 # JS-side `tauri-plugin-process` is not needed: `Update::install` exits the app

@@ -49,6 +49,7 @@ use crate::services::backup::BackupScheduler;
 use crate::services::ppob::MitraClient;
 use crate::updater::Updater;
 use crate::utils::{logging, AppError};
+use crate::window_icon::WindowIcon;
 use crate::window_zoom::WindowZoom;
 use throttle::LoginThrottle;
 
@@ -70,7 +71,7 @@ const SWEEP_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Everything the transport needs and nothing it does not.
 ///
-/// `mitra`, `backup_scheduler`, `updater` and `window_zoom` are process-wide
+/// `mitra`, `backup_scheduler`, `updater`, `window_zoom` and `window_icon` are process-wide
 /// mutable state that outlives any one request: the cached PPOB upstream
 /// session, the clock the daily backup runs on, the self-update state machine
 /// and the handle on the till window. `run()` builds
@@ -91,6 +92,8 @@ pub struct AppState {
     /// The till window's zoom. Attached in `setup` like the updater; a test
     /// state — and a process serving only the LAN — has no window behind it.
     pub window_zoom: Arc<WindowZoom>,
+    /// The till window's icon, attached the same way.
+    pub window_icon: Arc<WindowIcon>,
 }
 
 impl AppState {
@@ -106,6 +109,7 @@ impl AppState {
             backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
             updater: Arc::new(Updater::new()),
             window_zoom: Arc::new(WindowZoom::new()),
+            window_icon: Arc::new(WindowIcon::new()),
         }
     }
 
@@ -116,11 +120,13 @@ impl AppState {
         backup_scheduler: Arc<Mutex<BackupScheduler>>,
         updater: Arc<Updater>,
         window_zoom: Arc<WindowZoom>,
+        window_icon: Arc<WindowIcon>,
     ) -> Self {
         self.mitra = mitra;
         self.backup_scheduler = backup_scheduler;
         self.updater = updater;
         self.window_zoom = window_zoom;
+        self.window_icon = window_icon;
         self
     }
 }

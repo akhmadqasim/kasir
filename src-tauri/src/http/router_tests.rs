@@ -2556,6 +2556,77 @@ async fn the_till_window_zooms_itself_and_a_lan_client_cannot() {
     assert_eq!(malformed.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+#[tokio::test]
+async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let token = login_token(&db, 1).await;
+    let state = state(db);
+
+    // A bare server has no window: the route answers 409 rather than 500.
+    let no_window = router(&state)
+        .oneshot(
+            from_address(same_origin(Method::DELETE, "/api/window/icon"), [127, 0, 0, 1])
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(no_window.status(), StatusCode::CONFLICT);
+
+    let painted = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Option<Vec<u8>>>::new()));
+    let sink = painted.clone();
+    state.window_icon.attach(move |png| {
+        sink.lock().expect("lock").push(png.map(<[u8]>::to_vec));
+        Ok(())
+    });
+
+    let set = router(&state)
+        .oneshot(
+            from_address(same_origin(Method::POST, "/api/window/icon"), [127, 0, 0, 1])
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, multipart_content_type())
+                .body(multipart_file("file", "icon.png", b"png-bytes"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(set.status(), StatusCode::NO_CONTENT);
+
+    let reset = router(&state)
+        .oneshot(
+            from_address(same_origin(Method::DELETE, "/api/window/icon"), [127, 0, 0, 1])
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(reset.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        *painted.lock().expect("lock"),
+        vec![Some(b"png-bytes".to_vec()), None]
+    );
+
+    // A tablet on the LAN must not repaint the desktop window's taskbar entry.
+    let refused = router(&state)
+        .oneshot(
+            from_address(
+                same_origin(Method::POST, "/api/window/icon"),
+                [192, 168, 1, 20],
+            )
+            .header(header::COOKIE, cookie(&token))
+            .header(header::CONTENT_TYPE, multipart_content_type())
+            .body(multipart_file("file", "icon.png", b"png-bytes"))
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    assert_eq!(painted.lock().expect("lock").len(), 2);
+}
+
 // ---------------------------------------------------------------------------
 // The real listener
 // ---------------------------------------------------------------------------

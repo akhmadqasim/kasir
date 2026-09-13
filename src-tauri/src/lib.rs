@@ -8,6 +8,7 @@ mod services;
 mod test_support;
 mod updater;
 mod utils;
+mod window_icon;
 mod window_zoom;
 
 use std::fs;
@@ -77,6 +78,7 @@ pub fn run() {
     let updater = Arc::new(updater::Updater::new());
 
     let window_zoom = Arc::new(window_zoom::WindowZoom::new());
+    let window_icon = Arc::new(window_icon::WindowIcon::new());
     // Read before the window exists so it opens at the size it was left at,
     // rather than snapping from 100 % a moment after the first paint.
     let initial_zoom = tauri::async_runtime::block_on(services::settings::ui_zoom(&database))
@@ -95,12 +97,14 @@ pub fn run() {
         &backup_scheduler,
         &updater,
         &window_zoom,
+        &window_icon,
     );
     let http_port = http_server.port;
 
     let backup_scheduler_clone = backup_scheduler.clone();
     let updater_clone = updater.clone();
     let window_zoom_clone = window_zoom.clone();
+    let window_icon_clone = window_icon.clone();
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -127,6 +131,15 @@ pub fn run() {
             let window = build_main_window(app, http_port)?;
             // Same shape as the updater: the HTTP route that drives the zoom was
             // wired before this window existed, so it gets a closure over it.
+            // The icon too: the store logo, drawn as a PNG by the page, or the
+            // built-in mark again once the logo is removed.
+            let default_icon = app.default_window_icon().cloned().map(tauri::image::Image::to_owned);
+            let icon_window = window.clone();
+            window_icon_clone.attach(move |png| match (png, &default_icon) {
+                (Some(bytes), _) => icon_window.set_icon(tauri::image::Image::from_bytes(bytes)?),
+                (None, Some(icon)) => icon_window.set_icon(icon.clone()),
+                (None, None) => Ok(()),
+            });
             window_zoom_clone.attach(move |factor| window.set_zoom(factor));
             if initial_zoom != domain::settings::UI_ZOOM_DEFAULT {
                 if let Err(e) = window_zoom_clone.apply(initial_zoom) {
@@ -158,6 +171,7 @@ fn start_http_server(
     backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
     updater: &Arc<updater::Updater>,
     window_zoom: &Arc<window_zoom::WindowZoom>,
+    window_icon: &Arc<window_icon::WindowIcon>,
 ) -> http::ServerHandle {
     // Pay for the login timing-equaliser's one-off bcrypt hash now, so the first
     // login attempt against an unknown username is not the request that pays it.
@@ -168,6 +182,7 @@ fn start_http_server(
         backup_scheduler.clone(),
         updater.clone(),
         window_zoom.clone(),
+        window_icon.clone(),
     );
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => server,

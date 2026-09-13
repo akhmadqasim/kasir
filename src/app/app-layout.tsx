@@ -8,11 +8,13 @@ import { AppNavbar } from "@/components/layout/app-navbar"
 import { SidebarInset, SidebarProvider } from "@/components/layout/sidebar"
 import { UpdateBanner } from "@/features/updater"
 import { storeResumeRoute } from "./resume-route"
+import { useWindowIcon } from "./use-window-icon"
 import { ZOOM_MAX, ZOOM_MIN, useWindowZoom } from "./use-window-zoom"
 
 export function AppLayout() {
   const location = useLocation()
   const { zoom, available, zoomIn, zoomOut, zoomReset } = useWindowZoom()
+  useWindowIcon(available)
 
   useEffect(() => {
     storeResumeRoute(location.pathname)
