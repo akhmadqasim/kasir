@@ -11,6 +11,11 @@ import { CashFields } from "./cash-fields"
 import { BankField } from "./bank-field"
 import { PAYMENT_METHODS, usePaymentForm } from "./use-payment-form"
 
+/** Q W di baris atas, A S di tengah, Z di bawah — urutan tuts, bukan urutan metode. */
+const METHODS_IN_KEYBOARD_ORDER = ["qris", "ewallet", "cash", "transfer", "debit"].map(
+  (value) => PAYMENT_METHODS.find((method) => method.value === value)!,
+)
+
 interface PaymentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -168,8 +173,10 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <p>Metode Pembayaran</p>
+                  {/* Disusun seperti tutsnya di papan ketik — Q W / A S / Z —
+                      supaya letak tombol di layar dan di tangan sama. */}
                   <div className="grid grid-cols-2 gap-2">
-                    {PAYMENT_METHODS.map((method) => {
+                    {METHODS_IN_KEYBOARD_ORDER.map((method) => {
                       const split = form.paymentSplits.find(
                         (current) => current.payment_method === method.value,
                       )
