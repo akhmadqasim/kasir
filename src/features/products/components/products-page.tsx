@@ -4,9 +4,7 @@ import { Button } from "@heroui/react"
 import type { SortDescriptor } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
-import { StatCard } from "@/components/stat-card"
 import { id } from "@/i18n/id"
-import { formatNumber } from "@/lib/format"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
 import { ProductSearch } from "./product-search"
@@ -53,16 +51,6 @@ export function ProductsPage() {
   // lima puluh baris.
   const products = useMemo(() => productsData?.data ?? [], [productsData])
   const categoryList = useMemo(() => categories ?? [], [categories])
-
-  const reviewSummary = useMemo(() => {
-    const noBarcode = products.filter((product) => !product.barcode?.trim()).length
-    const negativeStock = products.filter((product) => product.stock < 0).length
-    const lowStock = products.filter(
-      (product) => product.stock >= 0 && product.stock <= product.min_stock,
-    ).length
-
-    return { noBarcode, negativeStock, lowStock }
-  }, [products])
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -119,21 +107,6 @@ export function ProductsPage() {
         quickFilter={quickFilter}
         onQuickFilterChange={handleQuickFilterChange}
       />
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Stok rendah pada hasil saat ini"
-          value={formatNumber(reviewSummary.lowStock)}
-        />
-        <StatCard
-          label="Stok minus pada hasil saat ini"
-          value={formatNumber(reviewSummary.negativeStock)}
-        />
-        <StatCard
-          label="Tanpa barcode pada hasil saat ini"
-          value={formatNumber(reviewSummary.noBarcode)}
-        />
-      </div>
 
       <ProductTable
         products={products}
