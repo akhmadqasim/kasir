@@ -390,27 +390,35 @@ pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<Receip
     let cpl = columns(paper_width_mm);
     let mut lines = Vec::new();
 
-    lines.push(ReceiptTextLine::bold(center_text("TEST PRINT", cpl)));
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
-    lines.push(ReceiptTextLine::plain(center_text(store_name, cpl)));
+    // The same shapes a real receipt uses, so what comes out of the printer
+    // here is what a customer will get: a bold heading, plain detail lines,
+    // a dashed rule and a two-column money line.
+    lines.push(ReceiptTextLine::bold(center_text(store_name, cpl)));
     lines.push(ReceiptTextLine::plain(center_text(
-        &format!("Lebar: {}mm", paper_width_mm),
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(center_text(
-        &format!("{} karakter/baris", cpl),
+        "Tes cetak printer",
         cpl,
     )));
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-    lines.push(ReceiptTextLine::plain("Normal text".to_string()));
-    lines.push(ReceiptTextLine::bold("Bold text".to_string()));
-    lines.push(ReceiptTextLine::plain(two_col_text("Kiri", "Kanan", cpl)));
     lines.push(ReceiptTextLine::plain(two_col_text(
-        "Item panjang sekali",
-        "100.000",
+        "Lebar kertas",
+        &format!("{}mm", paper_width_mm),
         cpl,
     )));
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Karakter/baris",
+        &cpl.to_string(),
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain("Contoh Barang".to_string()));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "  2 x 5.000",
+        "10.000",
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+    lines.push(ReceiptTextLine::bold(two_col_text("TOTAL", "10.000", cpl)));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
     lines.push(ReceiptTextLine::plain(center_text("Printer OK!", cpl)));
 
     lines
@@ -527,8 +535,7 @@ mod tests {
         assert!(total_line.bold, "TOTAL is the other heading");
     }
 
-    /// Every rule on a sales receipt is `-`; `=` never appears anywhere on it
-    /// (`format_test_page_text` is the only formatter still allowed one).
+    /// Every rule on a sales receipt is `-`; `=` never appears anywhere on it.
     #[test]
     fn sales_receipt_never_uses_a_double_rule() {
         let lines = format_receipt_text(&sample_receipt_data(), 58);
