@@ -101,7 +101,9 @@ pub struct SecuritySettings {
 impl Default for SecuritySettings {
     fn default() -> Self {
         Self {
-            session_timeout_minutes: 30,
+            // A whole shift. The till is one machine in one shop; a 30-minute
+            // idle limit meant the cashier logging in again after every lull.
+            session_timeout_minutes: 12 * 60,
         }
     }
 }
