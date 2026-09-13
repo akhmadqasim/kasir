@@ -156,6 +156,7 @@ export function CashierPage() {
         open={successResult !== null}
         result={successResult}
         autoPrint={autoPrint}
+        paperWidth={printerSettings?.paper_width}
         onNewTransaction={handleNewTransaction}
       />
 

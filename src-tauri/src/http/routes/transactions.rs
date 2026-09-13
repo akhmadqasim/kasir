@@ -18,8 +18,9 @@ use axum::response::Response;
 use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Router};
 use chrono::Utc;
+use serde::Deserialize;
 
-use crate::domain::receipt::ReceiptDataResponse;
+use crate::domain::receipt::{ReceiptDataResponse, ReceiptLineResponse};
 use crate::domain::transactions::{
     CheckoutTransactionInput, DeleteTransactionInput, ListTransactionsInput, PaginatedTransactions,
     TransactionDetail, UpdatePaymentMethodInput,
@@ -43,6 +44,7 @@ pub fn session() -> Router<AppState> {
         .route("/transactions/{id}", delete(void))
         .route("/transactions/{id}/payment-method", patch(payment_method))
         .route("/transactions/{id}/receipt", get(receipt))
+        .route("/transactions/{id}/receipt/lines", get(receipt_lines))
         .route("/transaction-items/{id}/ppob/retry", post(retry_ppob))
 }
 
@@ -173,6 +175,28 @@ async fn receipt(
 ) -> ApiResult<axum::Json<ReceiptDataResponse>> {
     Ok(axum::Json(
         services::receipt::receipt_data(&state.db, id).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct ReceiptLinesParams {
+    /// Paper width in mm (58 or 80). Missing = whatever the printer settings
+    /// say, the same width `print` would use.
+    paper: Option<u8>,
+}
+
+/// The lines the printer would be handed for this sale, so the success dialog
+/// can show a struk preview before anything is printed. Same data as
+/// [`receipt`], run through the exact same formatter the printer uses
+/// ([`crate::printing::receipt::format_receipt_text`]), so the preview cannot
+/// drift from the paper.
+async fn receipt_lines(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(params): Query<ReceiptLinesParams>,
+) -> ApiResult<axum::Json<Vec<ReceiptLineResponse>>> {
+    Ok(axum::Json(
+        services::receipt::sale_receipt_lines(&state.db, id, params.paper).await?,
     ))
 }
 

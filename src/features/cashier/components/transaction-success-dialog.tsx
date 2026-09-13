@@ -5,6 +5,7 @@ import { Printer } from "lucide-react"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
+import { ReceiptPreview } from "@/features/receipt"
 import { SendWhatsappButton } from "@/features/whatsapp"
 import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
 import { id } from "@/i18n/id"
@@ -27,6 +28,11 @@ interface TransactionSuccessDialogProps {
    * menunggu jawabannya alih-alih menganggapnya mati.
    */
   autoPrint: boolean | undefined
+  /** Lebar kertas dari pengaturan printer yang sama dipakai mencetak — dibaca
+   * `CashierPage` dari cache bersama `autoPrint`, lalu diteruskan ke
+   * `ReceiptPreview` supaya pratinjaunya tidak pernah beda kolom dari hasil
+   * cetaknya. */
+  paperWidth: number | null | undefined
   onNewTransaction: () => void
 }
 
@@ -44,20 +50,22 @@ export function TransactionSuccessDialog({
   open,
   result,
   autoPrint,
+  paperWidth,
   onNewTransaction,
 }: TransactionSuccessDialogProps) {
   if (!result) return null
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
-      <Modal.Container size="sm">
-        <Modal.Dialog aria-label="Transaksi tersimpan">
+      <Modal.Container size="lg">
+        <Modal.Dialog aria-label="Transaksi selesai">
           {/* Isi dan status cetaknya ikut penjualannya: `key` mengganti
               keduanya untuk struk berikutnya, dan Modal melepasnya saat tertutup. */}
           <SuccessContent
             key={result.transaction.id}
             result={result}
             autoPrint={autoPrint}
+            paperWidth={paperWidth}
             onNewTransaction={onNewTransaction}
           />
         </Modal.Dialog>
@@ -70,7 +78,7 @@ interface SuccessContentProps extends Omit<TransactionSuccessDialogProps, "open"
   result: TransactionResult
 }
 
-function SuccessContent({ result, autoPrint, onNewTransaction }: SuccessContentProps) {
+function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: SuccessContentProps) {
   const [isPrinting, setIsPrinting] = useState(false)
   const [autoPrintState, setAutoPrintState] = useState<AutoPrintState>({ status: "idle" })
   // Satu kali per struk, juga saat StrictMode menjalankan efeknya dua kali.
@@ -143,84 +151,98 @@ function SuccessContent({ result, autoPrint, onNewTransaction }: SuccessContentP
     <>
       <Modal.CloseTrigger />
       <Modal.Header>
-        <Modal.Heading>Transaksi tersimpan</Modal.Heading>
+        <Modal.Heading>Transaksi selesai</Modal.Heading>
       </Modal.Header>
 
       <Modal.Body>
-        {/* Angka dulu, keterangan belakangan (DESIGN.md §2). Kembalian dibaca
-            pelanggan dari seberang meja — peran "Total keranjang" §3.4; total
-            satu tingkat di bawahnya. */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-              {formatRupiah(transaction.total_amount)}
-            </p>
-            <p>{id.cashier.total}</p>
-          </div>
-          {changeAmount > 0 && (
-            <div>
-              <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                {formatRupiah(changeAmount)}
-              </p>
-              <p>
-                {id.cashier.change} dari {formatRupiah(transaction.payment_amount)}
-              </p>
+        {/* Kiri: ringkasan (angka dulu, keterangan belakangan — DESIGN.md §2).
+            Kanan: pratinjau struk, persis seperti yang akan dicetak. Satu
+            kolom di layar sempit karena kotak kertasnya butuh lebar sendiri. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col gap-4">
+            {/* Kembalian dibaca pelanggan dari seberang meja — peran "Total
+                keranjang" §3.4; total satu tingkat di bawahnya. */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {formatRupiah(transaction.total_amount)}
+                </p>
+                <p>{id.cashier.total}</p>
+              </div>
+              {changeAmount > 0 && (
+                <div>
+                  <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
+                    {formatRupiah(changeAmount)}
+                  </p>
+                  <p>
+                    {id.cashier.change} dari {formatRupiah(transaction.payment_amount)}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Chip>
-            {paymentSplitLabel(transaction.payment_method, paymentBreakdown[0]?.bank_name)}
-          </Chip>
-          <span className="font-mono text-xs">{transaction.receipt_number}</span>
-        </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Chip>
+                {paymentSplitLabel(transaction.payment_method, paymentBreakdown[0]?.bank_name)}
+              </Chip>
+              <span className="font-mono text-xs">{transaction.receipt_number}</span>
+            </div>
 
-        {paymentBreakdown.length > 1 && (
-          <SummaryList
-            items={paymentBreakdown.map((split) => ({
-              label: paymentSplitLabel(split.payment_method, split.bank_name),
-              value: formatRupiah(split.amount),
-            }))}
-          />
-        )}
+            {paymentBreakdown.length > 1 && (
+              <SummaryList
+                items={paymentBreakdown.map((split) => ({
+                  label: paymentSplitLabel(split.payment_method, split.bank_name),
+                  value: formatRupiah(split.amount),
+                }))}
+              />
+            )}
 
-        {transaction.notes && <p>Catatan: {transaction.notes}</p>}
+            {transaction.notes && <p>Catatan: {transaction.notes}</p>}
 
-        {ppobItems.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {ppobItems.map((item) => {
-              const status = ppobStatusConfig(item.ppob_status)
-              return (
-                <li key={item.id} className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-foreground">{item.product_name}</span>
-                  {status && (
-                    <StatusBadge size="sm" status={status.variant}>
-                      {isPpobInFlight(item.ppob_status) && (
-                        <Spinner className="size-3" color="current" size="sm" />
+            {ppobItems.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {ppobItems.map((item) => {
+                  const status = ppobStatusConfig(item.ppob_status)
+                  return (
+                    <li key={item.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-foreground">
+                        {item.product_name}
+                      </span>
+                      {status && (
+                        <StatusBadge size="sm" status={status.variant}>
+                          {isPpobInFlight(item.ppob_status) && (
+                            <Spinner className="size-3" color="current" size="sm" />
+                          )}
+                          {status.label}
+                        </StatusBadge>
                       )}
-                      {status.label}
-                    </StatusBadge>
-                  )}
-                </li>
-              )
-            })}
-            <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
-          </ul>
-        )}
+                    </li>
+                  )
+                })}
+                <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
+              </ul>
+            )}
 
-        {autoPrintState.status === "printing" && (
-          <p className="flex items-center gap-2">
-            <Spinner color="current" size="sm" />
-            Struk sedang dicetak otomatis…
-          </p>
-        )}
-        {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
-        {autoPrintState.status === "failed" && (
-          <p className="text-danger">
-            Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak struk".
-          </p>
-        )}
+            {autoPrintState.status === "printing" && (
+              <p className="flex items-center gap-2">
+                <Spinner color="current" size="sm" />
+                Struk sedang dicetak otomatis…
+              </p>
+            )}
+            {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
+            {autoPrintState.status === "failed" && (
+              <p className="text-danger">
+                Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
+                struk".
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-muted">Pratinjau struk</p>
+            <ReceiptPreview paperWidth={paperWidth} transactionId={transaction.id} />
+          </div>
+        </div>
       </Modal.Body>
 
       <Modal.Footer>

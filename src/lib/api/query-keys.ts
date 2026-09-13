@@ -79,6 +79,8 @@ export const queryKeys = {
     list: (params: ListTransactionsInput) => ["transactions", "list", params] as const,
     detail: (transactionId: number) => ["transactions", "detail", transactionId] as const,
     receipt: (transactionId: number) => ["transactions", "receipt", transactionId] as const,
+    receiptLines: (transactionId: number, paperWidth: number | null) =>
+      ["transactions", "receipt-lines", transactionId, paperWidth] as const,
     nextReceiptNumber: ["transactions", "next-receipt-number"] as const,
   },
 
