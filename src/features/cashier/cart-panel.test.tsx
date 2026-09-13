@@ -95,11 +95,12 @@ describe("cart panel", () => {
     expect(screen.getByText("4 item")).toBeInTheDocument()
   })
 
-  it("shows the empty state with no lines", () => {
+  it("shows the empty state inside the table, under its column headers", () => {
     renderPanel()
 
     expect(screen.getByText("Keranjang Kosong")).toBeInTheDocument()
-    expect(screen.queryByRole("grid", { name: "Isi keranjang" })).not.toBeInTheDocument()
+    expect(screen.getByRole("grid", { name: "Isi keranjang" })).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "Produk" })).toBeInTheDocument()
   })
 
   // Pintasannya ditulis sebagai `Kbd` di tombol yang memicunya, jadi ikut nama

@@ -94,7 +94,9 @@ export function AppUpdateCard() {
           onPress={() => check.mutate()}
         >
           <RefreshCw />
-          {t.updater.checkNow}
+          {status?.phase === "checking" || check.isPending
+            ? t.updater.checking
+            : t.updater.checkNow}
         </PendingButton>
       </Card.Footer>
 

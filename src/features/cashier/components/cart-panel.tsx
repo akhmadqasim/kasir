@@ -206,47 +206,45 @@ export function CartPanel({
         </Badge.Anchor>
       </div>
 
-      <Separator />
-
-      {/* Cart Items */}
-      {items.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <NoData icon={<ShoppingCart />} title="Keranjang Kosong">
-            Scan barcode atau cari produk
-          </NoData>
-        </div>
-      ) : (
-        <ScrollShadow className="min-h-0 flex-1">
-          <Table variant="secondary">
-            <Table.ScrollContainer>
-              <Table.Content aria-label="Isi keranjang">
-                <Table.Header>
-                  <Table.Column isRowHeader id="product">
-                    Produk
-                  </Table.Column>
-                  <Table.Column className="w-24 text-right" id="subtotal">
-                    Subtotal
-                  </Table.Column>
-                  <Table.Column className="w-9" id="actions">
-                    <span className="sr-only">Aksi</span>
-                  </Table.Column>
-                </Table.Header>
-                <Table.Body>
-                  {items.map((item) => (
-                    <CartItemRow
-                      key={item.cart_id}
-                      item={item}
-                      onRemove={removeItem}
-                      onEdit={(it) => setEditItem(it)}
-                      hasDiscount={!!itemDiscounts[item.cart_id]}
-                    />
-                  ))}
-                </Table.Body>
-              </Table.Content>
-            </Table.ScrollContainer>
-          </Table>
-        </ScrollShadow>
-      )}
+      {/* Cart Items. The column header row is the divider under the title,
+          and it stays put on an empty cart so the panel does not reshape
+          itself between the first scan and the last. */}
+      <ScrollShadow className="min-h-0 flex-1">
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="Isi keranjang">
+              <Table.Header>
+                <Table.Column isRowHeader id="product">
+                  Produk
+                </Table.Column>
+                <Table.Column className="w-24 text-right" id="subtotal">
+                  Subtotal
+                </Table.Column>
+                <Table.Column className="w-9" id="actions">
+                  <span className="sr-only">Aksi</span>
+                </Table.Column>
+              </Table.Header>
+              <Table.Body
+                renderEmptyState={() => (
+                  <NoData icon={<ShoppingCart />} title="Keranjang Kosong">
+                    Scan barcode atau cari produk
+                  </NoData>
+                )}
+              >
+                {items.map((item) => (
+                  <CartItemRow
+                    key={item.cart_id}
+                    item={item}
+                    onRemove={removeItem}
+                    onEdit={(it) => setEditItem(it)}
+                    hasDiscount={!!itemDiscounts[item.cart_id]}
+                  />
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
+      </ScrollShadow>
 
       {/* Footer */}
       <Separator />
