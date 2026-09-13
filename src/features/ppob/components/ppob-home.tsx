@@ -29,7 +29,7 @@ export function PpobHome() {
   const navigate = useNavigate()
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const [search, setSearch] = useState("")
-  const { data: billers, isLoading: billersLoading } = usePaymentPointSearch(search)
+  const { data: billers } = usePaymentPointSearch(search)
 
   const handleSelectService = (service: PpobServiceDef) => navigate(service.path)
 
@@ -78,7 +78,6 @@ export function PpobHome() {
               {search.trim() ? (
                 <SearchResultsGrid
                   billers={billers}
-                  isLoading={billersLoading}
                   query={search}
                   onSelectBiller={handleSelectBiller}
                   onSelectService={handleSelectService}

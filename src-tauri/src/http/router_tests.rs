@@ -1051,9 +1051,12 @@ async fn the_ppob_payment_point_search_route_requires_a_session() {
 
     let response = router(&state(db))
         .oneshot(
-            same_origin(Method::GET, "/api/ppob/catalog/payment-points/search?q=indihome")
-                .body(Body::empty())
-                .expect("request"),
+            same_origin(
+                Method::GET,
+                "/api/ppob/catalog/payment-points/search?q=indihome",
+            )
+            .body(Body::empty())
+            .expect("request"),
         )
         .await
         .expect("response");

@@ -62,6 +62,12 @@ pub fn forget_index() {
     }
 }
 
+/// Serialises rebuilding a cold cache: without this, two searches that both
+/// see an empty cache (right after startup, a logout, or a TTL expiry) would
+/// each fan out a full round of `pp_sub_menu` calls at once instead of the
+/// second one simply waiting for the first's answer.
+static BUILD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 /// Every group's sub-menu, flattened and cached. Rebuilt at most once per
 /// [`SEARCH_CACHE_TTL`], and fetched one group at a time concurrently rather
 /// than in series — a shop with two dozen payment-point groups would
@@ -71,6 +77,13 @@ async fn payment_point_index(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
 ) -> Result<Arc<Vec<PpSearchResult>>, AppError> {
+    if let Some(index) = cached_index() {
+        return Ok(index);
+    }
+
+    // Whoever gets here first rebuilds; anyone that raced them just waits for
+    // the lock and then finds the cache the first caller already filled.
+    let _building = BUILD_LOCK.lock().await;
     if let Some(index) = cached_index() {
         return Ok(index);
     }

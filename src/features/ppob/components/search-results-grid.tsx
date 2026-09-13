@@ -12,9 +12,8 @@ import { TileGrid } from "./tile-grid"
 interface SearchResultsGridProps {
   /** The raw (non-debounced) search box value — matched against fixed service labels instantly. */
   query: string
-  /** `undefined` while the debounced biller search has not answered yet. */
+  /** `undefined` until the debounced biller search has answered at least once. */
   billers: PpSearchResult[] | undefined
-  isLoading: boolean
   onSelectService: (service: PpobServiceDef) => void
   onSelectBiller: (item: PpSearchResult) => void
 }
@@ -29,7 +28,6 @@ interface SearchResultsGridProps {
 export function SearchResultsGrid({
   query,
   billers,
-  isLoading,
   onSelectService,
   onSelectBiller,
 }: SearchResultsGridProps) {
@@ -39,10 +37,13 @@ export function SearchResultsGrid({
   )
 
   // The fixed-tile match is instant; only the biller half waits on the
-  // debounced request. Loading skeletons only while that half has never
-  // answered at all — a keystroke that narrows an already-loaded list must
-  // not flash the whole kisi back to loading.
-  if (isLoading && billers === undefined) {
+  // debounced request, and `billers` alone (not the query's `isLoading`) is
+  // what tells the two apart — TanStack Query reports `isLoading: false`
+  // for a query still disabled by the debounce not having settled yet, which
+  // would otherwise flash "Tidak ada layanan" for the first ~300ms of every
+  // search. `billers === undefined` stays true for exactly as long as no
+  // answer, settled or not, has ever arrived.
+  if (billers === undefined) {
     return (
       <TileGrid>
         {Array.from({ length: 6 }).map((_, i) => (

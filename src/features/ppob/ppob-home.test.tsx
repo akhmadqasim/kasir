@@ -122,6 +122,26 @@ describe("ppob home search", () => {
     expect(screen.queryByRole("button", { name: "PLN" })).toBeNull()
   })
 
+  /**
+   * The debounce (300ms) delays the request itself, not just its answer —
+   * TanStack Query reports `isLoading: false` for a query still disabled by
+   * an unsettled debounce. Asserting immediately after the keystroke, before
+   * any timer has run, catches a regression back to reading that as
+   * "confirmed no results" rather than "no answer yet".
+   */
+  it("does not show the empty state while the search is still debouncing", () => {
+    installApiMock({
+      "GET /ppob/balance": { saldo: 1_500_000, username: "toko" },
+      "GET /ppob/history": [PLN_ROW],
+      "GET /ppob/catalog/payment-points/search": [],
+    })
+    renderHome()
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "indihome" } })
+
+    expect(screen.queryByText(/Tidak ada layanan/)).toBeNull()
+  })
+
   it("shows a matching fixed service tile alongside biller results", async () => {
     installApiMock({
       "GET /ppob/balance": { saldo: 1_500_000, username: "toko" },
