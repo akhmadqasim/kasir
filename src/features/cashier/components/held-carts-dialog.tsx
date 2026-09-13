@@ -15,23 +15,23 @@ interface HeldCartsDialogProps {
 }
 
 /** Berapa nama barang yang disebut di baris keterangan sebelum "+N lainnya". */
-const NAMES_SHOWN = 2
+const NAMES_SHOWN = 4
 
 function describeHeldCart(held: HeldCart): string {
   const itemCount = held.items.reduce((sum, item) => sum + item.quantity, 0)
   const names = held.items.slice(0, NAMES_SHOWN).map((item) => item.product_name)
   const rest = held.items.length - names.length
   const summary = rest > 0 ? `${names.join(", ")}, +${rest} lainnya` : names.join(", ")
-  return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item · ${summary}`
+  return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item
+${summary}`
 }
 
 /**
  * Daftar keranjang yang disimpan (F9), dipanggil kembali dengan Enter.
  *
- * Dengan mouse, satu klik hanya menyorot dan "Lanjutkan" (atau klik ganda)
- * yang melanjutkan; sentuhan di tablet langsung melanjutkan. Itu perilaku
- * bawaan listbox React Aria dan sengaja dibiarkan: tombol per baris yang dulu
- * menggantikannya adalah yang membuat dialog ini berat.
+ * Dengan mouse, satu klik menyorot dan tombol "Buka"/"Hapus" di barisnya
+ * yang bekerja; Enter dan klik ganda juga membuka, sentuhan di tablet langsung
+ * membuka — perilaku bawaan listbox React Aria.
  *
  * Satu `ListBox` — panah, Enter, dan fokusnya milik React Aria, jadi tidak ada
  * lagi listener `window` yang dipasang ulang tiap kali sorotan berpindah, dan
@@ -115,7 +115,6 @@ function HeldCartsList({
   return (
     <>
       <Modal.Body>
-        <p>Panah memilih, Enter melanjutkan, Delete menghapus, angka 1–9 memanggil langsung.</p>
         <div onKeyDownCapture={handleKeyDownCapture}>
           <ListBox
             aria-label="Daftar transaksi tersimpan"
@@ -147,26 +146,36 @@ function HeldCartsList({
                       {formatRupiah(held.total)}
                     </span>
                   </div>
-                  <Description>{describeHeldCart(held)}</Description>
+                  <Description className="whitespace-pre-line">{describeHeldCart(held)}</Description>
+                </div>
+                {/* Tombol per baris untuk yang memakai tetikus; papan ketik tetap
+                    punya Enter/Delete. React Aria menghentikan perambatan tekanan
+                    dari tombol bersarang, jadi Hapus tidak ikut memicu onAction. */}
+                <div className="flex shrink-0 gap-1">
+                  <Button
+                    aria-label={`Hapus ${held.label}`}
+                    isIconOnly
+                    size="sm"
+                    variant="danger-soft"
+                    onPress={() => onRemove(held.id)}
+                  >
+                    <Trash2 />
+                  </Button>
+                  <Button
+                    aria-label={`Buka ${held.label}`}
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => onRecall(held.id)}
+                  >
+                    <PlayCircle />
+                    Buka
+                  </Button>
                 </div>
               </ListBox.Item>
             ))}
           </ListBox>
         </div>
       </Modal.Body>
-      <Modal.Footer>
-        <Button isDisabled={!highlightedId} variant="danger-soft" onPress={removeHighlighted}>
-          <Trash2 />
-          Hapus
-        </Button>
-        <Button
-          isDisabled={!highlightedId}
-          onPress={() => highlightedId && onRecall(highlightedId)}
-        >
-          <PlayCircle />
-          Lanjutkan
-        </Button>
-      </Modal.Footer>
     </>
   )
 }
