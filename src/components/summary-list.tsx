@@ -55,14 +55,15 @@ export function SummaryList({ items, layout = "row" }: SummaryListProps) {
             isGrid ? "grid grid-cols-[120px_1fr] gap-2" : "flex items-start justify-between gap-4",
           )}
         >
-          <dt className="text-muted">{item.label}</dt>
-          {/* `min-w-0 break-words`: nilai mentah dari vendor PPOB (token, nomor
-              referensi) bisa berupa satu kata panjang tanpa spasi, dan tanpa ini
-              ia mendorong kolom `1fr` melebar keluar dialog. */}
+          <dt className={cn("text-muted", !isGrid && "min-w-0")}>{item.label}</dt>
+          {/* `grid`: `min-w-0 break-words` — nilai mentah dari vendor PPOB (token,
+              nomor referensi) bisa berupa satu kata panjang tanpa spasi, dan
+              tanpa ini ia mendorong kolom `1fr` melebar keluar dialog.
+              `row`: nilainya angka yang dibandingkan antar baris, jadi ia yang
+              tidak boleh patah ("Rp 25.00 / 0") — labelnya yang membungkus. */}
           <dd
             className={cn(
-              "min-w-0 break-words",
-              !isGrid && "text-right",
+              isGrid ? "min-w-0 break-words" : "shrink-0 text-right whitespace-nowrap",
               TONE_CLASS[item.tone ?? "default"],
             )}
           >

@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Chip, Modal, Spinner } from "@heroui/react"
+import { Button, Kbd, Modal, Spinner } from "@heroui/react"
 import { Printer } from "lucide-react"
 
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
-import { SummaryList } from "@/components/summary-list"
 import { ReceiptPreview } from "@/features/receipt"
 import { SendWhatsappButton } from "@/features/whatsapp"
 import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
 import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
-import { paymentSplitLabel } from "@/lib/labels"
 import { toast } from "@/lib/toast"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
@@ -57,7 +55,7 @@ export function TransactionSuccessDialog({
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
-      <Modal.Container size="lg">
+      <Modal.Container size="md">
         <Modal.Dialog aria-label="Transaksi selesai">
           {/* Isi dan status cetaknya ikut penjualannya: `key` mengganti
               keduanya untuk struk berikutnya, dan Modal melepasnya saat tertutup. */}
@@ -89,7 +87,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   const unmountedRef = useRef(false)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  const { transaction, payment_breakdown: paymentBreakdown } = result
+  const { transaction } = result
 
   useEffect(() => {
     unmountedRef.current = false
@@ -131,6 +129,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   const ppobItems = result.items.filter((item) => item.service_type)
 
   const handlePrint = async () => {
+    if (isPrinting) return
     setIsPrinting(true)
     try {
       await printReceipt(transaction.id)
@@ -147,6 +146,23 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     }
   }
 
+  // Enter mencetak, dari mana pun fokusnya di dialog ini — tanpa harus
+  // mencari tombolnya dulu — dan Esc (bawaan Modal) membuka transaksi baru.
+  // Fase capture supaya tombol yang kebetulan sedang fokus tidak ikut ditekan.
+  const printRef = useRef(handlePrint)
+  printRef.current = handlePrint
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey) return
+      if (event.target instanceof HTMLTextAreaElement) return
+      event.preventDefault()
+      event.stopPropagation()
+      void printRef.current()
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [])
+
   return (
     <>
       <Modal.CloseTrigger />
@@ -155,106 +171,77 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
       </Modal.Header>
 
       <Modal.Body>
-        {/* Kiri: ringkasan (angka dulu, keterangan belakangan — DESIGN.md §2).
-            Kanan: pratinjau struk, persis seperti yang akan dicetak. Satu
-            kolom di layar sempit karena kotak kertasnya butuh lebar sendiri. */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col gap-4">
-            {/* Kembalian dibaca pelanggan dari seberang meja — peran "Total
-                keranjang" §3.4; total satu tingkat di bawahnya. */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-                  {formatRupiah(transaction.total_amount)}
-                </p>
-                <p>{id.cashier.total}</p>
-              </div>
-              {changeAmount > 0 && (
-                <div>
-                  <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                    {formatRupiah(changeAmount)}
-                  </p>
-                  <p>
-                    {id.cashier.change} dari {formatRupiah(transaction.payment_amount)}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Chip>
-                {paymentSplitLabel(transaction.payment_method, paymentBreakdown[0]?.bank_name)}
-              </Chip>
-              <span className="font-mono text-xs">{transaction.receipt_number}</span>
-            </div>
-
-            {paymentBreakdown.length > 1 && (
-              <SummaryList
-                items={paymentBreakdown.map((split) => ({
-                  label: paymentSplitLabel(split.payment_method, split.bank_name),
-                  value: formatRupiah(split.amount),
-                }))}
-              />
-            )}
-
-            {transaction.notes && <p>Catatan: {transaction.notes}</p>}
-
-            {ppobItems.length > 0 && (
-              <ul className="flex flex-col gap-1">
-                {ppobItems.map((item) => {
-                  const status = ppobStatusConfig(item.ppob_status)
-                  return (
-                    <li key={item.id} className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-foreground">
-                        {item.product_name}
-                      </span>
-                      {status && (
-                        <StatusBadge size="sm" status={status.variant}>
-                          {isPpobInFlight(item.ppob_status) && (
-                            <Spinner className="size-3" color="current" size="sm" />
-                          )}
-                          {status.label}
-                        </StatusBadge>
-                      )}
-                    </li>
-                  )
-                })}
-                <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
-              </ul>
-            )}
-
-            {autoPrintState.status === "printing" && (
-              <p className="flex items-center gap-2">
-                <Spinner color="current" size="sm" />
-                Struk sedang dicetak otomatis…
+        {/* Struknya sendiri sudah memuat total, metode, nomor transaksi dan
+            rinciannya — tidak diulang di atasnya. Yang ditambahkan hanya apa
+            yang bukan isi struk: kembalian yang harus diserahkan (dibaca
+            pelanggan dari seberang meja — peran "Total keranjang" §3.4),
+            status PPOB yang masih berjalan, dan nasib cetak otomatis. */}
+        <div className="flex flex-col gap-4">
+          {changeAmount > 0 && (
+            <div>
+              <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
+                {formatRupiah(changeAmount)}
               </p>
-            )}
-            {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
-            {autoPrintState.status === "failed" && (
-              <p className="text-danger">
-                Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
-                struk".
+              <p>
+                {id.cashier.change} dari {formatRupiah(transaction.payment_amount)}
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="flex flex-col gap-2">
-            <p className="text-muted">Pratinjau struk</p>
-            <ReceiptPreview paperWidth={paperWidth} transactionId={transaction.id} />
-          </div>
+          {ppobItems.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {ppobItems.map((item) => {
+                const status = ppobStatusConfig(item.ppob_status)
+                return (
+                  <li key={item.id} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-foreground">{item.product_name}</span>
+                    {status && (
+                      <StatusBadge size="sm" status={status.variant}>
+                        {isPpobInFlight(item.ppob_status) && (
+                          <Spinner className="size-3" color="current" size="sm" />
+                        )}
+                        {status.label}
+                      </StatusBadge>
+                    )}
+                  </li>
+                )
+              })}
+              <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
+            </ul>
+          )}
+
+          {autoPrintState.status === "printing" && (
+            <p className="flex items-center gap-2">
+              <Spinner color="current" size="sm" />
+              Struk sedang dicetak otomatis…
+            </p>
+          )}
+          {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
+          {autoPrintState.status === "failed" && (
+            <p className="text-danger">
+              Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
+              struk".
+            </p>
+          )}
+
+          <ReceiptPreview paperWidth={paperWidth} transactionId={transaction.id} />
         </div>
       </Modal.Body>
 
       <Modal.Footer>
-        <PendingButton isPending={isPrinting} variant="secondary" onPress={handlePrint}>
+        <PendingButton isPending={isPrinting} variant="tertiary" onPress={handlePrint}>
           <Printer />
           Cetak struk
+          <Kbd aria-hidden="true">
+            <Kbd.Abbr keyValue="enter" />
+          </Kbd>
         </PendingButton>
         <SendWhatsappButton transactionId={transaction.id} />
-        {/* Fokus mendarat di sini: Enter dari kasir — atau dari pemindai —
-                membuka transaksi berikutnya. */}
         <Button autoFocus onPress={onNewTransaction}>
           Transaksi baru
+          <Kbd aria-hidden="true" variant="light">
+            <Kbd.Abbr keyValue="escape" />
+          </Kbd>
         </Button>
       </Modal.Footer>
     </>

@@ -74,13 +74,15 @@ describe("selectable payment methods", () => {
 
 describe("paymentSplitLabel", () => {
   it("appends the bank name when there is one", () => {
-    expect(paymentSplitLabel("transfer", "BCA")).toBe("Transfer Bank (BCA)")
+    expect(paymentSplitLabel("transfer", "BCA")).toBe("Transfer (BCA)")
   })
 
   it("ignores a blank bank name", () => {
-    expect(paymentSplitLabel("transfer", "   ")).toBe("Transfer Bank")
-    expect(paymentSplitLabel("transfer", null)).toBe("Transfer Bank")
-    expect(paymentSplitLabel("transfer")).toBe("Transfer Bank")
+    expect(paymentSplitLabel("transfer", "   ")).toBe("Transfer")
+    expect(paymentSplitLabel("transfer", null)).toBe("Transfer")
+    expect(paymentSplitLabel("transfer")).toBe("Transfer")
+    // A mixed sale is several legs; the first leg's bank is not its name.
+    expect(paymentSplitLabel("mixed", "GoPay")).toBe("Campuran")
   })
 })
 

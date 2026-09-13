@@ -68,9 +68,14 @@ export function paymentMethodColor(method: string): string {
   return METHOD_COLORS[method] ?? "var(--accent)"
 }
 
-/** "Transfer Bank (BCA)" — untuk baris split yang menyimpan nama bank. */
+/**
+ * "Transfer (BCA)" — untuk baris split yang menyimpan nama bank. `mixed` tidak
+ * pernah membawa nama bank: itu gabungan beberapa baris, dan bank baris
+ * pertama saja ("Campuran (GoPay)") menyesatkan.
+ */
 export function paymentSplitLabel(method: string, bankName?: string | null): string {
   const label = paymentMethodLabel(method)
+  if (method === "mixed") return label
   return bankName?.trim() ? `${label} (${bankName.trim()})` : label
 }
 

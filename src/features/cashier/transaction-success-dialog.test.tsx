@@ -123,11 +123,12 @@ describe("transaction success dialog", () => {
     renderDialog()
 
     const dialog = await screen.findByRole("dialog", { name: "Transaksi selesai" })
-    expect(dialog).toHaveTextContent("Rp 6.000")
+    // Only what the receipt itself does not carry: the change to hand back.
     expect(dialog).toHaveTextContent("Rp 44.000")
     expect(dialog).toHaveTextContent("Kembalian dari Rp 50.000")
-    expect(dialog).toHaveTextContent("Tunai")
-    expect(dialog).toHaveTextContent("TRX-20260913-0001")
+    // Total, method and receipt number are read off the receipt preview, not
+    // repeated above it.
+    expect(dialog).not.toHaveTextContent("TRX-20260913-0001")
     // Tidak ada GET pengaturan printer: itu datang dari CashierPage. Yang tersisa
     // hanya status WhatsApp yang dipoll tombolnya, dan baris struk pratinjau.
     expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
@@ -146,20 +147,20 @@ describe("transaction success dialog", () => {
     })
 
     const dialog = await screen.findByRole("dialog")
-    expect(dialog).toHaveTextContent("QRIS")
     expect(dialog).not.toHaveTextContent("Kembalian")
   })
 
-  it("lands focus on Transaksi baru so Enter starts the next sale", async () => {
+  it("prints on Enter wherever focus sits, without also pressing the focused button", async () => {
     const onNewTransaction = vi.fn()
     renderDialog({ onNewTransaction })
 
-    const newSale = await screen.findByRole("button", { name: "Transaksi baru" })
+    const newSale = await screen.findByRole("button", { name: /Transaksi baru/ })
     await waitFor(() => expect(newSale).toHaveFocus())
 
     pressKey("Enter")
 
-    expect(onNewTransaction).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
+    expect(onNewTransaction).not.toHaveBeenCalled()
   })
 
   it("closes on Escape", async () => {
@@ -175,7 +176,7 @@ describe("transaction success dialog", () => {
   it("prints once from the Cetak struk button", async () => {
     renderDialog()
 
-    fireEvent.click(await screen.findByRole("button", { name: "Cetak struk" }))
+    fireEvent.click(await screen.findByRole("button", { name: /Cetak struk/ }))
 
     await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
   })

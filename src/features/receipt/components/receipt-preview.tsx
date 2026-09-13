@@ -41,8 +41,11 @@ export function ReceiptPreview({ transactionId, paperWidth }: ReceiptPreviewProp
     // pengecualian yang sama dengan warna kategori di DESIGN.md §3.2.
     <div
       aria-label="Pratinjau struk"
-      className="mx-auto overflow-x-auto rounded-md border border-border bg-white p-3 text-black shadow-xs"
-      style={{ width: `${columns}ch` }}
+      // `font-mono text-xs` di kotaknya, bukan hanya di teksnya: lebar `ch`
+      // dihitung dari huruf elemen ini sendiri, dan dengan huruf sans 16px kotak
+      // itu jadi sepertiga lebih lebar dari teksnya lalu meluber keluar dialog.
+      className="mx-auto max-w-full overflow-x-auto rounded-md border border-border bg-white p-3 font-mono text-xs text-black shadow-xs"
+      style={{ width: `calc(${columns}ch + 1.5rem)` }}
     >
       {!lines || isLoading ? (
         <div className="flex flex-col gap-1.5">
@@ -51,7 +54,7 @@ export function ReceiptPreview({ transactionId, paperWidth }: ReceiptPreviewProp
           ))}
         </div>
       ) : (
-        <div className="font-mono text-xs whitespace-pre">
+        <div className="whitespace-pre">
           {lines.map((line, index) => (
             <div key={index} className={cn(line.bold && "font-bold")}>
               {line.text}

@@ -256,7 +256,7 @@ export const id = {
     qris: "QRIS",
     debit: "Debit",
     ewallet: "E-Wallet",
-    transfer: "Transfer Bank",
+    transfer: "Transfer",
     mixed: "Campuran",
   },
   settings: {
