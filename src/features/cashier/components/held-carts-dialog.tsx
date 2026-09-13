@@ -14,16 +14,28 @@ interface HeldCartsDialogProps {
   onRemove: (holdId: string) => void
 }
 
-/** Berapa nama barang yang disebut di baris keterangan sebelum "+N lainnya". */
+/** Berapa nama barang yang dimuat kolom barang; lebihnya jadi "5+". */
 const NAMES_SHOWN = 4
 
 function describeHeldCart(held: HeldCart): string {
   const itemCount = held.items.reduce((sum, item) => sum + item.quantity, 0)
+  return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item`
+}
+
+/** Kolom barang: sampai empat nama, satu per baris, lalu "5+" kalau lebih. */
+function HeldCartItems({ held }: { held: HeldCart }) {
   const names = held.items.slice(0, NAMES_SHOWN).map((item) => item.product_name)
-  const rest = held.items.length - names.length
-  const summary = rest > 0 ? `${names.join(", ")}, +${rest} lainnya` : names.join(", ")
-  return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item
-${summary}`
+  const more = held.items.length > NAMES_SHOWN
+  return (
+    <ul className="flex min-w-0 flex-col text-xs text-muted">
+      {names.map((name, index) => (
+        <li key={index} className="truncate">
+          {name}
+        </li>
+      ))}
+      {more && <li className="font-medium text-foreground">{NAMES_SHOWN + 1}+</li>}
+    </ul>
+  )
 }
 
 /**
@@ -140,20 +152,25 @@ function HeldCartsList({
                 className="data-[selected=true]:bg-default"
                 textValue={held.label}
               >
-                <span className="w-4 text-center text-sm text-muted tabular-nums">{index + 1}</span>
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex items-baseline justify-between gap-4">
-                    <Label>{held.label}</Label>
-                    <span className="text-sm font-medium tabular-nums">
-                      {formatRupiah(held.total)}
-                    </span>
-                  </div>
-                  <Description className="whitespace-pre-line">{describeHeldCart(held)}</Description>
+                {/* Kolom: nomor · label + waktu · barang · total · tombol,
+                    semuanya rata tengah secara vertikal. */}
+                <span className="w-4 self-center text-center text-sm text-muted tabular-nums">
+                  {index + 1}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col self-center">
+                  <Label>{held.label}</Label>
+                  <Description>{describeHeldCart(held)}</Description>
                 </div>
+                <div className="w-44 shrink-0 self-center">
+                  <HeldCartItems held={held} />
+                </div>
+                <span className="w-24 shrink-0 self-center text-right text-sm font-medium tabular-nums">
+                  {formatRupiah(held.total)}
+                </span>
                 {/* Tombol per baris untuk yang memakai tetikus; papan ketik tetap
                     punya Enter/Delete. React Aria menghentikan perambatan tekanan
                     dari tombol bersarang, jadi Hapus tidak ikut memicu onAction. */}
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 gap-2 self-center">
                   <Button
                     aria-label={`Buka ${held.label}`}
                     size="sm"
