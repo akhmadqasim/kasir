@@ -1,3 +1,53 @@
+import alloBankLogo from "@/assets/banks/allo-bank.svg"
+import amarBankLogo from "@/assets/banks/amar-bank.png"
+import bankAcehLogo from "@/assets/banks/bank-aceh.png"
+import bankDkiLogo from "@/assets/banks/bank-dki.svg"
+import bankJagoLogo from "@/assets/banks/bank-jago.svg"
+import bankJatengLogo from "@/assets/banks/bank-jateng.png"
+import bankJatimLogo from "@/assets/banks/bank-jatim.svg"
+import bankKaltimtaraLogo from "@/assets/banks/bank-kaltimtara.png"
+import bankLampungLogo from "@/assets/banks/bank-lampung.png"
+import bankMegaLogo from "@/assets/banks/bank-mega.svg"
+import bankNagariLogo from "@/assets/banks/bank-nagari.svg"
+import bankNeoCommerceLogo from "@/assets/banks/bank-neo-commerce.png"
+import bankNtbSyariahLogo from "@/assets/banks/bank-ntb-syariah.png"
+import bankRayaLogo from "@/assets/banks/bank-raya.svg"
+import bankRiauKepriLogo from "@/assets/banks/bank-riau-kepri.png"
+import bankSaquLogo from "@/assets/banks/bank-saqu.png"
+import bankSulselbarLogo from "@/assets/banks/bank-sulselbar.png"
+import bankSumselBabelLogo from "@/assets/banks/bank-sumsel-babel.png"
+import bankSumutLogo from "@/assets/banks/bank-sumut.png"
+import bcaLogo from "@/assets/banks/bca.svg"
+import bjbLogo from "@/assets/banks/bjb.svg"
+import bluBcaLogo from "@/assets/banks/blu-bca.svg"
+import bniLogo from "@/assets/banks/bni.svg"
+import briLogo from "@/assets/banks/bri.svg"
+import bsiLogo from "@/assets/banks/bsi.svg"
+import btnLogo from "@/assets/banks/btn.svg"
+import cimbNiagaLogo from "@/assets/banks/cimb-niaga.svg"
+import danaLogo from "@/assets/banks/dana.svg"
+import danamonLogo from "@/assets/banks/danamon.svg"
+import dbsLogo from "@/assets/banks/dbs.svg"
+import gopayLogo from "@/assets/banks/gopay.svg"
+import hibankLogo from "@/assets/banks/hibank.svg"
+import hsbcLogo from "@/assets/banks/hsbc.svg"
+import jeniusLogo from "@/assets/banks/jenius.png"
+import kbBankLogo from "@/assets/banks/kb-bank.svg"
+import kromBankLogo from "@/assets/banks/krom-bank.png"
+import lineBankLogo from "@/assets/banks/line-bank.png"
+import linkajaLogo from "@/assets/banks/linkaja.svg"
+import mandiriLogo from "@/assets/banks/mandiri.svg"
+import maybankLogo from "@/assets/banks/maybank.png"
+import ocbcLogo from "@/assets/banks/ocbc.svg"
+import ovoLogo from "@/assets/banks/ovo.svg"
+import paninLogo from "@/assets/banks/panin.svg"
+import permataLogo from "@/assets/banks/permata.svg"
+import seabankLogo from "@/assets/banks/seabank.svg"
+import shopeepayLogo from "@/assets/banks/shopeepay.png"
+import sinarmasLogo from "@/assets/banks/sinarmas.png"
+import superbankLogo from "@/assets/banks/superbank.svg"
+import uobLogo from "@/assets/banks/uob.svg"
+
 /**
  * Bank dan e-wallet yang mungkin muncul di kolom "Bank" transfer — daftar
  * awal untuk `Autocomplete`, bukan daftar tertutup: `allowsCustomValue` di
@@ -19,9 +69,11 @@ export interface Bank {
   code?: string
   /** Kata kunci lain yang mungkin diketik kasir, huruf kecil semua. */
   aliases?: readonly string[]
+  /** URL logo yang diimpor Vite, kalau ada satu di `BANK_LOGOS` untuk nama ini. */
+  logo?: string
 }
 
-export const BANKS: readonly Bank[] = [
+const BANKS_BASE: readonly Omit<Bank, "logo">[] = [
   // --- Paling umum diterima toko sembako -----------------------------------
   { name: "BCA", code: "014", aliases: ["bca", "bank central asia"] },
   { name: "Mandiri", code: "008", aliases: ["mandiri", "bank mandiri"] },
@@ -75,6 +127,71 @@ export const BANKS: readonly Bank[] = [
   { name: "Superbank", code: "562", aliases: ["superbank"] },
   { name: "UOB Indonesia", code: "023", aliases: ["uob"] },
 ] as const
+
+/**
+ * Logo per nama bank, dari `src/assets/banks/` — lihat `SOURCES.md` di
+ * situ untuk sumber dan lisensi tiap berkas. Bukan semua bank di `BANKS`
+ * punya entri di sini: yang logonya tidak ditemukan dari sumber resmi
+ * (Wikimedia Commons, situs resmi, atau koleksi logo terbuka) sengaja
+ * dibiarkan tanpa logo — `BankLogo` jatuh ke ikon `Landmark` netral, bukan
+ * gambar karangan.
+ */
+export const BANK_LOGOS: Partial<Record<string, string>> = {
+  BCA: bcaLogo,
+  Mandiri: mandiriLogo,
+  BRI: briLogo,
+  BNI: bniLogo,
+  BSI: bsiLogo,
+  BTN: btnLogo,
+  "CIMB Niaga": cimbNiagaLogo,
+  Danamon: danamonLogo,
+  Permata: permataLogo,
+  GoPay: gopayLogo,
+  OVO: ovoLogo,
+  DANA: danaLogo,
+  ShopeePay: shopeepayLogo,
+  LinkAja: linkajaLogo,
+  "Allo Bank": alloBankLogo,
+  "Amar Bank": amarBankLogo,
+  "Bank Aceh": bankAcehLogo,
+  "Bank DKI": bankDkiLogo,
+  "Bank Jago": bankJagoLogo,
+  "Bank Jateng": bankJatengLogo,
+  "Bank Jatim": bankJatimLogo,
+  "Bank Kaltimtara": bankKaltimtaraLogo,
+  "Bank Lampung": bankLampungLogo,
+  "Bank Mega": bankMegaLogo,
+  "Bank Nagari": bankNagariLogo,
+  "Bank Neo Commerce": bankNeoCommerceLogo,
+  "Bank NTB Syariah": bankNtbSyariahLogo,
+  "Bank Raya": bankRayaLogo,
+  "Bank Riau Kepri": bankRiauKepriLogo,
+  "Bank Saqu": bankSaquLogo,
+  "Bank Sulselbar": bankSulselbarLogo,
+  "Bank Sumsel Babel": bankSumselBabelLogo,
+  "Bank Sumut": bankSumutLogo,
+  BJB: bjbLogo,
+  "blu by BCA": bluBcaLogo,
+  "DBS Indonesia": dbsLogo,
+  Hibank: hibankLogo,
+  "HSBC Indonesia": hsbcLogo,
+  Jenius: jeniusLogo,
+  "KB Bank": kbBankLogo,
+  "Krom Bank": kromBankLogo,
+  "Line Bank": lineBankLogo,
+  "Maybank Indonesia": maybankLogo,
+  OCBC: ocbcLogo,
+  Panin: paninLogo,
+  SeaBank: seabankLogo,
+  Sinarmas: sinarmasLogo,
+  Superbank: superbankLogo,
+  "UOB Indonesia": uobLogo,
+}
+
+export const BANKS: readonly Bank[] = BANKS_BASE.map((bank) => ({
+  ...bank,
+  logo: BANK_LOGOS[bank.name],
+}))
 
 /** Cocok untuk `ComboBox`'s `defaultFilter`: nama bank atau salah satu aliasnya. */
 export function bankMatchesQuery(bank: Bank, query: string): boolean {
