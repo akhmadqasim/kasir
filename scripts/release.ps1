@@ -179,9 +179,12 @@ if ($LASTEXITCODE -ne 0) { Fail "Build failed (exit $LASTEXITCODE). Version file
 
 # --- locate artifacts -------------------------------------------------------
 $bundle = Join-Path $root "src-tauri/target/release/bundle"
-$msi  = Get-ChildItem "$bundle/msi/*.msi"        -ErrorAction SilentlyContinue | Select-Object -First 1
-$nsis = Get-ChildItem "$bundle/nsis/*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $nsis) { Fail "No NSIS installer (*-setup.exe) found under $bundle/nsis; the updater's primary artifact is missing." }
+# Match this version's files only: the bundle dir keeps installers from earlier
+# builds, and a bare `*.msi | Select -First 1` once shipped 1.0.0 binaries
+# under the v1.1.0 tag.
+$msi  = Get-ChildItem "$bundle/msi/*_${Version}_*.msi"        -ErrorAction SilentlyContinue | Select-Object -First 1
+$nsis = Get-ChildItem "$bundle/nsis/*_${Version}_*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $nsis) { Fail "No NSIS installer (*_${Version}_*-setup.exe) found under $bundle/nsis; the updater's primary artifact is missing." }
 $installers = @($nsis, $msi) | Where-Object { $_ }
 
 # `createUpdaterArtifacts: true` signs each installer in place and writes the
