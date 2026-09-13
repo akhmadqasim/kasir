@@ -77,12 +77,15 @@ export function DateRangePicker({
           </DateField.Suffix>
         </DateField.Group>
         <HeroDateRangePicker.Popover placement={POPOVER_PLACEMENT[align]}>
+          {/* `.range-calendar` bawaan berlebar satu bulan dengan `container-type:
+              inline-size`; containment itu membuat popover mengukur kalendernya
+              nol lebar. Kelas ini dari contoh "Multiple Months" di dokumentasi. */}
           <RangeCalendar
             aria-label="Pilih rentang tanggal"
-            className="w-max"
+            className="@container-normal w-full max-w-none"
             visibleDuration={{ months: months.length }}
           >
-            <div className="flex gap-6">
+            <div className="flex w-max gap-8">
               {months.map((offset) => (
                 <div key={offset} className="w-64">
                   <RangeCalendar.Header>
