@@ -147,7 +147,7 @@ describe("payment dialog", () => {
 
     expect(screen.getByRole("button", { name: "5k" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "100k" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Uang Pas/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Uang Pas" })).toBeInTheDocument()
   })
 
   it("refuses a barcode burst instead of closing the sale", async () => {

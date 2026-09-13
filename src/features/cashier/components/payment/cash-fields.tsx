@@ -1,4 +1,4 @@
-import { Button, Kbd } from "@heroui/react"
+import { Button } from "@heroui/react"
 
 import { QUICK_AMOUNT_OPTIONS } from "./use-payment-form"
 import { formatRupiah } from "../../utils"
@@ -27,9 +27,6 @@ export function CashFields({ onQuickAmount, onRemainingAmount }: CashFieldsProps
     <div className="flex flex-wrap gap-2">
       <Button className="grow" size="sm" variant="secondary" onPress={onRemainingAmount}>
         Uang Pas
-        <Kbd variant="light">
-          <Kbd.Content>\</Kbd.Content>
-        </Kbd>
       </Button>
       {QUICK_AMOUNT_OPTIONS.map((amount) => (
         <Button
