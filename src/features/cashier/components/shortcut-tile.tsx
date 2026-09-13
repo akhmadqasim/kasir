@@ -67,7 +67,7 @@ export const ShortcutTile = memo(function ShortcutTile({
               }
             : undefined
         }
-        variant="secondary"
+        variant="tertiary"
         onPress={() => !isHolding && onSelect(product)}
       >
         <span className="line-clamp-2 w-full break-words">{product.name}</span>

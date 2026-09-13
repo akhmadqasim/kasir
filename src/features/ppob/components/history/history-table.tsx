@@ -7,7 +7,9 @@ import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { id as t } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import type { HistoryPaymentItem } from "../../types"
-import { HistoryPrintDialog } from "./history-print-dialog"
+import { PendingButton } from "@/components/pending-button"
+import { HistoryPrintFields } from "./history-print"
+import { useHistoryPrint } from "./use-history-print"
 import {
   detectServiceType,
   normalizeStatus,
@@ -55,17 +57,18 @@ function detailItem(
   return [{ label, value, tone }]
 }
 
-function TransactionDetailDialog({
+export function TransactionDetailDialog({
   item,
   onClose,
-  onPrint,
 }: {
   item: HistoryPaymentItem | null
   onClose: () => void
-  /** Open the "Ringkasan Transaksi" dialog for this row. */
-  onPrint: (item: HistoryPaymentItem) => void
 }) {
   const service = item ? detectServiceType(item) : null
+  // Only a settled transaction the server can look up again has a struk
+  // worth printing; it refuses the others, so no fee field for them.
+  const printable = item?.trxId != null && normalizeStatus(item.status) === "sukses"
+  const printing = useHistoryPrint(printable ? item : null)
   const nominal = item ? getNominal(item) : null
   const profit =
     item && item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
@@ -133,18 +136,28 @@ function TransactionDetailDialog({
               <Separator />
 
               <SummaryList items={priceItems} layout="grid" />
+
+              {printable && (
+                <>
+                  <Separator />
+                  <HistoryPrintFields control={printing} />
+                </>
+              )}
             </Modal.Body>
           )}
           <Modal.Footer>
             <Button slot="close" variant="tertiary">
               {t.common.close}
             </Button>
-            {/* Only a settled transaction the server can look up again has a
-                struk worth printing; it refuses the others, so the button
-                is not offered. */}
-            {item?.trxId && normalizeStatus(item.status) === "sukses" ? (
-              <Button onPress={() => onPrint(item)}>{t.transactions.printReceipt}</Button>
-            ) : null}
+            {printable && (
+              <PendingButton
+                isDisabled={!printing.hasPrice}
+                isPending={printing.print.isPending}
+                onPress={() => printing.print.mutate()}
+              >
+                {t.transactions.printReceipt}
+              </PendingButton>
+            )}
           </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
@@ -158,7 +171,6 @@ interface HistoryTableProps {
 
 export function HistoryTable({ items }: HistoryTableProps) {
   const [selectedItem, setSelectedItem] = useState<HistoryPaymentItem | null>(null)
-  const [printItem, setPrintItem] = useState<HistoryPaymentItem | null>(null)
 
   return (
     <>
@@ -215,15 +227,7 @@ export function HistoryTable({ items }: HistoryTableProps) {
         </Table.ScrollContainer>
       </Table>
 
-      <TransactionDetailDialog
-        item={selectedItem}
-        onClose={() => setSelectedItem(null)}
-        onPrint={(item) => {
-          setSelectedItem(null)
-          setPrintItem(item)
-        }}
-      />
-      <HistoryPrintDialog item={printItem} onClose={() => setPrintItem(null)} />
+      <TransactionDetailDialog item={selectedItem} onClose={() => setSelectedItem(null)} />
     </>
   )
 }

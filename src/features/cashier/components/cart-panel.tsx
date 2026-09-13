@@ -267,48 +267,74 @@ export function CartPanel({
             {formatRupiah(total)}
           </span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Tombol aksi kecil di kiri, Bayar lebar di kanan: tangan kasir sudah
+            ada di sisi kanan setelah mengetik total, dan tombol yang paling
+            sering ditekan harus yang paling mudah dijangkau. */}
+        <div className="flex items-stretch gap-2">
+          <div className="grid grid-cols-[repeat(2,minmax(7.5rem,1fr))] gap-2">
+            <Button
+              isDisabled={items.length === 0}
+              fullWidth
+              className="justify-start"
+              size="sm"
+              variant="tertiary"
+              onPress={() => setDiscountDialogOpen(true)}
+            >
+              <Percent />
+              Diskon
+              <ShortcutKey className="ml-auto">F2</ShortcutKey>
+            </Button>
+            <Button
+              isDisabled={items.length === 0}
+              fullWidth
+              className="justify-start"
+              size="sm"
+              variant="tertiary"
+              onPress={handleHold}
+            >
+              <PauseCircle />
+              Simpan
+              <ShortcutKey className="ml-auto">F3</ShortcutKey>
+            </Button>
+            {activeShift && (
+              <>
+                <Button
+                  fullWidth
+                  className="justify-start"
+                  size="sm"
+                  variant="tertiary"
+                  onPress={() => setCashFlowOpen(true)}
+                >
+                  <ArrowDownUp />
+                  Uang
+                  <ShortcutKey className="ml-auto">F1</ShortcutKey>
+                </Button>
+                {/* Hanya membuka halaman tutup kasir; yang merusak dikonfirmasi di sana. */}
+                <Button
+                  fullWidth
+                  className="justify-start"
+                  size="sm"
+                  variant="tertiary"
+                  onPress={() => navigate("/close-shift")}
+                >
+                  <DoorClosed />
+                  Tutup
+                  <ShortcutKey className="ml-auto">F6</ShortcutKey>
+                </Button>
+              </>
+            )}
+          </div>
           <Button
-            isDisabled={items.length === 0}
-            size="sm"
-            variant="secondary"
-            onPress={() => setDiscountDialogOpen(true)}
+            className="h-auto min-h-12 flex-1 text-lg"
+            isDisabled={items.length === 0 || disabled}
+            size="lg"
+            onPress={onPay}
           >
-            <Percent />
-            Diskon
-            <ShortcutKey>F2</ShortcutKey>
+            Bayar
+            {/* `.kbd` memaksa `text-muted`; di atas latar aksen warnanya harus ikut tombolnya. */}
+            <ShortcutKey className="text-accent-foreground">F4</ShortcutKey>
           </Button>
-          <Button
-            isDisabled={items.length === 0}
-            size="sm"
-            variant="secondary"
-            onPress={handleHold}
-          >
-            <PauseCircle />
-            Simpan
-            <ShortcutKey>F3</ShortcutKey>
-          </Button>
-          {activeShift && (
-            <>
-              <Button size="sm" variant="secondary" onPress={() => setCashFlowOpen(true)}>
-                <ArrowDownUp />
-                Uang
-                <ShortcutKey>F1</ShortcutKey>
-              </Button>
-              {/* Hanya membuka halaman tutup kasir; yang merusak dikonfirmasi di sana. */}
-              <Button size="sm" variant="secondary" onPress={() => navigate("/close-shift")}>
-                <DoorClosed />
-                Tutup
-                <ShortcutKey>F6</ShortcutKey>
-              </Button>
-            </>
-          )}
         </div>
-        <Button fullWidth isDisabled={items.length === 0 || disabled} size="lg" onPress={onPay}>
-          Bayar
-          {/* `.kbd` memaksa `text-muted`; di atas latar aksen warnanya harus ikut tombolnya. */}
-          <ShortcutKey className="text-accent-foreground">F4</ShortcutKey>
-        </Button>
       </div>
 
       {/* Hold Dialog */}

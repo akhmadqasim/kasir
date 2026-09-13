@@ -13,8 +13,8 @@ vi.mock("@/lib/toast", () => ({
 }))
 
 import { installApiMock, apiFailure, type ApiMock } from "@/test-utils/api-mock"
-import { HistoryPrintDialog } from "./components/history/history-print-dialog"
-import type { HistoryPaymentItem, PpobReceiptLine } from "./types"
+import { TransactionDetailDialog } from "./components/history/history-table"
+import type { HistoryPaymentItem } from "./types"
 import type { PpobMarkup } from "./types/auth"
 
 /** A PLN postpaid row as `/ppob/history` answers it: `total` null, `amount`
@@ -59,28 +59,19 @@ const MARKUP: PpobMarkup = {
   custom_prices: {},
 }
 
-function receiptLines(sellPrice: number): PpobReceiptLine[] {
-  return [
-    { text: "          Toko Contoh           ", bold: false, size: "normal" },
-    { text: "IDPEL          : 231000000002", bold: false, size: "normal" },
-    { text: "Total             Rp 73.229", bold: false, size: "normal" },
-    { text: `Grand Total       Rp ${sellPrice}`, bold: false, size: "normal" },
-  ]
-}
-
 function renderDialog(item: HistoryPaymentItem | null = PLN_ROW) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <HistoryPrintDialog item={item} onClose={() => {}} />
+      <TransactionDetailDialog item={item} onClose={() => {}} />
     </QueryClientProvider>,
   )
 }
 
 function priceInput() {
-  return screen.getByRole("textbox", { name: /Harga Jual/ })
+  return screen.getByRole("textbox", { name: /Biaya Layanan/ })
 }
 
 function setPrice(value: string) {
@@ -96,55 +87,43 @@ beforeEach(() => {
   toastError.mockClear()
   api = installApiMock({
     "GET /settings/ppob/markup": MARKUP,
-    "GET /ppob/history/*/receipt": (call) => receiptLines(Number(call.query.get("sellPrice"))),
     "POST /ppob/history/*/print": null,
   })
 })
 
-describe("HistoryPrintDialog", () => {
-  it("mengisi harga jual dari markup layanan di pengaturan PPOB", async () => {
+describe("Cetak struk dari detail riwayat PPOB", () => {
+  it("mengisi biaya layanan dari markup layanan di pengaturan PPOB", async () => {
     renderDialog()
 
-    // 73.229 modal + markup PLN 1.500 dari pengaturan.
-    await waitFor(() => expect(priceInput()).toHaveValue("74729"))
+    // Markup PLN 1.500 dari pengaturan, di atas modal 73.229.
+    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
     expect(screen.getByText("Rp 73.229")).toBeInTheDocument()
-    expect(screen.getByText("+Rp 1.500")).toBeInTheDocument()
+    expect(screen.getByText("Rp 74.729")).toBeInTheDocument()
   })
 
-  it("memakai harga modal sebagai harga jual bila markup tidak ada", async () => {
+  it("biaya layanan nol bila markup tidak ada", async () => {
     api.route("GET /settings/ppob/markup", apiFailure(403, "forbidden", "Tidak boleh"))
     renderDialog()
 
-    await waitFor(() => expect(priceInput()).toHaveValue("73229"))
-    expect(screen.getByText("+Rp 0")).toBeInTheDocument()
+    await waitFor(() => expect(priceInput()).toHaveValue("0"))
+    expect(screen.getAllByText("Rp 73.229")).toHaveLength(2)
   })
 
-  it("menghitung keuntungan langsung dan menandai yang rugi", async () => {
+  it("menghitung grand total langsung dan menandai diskon", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("74729"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
 
-    setPrice("80000")
-    expect(screen.getByText("+Rp 6.771")).toHaveClass("text-success")
+    setPrice("6771")
+    expect(screen.getByText("Rp 80.000")).toBeInTheDocument()
 
-    setPrice("70000")
-    expect(screen.getByText("-Rp 3.229")).toHaveClass("text-danger")
-  })
-
-  it("menampilkan pratinjau struk untuk harga jual yang dipilih", async () => {
-    renderDialog()
-
-    // Baris dari server, apa adanya — Grand Total mengikuti harga jual.
-    expect(await screen.findByText(/Grand Total\s+Rp 74729/)).toBeInTheDocument()
-    expect(api.lastCall("GET /ppob/history/*/receipt")?.query.get("sellPrice")).toBe("74729")
-
-    setPrice("80000")
-    expect(await screen.findByText(/Grand Total\s+Rp 80000/)).toBeInTheDocument()
+    setPrice("-3229")
+    expect(screen.getByText("Rp 70.000")).toHaveClass("text-danger")
   })
 
   it("mencetak dengan harga jual yang sedang dipilih dan membiarkan dialog terbuka", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("74729"))
-    setPrice("80000")
+    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    setPrice("6771")
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
 
@@ -162,7 +141,7 @@ describe("HistoryPrintDialog", () => {
       apiFailure(422, "validation", "Printer belum dikonfigurasi"),
     )
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("74729"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
 
@@ -171,13 +150,13 @@ describe("HistoryPrintDialog", () => {
     )
   })
 
-  it("tidak bisa mencetak tanpa harga jual", async () => {
+  it("tidak bisa mencetak tanpa biaya layanan", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("74729"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
 
     setPrice("")
 
-    expect(screen.getByText("Keuntungan").nextElementSibling).toHaveTextContent("-")
+    expect(screen.getByText("Grand Total").nextElementSibling).toHaveTextContent("-")
     expect(screen.getByRole("button", { name: "Cetak Struk" })).toBeDisabled()
   })
 })
