@@ -75,7 +75,7 @@ export function SettingsPage() {
   // Judul "Pengaturan" sudah digambar navbar dari daftar navigasi; halaman ini
   // langsung mulai dari baris kendalinya, dan padding luarnya milik `AppLayout`.
   return (
-    <Tabs className="max-w-3xl" defaultSelectedKey="store">
+    <Tabs defaultSelectedKey="store">
       <Tabs.ListContainer>
         <Tabs.List aria-label={id.settings.title}>
           {tabs.map((tab) => (

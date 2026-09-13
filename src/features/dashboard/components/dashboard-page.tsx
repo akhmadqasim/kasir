@@ -48,7 +48,7 @@ export function DashboardPage() {
   return (
     // Dipusatkan dengan lebar maksimum, seperti template dashboard HeroUI. Layar
     // kasir sengaja tidak — ia butuh seluruh lebar untuk keranjang dan katalog.
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <DashboardHeader />
 
       <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(key as DashboardTab)}>
