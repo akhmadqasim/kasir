@@ -74,9 +74,9 @@ export function SettingsPage() {
 
   // Judul "Pengaturan" sudah digambar navbar dari daftar navigasi; halaman ini
   // langsung mulai dari baris kendalinya, dan padding luarnya milik `AppLayout`.
+  // Dipusatkan di `max-w-5xl` seperti halaman pengaturan template: formulir
+  // sepanjang ini tidak enak dibaca kalau melebar ke seluruh monitor.
   return (
-    {/* Centred like the template's settings page: a form this long reads
-        badly stretched across a wide monitor. */}
     <Tabs className="mx-auto w-full max-w-5xl" defaultSelectedKey="store">
       <Tabs.ListContainer>
         <Tabs.List aria-label={id.settings.title}>
