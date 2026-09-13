@@ -180,3 +180,22 @@ export function installApiMock(routes: ApiRoutes = {}): ApiMock {
     fetchMock,
   }
 }
+
+/**
+ * Install the mock with one route held open until the test releases it, so the
+ * window where a query has not answered — the only moment a form still holds
+ * its hardcoded defaults — can be observed instead of slipping past in the
+ * first microtask.
+ */
+export function installDeferredApiMock(
+  route: string,
+  value: unknown,
+  others: ApiRoutes = {},
+): { api: ApiMock; release: () => void } {
+  let release: () => void = () => {}
+  const pending = new Promise((resolve) => {
+    release = () => resolve(value)
+  })
+  const api = installApiMock({ ...others, [route]: () => pending })
+  return { api, release }
+}

@@ -26,16 +26,16 @@ export function ServiceGrid<S extends PpobServiceDef>({
     // `auto-rows-fr` menyamakan tinggi ubin sebaris; tanpanya label dua baris
     // membuat satu ubin lebih tinggi dari tetangganya.
     //
-    // Kisi ringkas memakai `auto-fill` alih-alih breakpoint: lebarnya ditentukan
-    // panel kasir, bukan viewport, jadi `lg:grid-cols-6` yang menyala di layar
-    // lebar justru memerasnya jadi enam kolom 58px. Kisi halaman penuh memang
-    // selebar viewport, jadi breakpoint-nya benar di sana.
+    // Keduanya memakai `auto-fill`, bukan breakpoint viewport: lebar kisi
+    // ditentukan panelnya — panel kasir, atau separuh beranda PPOB di sebelah
+    // riwayat — jadi `lg:grid-cols-6` yang menyala di layar lebar justru
+    // memerasnya jadi enam kolom sempit.
     <div
       className={cn(
         "grid auto-rows-fr",
         compact
           ? "grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2"
-          : "grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
+          : "grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-3",
       )}
     >
       {services.map((service) => (

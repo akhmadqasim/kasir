@@ -1,10 +1,6 @@
-import { Routes, Route, useNavigate } from "react-router-dom"
-import { Button, Card } from "@heroui/react"
-import { History, ArrowUpDown, Bell } from "lucide-react"
+import { Navigate, Routes, Route } from "react-router-dom"
 
-import { NavbarActions } from "@/components/layout/app-navbar"
-import { id } from "@/i18n/id"
-import { PPOB_SERVICES } from "../constants"
+import { AdminRouteGuard } from "@/app/app-guard"
 import { PulsaFlow } from "./pulsa-flow"
 import { DataFlow } from "./data-flow"
 import { PlnFlow } from "./pln-flow"
@@ -14,52 +10,10 @@ import { PpFlow } from "./pp-flow"
 import { TransferFlow } from "./transfer-flow"
 import { EmoneyFlow } from "./emoney-flow"
 import { VoucherFlow } from "./voucher-flow"
-import { SaldoCard } from "./saldo-card"
-import { ServiceGrid } from "./service-grid"
-import { PpobHistory } from "./history"
+import { PpobHome } from "./ppob-home"
 import { PpobMutasi } from "./mutasi"
 import { PpobNotifications } from "./notifications"
-
-/**
- * Judul "Mitra Indogrosir" sudah digambar navbar dari daftar navigasi; yang
- * naik dari halaman ini hanya tiga jalan pintasnya, sebagai tombol `sm
- * tertiary` berikon dan berlabel (DESIGN.md §5.1) — ikon saja membuat kasir
- * menebak mana mutasi dan mana riwayat.
- */
-function PpobHome() {
-  const navigate = useNavigate()
-
-  return (
-    <>
-      <NavbarActions>
-        <Button size="sm" variant="tertiary" onPress={() => navigate("notifications")}>
-          <Bell />
-          Notifikasi
-        </Button>
-        <Button size="sm" variant="tertiary" onPress={() => navigate("mutasi")}>
-          <ArrowUpDown />
-          Mutasi
-        </Button>
-        <Button size="sm" variant="tertiary" onPress={() => navigate("history")}>
-          <History />
-          Riwayat
-        </Button>
-      </NavbarActions>
-
-      <div className="flex flex-col gap-6">
-        <SaldoCard />
-        <Card>
-          <Card.Header>
-            <Card.Title>{id.ppob.selectService}</Card.Title>
-          </Card.Header>
-          <Card.Content>
-            <ServiceGrid services={PPOB_SERVICES} onSelect={(service) => navigate(service.path)} />
-          </Card.Content>
-        </Card>
-      </div>
-    </>
-  )
-}
+import { PpobSettings } from "./settings"
 
 export function PpobPage() {
   return (
@@ -74,9 +28,18 @@ export function PpobPage() {
       <Route path="transfer" element={<TransferFlow />} />
       <Route path="emoney" element={<EmoneyFlow />} />
       <Route path="voucher" element={<VoucherFlow />} />
-      <Route path="history" element={<PpobHistory />} />
       <Route path="mutasi" element={<PpobMutasi />} />
       <Route path="notifications" element={<PpobNotifications />} />
+      {/* Pengaturan Mitra mengubah `PUT /settings`, yang admin-only di Rust;
+          `/ppob/settings` terdaftar di `ADMIN_ONLY_PREFIXES` supaya guard yang
+          sama dengan `/settings` yang menjaganya. */}
+      <Route element={<AdminRouteGuard />}>
+        <Route path="settings" element={<PpobSettings />} />
+      </Route>
+      {/* `ppob/*` sudah cocok di router induk, jadi alamat yang tidak dikenal di
+          sini tidak sampai ke catch-all 404-nya. Yang paling mungkin nyasar:
+          `/ppob/history` yang tersimpan sebagai rute resume dari versi lama. */}
+      <Route path="*" element={<Navigate to="/ppob" replace />} />
     </Routes>
   )
 }

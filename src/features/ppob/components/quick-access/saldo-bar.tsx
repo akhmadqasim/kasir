@@ -6,7 +6,10 @@ import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { usePpobSaldo } from "../../hooks"
 
-/** Saldo Mitra satu baris di atas kisi layanan panel kasir, dengan muat-ulang dan riwayat. */
+/**
+ * Saldo Mitra satu baris di atas kisi layanan panel kasir, dengan muat-ulang dan
+ * jalan ke riwayat — yang kini duduk di beranda PPOB, di sebelah menu layanan.
+ */
 export function SaldoBar() {
   const navigate = useNavigate()
   const { data, isLoading, error, refetch } = usePpobSaldo()
@@ -40,7 +43,7 @@ export function SaldoBar() {
           isIconOnly
           size="sm"
           variant="tertiary"
-          onPress={() => navigate("/ppob/history")}
+          onPress={() => navigate("/ppob")}
         >
           <History />
         </Button>

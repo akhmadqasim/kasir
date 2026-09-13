@@ -120,7 +120,8 @@ pub async fn get_mitra_session_context(
 
     if !settings.ppob.enabled || settings.ppob.phone_number.is_empty() {
         return Err(AppError::Validation(
-            "PPOB belum dikonfigurasi. Atur di Pengaturan → PPOB".into(),
+            "PPOB belum dikonfigurasi. Admin dapat mengaturnya di Mitra Indogrosir → Pengaturan"
+                .into(),
         ));
     }
 

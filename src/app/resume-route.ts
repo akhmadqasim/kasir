@@ -24,10 +24,11 @@ const RESUMABLE_PREFIXES = [
  * Routes a cashier may not open, mirroring the backend's `require_role(.., "admin")`:
  * every mutation behind these screens is admin-only — user CRUD in `auth.rs`, product
  * and category CRUD in `products.rs`/`categories.rs`, and store info, app settings,
- * database export/import and backups in `settings.rs`/`backup.rs`. Read-only commands a
+ * database export/import and backups in `settings.rs`/`backup.rs` — `/ppob/settings`
+ * writes the same settings blob from the PPOB screen. Read-only commands a
  * cashier does need (`search_products`, `get_product_by_barcode`) live on other screens.
  */
-const ADMIN_ONLY_PREFIXES = ["/users", "/products", "/settings"]
+const ADMIN_ONLY_PREFIXES = ["/users", "/products", "/settings", "/ppob/settings"]
 
 /**
  * True when `pathname` is `prefix` itself or a route nested under it. Both the route

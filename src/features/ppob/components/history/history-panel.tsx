@@ -1,9 +1,7 @@
 import { useState, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
-import { Skeleton } from "@heroui/react"
+import { Card, Skeleton } from "@heroui/react"
 import { Search } from "lucide-react"
 
-import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
 import type { DateRange } from "@/lib/date-range"
 import { id as i18n } from "@/i18n/id"
@@ -18,8 +16,11 @@ import {
   normalizeStatus,
 } from "./history-utils"
 
-export function PpobHistory() {
-  const navigate = useNavigate()
+/**
+ * Riwayat transaksi Mitra sebagai kartu di sebelah kanan menu layanan — bukan
+ * sub-halaman lagi, supaya kasir melihat menu dan riwayat sekaligus.
+ */
+export function HistoryPanel() {
   const defaults = getDefaultDateRange()
 
   const [productFilter, setProductFilter] = useState("all")
@@ -42,35 +43,38 @@ export function PpobHistory() {
   }, [items, productFilter, statusFilter])
 
   return (
-    <div className="flex flex-col gap-4">
-      <SubpageHeader title={i18n.ppob.history} onBack={() => navigate("/ppob")} />
+    <Card>
+      <Card.Header>
+        <Card.Title>{i18n.ppob.history}</Card.Title>
+      </Card.Header>
+      <Card.Content className="gap-4">
+        <HistoryFilters
+          productFilter={productFilter}
+          statusFilter={statusFilter}
+          dateRange={dateRange}
+          onProductFilterChange={setProductFilter}
+          onStatusFilterChange={setStatusFilter}
+          onDateRangeChange={setDateRange}
+        />
 
-      <HistoryFilters
-        productFilter={productFilter}
-        statusFilter={statusFilter}
-        dateRange={dateRange}
-        onProductFilterChange={setProductFilter}
-        onStatusFilterChange={setStatusFilter}
-        onDateRangeChange={setDateRange}
-      />
-
-      {isLoading ? (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : error ? (
-        <NoData title="Gagal memuat riwayat" tone="danger">
-          {error instanceof Error ? error.message : i18n.common.error}
-        </NoData>
-      ) : filteredItems.length === 0 ? (
-        <NoData icon={<Search />} title="Tidak ada transaksi">
-          Tidak ditemukan riwayat pada rentang tanggal yang dipilih
-        </NoData>
-      ) : (
-        <HistoryTable items={filteredItems} />
-      )}
-    </div>
+        {isLoading ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : error ? (
+          <NoData title="Gagal memuat riwayat" tone="danger">
+            {error.message}
+          </NoData>
+        ) : filteredItems.length === 0 ? (
+          <NoData icon={<Search />} title="Tidak ada transaksi">
+            Tidak ditemukan riwayat pada rentang tanggal yang dipilih
+          </NoData>
+        ) : (
+          <HistoryTable items={filteredItems} />
+        )}
+      </Card.Content>
+    </Card>
   )
 }
