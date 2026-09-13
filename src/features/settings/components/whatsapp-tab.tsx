@@ -114,7 +114,6 @@ export function WhatsappTab() {
               </Switch.Control>
               {t.whatsapp.enable}
             </Switch.Content>
-            <Description>{t.whatsapp.enableDesc}</Description>
           </Switch>
 
           {state === "qr_pending" && status?.qr && (

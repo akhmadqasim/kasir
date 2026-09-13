@@ -357,8 +357,6 @@ export const id = {
   whatsapp: {
     title: "WhatsApp",
     enable: "Aktifkan WhatsApp",
-    enableDesc:
-      "Kirim struk penjualan ke WhatsApp pelanggan. Disarankan pakai nomor khusus toko, bukan nomor pribadi — akun bisa diblokir WhatsApp karena ini klien tidak resmi.",
     statusOff: "Nonaktif",
     statusStarting: "Menyiapkan...",
     statusQrPending: "Menunggu pindai QR",
