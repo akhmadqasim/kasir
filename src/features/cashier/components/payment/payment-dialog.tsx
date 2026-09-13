@@ -57,45 +57,6 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                 </InfoPanel>
 
-                <div className="flex flex-col gap-2">
-                  <p>Metode Pembayaran</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {PAYMENT_METHODS.map((method) => {
-                      const split = form.paymentSplits.find(
-                        (current) => current.payment_method === method.value,
-                      )
-                      if (!split) return null
-
-                      return (
-                        // `ToggleButton`, bukan tombol biasa: metode yang tercentang
-                        // adalah keadaan, dan `aria-pressed` satu-satunya cara pembaca
-                        // layar tahu mana yang aktif. Klik tetap lewat `handleMethodClick`
-                        // — aturan radio-lalu-tambah ada di situ.
-                        <ToggleButton
-                          key={method.value}
-                          className="w-full"
-                          isSelected={split.selected}
-                          onChange={() => form.handleMethodClick(method.value)}
-                        >
-                          {method.label}
-                        </ToggleButton>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <TextField
-                  fullWidth
-                  value={form.notes}
-                  variant="secondary"
-                  onChange={form.setNotes}
-                >
-                  <Label>Catatan</Label>
-                  <TextArea className="resize-none" placeholder="Opsional" rows={2} />
-                </TextField>
-              </div>
-
-              <div className="flex flex-col gap-4">
                 {form.selectedPaymentSplits.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {form.selectedPaymentSplits.map((split) => {
@@ -197,6 +158,45 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 {!form.allTransferMethodsHaveBank && (
                   <p className="text-danger">Isi nama bank untuk pembayaran transfer bank.</p>
                 )}
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <p>Metode Pembayaran</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PAYMENT_METHODS.map((method) => {
+                      const split = form.paymentSplits.find(
+                        (current) => current.payment_method === method.value,
+                      )
+                      if (!split) return null
+
+                      return (
+                        // `ToggleButton`, bukan tombol biasa: metode yang tercentang
+                        // adalah keadaan, dan `aria-pressed` satu-satunya cara pembaca
+                        // layar tahu mana yang aktif. Klik tetap lewat `handleMethodClick`
+                        // — aturan radio-lalu-tambah ada di situ.
+                        <ToggleButton
+                          key={method.value}
+                          className="w-full"
+                          isSelected={split.selected}
+                          onChange={() => form.handleMethodClick(method.value)}
+                        >
+                          {method.label}
+                        </ToggleButton>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <TextField
+                  fullWidth
+                  value={form.notes}
+                  variant="secondary"
+                  onChange={form.setNotes}
+                >
+                  <Label>Catatan</Label>
+                  <TextArea className="resize-none" placeholder="Opsional" rows={2} />
+                </TextField>
               </div>
             </div>
           </Modal.Body>
