@@ -458,7 +458,7 @@ export const id = {
     dataPacket: "Paket Data",
     pln: "Token PLN",
     pdam: "PDAM",
-    bpjs: "BPJS Kesehatan",
+    bpjs: "BPJS",
     pp: "Payment Point",
     transfer: "Transfer Uang",
     emoney: "E-Money",
