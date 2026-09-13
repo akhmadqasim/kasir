@@ -26,6 +26,14 @@ pub enum Command {
         #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<u64>,
     },
+    /// Close the browser and exit without invalidating the linked session —
+    /// unlike [`Command::Logout`]. Sent when the feature is turned off, or
+    /// the app is closing; either way the shop expects it to reconnect
+    /// without a QR the next time it starts.
+    Shutdown {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<u64>,
+    },
 }
 
 impl Command {
@@ -126,6 +134,14 @@ mod tests {
         let command = Command::Logout { id: None };
         let value: serde_json::Value = serde_json::from_str(command.to_line().trim()).unwrap();
         assert_eq!(value["cmd"], "logout");
+        assert!(value.get("id").is_none());
+    }
+
+    #[test]
+    fn a_shutdown_command_serialises_distinctly_from_logout() {
+        let command = Command::Shutdown { id: None };
+        let value: serde_json::Value = serde_json::from_str(command.to_line().trim()).unwrap();
+        assert_eq!(value["cmd"], "shutdown");
         assert!(value.get("id").is_none());
     }
 

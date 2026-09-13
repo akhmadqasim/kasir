@@ -43,7 +43,18 @@ export interface LogoutCommand {
   cmd: "logout"
 }
 
-export type IncomingCommand = SendCommand | LogoutCommand
+/**
+ * Close the browser and exit, without invalidating the linked session the
+ * way `logout` does. Sent when the feature is turned off or the app is
+ * closing — either way, the shop expects it to reconnect without a QR next
+ * time, so the session on disk must survive this.
+ */
+export interface ShutdownCommand {
+  id?: number
+  cmd: "shutdown"
+}
+
+export type IncomingCommand = SendCommand | LogoutCommand | ShutdownCommand
 
 export type AckResult = { ok: true } | { ok: false; error: string }
 
@@ -101,6 +112,13 @@ export function parseCommand(line: string): IncomingCommand | null {
     return {
       id: typeof parsed.id === "number" ? parsed.id : undefined,
       cmd: "logout",
+    }
+  }
+
+  if (parsed.cmd === "shutdown") {
+    return {
+      id: typeof parsed.id === "number" ? parsed.id : undefined,
+      cmd: "shutdown",
     }
   }
 

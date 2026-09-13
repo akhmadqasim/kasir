@@ -87,11 +87,36 @@ export class WhatsAppSession {
   }
 
   async handle(command: IncomingCommand): Promise<void> {
-    if (command.cmd === "send") {
-      await this.handleSend(command)
-      return
+    switch (command.cmd) {
+      case "send":
+        await this.handleSend(command)
+        return
+      case "logout":
+        await this.handleLogout(command.id)
+        return
+      case "shutdown":
+        await this.handleShutdown(command.id)
+        return
     }
-    await this.handleLogout(command.id)
+  }
+
+  /**
+   * Close the browser (if one was ever opened) and exit, without
+   * invalidating the linked session — `Client.logout()` is what does that,
+   * and this is deliberately not that. Also what the process's own
+   * `SIGTERM`/`SIGINT` handlers call: a plain `process.exit()` there would
+   * leave the browser it launched running as an orphan, because killing this
+   * process is not something the browser is watching for.
+   */
+  async shutdown(): Promise<void> {
+    if (!this.client) return
+    try {
+      await this.client.destroy()
+    } catch (error) {
+      // Best-effort: the browser may already be gone (crashed, or the OS
+      // killed it directly), and that is not a reason to hang here.
+      console.error("error while closing the browser", error)
+    }
   }
 
   private async handleSend(command: SendCommand): Promise<void> {
@@ -144,9 +169,17 @@ export class WhatsAppSession {
     } catch (error) {
       ack(id, { ok: false, error: describeError(error) })
     } finally {
-      // The session this process held is gone either way; Rust re-spawns a
-      // fresh process (and a fresh QR) the next time the feature is enabled.
+      // `Client.logout()` already closes the browser itself before
+      // resolving. The session this process held is gone either way; Rust
+      // re-spawns a fresh process (and a fresh QR) the next time the feature
+      // is enabled.
       setTimeout(() => process.exit(0), 250)
     }
+  }
+
+  private async handleShutdown(id: number | undefined): Promise<void> {
+    await this.shutdown()
+    ack(id, { ok: true })
+    process.exit(0)
   }
 }

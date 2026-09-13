@@ -12,6 +12,10 @@ import { createInterface } from "node:readline"
 import { parseCommand } from "./protocol"
 import { WhatsAppSession } from "./whatsapp-client"
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function main(): Promise<void> {
   const sessionDir = process.argv[2]
   if (!sessionDir) {
@@ -31,8 +35,19 @@ async function main(): Promise<void> {
     })
   })
 
-  process.on("SIGTERM", () => process.exit(0))
-  process.on("SIGINT", () => process.exit(0))
+  // Rust normally asks for a shutdown over stdin (see `protocol.ts`'s
+  // `ShutdownCommand`) rather than a signal — `TerminateProcess`, the only
+  // way Windows can kill another process, is not something Node can catch at
+  // all. These exist for the cases something *does* send a real signal (a
+  // `Ctrl+C` while running this by hand to reach the QR stage, a tree-kill
+  // under WSL): close the browser before exiting instead of leaving it
+  // behind, with a hard cap so a stuck `destroy()` cannot wedge the process
+  // open forever.
+  const handleSignal = () => {
+    void Promise.race([session.shutdown(), sleep(3_000)]).finally(() => process.exit(0))
+  }
+  process.on("SIGTERM", handleSignal)
+  process.on("SIGINT", handleSignal)
 
   await session.start(sessionDir)
 }

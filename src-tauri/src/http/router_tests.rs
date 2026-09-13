@@ -3046,6 +3046,39 @@ async fn send_receipt_needs_only_a_session_not_the_till_or_an_admin() {
     assert_ne!(refused.status(), StatusCode::FORBIDDEN);
 }
 
+/// No double-send: a second request for a transaction that already has a
+/// send in flight is refused outright, before it ever reaches the database —
+/// this is what protects against the till and a tablet both pressing "Kirim
+/// WhatsApp" on the same sale within the same few seconds.
+#[tokio::test]
+async fn a_second_send_for_the_same_transaction_already_in_flight_is_refused() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, false).await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    // Held for the whole test, standing in for the first request's own claim
+    // still being in flight.
+    let _claim = state.whatsapp.claim_send(1).expect("first claim");
+
+    let response = router(&state)
+        .oneshot(
+            same_origin(Method::POST, "/api/whatsapp/send-receipt")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(
+                    json!({ "transaction_id": 1, "phone": "0812345678" }),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body_json(response).await["code"], json!("validation"));
+}
+
 /// The caption template is a store setting: admin-only to change, like the
 /// printer footer text.
 #[tokio::test]

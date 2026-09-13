@@ -110,6 +110,7 @@ pub fn run() {
     let backup_scheduler_clone = backup_scheduler.clone();
     let updater_clone = updater.clone();
     let whatsapp_clone = whatsapp.clone();
+    let whatsapp_for_exit = whatsapp.clone();
     let database_for_setup = database.clone();
     let window_zoom_clone = window_zoom.clone();
     let window_icon_clone = window_icon.clone();
@@ -199,8 +200,19 @@ pub fn run() {
         .manage(mitra_client)
         .manage(backup_scheduler)
         .manage(whatsapp)
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            // Closing the window does not stop a background sidecar on its
+            // own — this is the one path guaranteed to run before the
+            // process actually exits. Blocks briefly (see
+            // `WhatsappManager::shutdown`/`GRACEFUL_STOP_TIMEOUT`) so the
+            // sidecar closes its own browser instead of leaving it running as
+            // an orphan after the till's own window is gone.
+            if let tauri::RunEvent::Exit = event {
+                tauri::async_runtime::block_on(whatsapp_for_exit.shutdown());
+            }
+        });
 
     http_server.shutdown();
 

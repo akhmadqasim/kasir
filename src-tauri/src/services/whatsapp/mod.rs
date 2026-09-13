@@ -43,11 +43,18 @@ pub async fn disable(
 /// The record is written even when the send failed: a wrong number typed by
 /// the cashier is exactly the kind of attempt the history should carry, so a
 /// second try is not typed blind.
+///
+/// `claim_send` is held for the whole function, so a second request for the
+/// same transaction — the till and a tablet both open on the same sale,
+/// "Kirim WhatsApp" pressed on both within the same few seconds — is refused
+/// rather than sending the struk twice.
 pub async fn send_receipt(
     manager: &Arc<WhatsappManager>,
     db: &DatabaseConnection,
     input: SendReceiptInput,
 ) -> Result<(), AppError> {
+    let _claim = manager.claim_send(input.transaction_id)?;
+
     // Fetched once and threaded through both the caption and the render: each
     // otherwise reads `store_info` (and re-parses its `additional_info` JSON)
     // on its own for the same row.
