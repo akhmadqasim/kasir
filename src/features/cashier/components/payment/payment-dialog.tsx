@@ -197,21 +197,22 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   onQuickAmount={form.handleQuickRoundAmount}
                   onRemainingAmount={form.handleSetRemainingAmount}
                 />
+
+                {/* Di dasar kolom kanan, selebar kolomnya dan agak tinggi:
+                    tombol terakhir yang ditekan kasir tiap transaksi. */}
+                <PendingButton
+                  className="mt-auto min-h-12 text-lg"
+                  fullWidth
+                  isDisabled={!form.canConfirm}
+                  isPending={form.isPending}
+                  size="lg"
+                  onPress={form.handleConfirm}
+                >
+                  Bayar
+                </PendingButton>
               </div>
             </div>
           </Modal.Body>
-          <Modal.Footer>
-            {/* Kanan, besar: tombol terakhir yang ditekan kasir tiap transaksi. */}
-            <PendingButton
-              className="min-w-48 text-lg"
-              isDisabled={!form.canConfirm}
-              isPending={form.isPending}
-              size="lg"
-              onPress={form.handleConfirm}
-            >
-              Bayar
-            </PendingButton>
-          </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
