@@ -25,7 +25,7 @@ export function CashFields({ onQuickAmount, onRemainingAmount }: CashFieldsProps
     // Membungkus, bukan kisi lima kolom: di kolom kanan dialog, lima tombol
     // sebaris melebar melewati kolomnya dan memunculkan gulir mendatar.
     <div className="flex flex-wrap gap-2">
-      <Button className="grow" size="sm" variant="secondary" onPress={onRemainingAmount}>
+      <Button className="grow" size="sm" variant="tertiary" onPress={onRemainingAmount}>
         Uang Pas
       </Button>
       {QUICK_AMOUNT_OPTIONS.map((amount) => (
