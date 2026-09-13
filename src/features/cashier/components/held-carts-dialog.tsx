@@ -52,7 +52,9 @@ export function HeldCartsDialog({
 }: HeldCartsDialogProps) {
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
-      <Modal.Container size="md">
+      {/* Lebar: tiap baris memuat label, total, empat nama barang, dan dua
+          tombol — di "md" nama barang terpotong dan tombol berdesakan. */}
+      <Modal.Container size="xl">
         <Modal.Dialog aria-label="Transaksi Tersimpan">
           <Modal.CloseTrigger />
           <Modal.Header>
@@ -151,16 +153,7 @@ function HeldCartsList({
                 {/* Tombol per baris untuk yang memakai tetikus; papan ketik tetap
                     punya Enter/Delete. React Aria menghentikan perambatan tekanan
                     dari tombol bersarang, jadi Hapus tidak ikut memicu onAction. */}
-                <div className="flex shrink-0 gap-1">
-                  <Button
-                    aria-label={`Hapus ${held.label}`}
-                    isIconOnly
-                    size="sm"
-                    variant="danger-soft"
-                    onPress={() => onRemove(held.id)}
-                  >
-                    <Trash2 />
-                  </Button>
+                <div className="flex shrink-0 gap-2">
                   <Button
                     aria-label={`Buka ${held.label}`}
                     size="sm"
@@ -169,6 +162,15 @@ function HeldCartsList({
                   >
                     <PlayCircle />
                     Buka
+                  </Button>
+                  <Button
+                    aria-label={`Hapus ${held.label}`}
+                    isIconOnly
+                    size="sm"
+                    variant="danger-soft"
+                    onPress={() => onRemove(held.id)}
+                  >
+                    <Trash2 />
                   </Button>
                 </div>
               </ListBox.Item>
