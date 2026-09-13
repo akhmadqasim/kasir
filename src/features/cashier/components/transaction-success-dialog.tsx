@@ -5,6 +5,7 @@ import { Printer } from "lucide-react"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
+import { SendWhatsappButton } from "@/features/whatsapp"
 import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
 import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
@@ -227,6 +228,7 @@ function SuccessContent({ result, autoPrint, onNewTransaction }: SuccessContentP
           <Printer />
           Cetak struk
         </PendingButton>
+        <SendWhatsappButton transactionId={transaction.id} />
         {/* Fokus mendarat di sini: Enter dari kasir — atau dari pemindai —
                 membuka transaksi berikutnya. */}
         <Button autoFocus onPress={onNewTransaction}>
