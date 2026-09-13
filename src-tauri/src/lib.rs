@@ -6,12 +6,14 @@ mod printing;
 mod services;
 #[cfg(test)]
 mod test_support;
+mod updater;
 mod utils;
 
 use std::fs;
 use std::sync::Arc;
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -71,16 +73,21 @@ pub fn run() {
 
     let backup_scheduler = Arc::new(Mutex::new(services::backup::BackupScheduler::new()));
 
+    let updater = Arc::new(updater::Updater::new());
+
     // The HTTP server is started before the Tauri builder because the window's
     // URL depends on the port it actually got, and the port is only known once
     // the listener is bound. There is no longer a window path that does not
     // need it: the frontend speaks nothing but `fetch` to `/api`.
-    let http_server = start_http_server(&database, &mitra_client, &backup_scheduler);
+    let http_server = start_http_server(&database, &mitra_client, &backup_scheduler, &updater);
     let http_port = http_server.port;
 
     let backup_scheduler_clone = backup_scheduler.clone();
+    let updater_clone = updater.clone();
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(debug_assertions)]
     {
@@ -91,6 +98,15 @@ pub fn run() {
         .setup(move |app| {
             // Start backup scheduler inside setup where tokio runtime is available
             tauri::async_runtime::spawn(services::backup::run_scheduler(backup_scheduler_clone));
+            // The updater needs the app handle for the plugin; the HTTP routes
+            // that drive it were wired before this handle existed.
+            let handle = app.handle().clone();
+            updater_clone.attach(move || handle.updater_builder());
+            // Release builds only: a dev build restarts many times an hour, and
+            // must never be nudged into replacing itself with the installer.
+            if !cfg!(debug_assertions) {
+                updater_clone.spawn_background_checks();
+            }
             build_main_window(app, http_port)?;
             Ok(())
         })
@@ -115,13 +131,17 @@ fn start_http_server(
     database: &sea_orm::DatabaseConnection,
     mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
     backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
+    updater: &Arc<updater::Updater>,
 ) -> http::ServerHandle {
     // Pay for the login timing-equaliser's one-off bcrypt hash now, so the first
     // login attempt against an unknown username is not the request that pays it.
     services::auth::warm_password_verifier();
 
-    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env())
-        .sharing(mitra_client.clone(), backup_scheduler.clone());
+    let state = http::AppState::new(database.clone(), http::ServerConfig::from_env()).sharing(
+        mitra_client.clone(),
+        backup_scheduler.clone(),
+        updater.clone(),
+    );
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => server,
         Err(e) => {

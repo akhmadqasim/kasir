@@ -327,7 +327,7 @@ describe("layar pengaturan", () => {
     const kasirTabs = within(screen.getByRole("tablist", { name: "Pengaturan" })).getAllByRole(
       "tab",
     )
-    expect(kasirTabs.map((tab) => tab.textContent)).toEqual(["Toko", "Printer"])
+    expect(kasirTabs.map((tab) => tab.textContent)).toEqual(["Toko", "Printer", "Aplikasi"])
   })
 
   it("meminta konfirmasi sebelum menghapus sebuah backup", async () => {

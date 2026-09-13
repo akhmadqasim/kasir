@@ -3,8 +3,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useApiMutation } from "@/hooks/use-api"
 import { createBackup } from "@/lib/api/backups"
 import { queryKeys } from "@/lib/api/query-keys"
+import { formatFileSize } from "@/lib/format"
 import { toast } from "@/lib/toast"
-import { formatFileSize } from "../lib/format"
 import type { BackupInfo } from "../types"
 
 /**

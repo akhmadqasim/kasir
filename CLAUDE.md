@@ -33,7 +33,27 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
   It keeps `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
   versions in sync, produces the Windows MSI + NSIS installers under
   `src-tauri/target/release/bundle/`, and only commits/tags/publishes if the build
-  succeeds. Installers are currently **unsigned**.
+  succeeds. Installers carry **no Authenticode signature** (SmartScreen warns on first
+  manual install); updates are verified by the updater's own minisign signature instead.
+- **Self-update.** The app polls
+  `https://github.com/akhmadqasim/kasir/releases/latest/download/latest.json`
+  (`tauri-plugin-updater`, driven from Rust in `src-tauri/src/updater/`, exposed as
+  `/api/updates*`; the webview has no Tauri IPC). The release script uploads the
+  installers, their `.sig` files and a generated `latest.json`. Two things follow:
+  - **The build needs the signing key.** Set once per shell (or in the user env):
+    ```powershell
+    $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\kasir.key"   # path or key content
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""                             # the key has no password
+    ```
+    The private key is **not in the repo**; only its public half is, in
+    `tauri.conf.json` → `plugins.updater.pubkey`. Losing the private key means every
+    installed copy stops accepting updates (a new key needs one more manual install).
+    Generate a pair with `bunx tauri signer generate -w ~/.tauri/kasir.key`.
+  - **The first release that ships the updater (v0.6.0) must be installed by hand once**;
+    v0.5.0 and older do not know how to look for updates. From then on the app offers
+    each newer release itself (banner + Pengaturan → Aplikasi → "Periksa pembaruan").
+  - Debug builds never auto-check (they would offer to replace themselves with the
+    installer); the explicit button still works.
 - **Build gotcha:** on high-core / low-free-RAM machines, cargo's default job count
   can OOM `rustc` (`STATUS_STACK_BUFFER_OVERRUN` / `rust_oom`). Use `CARGO_BUILD_JOBS=2`
   (the release script defaults to `-Jobs 2`). Note `cargo` lives at `~/.cargo/bin`, not
@@ -57,7 +77,8 @@ src/                    # Frontend (React + TypeScript)
 │   ├── reports/        # Sales & loss reports
 │   ├── receipt/        # Receipt preview & printing
 │   ├── onboarding/     # First-time setup (store info)
-│   └── settings/       # App settings
+│   ├── settings/       # App settings
+│   └── updater/        # Update banner + Pengaturan → Aplikasi card
 ├── hooks/              # Shared React hooks
 ├── lib/                # Utilities, constants, types
 │   └── api/            # fetch client (client.ts) + one typed module per resource
@@ -73,6 +94,7 @@ src-tauri/              # Backend (Rust)
 │   ├── http/           # axum router, routes/, session, CSRF, idempotency
 │   ├── db/             # DB setup + migration runner (db/migrations.rs)
 │   ├── printing/       # ESC/POS thermal printer driver
+│   ├── updater/        # Self-update state machine over tauri-plugin-updater (Rust-driven)
 │   └── utils/          # Shared Rust utilities (error types, logging, paths)
 ├── migrations/         # SQL migration files
 ├── Cargo.toml

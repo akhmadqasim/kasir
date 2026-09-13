@@ -6,6 +6,7 @@ import { Minus, Plus } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { AppNavbar } from "@/components/layout/app-navbar"
 import { SidebarInset, SidebarProvider } from "@/components/layout/sidebar"
+import { UpdateBanner } from "@/features/updater"
 import { storeResumeRoute } from "./resume-route"
 
 const ZOOM_LEVEL_KEY = "kasir-zoom-level"
@@ -92,6 +93,7 @@ export function AppLayout() {
               jadi saat mencetak ia juga yang memotong halaman jadi satu viewport.
               Padding samping 24px menyamakan tepi isi dengan tepi judul di navbar. */}
           <div className="flex flex-1 flex-col gap-4 overflow-auto px-6 pt-2 pb-16 lg:pb-6 print:overflow-visible">
+            <UpdateBanner />
             <Outlet />
           </div>
         </AppNavbar>

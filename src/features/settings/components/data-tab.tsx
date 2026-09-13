@@ -9,7 +9,7 @@ import { PendingButton } from "@/components/pending-button"
 import { StatCard } from "@/components/stat-card"
 import { SummaryList } from "@/components/summary-list"
 import { id } from "@/i18n/id"
-import { formatDateTime } from "@/lib/format"
+import { formatDateTime, formatFileSize } from "@/lib/format"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import { errorMessage } from "@/lib/api/client"
 import {
@@ -28,7 +28,6 @@ import {
 } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useCreateBackupMutation } from "../hooks/use-backup"
-import { formatFileSize } from "../lib/format"
 import type { AppSettings, BackupInfo, BackupStatus, DatabaseInfo } from "../types"
 
 /*

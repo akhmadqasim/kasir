@@ -47,6 +47,7 @@ use tower_http::compression::CompressionLayer;
 
 use crate::services::backup::BackupScheduler;
 use crate::services::ppob::MitraClient;
+use crate::updater::Updater;
 use crate::utils::{logging, AppError};
 use throttle::LoginThrottle;
 
@@ -68,11 +69,13 @@ const SWEEP_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Everything the transport needs and nothing it does not.
 ///
-/// `mitra` and `backup_scheduler` are the two pieces of process-wide mutable
-/// state the services own: the cached PPOB upstream session, and the clock the
-/// daily backup runs on. They are shared handles rather than fresh instances
-/// because the Tauri command layer holds the same two — a second `MitraClient`
-/// would hold a second upstream session, and logging one in logs the other out.
+/// `mitra`, `backup_scheduler` and `updater` are process-wide mutable state
+/// that outlives any one request: the cached PPOB upstream session, the clock
+/// the daily backup runs on, and the self-update state machine. `run()` builds
+/// each once and hands the same handles in through [`AppState::sharing`], so
+/// the transport can never hold a second copy that disagrees with the first —
+/// a second `MitraClient` would hold a second upstream session, and logging
+/// one in logs the other out.
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
@@ -80,6 +83,9 @@ pub struct AppState {
     pub throttle: Arc<LoginThrottle>,
     pub mitra: Arc<Mutex<MitraClient>>,
     pub backup_scheduler: Arc<Mutex<BackupScheduler>>,
+    /// The self-update state machine. Owned by `run()` too, which attaches the
+    /// Tauri app handle once the app exists; a test state never gets one.
+    pub updater: Arc<Updater>,
 }
 
 impl AppState {
@@ -93,6 +99,7 @@ impl AppState {
             throttle: Arc::new(LoginThrottle::new()),
             mitra: Arc::new(Mutex::new(MitraClient::new())),
             backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
+            updater: Arc::new(Updater::new()),
         }
     }
 
@@ -101,9 +108,11 @@ impl AppState {
         mut self,
         mitra: Arc<Mutex<MitraClient>>,
         backup_scheduler: Arc<Mutex<BackupScheduler>>,
+        updater: Arc<Updater>,
     ) -> Self {
         self.mitra = mitra;
         self.backup_scheduler = backup_scheduler;
+        self.updater = updater;
         self
     }
 }
