@@ -44,6 +44,9 @@ hex = "0.4"
 cookie = "0.18"
 rust-embed = { version = "8", features = ["mime-guess"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
+# Already in `Cargo.lock` through tauri; used to check that an uploaded SVG
+# logo parses as XML before it is stored and served.
+quick-xml = "0.38"
 
 [dev-dependencies]
 # `ServiceExt::oneshot`, which drives the router in tests without a listener.

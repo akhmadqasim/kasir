@@ -19,6 +19,7 @@ pub mod reports;
 pub mod settings;
 pub mod shifts;
 pub mod stock;
+pub mod store_logo;
 pub mod transactions;
 
 pub use actor::Actor;
