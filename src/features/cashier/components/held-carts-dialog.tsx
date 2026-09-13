@@ -28,6 +28,11 @@ function describeHeldCart(held: HeldCart): string {
 /**
  * Daftar keranjang yang disimpan (F9), dipanggil kembali dengan Enter.
  *
+ * Dengan mouse, satu klik hanya menyorot dan "Lanjutkan" (atau klik ganda)
+ * yang melanjutkan; sentuhan di tablet langsung melanjutkan. Itu perilaku
+ * bawaan listbox React Aria dan sengaja dibiarkan: tombol per baris yang dulu
+ * menggantikannya adalah yang membuat dialog ini berat.
+ *
  * Satu `ListBox` — panah, Enter, dan fokusnya milik React Aria, jadi tidak ada
  * lagi listener `window` yang dipasang ulang tiap kali sorotan berpindah, dan
  * sorotan yang berpindah hanya merender daftar ini, bukan seluruh panel
@@ -82,7 +87,13 @@ function HeldCartsList({
     : (heldCarts[0]?.id ?? null)
 
   const removeHighlighted = () => {
-    if (highlightedId) onRemove(highlightedId)
+    if (!highlightedId) return
+    // React Aria memindahkan fokus ke tetangga baris yang hilang; sorotan
+    // harus ikut ke baris yang sama, atau Enter dan Delete berikutnya mengenai
+    // baris yang berbeda dari yang terlihat tersorot.
+    const index = heldCarts.findIndex((held) => held.id === highlightedId)
+    setPickedId(heldCarts[index + 1]?.id ?? heldCarts[index - 1]?.id ?? null)
+    onRemove(highlightedId)
   }
 
   // Fase capture supaya angka tidak sempat menjadi typeahead listbox.

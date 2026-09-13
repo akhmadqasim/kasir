@@ -74,8 +74,22 @@ function SuccessContent({ result, autoPrint, onNewTransaction }: SuccessContentP
   const [autoPrintState, setAutoPrintState] = useState<AutoPrintState>({ status: "idle" })
   // Satu kali per struk, juga saat StrictMode menjalankan efeknya dua kali.
   const autoPrintStartedRef = useRef(false)
+  // Umur komponen, bukan umur satu jalannya efek: StrictMode menjalankan
+  // efek → cleanup → efek lagi, dan flag `cancelled` di closure jalan pertama
+  // membuat cetak yang sudah dilepas tidak pernah melaporkan hasilnya.
+  const unmountedRef = useRef(false)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const { transaction, payment_breakdown: paymentBreakdown } = result
+
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+      // Timer yang tidak dibatalkan akan menghapus keranjang pelanggan berikutnya
+      clearTimeout(closeTimerRef.current)
+    }
+  }, [])
 
   // Cetak otomatis dimulai begitu dialog terbuka dan pengaturannya diketahui.
   // Tidak ada `await` sebelum dialog bisa dipakai: permintaan cetaknya
@@ -83,28 +97,19 @@ function SuccessContent({ result, autoPrint, onNewTransaction }: SuccessContentP
   useEffect(() => {
     if (!autoPrint || autoPrintStartedRef.current) return
     autoPrintStartedRef.current = true
-
-    let cancelled = false
-    let closeTimer: ReturnType<typeof setTimeout> | undefined
     setAutoPrintState({ status: "printing" })
 
     printReceipt(transaction.id).then(
       () => {
-        if (cancelled) return
+        if (unmountedRef.current) return
         setAutoPrintState({ status: "printed" })
-        closeTimer = setTimeout(onNewTransaction, AUTO_CLOSE_DELAY_MS)
+        closeTimerRef.current = setTimeout(onNewTransaction, AUTO_CLOSE_DELAY_MS)
       },
       (error: unknown) => {
-        if (cancelled) return
+        if (unmountedRef.current) return
         setAutoPrintState({ status: "failed", message: errorMessage(error) })
       },
     )
-
-    return () => {
-      cancelled = true
-      // Timer yang tidak dibatalkan akan menghapus keranjang pelanggan berikutnya
-      if (closeTimer) clearTimeout(closeTimer)
-    }
   }, [autoPrint, onNewTransaction, transaction.id])
 
   // `change_amount` alone decides whether there is money to hand back.

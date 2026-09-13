@@ -1,3 +1,4 @@
+import { StrictMode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
@@ -154,6 +155,27 @@ describe("transaction success dialog", () => {
     expect(api.calls.filter((call) => call.method === "GET")).toHaveLength(0)
 
     // Lalu menutup sendiri supaya kasir bisa langsung melayani berikutnya.
+    await waitFor(() => expect(onNewTransaction).toHaveBeenCalledTimes(1), { timeout: 3000 })
+  })
+
+  // `main.tsx` membungkus aplikasi dengan StrictMode, jadi setiap efek
+  // berjalan, dibersihkan, lalu berjalan lagi saat mount. Cetak otomatis harus
+  // tetap satu kali dan tetap melaporkan hasilnya.
+  it("auto-prints once and still finishes under StrictMode", async () => {
+    const onNewTransaction = vi.fn()
+    render(
+      <StrictMode>
+        <TransactionSuccessDialog
+          open
+          result={RESULT}
+          autoPrint
+          onNewTransaction={onNewTransaction}
+        />
+      </StrictMode>,
+    )
+
+    expect(await screen.findByText("Struk otomatis dicetak.")).toBeInTheDocument()
+    expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1)
     await waitFor(() => expect(onNewTransaction).toHaveBeenCalledTimes(1), { timeout: 3000 })
   })
 

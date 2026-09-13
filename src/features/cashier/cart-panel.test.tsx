@@ -35,6 +35,10 @@ function heldCart(overrides: Partial<HeldCart> = {}): HeldCart {
   }
 }
 
+// Beberapa test mengganti aksi store dengan `vi.fn()`; Zustand tidak mengembalikannya
+// sendiri antar test, jadi aksi aslinya disimpan di sini dan dipasang kembali.
+const { recallCart: realRecallCart, removeHeldCart: realRemoveHeldCart } = useCartStore.getState()
+
 function resetStore(state: Partial<ReturnType<typeof useCartStore.getState>> = {}) {
   useCartStore.setState({
     items: [],
@@ -42,6 +46,8 @@ function resetStore(state: Partial<ReturnType<typeof useCartStore.getState>> = {
     itemDiscounts: {},
     transactionDiscount: null,
     ppobCounter: 0,
+    recallCart: realRecallCart,
+    removeHeldCart: realRemoveHeldCart,
     ...state,
   })
 }
@@ -207,6 +213,33 @@ describe("cart panel", () => {
     pressKey("Delete")
 
     expect(removeHeldCart).toHaveBeenCalledWith("hold-1")
+  })
+
+  it("keeps the highlight on the row that takes the deleted one's place", async () => {
+    resetStore({
+      heldCarts: [
+        heldCart(),
+        heldCart({ id: "hold-2", label: "Pelanggan 2" }),
+        heldCart({ id: "hold-3", label: "Pelanggan 3" }),
+      ],
+    })
+    renderPanel()
+    await openHeldCartsDialog()
+
+    pressKey("ArrowDown")
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Pelanggan 2/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    )
+    pressKey("Delete")
+
+    // React Aria memfokuskan baris ketiga yang naik menggantikan yang dihapus;
+    // sorotan dan fokus harus menunjuk baris yang sama.
+    const next = await screen.findByRole("option", { name: /Pelanggan 3/ })
+    await waitFor(() => expect(next).toHaveAttribute("aria-selected", "true"))
+    expect(screen.queryByRole("option", { name: /Pelanggan 2/ })).not.toBeInTheDocument()
   })
 
   it("opens the line editor on F10 and closes it on the second press", async () => {
