@@ -183,8 +183,11 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                         <ToggleButton
                           key={method.value}
                           aria-keyshortcuts={`Alt+${method.shortcut}`}
-                          className="w-full justify-between"
+                          // `ToggleButton` tidak punya varian outline seperti `Button`:
+                          // ghost + garis tepi, yang terpilih diberi tepi aksen.
+                          className="w-full justify-between border border-border data-[selected=true]:border-accent"
                           isSelected={split.selected}
+                          variant="ghost"
                           onChange={() => form.handleMethodClick(method.value)}
                         >
                           {method.label}
