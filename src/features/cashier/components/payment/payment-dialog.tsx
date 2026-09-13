@@ -37,7 +37,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
             <Modal.Heading>Pembayaran</Modal.Heading>
           </Modal.Header>
           <Modal.Body>
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid min-w-0 gap-6 md:grid-cols-2">
               <div className="flex flex-col gap-4">
                 <InfoPanel className="flex items-start justify-between gap-4">
                   <div>
@@ -91,7 +91,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   onChange={form.setNotes}
                 >
                   <Label>Catatan</Label>
-                  <TextArea placeholder="Opsional" rows={2} />
+                  <TextArea className="resize-none" placeholder="Opsional" rows={2} />
                 </TextField>
               </div>
 

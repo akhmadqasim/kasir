@@ -22,23 +22,23 @@ function formatQuickAmountLabel(amount: number): string {
  */
 export function CashFields({ onQuickAmount, onRemainingAmount }: CashFieldsProps) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-5 gap-2">
-        {QUICK_AMOUNT_OPTIONS.map((amount) => (
-          <Button
-            key={amount}
-            className="tabular-nums"
-            size="sm"
-            variant="secondary"
-            onPress={() => onQuickAmount(amount)}
-          >
-            {formatQuickAmountLabel(amount)}
-          </Button>
-        ))}
-      </div>
-      <Button fullWidth size="sm" variant="secondary" onPress={onRemainingAmount}>
+    // Membungkus, bukan kisi lima kolom: di kolom kanan dialog, lima tombol
+    // sebaris melebar melewati kolomnya dan memunculkan gulir mendatar.
+    <div className="flex flex-wrap gap-2">
+      <Button className="grow" size="sm" variant="secondary" onPress={onRemainingAmount}>
         Uang Pas
       </Button>
+      {QUICK_AMOUNT_OPTIONS.map((amount) => (
+        <Button
+          key={amount}
+          className="tabular-nums"
+          size="sm"
+          variant="tertiary"
+          onPress={() => onQuickAmount(amount)}
+        >
+          {formatQuickAmountLabel(amount)}
+        </Button>
+      ))}
     </div>
   )
 }
