@@ -502,6 +502,7 @@ export const id = {
     success: "Transaksi berhasil",
     failed: "Transaksi gagal",
     notAvailable: "Belum tersedia",
+    trouble: "Gangguan",
     merchantNotFound: "Merchant tidak ditemukan",
     bankNotFound: "Bank tidak ditemukan",
     notConfigured: "Mitra Indogrosir belum dikonfigurasi",

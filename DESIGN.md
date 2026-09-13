@@ -668,3 +668,22 @@ jumlah huruf yang diketik kasir.
 layanan yang cocok, jadi keduanya naik jadi komponen sendiri (`tile-button.tsx`,
 `tile-grid.tsx`) alih-alih ditulis ulang. `ServiceGrid` sendiri tidak berubah bentuknya —
 ia kini menggambar lewat `TileButton`/`TileGrid` alih-alih markup sendiri.
+
+**Payment Point dirapikan mengikuti bentuk kisi, bukan `ListBox`.** Daftar grup dan
+biller di `pp-flow.tsx` semula grid `Button` buatan tangan dan `ListBox` di dalam
+`Surface`; sekarang ubin `TileButton`/`TileGrid` yang sama dengan `ServiceGrid` dan
+`SearchResultsGrid` (ikon dari `path_icon`, fallback `PaymentPointIcon` generik untuk yang
+tidak punya), dengan `StatusBadge status="warning"` "Gangguan" menggantikan keterangan
+biller yang `isTrouble` (ubinnya tetap `isDisabled`, tidak bisa ditekan). `Breadcrumbs` di
+atas `FlowColumns` menunjukkan Payment Point → grup → biller begitu grup sudah dipilih —
+tiap crumb sebelum yang terakhir bisa ditekan lewat `onPress` (bukan `href`, karena
+langkahnya bukan alamat URL) untuk lompat balik tanpa menekan mundur berkali-kali. Label
+kolom kode diambil dari `label` biller sendiri (mis. "Kode Voucher"), bukan teks tetap
+"Kode Pembayaran" — Mitra tidak memberi nama kode yang sama untuk setiap biller. Biller
+yang `inputAmt` menambah `RupiahField` "Nominal"; keduanya masuk ringkasan `ConfirmCard`
+(yang sudah memakai `SummaryList`). Sebuah biller dari hasil pencarian (`ppob-home.tsx`)
+melompati langkah grup: `location.state` membawa grup (id dan nama sudah diketahui
+pencarian) dan id biller, `pp-flow.tsx` memulai dari grup itu langsung lalu memilihkan
+billernya begitu sub-menunya sendiri selesai dimuat. Tombol bayarnya tetap nonaktif
+"Belum tersedia" seperti sebelumnya — pembelian Payment Point belum tersambung ke
+backend, dan itu bukan urusan pembersihan tampilan ini.
