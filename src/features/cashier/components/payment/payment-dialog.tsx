@@ -198,10 +198,13 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                 </div>
 
-                <CashFields
-                  onQuickAmount={form.handleQuickRoundAmount}
-                  onRemainingAmount={form.handleSetRemainingAmount}
-                />
+                <div className="flex flex-col gap-2">
+                  <p>Nominal Cepat</p>
+                  <CashFields
+                    onQuickAmount={form.handleQuickRoundAmount}
+                    onRemainingAmount={form.handleSetRemainingAmount}
+                  />
+                </div>
 
                 {/* Di dasar kolom kanan, selebar kolomnya dan agak tinggi:
                     tombol terakhir yang ditekan kasir tiap transaksi. */}
