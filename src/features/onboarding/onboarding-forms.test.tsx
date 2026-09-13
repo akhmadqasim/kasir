@@ -13,7 +13,7 @@ describe("onboarding forms", () => {
   it("renders the store step and validates the required name", () => {
     const onNext = vi.fn()
     render(<StoreInfoForm onNext={onNext} />)
-    expect(screen.getByText("Informasi Toko")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Informasi Toko" })).toBeInTheDocument()
     const name = screen.getByLabelText(/Nama Toko/)
     expect(name).toHaveAttribute("placeholder", "Contoh: Toko Sembako Jaya")
     fireEvent.click(screen.getByRole("button", { name: "Selanjutnya" }))
@@ -27,6 +27,17 @@ describe("onboarding forms", () => {
       phone: undefined,
       email: undefined,
     })
+  })
+
+  it("marks the step the user is on in the stepper", () => {
+    const { unmount } = render(<StoreInfoForm onNext={vi.fn()} />)
+    const store = screen.getByRole("listitem", { current: "step" })
+    expect(store).toHaveTextContent("Informasi Toko")
+    unmount()
+
+    render(<AdminSetupForm isLoading={false} onBack={vi.fn()} onSubmit={vi.fn()} />)
+    const admin = screen.getByRole("listitem", { current: "step" })
+    expect(admin).toHaveTextContent("Akun Admin")
   })
 
   it("keeps the PIN numeric and reports mismatches", () => {

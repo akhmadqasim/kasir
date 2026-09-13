@@ -6,6 +6,7 @@ import { AuthCard } from "@/components/auth-card"
 import { PendingButton } from "@/components/pending-button"
 import { PinInput } from "@/features/auth/components/pin-input"
 import type { SetupAdminInput } from "../types"
+import { OnboardingSteps } from "./onboarding-steps"
 
 interface AdminSetupFormProps {
   onSubmit: (data: SetupAdminInput) => void
@@ -61,46 +62,40 @@ export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: Adm
   }
 
   return (
-    <AuthCard
-      description={
-        <>
-          Buat akun administrator pertama untuk mengelola toko.
-          <br />
-          {t.step2of2}
-        </>
-      }
-      title={t.adminSetup}
-    >
+    <AuthCard title={t.adminSetup} size="md">
+      <OnboardingSteps current="admin" />
       {/* validationBehavior="aria" keeps validation in this component. With
           React Aria's default ("native") an `isInvalid` field calls
           setCustomValidity, and the browser then blocks every later submit —
           including the one that would clear the error. */}
       <Form className="flex flex-col gap-4" validationBehavior="aria" onSubmit={handleSubmit}>
-        <TextField
-          autoFocus
-          fullWidth
-          isInvalid={Boolean(errors.fullName)}
-          isRequired
-          value={fullName}
-          variant="secondary"
-          onChange={setFullName}
-        >
-          <Label>{t.fullName}</Label>
-          <Input />
-          <FieldError>{errors.fullName}</FieldError>
-        </TextField>
-        <TextField
-          fullWidth
-          isInvalid={Boolean(errors.username)}
-          isRequired
-          value={username}
-          variant="secondary"
-          onChange={setUsername}
-        >
-          <Label>{t.username}</Label>
-          <Input />
-          <FieldError>{errors.username}</FieldError>
-        </TextField>
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            autoFocus
+            fullWidth
+            isInvalid={Boolean(errors.fullName)}
+            isRequired
+            value={fullName}
+            variant="secondary"
+            onChange={setFullName}
+          >
+            <Label>{t.fullName}</Label>
+            <Input />
+            <FieldError>{errors.fullName}</FieldError>
+          </TextField>
+          <TextField
+            fullWidth
+            isInvalid={Boolean(errors.username)}
+            isRequired
+            value={username}
+            variant="secondary"
+            onChange={setUsername}
+          >
+            <Label>{t.username}</Label>
+            <Input />
+            <FieldError>{errors.username}</FieldError>
+          </TextField>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <PinInput
             description={t.pinHint}
@@ -119,10 +114,10 @@ export function AdminSetupForm({ onSubmit, onBack, isLoading, initialData }: Adm
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Button type="button" variant="tertiary" onPress={() => onBack(currentData)}>
+          <Button fullWidth type="button" variant="tertiary" onPress={() => onBack(currentData)}>
             {t.back}
           </Button>
-          <PendingButton isPending={isLoading} type="submit">
+          <PendingButton fullWidth isPending={isLoading} type="submit">
             {t.submit}
           </PendingButton>
         </div>

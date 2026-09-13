@@ -254,4 +254,107 @@ describe("product search panel", () => {
 
     await waitFor(() => expect(searchField()).toHaveFocus())
   })
+
+  /**
+   * Ubin Favorit. Yang dijaga di sini bukan rupanya melainkan bentuknya: pin
+   * adalah tombol tersendiri di sebelah ubin, bukan `span role="button"` di
+   * dalamnya — tombol di dalam tombol tidak bisa dicapai papan ketik dan bukan
+   * HTML yang sah.
+   */
+  describe("shortcut tiles", () => {
+    const SHORTCUTS = [
+      { ...product({ id: 7, name: "Yakult Merah, Mangga, Strawberry 5 pcs" }), is_pinned: true },
+      { ...product({ id: 8, name: "Teh Botol", sell_price: 500 }), is_pinned: false },
+    ]
+
+    beforeEach(() => {
+      api.route("GET /products/popular", SHORTCUTS)
+      api.route("POST /products/*/pin", true)
+    })
+
+    it("shows each shortcut's name and its price", async () => {
+      renderPanel()
+
+      expect(await screen.findByText("Teh Botol")).toBeInTheDocument()
+      expect(screen.getByText("Rp 500")).toBeInTheDocument()
+      expect(screen.getByText("Yakult Merah, Mangga, Strawberry 5 pcs")).toBeInTheDocument()
+      expect(screen.getByText("Rp 3.000")).toBeInTheDocument()
+    })
+
+    it("adds the product to the cart when the tile is pressed", async () => {
+      renderPanel()
+
+      // Nama ubinnya adalah isinya, nama pin-nya "Pin <produk>" — jangkarkan
+      // polanya di awal supaya keduanya tidak sama-sama cocok.
+      fireEvent.click(await screen.findByRole("button", { name: /^Teh Botol/ }))
+
+      await waitFor(() => expect(cartLines()).toHaveLength(1))
+      expect(cartLines()[0].product_id).toBe(8)
+    })
+
+    it("keeps the pin control a real button beside the tile, not nested inside it", async () => {
+      renderPanel()
+
+      const pin = await screen.findByRole("button", { name: "Pin Teh Botol" })
+      expect(pin.tagName).toBe("BUTTON")
+      // `closest` mulai dari elemennya sendiri, jadi yang membuktikan tidak ada
+      // tombol di dalam tombol adalah pencarian dari induknya ke atas.
+      expect(pin.parentElement?.closest("button")).toBeNull()
+    })
+
+    it("pins a product from its tile without adding it to the cart", async () => {
+      renderPanel()
+
+      fireEvent.click(await screen.findByRole("button", { name: "Pin Teh Botol" }))
+
+      await waitFor(() => expect(api.callsFor("POST /products/8/pin")).toHaveLength(1))
+      expect(cartLines()).toHaveLength(0)
+    })
+
+    /**
+     * Melepas pin lewat papan ketik. Menahan tidak bisa dilakukan dengan Tab,
+     * jadi Enter melepasnya langsung — tanpa ini tombolnya perhentian Tab yang
+     * tidak melakukan apa-apa.
+     */
+    it("unpins a pinned product from the keyboard", async () => {
+      renderPanel()
+
+      const unpin = await screen.findByRole("button", {
+        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
+      })
+      fireEvent.keyDown(unpin, { key: "Enter" })
+      fireEvent.keyUp(unpin, { key: "Enter" })
+
+      await waitFor(() => expect(api.callsFor("POST /products/7/pin")).toHaveLength(1))
+    })
+
+    /**
+     * Menahan pin selama `HOLD_DURATION` melepasnya. Ini yang membuktikan
+     * handler pointer-nya selamat dari `filterDOMProps` HeroUI — `Button`
+     * membuang `onClick`, jadi kalau pointer-nya ikut tersaring, fitur ini mati
+     * tanpa satu pun test lain gagal.
+     */
+    it("unpins a pinned product after the pin is held", async () => {
+      renderPanel()
+
+      const unpin = await screen.findByRole("button", {
+        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
+      })
+      fireEvent.pointerDown(unpin)
+      // Jam-nya beku (`Date.now` di-mock), jadi tahanannya dimajukan dengan
+      // memajukan jam itu: tik interval berikutnya membaca 600ms sudah lewat.
+      nowMs += 600
+
+      await waitFor(() => expect(api.callsFor("POST /products/7/pin")).toHaveLength(1))
+    })
+
+    it("offers a hold-to-unpin control for a pinned product", async () => {
+      renderPanel()
+
+      const unpin = await screen.findByRole("button", {
+        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
+      })
+      expect(unpin.tagName).toBe("BUTTON")
+    })
+  })
 })

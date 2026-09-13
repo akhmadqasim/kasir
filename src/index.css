@@ -256,6 +256,19 @@
     border-radius: var(--radius-2xl);
   }
 
+  /* Ubin yang bisa ditekan: ubin Favorit di panel kasir dan ubin layanan PPOB
+     di tab sebelahnya. Keduanya `Button` yang harus mengisi selnya di dalam
+     kisi, jadi empat bawaan `.button` harus ditimpa — `w-fit` dan `h-10` yang
+     membuat ubin menyusut ke lebar tulisannya, `whitespace-nowrap` yang
+     mendorong nama panjang keluar dari panel, dan `rounded-3xl` yang membuat
+     ubin dua baris terbaca seperti kapsul. Ditulis sekali di sini, dengan sudut
+     yang sama dengan `.card` di sekitarnya, bukan sebagai rentetan kelas yang
+     disalin per fitur. */
+  .tile {
+    @apply h-full w-full whitespace-normal;
+    border-radius: var(--radius-2xl);
+  }
+
   /* Body dialog: isinya hampir selalu lebih dari satu anak (kalimat penjelas
      lalu kolom isian, atau beberapa kolom isian), dan tiap dialog menulis
      jaraknya sendiri — 13 memakai `flex flex-col gap-4`, 2 `gap-3`, 3
