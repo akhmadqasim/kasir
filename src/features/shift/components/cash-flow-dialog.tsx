@@ -39,15 +39,17 @@ export function CashFlowDialog({ open, onOpenChange }: CashFlowDialogProps) {
 }
 
 function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
-  const [flowType, setFlowType] = useState<"in" | "out" | "">("")
+  // Starts on "Uang Masuk" so the keyboard path is: type the amount, Enter.
+  // The type and the note are one click / one Tab away when they matter.
+  const [flowType, setFlowType] = useState<"in" | "out">("in")
   const [amount, setAmount] = useState("")
   const [description, setDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const activeShift = useShiftStore((s) => s.activeShift)
 
   const numericAmount = Number(amount) || 0
-  const canSubmit =
-    flowType !== "" && numericAmount > 0 && description.trim().length > 0 && !isSubmitting
+  const canSubmit = numericAmount > 0 && !isSubmitting
+  const flowLabel = flowType === "in" ? "Uang masuk" : "Uang keluar"
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -58,10 +60,10 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
         shiftId: activeShift.id,
         flowType,
         amount: numericAmount,
-        description: description.trim(),
+        // The server insists on a note; a blank one becomes the direction.
+        description: description.trim() || flowLabel,
       })
-      const label = flowType === "in" ? "Uang masuk" : "Uang keluar"
-      toast.success(`${label} ${formatRupiah(numericAmount)} tercatat`)
+      toast.success(`${flowLabel} ${formatRupiah(numericAmount)} tercatat`)
       onOpenChange(false)
     } catch (err) {
       toast.error(`Gagal mencatat: ${err}`)
@@ -90,7 +92,7 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
             disallowEmptySelection
             fullWidth
             isDisabled={isSubmitting}
-            selectedKeys={flowType ? [flowType] : []}
+            selectedKeys={[flowType]}
             selectionMode="single"
             onSelectionChange={(keys) => {
               const [picked] = keys
@@ -128,7 +130,7 @@ function CashFlowForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
           variant="secondary"
           onChange={setDescription}
         >
-          <Label>Keterangan</Label>
+          <Label>Keterangan (opsional)</Label>
           <Input placeholder="Contoh: Bayar supplier" />
         </TextField>
       </Modal.Body>

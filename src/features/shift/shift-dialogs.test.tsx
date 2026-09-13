@@ -83,26 +83,26 @@ describe("dialog buka kasir", () => {
 })
 
 describe("dialog arus kas", () => {
-  it("baru bisa disimpan setelah jenis, nominal, dan keterangan terisi", async () => {
+  it("bisa disimpan begitu nominal terisi; jenis mulai di Uang Masuk", async () => {
     useShiftStore.setState({ activeShift: SHIFT })
     render(<CashFlowDialog open onOpenChange={() => {}} />)
 
     const dialog = within(await screen.findByRole("dialog"))
     const save = dialog.getByRole("button", { name: "Simpan" })
     expect(save).toBeDisabled()
+    expect(dialog.getByRole("radio", { name: "Uang Masuk" })).toBeChecked()
 
     fireEvent.change(dialog.getByLabelText("Nominal"), { target: { value: "25000" } })
-    fireEvent.change(dialog.getByLabelText("Keterangan"), {
+    expect(save).toBeEnabled()
+    fireEvent.change(dialog.getByLabelText(/Keterangan/), {
       target: { value: "Bayar supplier" },
     })
-    // Jenis belum dipilih, jadi tombolnya harus tetap mati.
-    expect(save).toBeDisabled()
 
     // `ToggleButtonGroup` pilihan tunggal dirender React Aria sebagai radiogroup.
     fireEvent.click(dialog.getByRole("radio", { name: "Uang Keluar" }))
-    expect(save).toBeEnabled()
 
-    fireEvent.click(save)
+    // Enter di kolom nominal mengirim form, tanpa harus ke tombol Simpan.
+    fireEvent.submit(dialog.getByLabelText("Nominal").closest("form")!)
 
     await vi.waitFor(() => {
       // Shift-nya ada di path, penulisnya di sesi; sisanya yang jadi badan.

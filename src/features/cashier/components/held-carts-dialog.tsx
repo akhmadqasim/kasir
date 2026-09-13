@@ -53,8 +53,8 @@ export function HeldCartsDialog({
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
       {/* Lebar: tiap baris memuat label, total, empat nama barang, dan dua
-          tombol — di "md" nama barang terpotong dan tombol berdesakan. */}
-      <Modal.Container size="xl">
+          tombol — di "md" nama barang terpotong, di "xl" terlalu lapang. */}
+      <Modal.Container size="lg">
         <Modal.Dialog aria-label="Transaksi Tersimpan">
           <Modal.CloseTrigger />
           <Modal.Header>
