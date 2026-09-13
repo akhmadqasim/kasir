@@ -11,6 +11,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     /**
+     * The dev app keeps its data under `data/` in the project root — the
+     * SQLite file, backups, and the WhatsApp sidecar's browser profile, which
+     * Edge rewrites constantly. None of it is source; without the ignore every
+     * profile write was a full page reload.
+     */
+    watch: { ignored: ["**/data/**", "**/src-tauri/**", "**/sidecar/**/dist/**"] },
+    /**
      * `bun run dev` serves the SPA from 5173 while the API lives inside the
      * running application on 17720, so the two are different origins and the
      * client's relative `/api` paths would 404. Proxying keeps them one origin
