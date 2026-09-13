@@ -59,10 +59,9 @@ function getInitialOpen(): boolean {
 interface SidebarProviderProps {
   children: React.ReactNode
   className?: string
-  style?: React.CSSProperties
 }
 
-export function SidebarProvider({ children, className, style }: SidebarProviderProps) {
+export function SidebarProvider({ children, className }: SidebarProviderProps) {
   const isMobile = useIsMobile()
   const [open, setOpenState] = React.useState(getInitialOpen)
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -173,8 +172,7 @@ export function SidebarProvider({ children, className, style }: SidebarProviderP
     <SidebarContext.Provider value={value}>
       <div
         data-slot="sidebar-wrapper"
-        className={cn("flex w-full overflow-hidden bg-background", className)}
-        style={style}
+        className={cn("flex h-svh w-full overflow-hidden bg-background", className)}
       >
         {children}
       </div>
@@ -185,12 +183,11 @@ export function SidebarProvider({ children, className, style }: SidebarProviderP
 interface SidebarProps {
   children: React.ReactNode
   className?: string
-  style?: React.CSSProperties
   /** Accessible name of the navigation landmark. */
   label: string
 }
 
-export function Sidebar({ children, className, style, label }: SidebarProps) {
+export function Sidebar({ children, className, label }: SidebarProps) {
   const {
     state,
     open,
@@ -239,7 +236,6 @@ export function Sidebar({ children, className, style, label }: SidebarProps) {
         open ? "w-60" : "w-15",
         className,
       )}
-      style={style}
       onMouseEnter={() => {
         if (open) return
         hoverTimeout.current = setTimeout(beginHoverExpand, SIDEBAR_HOVER_EXPAND_DELAY_MS)

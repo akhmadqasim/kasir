@@ -149,6 +149,11 @@ export const queryKeys = {
     status: ["updates", "status"] as const,
   },
 
+  window: {
+    all: ["window"] as const,
+    zoom: ["window", "zoom"] as const,
+  },
+
   printers: {
     all: ["printers"] as const,
     list: ["printers", "list"] as const,

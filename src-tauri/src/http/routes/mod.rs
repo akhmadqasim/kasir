@@ -38,6 +38,7 @@ pub mod stock;
 pub mod transactions;
 pub mod updates;
 pub mod users;
+pub mod window;
 
 use axum::Router;
 
@@ -67,6 +68,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(ppob::session())
         .merge(logs::session())
         .merge(updates::session())
+        .merge(window::session())
         .route_layer(session_layer.clone());
 
     // The order matters and is the reverse of how it reads: a `route_layer`

@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react"
 import { Avatar } from "@heroui/react"
 import { StoreIcon } from "lucide-react"
 
@@ -27,7 +26,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
  * template dashboard HeroUI Pro. Daftar menunya dibaca dari `app/navigation`,
  * sumber yang sama yang dipakai navbar untuk menurunkan judul halaman.
  */
-export function AppSidebar({ style }: { style?: CSSProperties }) {
+export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
 
@@ -36,7 +35,7 @@ export function AppSidebar({ style }: { style?: CSSProperties }) {
   const visibleNavMain = isAdmin ? NAV_MAIN : NAV_MAIN.filter((item) => !isAdminOnlyRoute(item.url))
 
   return (
-    <Sidebar label="Menu utama" style={style}>
+    <Sidebar label="Menu utama">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

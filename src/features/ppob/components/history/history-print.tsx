@@ -10,7 +10,7 @@ export function HistoryPrintFields({ control }: { control: HistoryPrintControl }
 
   const grandTotal: SummaryItem = {
     label: t.ppob.grandTotal,
-    value: hasPrice ? formatRupiah(sellPrice) : "-",
+    value: hasPrice && sellPrice != null ? formatRupiah(sellPrice) : "-",
     tone: hasPrice && fee != null && fee < 0 ? "danger" : "default",
   }
 
