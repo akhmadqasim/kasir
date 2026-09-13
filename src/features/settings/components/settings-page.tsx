@@ -75,7 +75,9 @@ export function SettingsPage() {
   // Judul "Pengaturan" sudah digambar navbar dari daftar navigasi; halaman ini
   // langsung mulai dari baris kendalinya, dan padding luarnya milik `AppLayout`.
   return (
-    <Tabs defaultSelectedKey="store">
+    {/* Centred like the template's settings page: a form this long reads
+        badly stretched across a wide monitor. */}
+    <Tabs className="mx-auto w-full max-w-5xl" defaultSelectedKey="store">
       <Tabs.ListContainer>
         <Tabs.List aria-label={id.settings.title}>
           {tabs.map((tab) => (

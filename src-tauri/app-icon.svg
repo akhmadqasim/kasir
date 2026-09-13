@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The app icon: the LogoRustore glyph from @gravity-ui/icons, white on the
+       accent blue (oklch(62.04% 0.195 253.83) ≈ #006FEE), the same default the
+       sidebar shows until a store uploads its own logo. Regenerate the icons/
+       set with: bunx tauri icon src-tauri/app-icon.svg -o src-tauri/icons -->
+  <rect width="1024" height="1024" rx="224" fill="#006FEE"/>
+  <g transform="translate(192 192) scale(40)">
+    <path fill="#FFFFFF" fill-rule="evenodd" clip-rule="evenodd" d="M8.676 2.379a1 1 0 0 1 1.242-.97l3.945.984a1.5 1.5 0 0 1 1.138 1.455v6.686a1 1 0 0 1-1.242.97l-2.594-.646V9.317l2.025.5a.25.25 0 0 0 .309-.243V4.041a.25.25 0 0 0-.19-.243l-2.827-.703a.25.25 0 0 0-.31.242v.646a1.5 1.5 0 0 1 .99 1.409v6.686a1 1 0 0 1-1.243.97l-2.594-.646v1.287a1 1 0 0 1-1.242.97l-3.946-.984A1.5 1.5 0 0 1 1 12.219V5.533a1 1 0 0 1 1.242-.97l3.766.94-1.172-.294V3.923a1 1 0 0 1 1.242-.97l2.598.647zm-5.87 3.87a.25.25 0 0 0-.309.242v5.54a.25.25 0 0 0 .19.243l2.827.697a.25.25 0 0 0 .31-.242V7.195a.25.25 0 0 0-.19-.243zm3.837-1.61a.25.25 0 0 0-.31.242v.71l-.01-.004a1.5 1.5 0 0 1 1.002 1.415v3.859l2.025.5a.25.25 0 0 0 .31-.243V5.585a.25.25 0 0 0-.19-.243z"/>
+  </g>
+</svg>
