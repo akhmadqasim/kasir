@@ -36,6 +36,7 @@ pub mod settings;
 pub mod shifts;
 pub mod stock;
 pub mod transactions;
+pub mod updates;
 pub mod users;
 
 use axum::Router;
@@ -65,6 +66,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(printers::session())
         .merge(ppob::session())
         .merge(logs::session())
+        .merge(updates::session())
         .route_layer(session_layer.clone());
 
     // The order matters and is the reverse of how it reads: a `route_layer`
@@ -80,6 +82,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .merge(backups::admin())
         .merge(printers::admin())
         .merge(ppob::admin())
+        .merge(updates::admin())
         .route_layer(admin_layer)
         .route_layer(session_layer);
 

@@ -15,6 +15,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+# Self-update from GitHub Releases, driven from Rust (see `updater/`). The
+# JS-side `tauri-plugin-process` is not needed: `Update::install` exits the app
+# itself and the NSIS installer relaunches it.
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-native-tls", "macros"] }

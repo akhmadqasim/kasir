@@ -47,6 +47,7 @@ use tower_http::compression::CompressionLayer;
 
 use crate::services::backup::BackupScheduler;
 use crate::services::ppob::MitraClient;
+use crate::updater::Updater;
 use crate::utils::{logging, AppError};
 use throttle::LoginThrottle;
 
@@ -80,6 +81,9 @@ pub struct AppState {
     pub throttle: Arc<LoginThrottle>,
     pub mitra: Arc<Mutex<MitraClient>>,
     pub backup_scheduler: Arc<Mutex<BackupScheduler>>,
+    /// The self-update state machine. Owned by `run()` too, which attaches the
+    /// Tauri app handle once the app exists; a test state never gets one.
+    pub updater: Arc<Updater>,
 }
 
 impl AppState {
@@ -93,6 +97,7 @@ impl AppState {
             throttle: Arc::new(LoginThrottle::new()),
             mitra: Arc::new(Mutex::new(MitraClient::new())),
             backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
+            updater: Arc::new(Updater::new()),
         }
     }
 
@@ -101,9 +106,11 @@ impl AppState {
         mut self,
         mitra: Arc<Mutex<MitraClient>>,
         backup_scheduler: Arc<Mutex<BackupScheduler>>,
+        updater: Arc<Updater>,
     ) -> Self {
         self.mitra = mitra;
         self.backup_scheduler = backup_scheduler;
+        self.updater = updater;
         self
     }
 }
