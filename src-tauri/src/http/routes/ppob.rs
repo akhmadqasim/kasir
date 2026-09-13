@@ -34,8 +34,9 @@ use crate::domain::ppob::{
     PdamProduct, PlnDenom, PpSubMenuItem, PpobMenuGroup, PpobSaldoResponse, PulsaDetailsResponse,
     PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
 };
+use crate::domain::receipt::ReceiptLineResponse;
 use crate::domain::Actor;
-use crate::http::error::ApiResult;
+use crate::http::error::{ApiError, ApiResult};
 use crate::http::extract::{json_from_slice, Json, Query};
 use crate::http::idempotency::{self, Claim};
 use crate::http::AppState;
@@ -77,6 +78,8 @@ pub fn session() -> Router<AppState> {
         // History
         .route("/ppob/history", get(history))
         .route("/ppob/history/{trx_id}", get(history_detail))
+        .route("/ppob/history/{trx_id}/receipt", get(history_receipt))
+        .route("/ppob/history/{trx_id}/print", post(history_print))
         .route("/ppob/mutasi", get(mutasi))
         // Notifications
         .route("/ppob/notifications", get(notifications))
@@ -528,6 +531,53 @@ async fn history_detail(
     Ok(axum::Json(
         services::ppob::history::detail(&state.db, &state.mitra, trx_id).await?,
     ))
+}
+
+/// The sell price a history struk is printed at — the Mitra app's "Harga
+/// Jual", which becomes the struk's `Grand Total`. Chosen per print, so it
+/// travels with the request rather than living in the settings.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SellPrice {
+    sell_price: f64,
+}
+
+impl SellPrice {
+    /// A negative price is a malformed request, not a business rule: nothing
+    /// downstream can do anything with it, so it stops here as a 400.
+    fn checked(self) -> Result<f64, ApiError> {
+        if !self.sell_price.is_finite() || self.sell_price < 0.0 {
+            return Err(ApiError::bad_request("Harga jual tidak boleh negatif"));
+        }
+        Ok(self.sell_price)
+    }
+}
+
+/// The lines the printer would be handed for this transaction at this sell
+/// price, so the screen can show the struk before it is printed.
+async fn history_receipt(
+    State(state): State<AppState>,
+    Path(trx_id): Path<String>,
+    Query(price): Query<SellPrice>,
+) -> ApiResult<axum::Json<Vec<ReceiptLineResponse>>> {
+    let sell_price = price.checked()?;
+    Ok(axum::Json(
+        services::receipt::ppob_history_receipt(&state.db, &state.mitra, trx_id, sell_price)
+            .await?,
+    ))
+}
+
+/// Print a struk for a transaction in Mitra's history. Like the other print
+/// routes, the paper comes out of the till the server runs on, and the
+/// response says the job was handed over, not that paper appeared.
+async fn history_print(
+    State(state): State<AppState>,
+    Path(trx_id): Path<String>,
+    Json(price): Json<SellPrice>,
+) -> ApiResult<StatusCode> {
+    let sell_price = price.checked()?;
+    services::receipt::print_ppob_history(&state.db, &state.mitra, trx_id, sell_price).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn mutasi(

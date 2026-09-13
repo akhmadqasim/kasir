@@ -2183,6 +2183,110 @@ async fn the_ppob_routes_need_a_session() {
     }
 }
 
+/// The history struk is printed at a sell price chosen on the spot. A negative
+/// one is refused before anything is looked up — as a 400, because nothing
+/// downstream could do anything with it.
+#[tokio::test]
+async fn a_history_struk_refuses_a_negative_sell_price() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    let print = router(&state)
+        .oneshot(
+            same_origin(Method::POST, "/api/ppob/history/111100000001/print")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({ "sellPrice": -1 })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(print.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_json(print).await["code"], json!("bad_request"));
+
+    let preview = router(&state)
+        .oneshot(
+            same_origin(
+                Method::GET,
+                "/api/ppob/history/111100000001/receipt?sellPrice=-500",
+            )
+            .header(header::COOKIE, cookie(&token))
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(preview.status(), StatusCode::BAD_REQUEST);
+
+    // No price at all is the same malformed request.
+    let missing = router(&state)
+        .oneshot(
+            same_origin(Method::GET, "/api/ppob/history/111100000001/receipt")
+                .header(header::COOKIE, cookie(&token))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Printing from the PPOB history is a selling action, so a cashier passes the
+/// role check like every other print route. With no printer set up the request
+/// stops at the printer, not at the role — and never reaches the vendor.
+#[tokio::test]
+async fn a_cashier_may_print_a_history_struk() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    let response = router(&state)
+        .oneshot(
+            same_origin(Method::POST, "/api/ppob/history/111100000001/print")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({ "sellPrice": 25000 })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = body_json(response).await;
+    assert_eq!(body["code"], json!("validation"));
+    assert_eq!(body["message"], json!("Printer belum dikonfigurasi"));
+}
+
+#[tokio::test]
+async fn the_history_struk_routes_need_a_session() {
+    let db = setup_test_db().await;
+    let state = state(db);
+
+    for (method, uri) in [
+        (
+            Method::GET,
+            "/api/ppob/history/111100000001/receipt?sellPrice=25000",
+        ),
+        (Method::POST, "/api/ppob/history/111100000001/print"),
+    ] {
+        let response = router(&state)
+            .oneshot(
+                same_origin(method, uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(json_body(json!({ "sellPrice": 25000 })))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{uri}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Client logs
 // ---------------------------------------------------------------------------
