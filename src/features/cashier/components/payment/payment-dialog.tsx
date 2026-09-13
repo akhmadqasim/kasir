@@ -201,10 +201,12 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
             </div>
           </Modal.Body>
           <Modal.Footer>
+            {/* Kanan, besar: tombol terakhir yang ditekan kasir tiap transaksi. */}
             <PendingButton
-              fullWidth
+              className="min-w-48 text-lg"
               isDisabled={!form.canConfirm}
               isPending={form.isPending}
+              size="lg"
               onPress={form.handleConfirm}
             >
               Bayar
