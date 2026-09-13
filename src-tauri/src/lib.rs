@@ -8,6 +8,7 @@ mod services;
 mod test_support;
 mod updater;
 mod utils;
+mod window_zoom;
 
 use std::fs;
 use std::sync::Arc;
@@ -75,15 +76,31 @@ pub fn run() {
 
     let updater = Arc::new(updater::Updater::new());
 
+    let window_zoom = Arc::new(window_zoom::WindowZoom::new());
+    // Read before the window exists so it opens at the size it was left at,
+    // rather than snapping from 100 % a moment after the first paint.
+    let initial_zoom = tauri::async_runtime::block_on(services::settings::ui_zoom(&database))
+        .unwrap_or_else(|e| {
+            utils::logging::log_error(&format!("Stored window zoom not readable: {e}"));
+            domain::settings::UI_ZOOM_DEFAULT
+        });
+
     // The HTTP server is started before the Tauri builder because the window's
     // URL depends on the port it actually got, and the port is only known once
     // the listener is bound. There is no longer a window path that does not
     // need it: the frontend speaks nothing but `fetch` to `/api`.
-    let http_server = start_http_server(&database, &mitra_client, &backup_scheduler, &updater);
+    let http_server = start_http_server(
+        &database,
+        &mitra_client,
+        &backup_scheduler,
+        &updater,
+        &window_zoom,
+    );
     let http_port = http_server.port;
 
     let backup_scheduler_clone = backup_scheduler.clone();
     let updater_clone = updater.clone();
+    let window_zoom_clone = window_zoom.clone();
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -107,7 +124,15 @@ pub fn run() {
             if !cfg!(debug_assertions) {
                 updater_clone.spawn_background_checks();
             }
-            build_main_window(app, http_port)?;
+            let window = build_main_window(app, http_port)?;
+            // Same shape as the updater: the HTTP route that drives the zoom was
+            // wired before this window existed, so it gets a closure over it.
+            window_zoom_clone.attach(move |factor| window.set_zoom(factor));
+            if initial_zoom != domain::settings::UI_ZOOM_DEFAULT {
+                if let Err(e) = window_zoom_clone.apply(initial_zoom) {
+                    utils::logging::log_error(&format!("Stored window zoom not applied: {e}"));
+                }
+            }
             Ok(())
         })
         .manage(database)
@@ -132,6 +157,7 @@ fn start_http_server(
     mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
     backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
     updater: &Arc<updater::Updater>,
+    window_zoom: &Arc<window_zoom::WindowZoom>,
 ) -> http::ServerHandle {
     // Pay for the login timing-equaliser's one-off bcrypt hash now, so the first
     // login attempt against an unknown username is not the request that pays it.
@@ -141,6 +167,7 @@ fn start_http_server(
         mitra_client.clone(),
         backup_scheduler.clone(),
         updater.clone(),
+        window_zoom.clone(),
     );
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => server,
@@ -166,7 +193,7 @@ fn start_http_server(
 /// saved `.tsx` never showed up until `bun run build` and a Rust rebuild. Vite
 /// proxies `/api` to the same server, so sessions and CSRF behave exactly as
 /// they do in the browser, and `KASIR_ALLOWED_ORIGINS` already covers 5173.
-fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
+fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<tauri::WebviewWindow> {
     let origin = window_origin(app, http_port);
     utils::logging::log_startup(&format!("Window will load {origin}"));
     let url = WebviewUrl::External(origin.parse().expect("a bound port makes a valid URL"));
@@ -176,9 +203,7 @@ fn build_main_window(app: &tauri::App, http_port: u16) -> tauri::Result<()> {
         .inner_size(1280.0, 800.0)
         .resizable(true)
         .fullscreen(false)
-        .build()?;
-
-    Ok(())
+        .build()
 }
 
 /// Debug: Vite's `devUrl` from `tauri.conf.json` when it is configured, so

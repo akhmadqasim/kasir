@@ -49,6 +49,7 @@ use crate::services::backup::BackupScheduler;
 use crate::services::ppob::MitraClient;
 use crate::updater::Updater;
 use crate::utils::{logging, AppError};
+use crate::window_zoom::WindowZoom;
 use throttle::LoginThrottle;
 
 /// Default port. Deliberately high and unmemorable so it does not collide with
@@ -69,9 +70,10 @@ const SWEEP_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Everything the transport needs and nothing it does not.
 ///
-/// `mitra`, `backup_scheduler` and `updater` are process-wide mutable state
-/// that outlives any one request: the cached PPOB upstream session, the clock
-/// the daily backup runs on, and the self-update state machine. `run()` builds
+/// `mitra`, `backup_scheduler`, `updater` and `window_zoom` are process-wide
+/// mutable state that outlives any one request: the cached PPOB upstream
+/// session, the clock the daily backup runs on, the self-update state machine
+/// and the handle on the till window. `run()` builds
 /// each once and hands the same handles in through [`AppState::sharing`], so
 /// the transport can never hold a second copy that disagrees with the first —
 /// a second `MitraClient` would hold a second upstream session, and logging
@@ -86,6 +88,9 @@ pub struct AppState {
     /// The self-update state machine. Owned by `run()` too, which attaches the
     /// Tauri app handle once the app exists; a test state never gets one.
     pub updater: Arc<Updater>,
+    /// The till window's zoom. Attached in `setup` like the updater; a test
+    /// state — and a process serving only the LAN — has no window behind it.
+    pub window_zoom: Arc<WindowZoom>,
 }
 
 impl AppState {
@@ -100,6 +105,7 @@ impl AppState {
             mitra: Arc::new(Mutex::new(MitraClient::new())),
             backup_scheduler: Arc::new(Mutex::new(BackupScheduler::new())),
             updater: Arc::new(Updater::new()),
+            window_zoom: Arc::new(WindowZoom::new()),
         }
     }
 
@@ -109,10 +115,12 @@ impl AppState {
         mitra: Arc<Mutex<MitraClient>>,
         backup_scheduler: Arc<Mutex<BackupScheduler>>,
         updater: Arc<Updater>,
+        window_zoom: Arc<WindowZoom>,
     ) -> Self {
         self.mitra = mitra;
         self.backup_scheduler = backup_scheduler;
         self.updater = updater;
+        self.window_zoom = window_zoom;
         self
     }
 }

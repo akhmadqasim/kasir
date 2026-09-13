@@ -305,9 +305,84 @@ pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
     }
 }
 
+/// Smallest webview zoom the app will apply.
+pub const UI_ZOOM_MIN: f64 = 0.5;
+/// Largest webview zoom the app will apply.
+pub const UI_ZOOM_MAX: f64 = 2.0;
+/// The zoom a fresh install runs at, and what an unreadable value falls back to.
+pub const UI_ZOOM_DEFAULT: f64 = 1.0;
+
+/// Bring a requested zoom factor into the range the window accepts.
+///
+/// Out-of-range values are clamped rather than refused, so a client that steps
+/// past the end lands on the end. The result is rounded to two decimals because
+/// the frontend steps by tenths and `1.1 + 0.1` is not `1.2` in binary. `None`
+/// only for a value that is not a number at all — `NaN` or infinity, which a
+/// JSON body can produce with `1e400`.
+pub fn clamp_ui_zoom(factor: f64) -> Option<f64> {
+    if !factor.is_finite() {
+        return None;
+    }
+    Some((factor.clamp(UI_ZOOM_MIN, UI_ZOOM_MAX) * 100.0).round() / 100.0)
+}
+
+/// Read `ui.zoom` out of the settings blob, or the default when it is missing
+/// or unreadable. A stored value outside the range is clamped, so a hand-edited
+/// or downgraded database cannot open a window nobody can read.
+pub fn parse_ui_zoom(additional_info: &Option<String>) -> f64 {
+    additional_info
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|json| json.get("ui")?.get("zoom")?.as_f64())
+        .and_then(clamp_ui_zoom)
+        .unwrap_or(UI_ZOOM_DEFAULT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ui_zoom_is_clamped_and_rounded() {
+        assert_eq!(clamp_ui_zoom(1.0), Some(1.0));
+        assert_eq!(clamp_ui_zoom(0.1), Some(UI_ZOOM_MIN));
+        assert_eq!(clamp_ui_zoom(9.0), Some(UI_ZOOM_MAX));
+        // What `1.1 + 0.1` actually is in binary must not be stored as such.
+        assert_eq!(clamp_ui_zoom(1.2000000000000002), Some(1.2));
+        assert_eq!(clamp_ui_zoom(f64::NAN), None);
+        assert_eq!(clamp_ui_zoom(f64::INFINITY), None);
+    }
+
+    #[test]
+    fn ui_zoom_is_read_from_the_settings_blob() {
+        let stored = Some(r#"{"printer_id":"x","ui":{"zoom":1.5}}"#.to_string());
+        assert_eq!(parse_ui_zoom(&stored), 1.5);
+    }
+
+    #[test]
+    fn ui_zoom_falls_back_to_the_default_when_missing_or_unreadable() {
+        assert_eq!(parse_ui_zoom(&None), UI_ZOOM_DEFAULT);
+        assert_eq!(parse_ui_zoom(&Some("{}".into())), UI_ZOOM_DEFAULT);
+        assert_eq!(parse_ui_zoom(&Some("not json".into())), UI_ZOOM_DEFAULT);
+        assert_eq!(
+            parse_ui_zoom(&Some(r#"{"ui":{"zoom":"besar"}}"#.into())),
+            UI_ZOOM_DEFAULT
+        );
+        assert_eq!(
+            parse_ui_zoom(&Some(r#"{"ui":"x"}"#.into())),
+            UI_ZOOM_DEFAULT
+        );
+    }
+
+    /// A value a downgraded build or a hand edit left out of range is brought
+    /// back in, not applied as-is.
+    #[test]
+    fn a_stored_ui_zoom_outside_the_range_is_clamped() {
+        assert_eq!(
+            parse_ui_zoom(&Some(r#"{"ui":{"zoom":7}}"#.into())),
+            UI_ZOOM_MAX
+        );
+    }
 
     #[test]
     fn obfuscation_round_trips() {

@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::settings::{
-    obfuscate, parse_app_settings, AppSettings, ChangePinInput, DatabaseInfo, PpobMarkup,
-    PpobSettings, PublicAppSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput,
-    UpdateStoreInfoInput,
+    clamp_ui_zoom, obfuscate, parse_app_settings, parse_ui_zoom, AppSettings, ChangePinInput,
+    DatabaseInfo, PpobMarkup, PpobSettings, PublicAppSettings, UpdateAppSettingsInput,
+    UpdatePpobCredentialsInput, UpdateStoreInfoInput, UI_ZOOM_DEFAULT,
 };
 use crate::domain::Actor;
 use crate::entity::{store_info, users};
@@ -207,6 +207,51 @@ pub async fn update_app_settings(
     Ok(())
 }
 
+/// The webview zoom the till window should open at. The default when the shop
+/// has not been set up yet or nothing was ever saved.
+pub async fn ui_zoom(db: &DatabaseConnection) -> Result<f64, AppError> {
+    let store = store_info::Entity::find_by_id(1_i64).one(db).await?;
+    Ok(store
+        .map(|s| parse_ui_zoom(&s.additional_info))
+        .unwrap_or(UI_ZOOM_DEFAULT))
+}
+
+/// Remember the webview zoom under `additional_info.ui.zoom`, next to the
+/// printer keys and the settings sections, so a restart opens the window the
+/// way it was left. Returns the factor as stored — clamped and rounded — so the
+/// caller applies exactly what a restart will.
+pub async fn save_ui_zoom(db: &DatabaseConnection, factor: f64) -> Result<f64, AppError> {
+    let factor = clamp_ui_zoom(factor)
+        .ok_or_else(|| AppError::Validation("Faktor zoom tidak valid.".into()))?;
+
+    let store = store_info::Entity::find_by_id(1_i64)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+
+    let mut info: serde_json::Value = store
+        .additional_info
+        .as_ref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(serde_json::json!({}));
+    // `info["ui"]["zoom"] = …` builds the object when `ui` is absent but panics
+    // when it holds a non-object, so anything that is not a section is replaced.
+    if !info["ui"].is_object() {
+        info["ui"] = serde_json::json!({});
+    }
+    info["ui"]["zoom"] = serde_json::json!(factor);
+
+    let mut active: store_info::ActiveModel = store.into();
+    active.additional_info =
+        Set(Some(serde_json::to_string(&info).map_err(|e| {
+            AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
+        })?));
+    active.updated_at = Set(Some(now_ts()));
+    active.update(db).await?;
+
+    Ok(factor)
+}
+
 /// Change the actor's own PIN. The current PIN is the proof of identity here, so
 /// this is the one privileged action that does not need a role.
 pub async fn change_pin(
@@ -323,4 +368,62 @@ pub fn database_info() -> Result<DatabaseInfo, AppError> {
         size_bytes: metadata.len(),
         path: db_path.to_string_lossy().to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{insert_store_info, setup_test_db};
+
+    #[tokio::test]
+    async fn ui_zoom_defaults_before_the_shop_is_set_up_and_before_a_save() {
+        let db = setup_test_db().await;
+        assert_eq!(ui_zoom(&db).await.expect("read"), UI_ZOOM_DEFAULT);
+
+        insert_store_info(&db, false).await;
+        assert_eq!(ui_zoom(&db).await.expect("read"), UI_ZOOM_DEFAULT);
+    }
+
+    #[tokio::test]
+    async fn ui_zoom_round_trips_through_the_settings_blob_without_touching_its_neighbours() {
+        let db = setup_test_db().await;
+        insert_store_info(&db, true).await;
+
+        let stored = save_ui_zoom(&db, 1.5).await.expect("save");
+        assert_eq!(stored, 1.5);
+        assert_eq!(ui_zoom(&db).await.expect("read"), 1.5);
+
+        // The sales section the fixture seeded is still there.
+        let settings = get_app_settings(&db).await.expect("settings");
+        assert!(settings.sales.allow_negative_stock);
+    }
+
+    #[tokio::test]
+    async fn ui_zoom_is_stored_clamped() {
+        let db = setup_test_db().await;
+        insert_store_info(&db, false).await;
+
+        assert_eq!(save_ui_zoom(&db, 5.0).await.expect("save"), 2.0);
+        assert_eq!(ui_zoom(&db).await.expect("read"), 2.0);
+
+        assert_eq!(save_ui_zoom(&db, 0.0).await.expect("save"), 0.5);
+        assert_eq!(ui_zoom(&db).await.expect("read"), 0.5);
+    }
+
+    #[tokio::test]
+    async fn a_zoom_that_is_not_a_number_is_refused() {
+        let db = setup_test_db().await;
+        insert_store_info(&db, false).await;
+
+        let err = save_ui_zoom(&db, f64::NAN).await.expect_err("refused");
+        assert!(matches!(err, AppError::Validation(_)));
+        assert_eq!(ui_zoom(&db).await.expect("read"), UI_ZOOM_DEFAULT);
+    }
+
+    #[tokio::test]
+    async fn saving_zoom_before_onboarding_is_a_not_found() {
+        let db = setup_test_db().await;
+        let err = save_ui_zoom(&db, 1.2).await.expect_err("no store row");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
 }
