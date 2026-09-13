@@ -16,7 +16,6 @@ vi.mock("@/lib/toast", () => ({
 import { installApiMock, apiFailure, type ApiMock } from "@/test-utils/api-mock"
 import { TransactionDetailDialog } from "./components/history/history-table"
 import type { HistoryPaymentItem } from "./types"
-import type { PpobMarkup } from "./types/auth"
 
 /** A PLN postpaid row as `/ppob/history` answers it: `total` null, `amount`
  * the figure the outlet paid with the admin fee already in it. */
@@ -48,16 +47,6 @@ const PLN_ROW: HistoryPaymentItem = {
   invoiceUrl: null,
   igrDesc: "Post paid",
   noRef: "13516345",
-}
-
-const MARKUP: PpobMarkup = {
-  pulsa: { type: "fixed", value: 2000 },
-  data: { type: "fixed", value: 2000 },
-  pln: { type: "fixed", value: 1500 },
-  pdam: { type: "fixed", value: 2500 },
-  bpjs: { type: "fixed", value: 2500 },
-  emoney: { type: "fixed", value: 1000 },
-  custom_prices: {},
 }
 
 const onClose = vi.fn()
@@ -92,32 +81,21 @@ beforeEach(() => {
   onClose.mockClear()
   toastError.mockClear()
   api = installApiMock({
-    "GET /settings/ppob/markup": MARKUP,
     "POST /ppob/history/*/print": null,
   })
 })
 
 describe("Cetak struk dari detail riwayat PPOB", () => {
-  it("mengisi biaya layanan dari markup layanan di pengaturan PPOB", async () => {
+  it("biaya layanan mulai kosong dan grand total sama dengan modal", () => {
     renderDialog()
 
-    // Markup PLN 1.500 dari pengaturan, di atas modal 73.229.
-    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
-    expect(screen.getByText("Rp 73.229")).toBeInTheDocument()
-    expect(screen.getByText("Rp 74.729")).toBeInTheDocument()
-  })
-
-  it("biaya layanan nol bila markup tidak ada", async () => {
-    api.route("GET /settings/ppob/markup", apiFailure(403, "forbidden", "Tidak boleh"))
-    renderDialog()
-
-    await waitFor(() => expect(priceInput()).toHaveValue("0"))
+    expect(priceInput()).toHaveValue("")
+    expect(priceInput()).toHaveAttribute("placeholder", "0")
     expect(screen.getAllByText("Rp 73.229")).toHaveLength(2)
   })
 
-  it("menghitung grand total langsung dan menandai diskon", async () => {
+  it("menghitung grand total langsung dan menandai diskon", () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
     setPrice("6771")
     expect(screen.getByText("Rp 80.000")).toBeInTheDocument()
@@ -128,7 +106,6 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
 
   it("mencetak dengan biaya layanan yang dipilih lalu menutup dialog", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
     setPrice("6771")
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
@@ -146,7 +123,6 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
       apiFailure(422, "validation", "Printer belum dikonfigurasi"),
     )
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
 
@@ -155,11 +131,10 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
     )
   })
 
-  it("tidak bisa mencetak tanpa biaya layanan", async () => {
+  it("tidak bisa mencetak dengan diskon di bawah modal", () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
-    setPrice("")
+    setPrice("-80000")
 
     expect(screen.getByText("Grand Total").nextElementSibling).toHaveTextContent("-")
     expect(screen.getByRole("button", { name: "Cetak Struk" })).toBeDisabled()

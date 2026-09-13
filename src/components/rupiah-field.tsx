@@ -9,6 +9,8 @@ interface RupiahFieldProps {
   onChange: (value: number | null) => void
   /** Whether a leading minus is accepted (a discount). */
   allowNegative?: boolean
+  /** Shown while the field is empty. */
+  placeholder?: string
   isDisabled?: boolean
   className?: string
 }
@@ -41,6 +43,7 @@ export function RupiahField({
   value,
   onChange,
   allowNegative = false,
+  placeholder,
   isDisabled,
   className,
 }: RupiahFieldProps) {
@@ -55,7 +58,7 @@ export function RupiahField({
       onChange={(text) => onChange(parseTyped(text, allowNegative))}
     >
       <Label>{label}</Label>
-      <Input className="text-right tabular-nums" />
+      <Input className="text-right tabular-nums" placeholder={placeholder} />
     </TextField>
   )
 }

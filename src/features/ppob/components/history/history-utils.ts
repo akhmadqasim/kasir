@@ -13,9 +13,7 @@ import {
 } from "lucide-react"
 import { toLocalDateString } from "@/lib/format"
 import { PPOB_SERVICE_COLORS, type PpobServiceKey } from "../../constants"
-import { DEFAULT_PPOB_MARKUP, resolvePpobSellPrice } from "../../pricing"
 import type { HistoryPaymentItem } from "../../types"
-import type { PpobMarkup, PpobMarkupConfig } from "../../types/auth"
 
 export interface ServiceInfo {
   /** The canonical service, or `null` for a row nothing here recognises. */
@@ -277,52 +275,4 @@ export function getProviderTotal(item: HistoryPaymentItem): number | null {
   if (item.total != null) return item.total
   if (item.basePrice != null) return item.basePrice + (item.adminFee ?? 0)
   return null
-}
-
-/** The services PPOB settings carry a markup block for. */
-type MarkupServiceKey = {
-  [K in keyof PpobMarkup]: PpobMarkup[K] extends PpobMarkupConfig ? K : never
-}[keyof PpobMarkup]
-
-const MARKUP_SERVICES: readonly MarkupServiceKey[] = [
-  "pulsa",
-  "data",
-  "pln",
-  "pdam",
-  "bpjs",
-  "emoney",
-]
-
-function hasMarkupBlock(key: PpobServiceKey): key is MarkupServiceKey {
-  return (MARKUP_SERVICES as readonly string[]).includes(key)
-}
-
-/** The markup block in PPOB settings that applies to a service, if it has one. */
-function markupFor(
-  key: PpobServiceKey | null,
-  markup: PpobMarkup | null | undefined,
-): PpobMarkupConfig {
-  return key && markup && hasMarkupBlock(key) ? markup[key] : DEFAULT_PPOB_MARKUP
-}
-
-/**
- * The default "Harga Jual" for printing a history row: the provider's total
- * plus the shop's markup for that service, or a custom price for the nominal
- * — the same rule that prices the line at the counter. Services with no
- * markup block (payment point, transfer) start at cost, and so does every
- * row until the settings have loaded.
- */
-export function getDefaultSellPrice(
-  item: HistoryPaymentItem,
-  providerTotal: number,
-  markup: PpobMarkup | null | undefined,
-): number {
-  const { key } = detectServiceType(item)
-  return resolvePpobSellPrice({
-    name: buildDescription(item),
-    serviceType: key ?? "",
-    vendorCost: providerTotal,
-    markup: markupFor(key, markup),
-    customPrices: markup?.custom_prices ?? {},
-  })
 }

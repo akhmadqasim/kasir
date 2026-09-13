@@ -16,8 +16,14 @@ export function HistoryPrintFields({ control }: { control: HistoryPrintControl }
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Thousands grouped as they are typed; a negative fee is a discount. */}
-      <RupiahField allowNegative label={t.ppob.serviceFee} value={fee} onChange={setFee} />
+      {/* Starts empty, which is no fee; a negative fee is a discount. */}
+      <RupiahField
+        allowNegative
+        label={t.ppob.serviceFee}
+        placeholder="0"
+        value={fee}
+        onChange={setFee}
+      />
 
       <SummaryList items={[grandTotal]} layout="row" />
     </div>
