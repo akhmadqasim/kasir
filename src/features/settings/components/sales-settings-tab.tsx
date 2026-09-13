@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
-import { Card, Description, Label, NumberField, Switch } from "@heroui/react"
+import { Card, Description, Switch } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { OptionSelect } from "@/components/option-select"
@@ -10,28 +10,21 @@ import { id } from "@/i18n/id"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import { getAppSettings, toUpdateAppSettingsInput, updateAppSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
-import { isEmptyNumberFieldValue } from "@/lib/number-field"
 import type { AppSettings } from "../types"
-
-/** Same bounds as the server's clamp: one minute to thirty days. */
-const TIMEOUT_MIN = 1
-const TIMEOUT_MAX = 60 * 24 * 30
 
 export function SalesSettingsTab() {
   const queryClient = useQueryClient()
 
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState("cash")
-  const [sessionTimeout, setSessionTimeout] = useState(TIMEOUT_MAX)
   const [initialized, setInitialized] = useState(false)
 
   const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
 
   if (settingsQuery.data && !initialized) {
-    const { sales, security } = settingsQuery.data
+    const { sales } = settingsQuery.data
     setAllowNegativeStock(sales.allow_negative_stock)
     setDefaultPaymentMethod(sales.default_payment_method)
-    setSessionTimeout(security.session_timeout_minutes)
     setInitialized(true)
   }
 
@@ -50,7 +43,6 @@ export function SalesSettingsTab() {
           allow_negative_stock: allowNegativeStock,
           default_payment_method: defaultPaymentMethod,
         },
-        security: { session_timeout_minutes: sessionTimeout },
       })
     },
     {
@@ -101,27 +93,6 @@ export function SalesSettingsTab() {
           variant="secondary"
           onChange={(value) => setDefaultPaymentMethod(value ?? "")}
         />
-
-        {/* The idle limit lives here rather than on a tab of its own: it is the
-            one security knob, and it decides how often the cashier logs in. */}
-        <NumberField
-          fullWidth
-          maxValue={TIMEOUT_MAX}
-          minValue={TIMEOUT_MIN}
-          value={sessionTimeout}
-          variant="secondary"
-          onChange={(value) => {
-            if (!isEmptyNumberFieldValue(value)) setSessionTimeout(value)
-          }}
-        >
-          <Label>{id.settings.sessionTimeout}</Label>
-          <NumberField.Group>
-            <NumberField.DecrementButton />
-            <NumberField.Input className="tabular-nums" />
-            <NumberField.IncrementButton />
-          </NumberField.Group>
-          <Description>{id.settings.sessionTimeoutDesc}</Description>
-        </NumberField>
       </Card.Content>
       <Card.Footer>
         <PendingButton

@@ -302,8 +302,6 @@ export const id = {
     testPrintFailed: "Test print gagal",
     printerSettingsSaved: "Pengaturan printer berhasil disimpan",
     // Security
-    sessionTimeout: "Timeout Sesi",
-    sessionTimeoutDesc: "Menit tanpa aktivitas sebelum kasir harus login lagi; tiap dipakai sesi diperpanjang otomatis (43200 = 30 hari)",
     changePin: "Ganti PIN",
     currentPin: "PIN Saat Ini",
     newPin: "PIN Baru",

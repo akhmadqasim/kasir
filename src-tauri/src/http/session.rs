@@ -34,7 +34,7 @@ const TOKEN_BYTES: usize = 32;
 /// forward, but this is SQLite behind a one-connection pool: a write per request
 /// would serialise reads behind session bookkeeping. Refreshing at most once a
 /// minute keeps the sliding window accurate to within a minute, which is far
-/// finer than the 30-minute default timeout it slides.
+/// finer than the month-long window it slides.
 const TOUCH_INTERVAL_SECS: i64 = 60;
 
 /// Bounds on the configured timeout. Zero would expire a session before the
@@ -85,12 +85,14 @@ fn clamp_timeout(minutes: i64) -> i64 {
     minutes.clamp(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES)
 }
 
-/// The configured idle timeout, in minutes, already clamped to something sane.
-pub async fn timeout_minutes(db: &DatabaseConnection) -> Result<i64, AppError> {
-    let settings = crate::services::settings::get_app_settings(db).await?;
-    Ok(clamp_timeout(
-        settings.security.session_timeout_minutes as i64,
-    ))
+/// The idle timeout, in minutes: the ceiling, always. There is no setting
+/// behind it any more — a till is one machine in one shop, and an idle limit
+/// short enough to matter only sent the cashier back to the login screen
+/// after every quiet spell. The window still slides with each request, so
+/// what remains is a sweep of sessions nobody has used for a month. The
+/// `db` argument stays so the callers do not care where the number comes from.
+pub async fn timeout_minutes(_db: &DatabaseConnection) -> Result<i64, AppError> {
+    Ok(MAX_TIMEOUT_MINUTES)
 }
 
 /// Mint a session for `user_id` and return the raw token — the only moment it
