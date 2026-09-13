@@ -287,10 +287,8 @@ describe("product search panel", () => {
   })
 
   /**
-   * Ubin Favorit. Yang dijaga di sini bukan rupanya melainkan bentuknya: pin
-   * adalah tombol tersendiri di sebelah ubin, bukan `span role="button"` di
-   * dalamnya — tombol di dalam tombol tidak bisa dicapai papan ketik dan bukan
-   * HTML yang sah.
+   * Ubin Favorit: satu tombol per produk, tanpa kontrol pin — pin diatur dari
+   * halaman Produk.
    */
   describe("shortcut tiles", () => {
     const SHORTCUTS = [
@@ -323,69 +321,12 @@ describe("product search panel", () => {
       expect(cartLines()[0].product_id).toBe(8)
     })
 
-    it("keeps the pin control a real button beside the tile, not nested inside it", async () => {
+    it("has no pin control on the tile — pinning lives on the Produk page", async () => {
       renderPanel()
+      await screen.findByRole("button", { name: /Teh Botol/ })
 
-      const pin = await screen.findByRole("button", { name: "Pin Teh Botol" })
-      expect(pin.tagName).toBe("BUTTON")
-      // `closest` mulai dari elemennya sendiri, jadi yang membuktikan tidak ada
-      // tombol di dalam tombol adalah pencarian dari induknya ke atas.
-      expect(pin.parentElement?.closest("button")).toBeNull()
-    })
-
-    it("pins a product from its tile without adding it to the cart", async () => {
-      renderPanel()
-
-      fireEvent.click(await screen.findByRole("button", { name: "Pin Teh Botol" }))
-
-      await waitFor(() => expect(api.callsFor("POST /products/8/pin")).toHaveLength(1))
-      expect(cartLines()).toHaveLength(0)
-    })
-
-    /**
-     * Melepas pin lewat papan ketik. Menahan tidak bisa dilakukan dengan Tab,
-     * jadi Enter melepasnya langsung — tanpa ini tombolnya perhentian Tab yang
-     * tidak melakukan apa-apa.
-     */
-    it("unpins a pinned product from the keyboard", async () => {
-      renderPanel()
-
-      const unpin = await screen.findByRole("button", {
-        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
-      })
-      fireEvent.keyDown(unpin, { key: "Enter" })
-      fireEvent.keyUp(unpin, { key: "Enter" })
-
-      await waitFor(() => expect(api.callsFor("POST /products/7/pin")).toHaveLength(1))
-    })
-
-    /**
-     * Menahan pin selama `HOLD_DURATION` melepasnya. Ini yang membuktikan
-     * handler pointer-nya selamat dari `filterDOMProps` HeroUI — `Button`
-     * membuang `onClick`, jadi kalau pointer-nya ikut tersaring, fitur ini mati
-     * tanpa satu pun test lain gagal.
-     */
-    it("unpins a pinned product after the pin is held", async () => {
-      renderPanel()
-
-      const unpin = await screen.findByRole("button", {
-        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
-      })
-      fireEvent.pointerDown(unpin)
-      // Jam-nya beku (`Date.now` di-mock), jadi tahanannya dimajukan dengan
-      // memajukan jam itu: tik interval berikutnya membaca 600ms sudah lewat.
-      nowMs += 600
-
-      await waitFor(() => expect(api.callsFor("POST /products/7/pin")).toHaveLength(1))
-    })
-
-    it("offers a hold-to-unpin control for a pinned product", async () => {
-      renderPanel()
-
-      const unpin = await screen.findByRole("button", {
-        name: "Tahan untuk hapus pin Yakult Merah, Mangga, Strawberry 5 pcs",
-      })
-      expect(unpin.tagName).toBe("BUTTON")
+      expect(screen.queryByRole("button", { name: /Pin Teh Botol/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: /hapus pin/ })).not.toBeInTheDocument()
     })
   })
 })

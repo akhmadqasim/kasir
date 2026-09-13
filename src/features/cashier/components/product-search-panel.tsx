@@ -11,7 +11,6 @@ import { useApiQuery } from "@/hooks/use-api"
 import {
   getPopularProducts,
   searchProducts,
-  toggleProductPin,
   trackProductSelection,
 } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -67,11 +66,7 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [pickedProductValue, setPickedProductValue] = useState<string | undefined>()
-  const [holdingPinId, setHoldingPinId] = useState<number | null>(null)
-  const [holdProgress, setHoldProgress] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const holdStartRef = useRef<number>(0)
   const searchQueryRef = useRef("")
   const inputTimingRef = useRef({ query: "", startedAt: 0, lastInputAt: 0 })
   const addItem = useCartStore((s) => s.addItem)
@@ -187,65 +182,6 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     },
     [queryClient],
   )
-
-  const handleTogglePin = useCallback(
-    async (productId: number) => {
-      try {
-        const pinned = await toggleProductPin(productId)
-        toast.success(pinned ? "Produk di-pin" : "Pin dihapus")
-        queryClient.invalidateQueries({ queryKey: queryKeys.products.popularAll })
-      } catch {
-        toast.error("Gagal mengubah pin")
-      }
-    },
-    [queryClient],
-  )
-
-  const HOLD_DURATION = 500
-
-  const startHoldUnpin = useCallback(
-    (e: React.PointerEvent, productId: number) => {
-      e.stopPropagation()
-      e.preventDefault()
-      // Dua jari di dua pin sekaligus (layar sentuh) meninggalkan interval
-      // pertama tetap jalan: interval kedua menimpa ref-nya, lalu
-      // `clearInterval` di dalam callback pertama justru mematikan yang kedua
-      // dan menyisakan yang pertama memanggil `handleTogglePin` tiap 16ms.
-      if (holdTimerRef.current) clearInterval(holdTimerRef.current)
-      setHoldingPinId(productId)
-      setHoldProgress(0)
-      holdStartRef.current = Date.now()
-      holdTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - holdStartRef.current
-        const pct = Math.min((elapsed / HOLD_DURATION) * 100, 100)
-        setHoldProgress(pct)
-        if (elapsed >= HOLD_DURATION) {
-          clearInterval(holdTimerRef.current!)
-          holdTimerRef.current = null
-          setHoldingPinId(null)
-          setHoldProgress(0)
-          handleTogglePin(productId)
-        }
-      }, 16)
-    },
-    [handleTogglePin],
-  )
-
-  const cancelHoldUnpin = useCallback(() => {
-    if (holdTimerRef.current) {
-      clearInterval(holdTimerRef.current)
-      holdTimerRef.current = null
-    }
-    setHoldingPinId(null)
-    setHoldProgress(0)
-  }, [])
-
-  // Berpindah layar sambil menahan pin meninggalkan interval-nya hidup.
-  useEffect(() => {
-    return () => {
-      if (holdTimerRef.current) clearInterval(holdTimerRef.current)
-    }
-  }, [])
 
   const addToCart = useCallback(
     (product: Product | ShortcutProduct, isManualSearch: boolean) => {
@@ -521,16 +457,8 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
                     {shortcutProducts.map((product) => (
                       <ShortcutTile
                         key={product.id}
-                        // Hanya ubin yang sedang ditahan yang menerima angka
-                        // yang berubah tiap 16ms; sisanya tetap `0` dan
-                        // dilewati `memo`.
-                        holdProgress={holdingPinId === product.id ? holdProgress : 0}
-                        isHolding={holdingPinId === product.id}
                         product={product}
-                        onHoldCancel={cancelHoldUnpin}
-                        onHoldStart={startHoldUnpin}
                         onSelect={handleShortcutSelect}
-                        onTogglePin={handleTogglePin}
                       />
                     ))}
                   </div>
