@@ -139,9 +139,10 @@ function TransactionDetailDialog({
             <Button slot="close" variant="tertiary">
               {t.common.close}
             </Button>
-            {/* Only a settled transaction has a struk worth printing; the
-                server refuses the others, so the button is not offered. */}
-            {item && normalizeStatus(item.status) === "sukses" ? (
+            {/* Only a settled transaction the server can look up again has a
+                struk worth printing; it refuses the others, so the button
+                is not offered. */}
+            {item?.trxId && normalizeStatus(item.status) === "sukses" ? (
               <Button onPress={() => onPrint(item)}>{t.transactions.printReceipt}</Button>
             ) : null}
           </Modal.Footer>

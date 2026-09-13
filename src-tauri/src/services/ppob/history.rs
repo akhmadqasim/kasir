@@ -201,6 +201,15 @@ fn cached_detail(trx_id: &str) -> Option<HistoryPaymentItem> {
         .map(|(_, item)| item.clone())
 }
 
+/// Drop every remembered row. Called when the Mitra session is cleared: the
+/// cache is keyed by `trx_id` alone, and the next account must not be able
+/// to print the last one's struk from it.
+pub fn forget_details() {
+    if let Ok(mut cache) = DETAIL_CACHE.lock() {
+        cache.clear();
+    }
+}
+
 fn remember_detail(item: &HistoryPaymentItem) {
     let Some(trx_id) = item.trx_id.clone() else {
         return;
