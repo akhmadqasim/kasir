@@ -5,7 +5,6 @@ import { Printer } from "lucide-react"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { ReceiptPreview } from "@/features/receipt"
-import { SendWhatsappButton } from "@/features/whatsapp"
 import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
 import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
@@ -244,7 +243,6 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             <Kbd.Content>Enter</Kbd.Content>
           </Kbd>
         </PendingButton>
-        <SendWhatsappButton transactionId={transaction.id} />
         <Button autoFocus onPress={onNewTransaction}>
           Transaksi baru
           {/* Di tombol primary teks abu-abu Kbd tenggelam di biru; ikut warna teks tombolnya. */}

@@ -187,7 +187,7 @@ describe("layar pengaturan", () => {
       within(tablist)
         .getAllByRole("tab")
         .map((tab) => tab.textContent),
-    ).toEqual(["Toko", "Penjualan", "Printer", "WhatsApp", "Data", "Aplikasi"])
+    ).toEqual(["Toko", "Penjualan", "Printer", "Data", "Aplikasi"])
     unmount()
 
     useAuthStore.setState({ user: { ...ADMIN, role: "kasir" } })

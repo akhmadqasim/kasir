@@ -44,9 +44,6 @@ coverage/
 
 # Tauri
 src-tauri/WixTools/
-# WhatsApp sidecar binary — a dev-time placeholder (build.mjs) or the real
-# vendored node.exe (scripts/release.ps1), never something to commit.
-src-tauri/binaries/
 
 # Temp
 tmp/

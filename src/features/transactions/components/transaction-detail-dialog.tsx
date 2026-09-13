@@ -24,9 +24,7 @@ import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
-import { SendWhatsappButton } from "@/features/whatsapp"
 import { useApiQuery } from "@/hooks/use-api"
-import { getWhatsappSends } from "@/lib/api/whatsapp"
 import {
   getTransactionDetail,
   retryPpobFulfillment,
@@ -119,14 +117,6 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
     () => getTransactionDetail(transaction!.id),
     { enabled: !!transaction },
   )
-
-  // "Terkirim ke 0812...": the most recent successful WhatsApp send, if any.
-  const { data: whatsappSends } = useApiQuery(
-    queryKeys.whatsapp.sends(transaction?.id ?? 0),
-    () => getWhatsappSends(transaction!.id),
-    { enabled: !!transaction },
-  )
-  const lastWhatsappSend = whatsappSends?.find((send) => send.status === "sent")
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
@@ -415,18 +405,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
                   {(detail.transaction.notes ||
                     detail.transaction.deleted_reason ||
-                    ppobItem ||
-                    lastWhatsappSend) && (
+                    ppobItem) && (
                     <section className="flex flex-col gap-2">
                       <p className="font-medium text-foreground">Info Tambahan</p>
-                      {lastWhatsappSend && (
-                        <InfoPanel className="flex flex-col gap-1">
-                          <p className="text-xs">WhatsApp</p>
-                          <p className="text-foreground">
-                            {id.whatsapp.lastSentTo(lastWhatsappSend.phone)}
-                          </p>
-                        </InfoPanel>
-                      )}
                       {detail.transaction.notes && (
                         <InfoPanel className="flex flex-col gap-1">
                           <p className="text-xs">{id.transactions.notes}</p>
@@ -537,7 +518,6 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                         }}
                       />
                     )}
-                    <SendWhatsappButton transactionId={detail.transaction.id} />
                     <Button onPress={handlePrint}>
                       <Printer />
                       {id.transactions.printReceipt}

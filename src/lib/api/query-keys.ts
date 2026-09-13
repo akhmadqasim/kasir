@@ -162,13 +162,6 @@ export const queryKeys = {
     settings: ["printers", "settings"] as const,
   },
 
-  whatsapp: {
-    all: ["whatsapp"] as const,
-    status: ["whatsapp", "status"] as const,
-    settings: ["whatsapp", "settings"] as const,
-    sends: (transactionId: number) => ["whatsapp", "sends", transactionId] as const,
-  },
-
   ppob: {
     all: ["ppob"] as const,
     balance: ["ppob", "balance"] as const,

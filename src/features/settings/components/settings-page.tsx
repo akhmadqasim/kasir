@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { Tabs } from "@heroui/react"
-import { Store, ShoppingCart, Printer, MessageCircle, Database, Download } from "lucide-react"
+import { Store, ShoppingCart, Printer, Database, Download } from "lucide-react"
 
 import { useAuthStore } from "@/features/auth"
 import { AppUpdateCard } from "@/features/updater"
@@ -8,7 +8,6 @@ import { id } from "@/i18n/id"
 import { StoreInfoTab } from "./store-info-tab"
 import { SalesSettingsTab } from "./sales-settings-tab"
 import { PrinterSettingsTab } from "./printer-settings-tab"
-import { WhatsappTab } from "./whatsapp-tab"
 import { DataTab } from "./data-tab"
 
 interface SettingsTab {
@@ -50,12 +49,6 @@ export function SettingsPage() {
     },
     ...(isAdmin
       ? [
-          {
-            key: "whatsapp",
-            label: id.settings.tabWhatsapp,
-            icon: <MessageCircle aria-hidden="true" className="size-4" />,
-            panel: <WhatsappTab />,
-          },
           {
             key: "data",
             label: id.settings.tabData,

@@ -93,6 +93,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/023_ppob_receipts.sql"),
     ),
     (
+        // The WhatsApp receipt feature this table backed was removed; kept
+        // here (and in `migrations/024_whatsapp.sql`) so the migration runner
+        // still sees the same applied list on installs that ran it — the
+        // `whatsapp_sends` table stays in the schema, unused.
         "024_whatsapp",
         include_str!("../../migrations/024_whatsapp.sql"),
     ),

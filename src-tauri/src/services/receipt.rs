@@ -152,8 +152,7 @@ async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget, AppError> 
 /// requiring a printer to be configured at all.
 ///
 /// [`print_target`] builds on this and adds the one thing only printing
-/// needs: somewhere to send the bytes. Sending a struk over WhatsApp needs
-/// none of that, so it reads this directly instead.
+/// needs: somewhere to send the bytes.
 pub(crate) struct ReceiptRenderSettings {
     pub store: store_info::Model,
     pub paper_width: u8,
@@ -179,9 +178,9 @@ pub(crate) async fn receipt_render_settings(
 
 /// Assemble the sale receipt's [`ReceiptData`] — everything
 /// [`crate::printing::receipt::format_receipt_text`] needs — from a
-/// transaction. Shared by [`print`] and by the WhatsApp sender
-/// (`services::whatsapp::receipt_image`), so a struk sent by chat is drawn
-/// from exactly the same data as one printed on the thermal printer.
+/// transaction. Shared by [`print`] and by the receipt-lines endpoint the
+/// frontend's preview reads, so the preview never drifts from what actually
+/// prints.
 pub(crate) async fn build_sale_receipt_data(
     db: &DatabaseConnection,
     store: &store_info::Model,
