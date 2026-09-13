@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query"
 
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
+import { toast } from "@/lib/toast"
+import type { ApiError } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
 import { checkForUpdate, downloadUpdate, getUpdateStatus, installUpdate } from "@/lib/api/updates"
 import type { UpdatePhase, UpdateStatus } from "../types"
@@ -46,16 +48,19 @@ export function useUpdateStatus() {
  * The three writes. Each answers with the status it moved to, which is written
  * straight into the query cache so the screen updates before the next poll.
  *
- * Errors are left to the caller: a failed explicit check is a toast, a failed
- * download is already in the status the server reports.
+ * Every one of them is something a person pressed a button for, so a refusal
+ * — a 422 because a background check just emptied the release, a 403, the LAN
+ * dropping — is a toast rather than a spinner that stops for no reason.
  */
 export function useUpdateActions() {
   const queryClient = useQueryClient()
   const seed = (status: UpdateStatus) => queryClient.setQueryData(queryKeys.updates.status, status)
 
-  const check = useApiMutation<UpdateStatus>(checkForUpdate, { onSuccess: seed })
-  const download = useApiMutation<UpdateStatus>(downloadUpdate, { onSuccess: seed })
-  const install = useApiMutation<UpdateStatus>(installUpdate, { onSuccess: seed })
+  const options = { onSuccess: seed, onError: (error: ApiError) => toast.error(error.message) }
+
+  const check = useApiMutation<UpdateStatus>(checkForUpdate, options)
+  const download = useApiMutation<UpdateStatus>(downloadUpdate, options)
+  const install = useApiMutation<UpdateStatus>(installUpdate, options)
 
   return { check, download, install }
 }

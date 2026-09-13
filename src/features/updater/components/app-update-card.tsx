@@ -7,7 +7,6 @@ import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useAuthStore } from "@/features/auth"
 import { id as t } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
-import { toast } from "@/lib/toast"
 import { useInstallConfirmation } from "../hooks/use-install-confirmation"
 import { isBusyPhase, useUpdateActions, useUpdateStatus } from "../hooks/use-update-status"
 import { describeStatus, isVisibleFailure } from "../lib/describe-status"
@@ -27,8 +26,6 @@ export function AppUpdateCard() {
   const { data: status } = useUpdateStatus()
   const { check, download, install } = useUpdateActions()
   const confirmation = useInstallConfirmation(install)
-
-  const runCheck = () => check.mutate(undefined, { onError: (error) => toast.error(error.message) })
 
   const statusText = status ? describeStatus(status) : "—"
   const statusTone: SummaryItem["tone"] = isVisibleFailure(status) ? "danger" : "default"
@@ -94,7 +91,7 @@ export function AppUpdateCard() {
           isDisabled={isBusyPhase(status?.phase)}
           isPending={check.isPending}
           variant="secondary"
-          onPress={runCheck}
+          onPress={() => check.mutate()}
         >
           <RefreshCw />
           {t.updater.checkNow}

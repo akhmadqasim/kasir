@@ -19,25 +19,28 @@ import { UpdateProgress } from "./update-progress"
  * strip — and a check that *failed* silently stays silent too; only failures
  * of something a person started are shown.
  *
- * "Nanti" hides the current version for this session. It comes back on the
- * next launch, which is the next natural moment to ask.
+ * "Nanti" hides that one offer — the phase and the version — for this session.
+ * Putting off the download does not put off the later "mulai ulang", and
+ * everything comes back on the next launch, the next natural moment to ask.
  */
 export function UpdateBanner() {
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const { data: status } = useUpdateStatus()
   const { download, install } = useUpdateActions()
   const confirmation = useInstallConfirmation(install)
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
+  const [dismissed, setDismissed] = useState<string | null>(null)
 
   if (!isAdmin || !status) return null
 
   // Only the two phases that wait on a person can be put off; a download or
   // an install in progress is shown regardless.
-  const dismissable =
-    status.phase === "available" || status.phase === "ready" ? status.version : null
-  if (dismissable !== null && dismissable === dismissedVersion) return null
+  const offer =
+    status.phase === "available" || status.phase === "ready"
+      ? `${status.phase}:${status.version}`
+      : null
+  if (offer !== null && offer === dismissed) return null
 
-  const dismiss = () => setDismissedVersion(dismissable)
+  const dismiss = () => setDismissed(offer)
 
   let alert: ReactNode = null
 
@@ -152,10 +155,12 @@ export function UpdateBanner() {
 
   if (alert === null) return null
 
+  // `print:hidden`: the layout prints its content pane for the shift report,
+  // and an update offer is not part of that document.
   return (
-    <>
+    <div className="print:hidden">
       {alert}
       <InstallUpdateDialog {...confirmation.dialogProps} />
-    </>
+    </div>
   )
 }

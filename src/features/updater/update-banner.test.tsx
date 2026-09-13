@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { User } from "@/features/auth/types"
 import { AppUpdateCard } from "./components/app-update-card"
@@ -47,7 +48,7 @@ function renderWithQuery(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) }
 }
 
 beforeEach(() => {
@@ -122,12 +123,17 @@ describe("UpdateBanner", () => {
     expect(screen.getByRole("progressbar")).toBeInTheDocument()
   })
 
-  it("'Nanti' menyembunyikan tawaran versi itu", async () => {
+  it("'Nanti' menyembunyikan tawaran itu saja, bukan tahap berikutnya", async () => {
     api = installApiMock({ "GET /updates": AVAILABLE })
-    const { container } = renderWithQuery(<UpdateBanner />)
+    const { client, container } = renderWithQuery(<UpdateBanner />)
 
     fireEvent.click(await screen.findByRole("button", { name: "Nanti" }))
     expect(container).toBeEmptyDOMElement()
+
+    // The download was started elsewhere (the settings card); the offer to
+    // restart is a new question and comes back.
+    client.setQueryData(queryKeys.updates.status, READY)
+    expect(await screen.findByText("Versi 0.6.0 siap dipasang")).toBeInTheDocument()
   })
 
   it("memasang hanya setelah dikonfirmasi", async () => {

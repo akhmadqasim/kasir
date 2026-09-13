@@ -34,6 +34,12 @@ use crate::utils::{logging, AppError};
 /// How long one check may spend talking to GitHub before it is a failure.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Ceiling on one download, start to finish. Generous because a shop
+/// connection can be slow and the installer is tens of megabytes; without any
+/// ceiling a stalled socket leaves the phase `Downloading` forever, and both
+/// `check` and `download` defer to a download in flight.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
 /// Head start the `install` response gets before the process exits.
 const INSTALL_GRACE: Duration = Duration::from_millis(500);
 
@@ -174,7 +180,7 @@ impl Updater {
         // Before the phase moves: an updater nobody attached is a programming
         // error, not a failed check, and leaves the status alone.
         let builder = self.builder()?;
-        self.lock().phase = UpdatePhase::Checking;
+        let before = std::mem::replace(&mut self.lock().phase, UpdatePhase::Checking);
 
         let result = match builder.timeout(CHECK_TIMEOUT).build() {
             Ok(updater) => updater.check().await,
@@ -182,6 +188,12 @@ impl Updater {
         };
 
         let mut inner = self.lock();
+        // A download started while this check was on the wire owns the phase
+        // now; applying a stale answer over it would pair the new metadata
+        // with the old bytes. The next check picks up whatever this one saw.
+        if inner.phase != UpdatePhase::Checking {
+            return Ok(status_of(&inner));
+        }
         match result {
             Ok(Some(update)) => {
                 // A re-check that finds the version already sitting downloaded
@@ -218,11 +230,15 @@ impl Updater {
                 inner.phase = UpdatePhase::UpToDate;
             }
             Err(e) => {
-                let message = describe_check_error(&e);
                 logging::log_error(&format!("Update check failed: {e}"));
-                inner.phase = UpdatePhase::Failed {
-                    step: UpdateStep::Check,
-                    message,
+                // A release already found — or already downloaded — is still
+                // there; an unreachable GitHub does not un-find it.
+                inner.phase = match before {
+                    UpdatePhase::Available { .. } | UpdatePhase::Ready { .. } => before,
+                    _ => UpdatePhase::Failed {
+                        step: UpdateStep::Check,
+                        message: describe_check_error(&e),
+                    },
                 };
             }
         }
@@ -244,11 +260,12 @@ impl Updater {
             ) {
                 return Ok(status_of(&inner));
             }
-            let Some(update) = inner.update.clone() else {
+            let Some(mut update) = inner.update.clone() else {
                 return Err(AppError::Validation(
                     "Belum ada pembaruan untuk diunduh. Periksa pembaruan dulu.".into(),
                 ));
             };
+            update.timeout = Some(DOWNLOAD_TIMEOUT);
             inner.bytes = None;
             inner.phase = UpdatePhase::Downloading {
                 version: update.version.clone(),
