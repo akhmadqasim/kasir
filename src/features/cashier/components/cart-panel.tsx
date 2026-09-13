@@ -43,21 +43,29 @@ interface CartPanelProps {
 }
 
 /**
- * Tombol pintasan di dalam tombol aksinya, setelah label. Dokumentasi `Kbd`
- * tidak punya contoh di dalam `Button`, jadi yang dipakai varian `light`
- * (tanpa latar) supaya tidak ada kotak `bg-default` kedua di atas tombol yang
- * latarnya sudah `bg-default`. Pengikatan tombolnya: F1/F2/F3/F6/F9 di
- * `CartPanel`, F4 di `CashierPage`.
+ * Tombol pintasan di dalam tombol aksinya, setelah label. Di tombol
+ * `tertiary` (tanpa latar) dipakai `Kbd` bawaan dengan kotak abu-abunya,
+ * seperti contoh di dokumentasi; di tombol utama yang biru, varian `light`
+ * supaya tidak ada kotak abu-abu di atas warna aksen. Pengikatan tombolnya:
+ * F1/F2/F3/F6/F9 di `CartPanel`, F4 di `CashierPage`.
  *
  * Spasi di depannya ikut nama aksesibel tombolnya — "Diskon F2", bukan
  * "DiskonF2" — dan tidak menambah jarak di layar karena tombolnya flex.
  * (`aria-keyshortcuts` tidak bisa dipakai: React Aria membuangnya dari `Button`.)
  */
-function ShortcutKey({ children, className }: { children: string; className?: string }) {
+function ShortcutKey({
+  children,
+  className,
+  variant,
+}: {
+  children: string
+  className?: string
+  variant?: "light"
+}) {
   return (
     <>
       {" "}
-      <Kbd className={className} variant="light">
+      <Kbd className={className} variant={variant}>
         <Kbd.Content>{children}</Kbd.Content>
       </Kbd>
     </>
@@ -330,7 +338,9 @@ export function CartPanel({
           >
             Bayar
             {/* `.kbd` memaksa `text-muted`; di atas latar aksen warnanya harus ikut tombolnya. */}
-            <ShortcutKey className="text-accent-foreground">F4</ShortcutKey>
+            <ShortcutKey className="text-accent-foreground" variant="light">
+              F4
+            </ShortcutKey>
           </Button>
         </div>
       </div>
