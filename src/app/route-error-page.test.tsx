@@ -73,7 +73,7 @@ afterEach(() => {
 })
 
 describe("RouteErrorPage", () => {
-  it("names the crash in plain Indonesian and folds the stack under Detail teknis", async () => {
+  it("names the crash in plain Indonesian with the message shown straight away", async () => {
     useAuthStore.setState({ user: KASIR, isResolved: true })
     renderRouter("/broken")
 
@@ -81,10 +81,8 @@ describe("RouteErrorPage", () => {
     expect(screen.getByRole("button", { name: "Coba lagi" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Kembali ke kasir" })).toBeInTheDocument()
 
-    // The stack is for the admin, not the queue: collapsed until asked for.
-    expect(screen.queryByText(/Keranjang tidak bisa dibaca/)).not.toBeVisible()
-    fireEvent.click(screen.getByRole("button", { name: "Detail teknis" }))
-    expect(await screen.findByText(/Keranjang tidak bisa dibaca/)).toBeVisible()
+    // The message is on screen for the admin to photograph, no click needed.
+    expect(screen.getByText(/Keranjang tidak bisa dibaca/)).toBeVisible()
   })
 
   it("sends an admin back to the dashboard, and the home button really navigates", async () => {
@@ -147,6 +145,7 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("Terjadi kesalahan")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Coba lagi" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Kembali ke kasir" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Detail teknis" })).toBeInTheDocument()
+    // The details are on screen straight away, not behind a disclosure.
+    expect(screen.queryByRole("button", { name: "Detail teknis" })).not.toBeInTheDocument()
   })
 })

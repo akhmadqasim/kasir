@@ -150,7 +150,6 @@ export const id = {
     homeCashier: "Kembali ke kasir",
     homeDashboard: "Kembali ke dashboard",
     homeDefault: "Kembali ke halaman utama",
-    technicalDetails: "Detail teknis",
     unknownError: "Kesalahan tidak diketahui",
   },
   transactions: {

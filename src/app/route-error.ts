@@ -56,6 +56,12 @@ function kindOf(error: unknown): RouteErrorKind {
   return "crash"
 }
 
+/**
+ * Yang ditampilkan di kotak detail. Di build dev jejak tumpukan penuh — itu
+ * yang dibutuhkan untuk mencari penyebabnya. Di produksi hanya pesannya: jejak
+ * tumpukan berisi path berkas dan struktur internal aplikasi yang tidak perlu
+ * dipajang di layar kasir, dan bagi admin toko toh tidak bisa dibaca.
+ */
 function formatDetails(error: unknown): string {
   if (isRouteErrorResponse(error)) {
     return [`${error.status} ${error.statusText}`.trim(), stringify(error.data)]
@@ -63,6 +69,7 @@ function formatDetails(error: unknown): string {
       .join("\n")
   }
   if (error instanceof Error) {
+    if (!import.meta.env.DEV) return error.message || t.errorPage.unknownError
     // Chromium sudah menaruh pesan di baris pertama `stack`; WebKit tidak.
     const stack = error.stack ?? ""
     return stack.includes(error.message) ? stack : [error.message, stack].join("\n").trim()
