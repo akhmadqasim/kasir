@@ -183,7 +183,9 @@ export function PpobNotifications() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    // Centred and no wider than a reading column: each card is one message,
+    // and a message stretched across a wide monitor is mostly empty card.
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <SubpageHeader
         actions={
           <>
@@ -236,12 +238,12 @@ export function PpobNotifications() {
           ))}
         </div>
       ) : error ? (
-        <NoData icon={<Bell />} title="Gagal memuat pemberitahuan" tone="danger">
+        <NoData icon={<Bell />} title="Gagal memuat informasi" tone="danger">
           Silakan coba lagi nanti
         </NoData>
       ) : items.length === 0 ? (
         <NoData icon={<Bell />} title={i18n.ppob.noNotifications}>
-          Belum ada pemberitahuan saat ini
+          Belum ada informasi dari Mitra saat ini
         </NoData>
       ) : (
         <>

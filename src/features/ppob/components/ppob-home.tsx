@@ -45,7 +45,7 @@ export function PpobHome() {
       <NavbarActions>
         <Button size="sm" variant="tertiary" onPress={() => navigate("notifications")}>
           <Bell />
-          Notifikasi
+          Informasi
         </Button>
         <Button size="sm" variant="tertiary" onPress={() => navigate("mutasi")}>
           <ArrowUpDown />

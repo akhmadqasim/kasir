@@ -66,7 +66,7 @@ describe("ppob home", () => {
     // History is on the page; the navbar no longer needs a way to it.
     expect(screen.queryByRole("button", { name: "Riwayat" })).toBeNull()
     expect(screen.getByRole("button", { name: "Mutasi" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Notifikasi" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Informasi" })).toBeInTheDocument()
   })
 
   it("opens a service flow from its tile", () => {
