@@ -354,10 +354,6 @@ export function CartPanel({
               <Modal.Heading>Simpan Transaksi</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p>
-                {itemCount} item · {formatRupiah(total)}. Beri label supaya mudah dikenali; boleh
-                kosong.
-              </p>
               <TextField
                 autoFocus
                 fullWidth
