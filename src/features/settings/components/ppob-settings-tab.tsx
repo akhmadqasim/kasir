@@ -320,13 +320,10 @@ export function PpobSettingsTab() {
                         setMarkup((prev) => ({ ...prev, [key]: { ...prev[key], type } }))
                       }}
                     />
-                    {/* Grouping stays off for the same reason as the custom prices
-                        below: without an I18nProvider the parse locale follows the
-                        webview, and a grouped value would not survive a re-read. */}
                     <NumberField
                       aria-label={`Nilai markup ${label}`}
                       className="w-28"
-                      formatOptions={{ useGrouping: false, maximumFractionDigits: 2 }}
+                      formatOptions={{ maximumFractionDigits: 2 }}
                       isDisabled={!enabled}
                       minValue={0}
                       value={config.value > 0 ? config.value : Number.NaN}

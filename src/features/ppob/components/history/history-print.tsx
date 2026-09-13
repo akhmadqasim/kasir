@@ -19,10 +19,9 @@ export function HistoryPrintFields({ control }: { control: HistoryPrintControl }
     <div className="flex flex-col gap-3">
       <NumberField
         fullWidth
-        // Grouping is off on purpose: React Aria parses with the runtime
-        // locale and the app ships no I18nProvider, so a grouped "25.000"
-        // would read as 25 on an en-US webview.
-        formatOptions={{ useGrouping: false, maximumFractionDigits: 0 }}
+        // Whole rupiah with the Indonesian thousands dot; the locale comes
+        // from the app's I18nProvider.
+        formatOptions={{ maximumFractionDigits: 0 }}
         minValue={providerTotal != null ? -providerTotal : undefined}
         value={fee ?? Number.NaN}
         variant="secondary"

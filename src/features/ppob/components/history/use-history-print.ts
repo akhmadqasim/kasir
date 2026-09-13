@@ -18,7 +18,7 @@ import { getDefaultSellPrice, getProviderTotal } from "./history-utils"
  * not start from the default again. Nothing is persisted: the fee lives on
  * the struk, not in the books.
  */
-export function useHistoryPrint(item: HistoryPaymentItem | null) {
+export function useHistoryPrint(item: HistoryPaymentItem | null, onPrinted?: () => void) {
   const trxId = item?.trxId ?? null
   const providerTotal = item ? getProviderTotal(item) : null
 
@@ -47,7 +47,10 @@ export function useHistoryPrint(item: HistoryPaymentItem | null) {
   const hasPrice = sellPrice != null && Number.isFinite(sellPrice) && sellPrice >= 0
 
   const print = useApiMutation(() => printPpobHistoryReceipt(trxId ?? "", sellPrice ?? 0), {
-    onSuccess: () => toast.success(t.ppob.receiptPrinted),
+    onSuccess: () => {
+      toast.success(t.ppob.receiptPrinted)
+      onPrinted?.()
+    },
     onError: (error) => toast.error(`${t.ppob.receiptPrintFailed}: ${error.message}`),
   })
 

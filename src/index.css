@@ -283,4 +283,12 @@
     flex-direction: column;
     gap: calc(var(--spacing) * 4);
   }
+
+  /* NumberField tanpa tombol +/-: grid bawaannya tetap tiga kolom
+     (40px 1fr 40px), jadi input yang sendirian jatuh ke kolom 40px pertama —
+     hanya selebar angkanya, dan klik di sisa kotak tidak memfokuskan apa-apa.
+     Tanpa stepper, kotaknya satu kolom penuh. */
+  .number-field__group:not(:has([slot="decrement"], [slot="increment"])) {
+    grid-template-columns: 1fr;
+  }
 }

@@ -16,6 +16,7 @@ import {
   formatDateTime,
   buildDescription,
   getNominal,
+  getProviderTotal,
 } from "./history-utils"
 
 function PpobStatusBadge({ status }: { status: string | null }) {
@@ -68,11 +69,9 @@ export function TransactionDetailDialog({
   // Only a settled transaction the server can look up again has a struk
   // worth printing; it refuses the others, so no fee field for them.
   const printable = item?.trxId != null && normalizeStatus(item.status) === "sukses"
-  const printing = useHistoryPrint(printable ? item : null)
-  const nominal = item ? getNominal(item) : null
-  const profit =
-    item && item.amount != null && item.basePrice != null ? item.amount - item.basePrice : null
-
+  // The struk is the point of opening the detail; once it is out, so is the dialog.
+  const printing = useHistoryPrint(printable ? item : null, onClose)
+  const providerTotal = item ? getProviderTotal(item) : null
   const referenceItems: SummaryItem[] = item
     ? [
         ...detailItem("No. Transaksi", item.trxId, "mono"),
@@ -86,19 +85,18 @@ export function TransactionDetailDialog({
       ]
     : []
 
+  // What the outlet paid Mitra, and only that. The row carries no sell
+  // price of ours — the history is Mitra's ledger — so "Harga Jual" and
+  // "Profit" are not invented from the admin fee; the fee field below is
+  // where the shop's own price is decided.
   const priceItems: SummaryItem[] = item
     ? [
-        ...(item.basePrice != null ? detailItem("Harga Modal", formatRupiah(item.basePrice)) : []),
-        ...(nominal != null ? detailItem("Harga Jual", formatRupiah(nominal), "strong") : []),
+        ...(item.basePrice != null ? detailItem("Harga Dasar", formatRupiah(item.basePrice)) : []),
         ...(item.adminFee != null && item.adminFee > 0
           ? detailItem("Biaya Admin", formatRupiah(item.adminFee))
           : []),
-        ...(profit != null
-          ? detailItem(
-              "Profit",
-              `${profit >= 0 ? "+" : ""}${formatRupiah(profit)}`,
-              profit >= 0 ? "success" : "danger",
-            )
+        ...(providerTotal != null
+          ? detailItem("Harga Modal", formatRupiah(providerTotal), "strong")
           : []),
       ]
     : []

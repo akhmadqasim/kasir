@@ -96,13 +96,12 @@ export function PpobCustomPrices({
                 {isCustomNominal && <Chip size="sm">custom</Chip>}
               </div>
               {/* NumberField replaces `<input type="number">` and the CSS that used to
-                  hide its spinners. Grouping is off on purpose: React Aria parses with
-                  the runtime locale, and the app ships no I18nProvider, so a grouped
-                  "12.000" would read as 12 on an en-US webview. */}
+                  hide its spinners. Whole rupiah, grouped the Indonesian way by the
+                  app's I18nProvider. */}
               <NumberField
                 aria-label={`Harga jual untuk nominal ${formatRupiah(nominal)}`}
                 className="w-28"
-                formatOptions={{ useGrouping: false, maximumFractionDigits: 0 }}
+                formatOptions={{ maximumFractionDigits: 0 }}
                 isDisabled={disabled}
                 minValue={0}
                 value={hasPrice ? sellPrice : Number.NaN}

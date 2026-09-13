@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { I18nProvider } from "@heroui/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 const toastSuccess = vi.fn()
@@ -59,14 +60,18 @@ const MARKUP: PpobMarkup = {
   custom_prices: {},
 }
 
+const onClose = vi.fn()
+
 function renderDialog(item: HistoryPaymentItem | null = PLN_ROW) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={client}>
-      <TransactionDetailDialog item={item} onClose={() => {}} />
-    </QueryClientProvider>,
+    <I18nProvider locale="id-ID">
+      <QueryClientProvider client={client}>
+        <TransactionDetailDialog item={item} onClose={onClose} />
+      </QueryClientProvider>
+    </I18nProvider>,
   )
 }
 
@@ -84,6 +89,7 @@ let api: ApiMock
 
 beforeEach(() => {
   toastSuccess.mockClear()
+  onClose.mockClear()
   toastError.mockClear()
   api = installApiMock({
     "GET /settings/ppob/markup": MARKUP,
@@ -96,7 +102,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
     renderDialog()
 
     // Markup PLN 1.500 dari pengaturan, di atas modal 73.229.
-    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
     expect(screen.getByText("Rp 73.229")).toBeInTheDocument()
     expect(screen.getByText("Rp 74.729")).toBeInTheDocument()
   })
@@ -111,7 +117,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
 
   it("menghitung grand total langsung dan menandai diskon", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
     setPrice("6771")
     expect(screen.getByText("Rp 80.000")).toBeInTheDocument()
@@ -120,9 +126,9 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
     expect(screen.getByText("Rp 70.000")).toHaveClass("text-danger")
   })
 
-  it("mencetak dengan harga jual yang sedang dipilih dan membiarkan dialog terbuka", async () => {
+  it("mencetak dengan biaya layanan yang dipilih lalu menutup dialog", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
     setPrice("6771")
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
@@ -131,8 +137,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
     const call = api.lastCall("POST /ppob/history/*/print")
     expect(call?.path).toBe("/ppob/history/111100000001/print")
     expect(call?.body).toEqual({ sellPrice: 80000 })
-    // Masih terbuka untuk cetak ulang.
-    expect(screen.getByRole("button", { name: "Cetak Struk" })).toBeInTheDocument()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it("melaporkan kegagalan cetak sebagai toast, bukan menutup dialog", async () => {
@@ -141,7 +146,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
       apiFailure(422, "validation", "Printer belum dikonfigurasi"),
     )
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
 
@@ -152,7 +157,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
 
   it("tidak bisa mencetak tanpa biaya layanan", async () => {
     renderDialog()
-    await waitFor(() => expect(priceInput()).toHaveValue("1500"))
+    await waitFor(() => expect(priceInput()).toHaveValue("1.500"))
 
     setPrice("")
 

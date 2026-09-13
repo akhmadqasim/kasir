@@ -1,17 +1,21 @@
+import { I18nProvider } from "@heroui/react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 
 import { queryClient } from "./query-client"
 
 /**
- * React Query is the only provider left. HeroUI needs none — the theme travels
- * on `<html>` as a `light`/`dark` class plus `data-theme`, and its `Tooltip`
- * carries its own context per instance, so the Radix `TooltipProvider` that used
- * to wrap the app went away with the last Radix tooltip.
- *
- * The client itself lives in `query-client.ts`, along with the 401 handler that
- * needs it. Importing it here is also what installs that handler.
+ * Two providers. React Query's client lives in `query-client.ts`, along with
+ * the 401 handler that needs it; importing it here is also what installs that
+ * handler. React Aria's `I18nProvider` pins the locale to `id-ID`: without it
+ * every NumberField and date field formats and parses in the webview's own
+ * locale, so a typed `25.000` reads as twenty-five on an en-US machine. The
+ * theme needs no provider — it travels on `<html>` as a class.
  */
 export function AppProviders({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  return (
+    <I18nProvider locale="id-ID">
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </I18nProvider>
+  )
 }
