@@ -6,10 +6,12 @@ import { Card, Input, Label, TextField } from "@heroui/react"
 import { toast } from "@/lib/toast"
 import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
-import { useApiMutation, useApiQuery } from "@/hooks/use-api"
-import { getStoreInfo, updateStoreInfo } from "@/lib/api/settings"
+import { useApiMutation } from "@/hooks/use-api"
+import { useStoreInfo } from "../hooks/use-store-info"
+import { updateStoreInfo } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { StoreInfo } from "../types"
+import { StoreLogoField } from "./store-logo-field"
 
 export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient()
@@ -20,7 +22,7 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
   const [email, setEmail] = useState("")
   const [initialized, setInitialized] = useState(false)
 
-  const storeQuery = useApiQuery<StoreInfo | null>(queryKeys.settings.store, getStoreInfo)
+  const storeQuery = useStoreInfo()
 
   if (storeQuery.data && !initialized) {
     const s = storeQuery.data
@@ -71,6 +73,8 @@ export function StoreInfoTab({ isAdmin }: { isAdmin: boolean }) {
         )}
       </Card.Header>
       <Card.Content className="gap-4">
+        <StoreLogoField isAdmin={isAdmin} store={storeQuery.data} />
+
         {/* `isRequired` replaces the old `required` attribute: HeroUI's Label draws the
             asterisk itself, so the marker no longer has to be typed into the string. */}
         <TextField

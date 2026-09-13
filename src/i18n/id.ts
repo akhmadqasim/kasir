@@ -277,6 +277,13 @@ export const id = {
     storeEmail: "Email",
     storeInfoSaved: "Informasi toko berhasil disimpan",
     storeInfoReadOnly: "Hanya admin yang dapat mengubah informasi toko",
+    storeLogo: "Logo Toko",
+    storeLogoHint:
+      "PNG, JPEG, WebP, atau SVG, maksimal 1 MB. Tampil di sidebar; tanpa logo, ikon bawaan yang dipakai.",
+    storeLogoUpload: "Unggah logo",
+    storeLogoRemove: "Hapus logo",
+    storeLogoSaved: "Logo toko berhasil disimpan",
+    storeLogoRemoved: "Logo toko dihapus",
     // Sales
     allowNegativeStock: "Bolehkan Stok Minus",
     allowNegativeStockDesc: "Izinkan penjualan/tukar barang meskipun stok habis atau minus",

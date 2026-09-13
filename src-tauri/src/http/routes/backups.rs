@@ -29,7 +29,7 @@
 //! database.
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -39,6 +39,7 @@ use tokio_util::io::ReaderStream;
 use crate::domain::backup::{BackupInfo, BackupStatus};
 use crate::domain::Actor;
 use crate::http::error::{ApiError, ApiResult};
+use crate::http::extract::UploadedFile;
 use crate::http::AppState;
 use crate::services;
 use crate::utils::AppError;
@@ -140,30 +141,8 @@ async fn export(Extension(actor): Extension<Actor>) -> ApiResult<Response> {
 /// SQLite header and written to the one staging path the service owns.
 async fn import(
     Extension(actor): Extension<Actor>,
-    mut multipart: Multipart,
+    UploadedFile(data): UploadedFile,
 ) -> ApiResult<axum::Json<String>> {
-    let mut data = None;
-
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
-    })? {
-        // Only the field named `file` is considered, so a stray text field
-        // cannot be mistaken for the database.
-        if field.name() != Some("file") {
-            continue;
-        }
-        data = Some(field.bytes().await.map_err(|e| {
-            ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
-        })?);
-        break;
-    }
-
-    let Some(data) = data else {
-        return Err(ApiError::validation(
-            "Unggahan harus berisi berkas database pada field bernama 'file'.",
-        ));
-    };
-
     Ok(axum::Json(services::settings::import_database_bytes(
         &actor, &data,
     )?))

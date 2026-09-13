@@ -31,7 +31,9 @@ const CreateRefundPage = lazy(() =>
   import("@/features/refunds").then((m) => ({ default: m.CreateRefundPage })),
 )
 const SettingsPage = lazy(() =>
-  import("@/features/settings").then((m) => ({ default: m.SettingsPage })),
+  // Modul halamannya langsung, bukan barrel: barrel `@/features/settings`
+  // mengekspor `useStoreInfo` yang dimuat eager oleh sidebar.
+  import("@/features/settings/components/settings-page").then((m) => ({ default: m.SettingsPage })),
 )
 const UsersPage = lazy(() => import("@/features/users").then((m) => ({ default: m.UsersPage })))
 const DashboardPage = lazy(() =>

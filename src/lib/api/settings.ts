@@ -7,7 +7,7 @@ import type {
   UpdatePpobCredentialsInput,
   UpdateStoreInfoInput,
 } from "@/features/settings/types"
-import { apiGet, apiPut } from "./client"
+import { API_BASE_URL, apiDelete, apiGet, apiPut, apiUpload } from "./client"
 
 /**
  * Store details and application settings.
@@ -79,4 +79,32 @@ export function updatePpobCredentials(input: UpdatePpobCredentialsInput): Promis
 /** Size and location of the live database file, for an admin to find it on the till. */
 export function getDatabaseInfo(): Promise<DatabaseInfo> {
   return apiGet<DatabaseInfo>("/settings/database")
+}
+
+/**
+ * Replace the store logo. The server decides the format from the bytes, so
+ * nothing about the `File` beyond its content matters; a file that is not a
+ * PNG, JPEG, WebP or SVG under 1 MB comes back as a `validation` error.
+ */
+export function uploadStoreLogo(file: File): Promise<StoreInfo> {
+  return apiUpload<StoreInfo>("/settings/store/logo", file)
+}
+
+export function deleteStoreLogo(): Promise<void> {
+  return apiDelete<void>("/settings/store/logo")
+}
+
+/**
+ * Where the logo image is, or `null` when the store has none.
+ *
+ * `updated_at` rides along as a cache-buster: the path never changes, so
+ * without it a browser that cached yesterday's logo would keep showing it
+ * after an upload. The URL is same-origin and the session cookie travels with
+ * an `<img>` request, so this can be used as a plain `src`.
+ */
+export function storeLogoUrl(
+  store: Pick<StoreInfo, "logo_path" | "updated_at"> | null,
+): string | null {
+  if (!store?.logo_path) return null
+  return `${API_BASE_URL}/store/logo?v=${encodeURIComponent(store.updated_at ?? "")}`
 }

@@ -1,11 +1,9 @@
-import { Avatar } from "@heroui/react"
-import { StoreIcon } from "lucide-react"
-
 import { NAV_ADMIN, NAV_MAIN } from "@/app/navigation"
 import { isAdminOnlyRoute } from "@/app/resume-route"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
+import { StoreLogo } from "@/components/store-logo"
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +16,7 @@ import {
 } from "@/components/layout/sidebar"
 import { id } from "@/i18n/id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useStoreInfo } from "@/features/settings"
 
 /**
  * Sidebar aplikasi: merek di kepala, menu di tengah, pengguna di kaki.
@@ -29,6 +28,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
+  const store = useStoreInfo().data
 
   // Keep the menu in step with AdminRouteGuard: a cashier should not see an entry
   // that redirects them straight back out.
@@ -41,13 +41,10 @@ export function AppSidebar() {
           <SidebarMenuItem>
             {/* Baris merek meniru kepala sidebar template HeroUI Pro: Avatar 36px
                 lalu dua baris teks, nama `text-sm font-medium` dan keterangan
-                `text-xs font-medium text-muted`. */}
+                `text-xs font-medium text-muted`. Avatarnya logo toko yang
+                diunggah di Pengaturan, atau ikon bawaan bila belum ada. */}
             <SidebarMenuLink to="/dashboard" size="lg" tooltip={id.app.name}>
-              <Avatar className="size-9 shrink-0">
-                <Avatar.Fallback>
-                  <StoreIcon className="size-4" />
-                </Avatar.Fallback>
-              </Avatar>
+              <StoreLogo store={store} className="size-9 shrink-0" />
               <SidebarLabel className="grid leading-tight">
                 <span className="truncate text-sm font-medium">{id.app.name}</span>
                 <span className="truncate text-xs font-medium text-muted">Point of Sale</span>
