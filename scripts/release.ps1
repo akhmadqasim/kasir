@@ -135,6 +135,42 @@ Set-JsonVersion  (Join-Path $root "package.json") $Version
 Set-JsonVersion  (Join-Path $root "src-tauri/tauri.conf.json") $Version
 Set-CargoVersion (Join-Path $root "src-tauri/Cargo.toml") $Version
 
+# --- WhatsApp sidecar --------------------------------------------------------
+# `externalBin` needs a real file at src-tauri/binaries/whatsapp-sidecar-<target-triple>.exe
+# before `tauri build` runs. It is a renamed copy of the Node binary that built
+# it, not a Node single-executable application — see CLAUDE.md for why SEA
+# was tried and set aside for this sidecar (whatsapp-web.js/puppeteer's own
+# dynamic `require()`s and file lookups do not survive being embedded in one
+# blob). `bundle.resources` in tauri.conf.json ships `sidecar/whatsapp/dist`
+# (the esbuild output plus a real, non-symlinked `node_modules`) next to it.
+Step "Preparing WhatsApp sidecar"
+if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) { Fail "'node' not found on PATH; needed to build and to vendor as the sidecar binary." }
+if (-not (Get-Command "npm" -ErrorAction SilentlyContinue)) { Fail "'npm' not found on PATH; needed for a non-symlinked sidecar node_modules (bun's own store symlinks, which do not survive being copied into the installer)." }
+
+bun run build:sidecar
+if ($LASTEXITCODE -ne 0) { Fail "Sidecar build failed (bun run build:sidecar)." }
+
+$sidecarDist = Join-Path $root "sidecar/whatsapp/dist"
+Copy-Item (Join-Path $root "sidecar/whatsapp/package.json") $sidecarDist -Force
+Push-Location $sidecarDist
+try {
+  # Chromium is never launched from this copy — only `executablePath` builds
+  # are — so skip the ~200 MB download `puppeteer` (a `whatsapp-web.js`
+  # dependency) otherwise does on install.
+  $env:PUPPETEER_SKIP_DOWNLOAD = "true"
+  npm install --omit=dev --no-audit --no-fund
+  if ($LASTEXITCODE -ne 0) { Fail "npm install failed while vendoring the sidecar's node_modules." }
+} finally {
+  Pop-Location
+}
+
+$targetTriple = (rustc --print host-tuple).Trim()
+$binariesDir = Join-Path $root "src-tauri/binaries"
+New-Item -ItemType Directory -Force -Path $binariesDir | Out-Null
+$sidecarExe = Join-Path $binariesDir "whatsapp-sidecar-$targetTriple.exe"
+Copy-Item (Get-Command node).Source $sidecarExe -Force
+Step "Sidecar ready: $sidecarExe + $sidecarDist"
+
 # --- build ------------------------------------------------------------------
 if ($Jobs -gt 0) { $env:CARGO_BUILD_JOBS = "$Jobs" }
 Step "Building (bun run tauri build)  [CARGO_BUILD_JOBS=$($env:CARGO_BUILD_JOBS)]  — this can take a while..."

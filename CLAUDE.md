@@ -58,6 +58,31 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
   can OOM `rustc` (`STATUS_STACK_BUFFER_OVERRUN` / `rust_oom`). Use `CARGO_BUILD_JOBS=2`
   (the release script defaults to `-Jobs 2`). Note `cargo` lives at `~/.cargo/bin`, not
   always on the Git-Bash PATH.
+- **WhatsApp sidecar packaging.** `scripts/release.ps1` builds `sidecar/whatsapp/`
+  before `tauri build`:
+  1. `bun run build:sidecar` — esbuild bundles the sidecar's own TypeScript into
+     `dist/index.js`, keeping `whatsapp-web.js` (and puppeteer) external.
+  2. `npm install --omit=dev` inside `dist/` vendors a **real, non-symlinked**
+     `node_modules` next to it — Bun's own install (used everywhere else in this repo)
+     symlinks into a shared `.bun` store, which does not survive being copied into an
+     installer.
+  3. The Node binary that just built it is copied to
+     `src-tauri/binaries/whatsapp-sidecar-<target-triple>.exe` — `bundle.externalBin`'s
+     entry — and `dist/` ships as a `bundle.resources` entry (`whatsapp-sidecar/`).
+     In Rust, `whatsapp::process::release_spawn_factory` runs that binary against the
+     resource copy of `index.js`.
+
+  **A Node single-executable application (`--experimental-sea-config` + `postject`)
+  was tried first and set aside.** SEA embeds one script's source as a blob; it does
+  not solve `whatsapp-web.js`/puppeteer's own dynamic `require()`s and package-relative
+  file lookups (session files, the browser launch args, optional native transports),
+  which assume a real `node_modules` on disk next to a real entry file. Vendoring
+  `node.exe` under a different name and shipping `node_modules` as a resource is the
+  documented fallback for exactly this case, and is what ships. `sidecar/whatsapp/`'s
+  own dev flow (`node dist/index.js`) is unaffected either way.
+- **Debug builds** run the sidecar with the system's own `node` directly against
+  `sidecar/whatsapp/dist/index.js` (`whatsapp::process::dev_spawn_factory`) — no
+  packaging step, so `bun run build:sidecar` is enough after editing the sidecar.
 
 ## Architecture
 
@@ -78,7 +103,8 @@ src/                    # Frontend (React + TypeScript)
 │   ├── receipt/        # Receipt preview & printing
 │   ├── onboarding/     # First-time setup (store info)
 │   ├── settings/       # App settings
-│   └── updater/        # Update banner + Pengaturan → Aplikasi card
+│   ├── updater/        # Update banner + Pengaturan → Aplikasi card
+│   └── whatsapp/       # "Kirim WhatsApp" button/dialog + status polling (Pengaturan → WhatsApp tab lives in settings/)
 ├── hooks/              # Shared React hooks
 ├── lib/                # Utilities, constants, types
 │   └── api/            # fetch client (client.ts) + one typed module per resource
@@ -91,14 +117,21 @@ src-tauri/              # Backend (Rust)
 │   ├── domain/         # Core types (Actor, business entities) — no tauri/axum here
 │   ├── entity/         # sea-orm entities
 │   ├── services/       # Business logic + DB queries, built on sea-orm entities
+│   │   └── whatsapp/   # Settings, struk→PNG rendering, send history — no tauri here either
 │   ├── http/           # axum router, routes/, session, CSRF, idempotency
 │   ├── db/             # DB setup + migration runner (db/migrations.rs)
 │   ├── printing/       # ESC/POS thermal printer driver
 │   ├── updater/        # Self-update state machine over tauri-plugin-updater (Rust-driven)
+│   ├── whatsapp/        # WhatsApp sidecar process manager (state machine + stdin/stdout protocol) — Rust-driven, kept out of services/ because it holds a real child process and a Tauri app handle
 │   └── utils/          # Shared Rust utilities (error types, logging, paths)
 ├── migrations/         # SQL migration files
 ├── Cargo.toml
 └── tauri.conf.json
+
+sidecar/whatsapp/       # Node/TypeScript child process, own package.json in the Bun workspace
+├── src/                # whatsapp-web.js client, JSON-line protocol, phone number normalisation
+├── dist/               # `bun run build:sidecar` output — esbuild bundle + `whatsapp-web.js`'s node_modules
+└── build.mjs           # esbuild bundling (first-party code only; whatsapp-web.js/puppeteer stay external)
 ```
 
 ## Database Schema (SQLite)
@@ -236,6 +269,16 @@ stock_writeoffs (
   refund_id INTEGER REFERENCES refunds(id),  -- Link ke refund jika dari return
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
+
+-- Struk yang dikirim ke WhatsApp pelanggan (satu baris per percobaan kirim)
+whatsapp_sends (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id),
+  phone TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('sent', 'failed')),
+  error TEXT,
+  sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
 ```
 
 ### Indexes (Performance Critical)
@@ -252,6 +295,7 @@ CREATE INDEX idx_refunds_transaction ON refunds(transaction_id);
 CREATE INDEX idx_refunds_date ON refunds(created_at);
 CREATE INDEX idx_stock_writeoffs_product ON stock_writeoffs(product_id);
 CREATE INDEX idx_stock_writeoffs_date ON stock_writeoffs(created_at);
+CREATE INDEX idx_whatsapp_sends_transaction ON whatsapp_sends(transaction_id);
 ```
 
 ## SQLite Configuration (Performance)
@@ -314,6 +358,23 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 - Body: daftar item (nama, qty, harga, subtotal)
 - Footer: total, metode pembayaran, kembalian, tanggal, kasir, receipt number
 - Print via ESC/POS ke thermal printer
+
+### Kirim Struk via WhatsApp
+- Pakai **whatsapp-web.js** (client tidak resmi) lewat sidecar Node — lihat `sidecar/whatsapp/`
+  dan `src-tauri/src/whatsapp/`. Volume kecil (5-10 struk/hari, satu toko), risiko banned diterima
+  pemilik; disarankan pakai nomor khusus toko, bukan nomor pribadi.
+- Struk dikirim sebagai **gambar PNG**, dirender dari data yang sama dengan printer thermal
+  (`printing::raster` + `printing::receipt::format_receipt_text`), plus caption dari template
+  yang bisa diatur (Pengaturan → WhatsApp).
+- Alur: Pengaturan → WhatsApp → aktifkan → pindai QR dari HP (WhatsApp → Perangkat Tertaut) →
+  status `Ready`. Tombol "Kirim WhatsApp" muncul di dialog sukses transaksi dan di detail riwayat
+  transaksi begitu status `Ready`.
+- Setiap percobaan kirim (berhasil atau gagal) dicatat di `whatsapp_sends`, ditampilkan sebagai
+  "Terkirim ke 0812..." di riwayat transaksi.
+- Normalisasi nomor (08xx/8xx/+62xx → 62xx) dan pengecekan nomor terdaftar di WhatsApp
+  (`getNumberId`) dilakukan di sidecar, bukan di Rust.
+- Proses sidecar = status "aktif": dispawn saat diaktifkan, dimatikan saat dinonaktifkan, restart
+  otomatis dengan backoff kalau crash selama masih aktif.
 
 ### Reports
 - Penjualan harian & bulanan
