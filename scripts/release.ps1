@@ -5,11 +5,25 @@
 
 .DESCRIPTION
   1. Bumps the version in package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml.
-  2. Runs `bun run tauri build` (produces the Windows MSI + NSIS installers).
-  3. Only if the build succeeds: commits the bump, creates an annotated tag
-     vX.Y.Z, pushes, and creates a GitHub Release with the installers attached.
+  2. Runs `bun run tauri build` (produces the Windows MSI + NSIS installers and,
+     because `bundle.createUpdaterArtifacts` is on, a minisign `.sig` next to each).
+  3. Writes `latest.json`, the manifest the in-app updater polls at
+     https://github.com/<owner>/<repo>/releases/latest/download/latest.json.
+  4. Only if the build succeeds: commits the bump, creates an annotated tag
+     vX.Y.Z, pushes, and creates a GitHub Release with the installers, their
+     `.sig` files and `latest.json` attached.
 
   Nothing is committed, tagged, pushed or published if the build fails.
+
+  SIGNING. The updater only installs what the private key signed, so the build
+  refuses to start without it:
+
+    $env:TAURI_SIGNING_PRIVATE_KEY          = "$env:USERPROFILE\.tauri\kasir.key"  # path or key content
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""                                   # "" if the key has none
+
+  The matching public key lives in src-tauri/tauri.conf.json (plugins.updater.pubkey).
+  Generate a pair once with `bunx tauri signer generate -w ~/.tauri/kasir.key`;
+  losing the private key means every installed copy stops accepting updates.
 
 .PARAMETER Version
   Semantic version to release, e.g. 0.5.0 (no leading "v").
@@ -20,7 +34,8 @@
   a beefy machine for speed. 0 = let cargo decide.
 
 .PARAMETER Notes
-  Release notes text. Empty = let GitHub auto-generate from commits.
+  Release notes text. Empty = let GitHub auto-generate from commits. Also
+  shown inside the app as the update's notes, when given.
 
 .PARAMETER NoPublish
   Build + bump only. Skip git tag/push and the GitHub Release (dry run-ish).
@@ -58,6 +73,36 @@ if (Test-Path $cargoBin) { $env:Path = "$cargoBin;$env:Path" }
 foreach ($tool in @("bun", "cargo", "git")) {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { Fail "'$tool' not found on PATH." }
 }
+# The updater signing key. `tauri build` signs every installer with it because
+# `bundle.createUpdaterArtifacts` is on; without it the build itself fails, so
+# say so up front and say how to fix it.
+if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+  Fail @"
+TAURI_SIGNING_PRIVATE_KEY is not set. The updater refuses unsigned releases.
+  `$env:TAURI_SIGNING_PRIVATE_KEY = "`$env:USERPROFILE\.tauri\kasir.key"   # path or key content
+  `$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""                             # if the key has no password
+No key yet? Generate one: bunx tauri signer generate -w ~/.tauri/kasir.key
+(then put the .pub content into src-tauri/tauri.conf.json plugins.updater.pubkey).
+"@
+}
+if ((Test-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY -PathType Leaf -ErrorAction SilentlyContinue) -eq $false -and
+    $env:TAURI_SIGNING_PRIVATE_KEY -notmatch '^untrusted comment') {
+  Fail "TAURI_SIGNING_PRIVATE_KEY is neither an existing file nor key content: $env:TAURI_SIGNING_PRIVATE_KEY"
+}
+if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+  # An unset password makes the CLI prompt for one; an empty one means "none".
+  $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+}
+
+# The repo the app polls for updates, read from the endpoint it is built with,
+# so the download URLs in latest.json can never point at a different repo.
+$tauriConf = Get-Content (Join-Path $root "src-tauri/tauri.conf.json") -Raw | ConvertFrom-Json
+$endpoint = @($tauriConf.plugins.updater.endpoints)[0]
+if ($endpoint -notmatch '^https://github\.com/([^/]+/[^/]+)/releases/latest/download/latest\.json$') {
+  Fail "plugins.updater.endpoints[0] in tauri.conf.json must be https://github.com/<owner>/<repo>/releases/latest/download/latest.json (got '$endpoint')."
+}
+$repoSlug = $Matches[1]
+
 if (-not $NoPublish) {
   if (-not (Get-Command "gh" -ErrorAction SilentlyContinue)) { Fail "'gh' (GitHub CLI) not found; use -NoPublish or install gh." }
   gh auth status *> $null; if ($LASTEXITCODE -ne 0) { Fail "gh is not authenticated (run: gh auth login)." }
@@ -100,13 +145,48 @@ if ($LASTEXITCODE -ne 0) { Fail "Build failed (exit $LASTEXITCODE). Version file
 $bundle = Join-Path $root "src-tauri/target/release/bundle"
 $msi  = Get-ChildItem "$bundle/msi/*.msi"        -ErrorAction SilentlyContinue | Select-Object -First 1
 $nsis = Get-ChildItem "$bundle/nsis/*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-$artifacts = @($msi, $nsis) | Where-Object { $_ }
-if ($artifacts.Count -eq 0) { Fail "No installers found under $bundle (msi/nsis)." }
+if (-not $nsis) { Fail "No NSIS installer (*-setup.exe) found under $bundle/nsis; the updater's primary artifact is missing." }
+$installers = @($nsis, $msi) | Where-Object { $_ }
+
+# `createUpdaterArtifacts: true` signs each installer in place and writes the
+# minisign signature next to it as `<installer>.sig`.
+$signatures = foreach ($installer in $installers) {
+  $sig = Get-Item -LiteralPath "$($installer.FullName).sig" -ErrorAction SilentlyContinue
+  if (-not $sig) { Fail "No signature next to $($installer.Name). Is bundle.createUpdaterArtifacts true and TAURI_SIGNING_PRIVATE_KEY valid?" }
+  $sig
+}
+
+# --- updater manifest -------------------------------------------------------
+# The plugin looks up `windows-x86_64-nsis` / `windows-x86_64-msi` by how the
+# running copy was installed, then falls back to `windows-x86_64`; the fallback
+# is the NSIS installer because that is what the manual first install uses.
+function New-PlatformEntry($installer) {
+  [ordered]@{
+    signature = (Get-Content -LiteralPath "$($installer.FullName).sig" -Raw).Trim()
+    url       = "https://github.com/$repoSlug/releases/download/$Tag/$($installer.Name)"
+  }
+}
+$platforms = [ordered]@{ "windows-x86_64-nsis" = New-PlatformEntry $nsis }
+if ($msi) { $platforms["windows-x86_64-msi"] = New-PlatformEntry $msi }
+$platforms["windows-x86_64"] = New-PlatformEntry $nsis
+
+$manifest = [ordered]@{
+  version   = $Version
+  pub_date  = [DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+  platforms = $platforms
+}
+if (-not [string]::IsNullOrWhiteSpace($Notes)) { $manifest.Insert(1, "notes", $Notes) }
+
+$manifestPath = Join-Path $bundle "latest.json"
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+$latest = Get-Item -LiteralPath $manifestPath
+
+$artifacts = @($installers) + @($signatures) + @($latest)
 Step "Artifacts:"
 $artifacts | ForEach-Object { Write-Host ("    {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB)) }
 
 if ($NoPublish) {
-  Step "NoPublish set — bumped + built only. Installers are in $bundle."
+  Step "NoPublish set — bumped + built only. Installers, .sig files and latest.json are in $bundle."
   exit 0
 }
 
