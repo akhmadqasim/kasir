@@ -517,7 +517,7 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
                   // setiap nama terpotong setelah tujuh huruf. `auto-fill` dengan
                   // lebar minimum menjamin ubin selalu cukup lebar untuk dibaca.
                   // `auto-rows-fr` menyamakan tingginya.
-                  <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
+                  <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
                     {shortcutProducts.map((product) => (
                       <ShortcutTile
                         key={product.id}

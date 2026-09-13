@@ -57,7 +57,7 @@ export const ShortcutTile = memo(function ShortcutTile({
       {/* `pe-9` menyisakan kolom selebar pin di kanan, supaya nama dan harga
           tidak pernah tertimpa kontrol yang menumpuk di atasnya. */}
       <Button
-        className="tile flex-col items-start justify-start gap-1 px-3 py-2.5 pe-9 text-left"
+        className="tile min-h-24 flex-col items-start justify-start gap-1.5 px-4 py-3.5 pe-10 text-left"
         style={
           isHolding
             ? {
