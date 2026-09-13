@@ -96,11 +96,6 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   <NoData title="Pilih metode pembayaran dulu." />
                 )}
 
-                <CashFields
-                  onQuickAmount={form.handleQuickRoundAmount}
-                  onRemainingAmount={form.handleSetRemainingAmount}
-                />
-
                 {form.isSingleCashSelection && form.primaryPaymentAmount > 0 && (
                   <SummaryList
                     items={[
@@ -158,6 +153,16 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 {!form.allTransferMethodsHaveBank && (
                   <p className="text-danger">Isi nama bank untuk pembayaran transfer bank.</p>
                 )}
+
+                <TextField
+                  fullWidth
+                  value={form.notes}
+                  variant="secondary"
+                  onChange={form.setNotes}
+                >
+                  <Label>Catatan</Label>
+                  <TextArea className="resize-none" placeholder="Opsional" rows={2} />
+                </TextField>
               </div>
 
               <div className="flex flex-col gap-4">
@@ -188,15 +193,10 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   </div>
                 </div>
 
-                <TextField
-                  fullWidth
-                  value={form.notes}
-                  variant="secondary"
-                  onChange={form.setNotes}
-                >
-                  <Label>Catatan</Label>
-                  <TextArea className="resize-none" placeholder="Opsional" rows={2} />
-                </TextField>
+                <CashFields
+                  onQuickAmount={form.handleQuickRoundAmount}
+                  onRemainingAmount={form.handleSetRemainingAmount}
+                />
               </div>
             </div>
           </Modal.Body>
