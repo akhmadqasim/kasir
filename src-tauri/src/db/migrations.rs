@@ -92,6 +92,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "023_ppob_receipts",
         include_str!("../../migrations/023_ppob_receipts.sql"),
     ),
+    (
+        "024_whatsapp",
+        include_str!("../../migrations/024_whatsapp.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

@@ -123,6 +123,8 @@ beforeEach(() => {
   api = installApiMock({
     "GET /transactions": PAGE,
     "GET /transactions/*": DETAIL,
+    "GET /whatsapp/status": { enabled: false, state: "off" },
+    "GET /whatsapp/sends": [],
   })
 })
 

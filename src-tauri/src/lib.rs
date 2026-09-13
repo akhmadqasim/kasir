@@ -8,6 +8,7 @@ mod services;
 mod test_support;
 mod updater;
 mod utils;
+mod whatsapp;
 mod window_icon;
 mod window_zoom;
 
@@ -77,6 +78,10 @@ pub fn run() {
 
     let updater = Arc::new(updater::Updater::new());
 
+    let whatsapp = Arc::new(whatsapp::WhatsappManager::new(
+        utils::paths::get_whatsapp_session_dir(),
+    ));
+
     let window_zoom = Arc::new(window_zoom::WindowZoom::new());
     let window_icon = Arc::new(window_icon::WindowIcon::new());
     // Read before the window exists so it opens at the size it was left at,
@@ -96,6 +101,7 @@ pub fn run() {
         &mitra_client,
         &backup_scheduler,
         &updater,
+        &whatsapp,
         &window_zoom,
         &window_icon,
     );
@@ -103,6 +109,9 @@ pub fn run() {
 
     let backup_scheduler_clone = backup_scheduler.clone();
     let updater_clone = updater.clone();
+    let whatsapp_clone = whatsapp.clone();
+    let whatsapp_for_exit = whatsapp.clone();
+    let database_for_setup = database.clone();
     let window_zoom_clone = window_zoom.clone();
     let window_icon_clone = window_icon.clone();
     #[allow(unused_mut)]
@@ -128,6 +137,45 @@ pub fn run() {
             if !cfg!(debug_assertions) {
                 updater_clone.spawn_background_checks();
             }
+
+            // Same shape again: the sidecar needs the app handle to resolve
+            // itself in a release build (or the workspace path in debug), so
+            // this is attached here rather than when the manager was built.
+            #[cfg(debug_assertions)]
+            whatsapp_clone.attach(whatsapp::process::dev_spawn_factory(app.handle()));
+            #[cfg(not(debug_assertions))]
+            whatsapp_clone.attach(whatsapp::process::release_spawn_factory(app.handle()));
+
+            // Whether to reconnect is read here rather than blocking the
+            // synchronous setup path above on a DB round trip — nothing before
+            // this point needs the answer (contrast `initial_zoom`, which the
+            // window's own creation below needs synchronously).
+            let whatsapp_startup = whatsapp_clone.clone();
+            let db_startup = database_for_setup.clone();
+            tauri::async_runtime::spawn(async move {
+                let enabled =
+                    match services::whatsapp::settings::get_whatsapp_settings(&db_startup).await {
+                        Ok(settings) => settings.enabled,
+                        Err(e) => {
+                            utils::logging::log_error(&format!(
+                                "Stored WhatsApp setting not readable: {e}"
+                            ));
+                            false
+                        }
+                    };
+                // The setting is already `true` in the database; only the live
+                // side needs starting, so this calls the manager directly
+                // rather than `services::whatsapp::enable` (which would write
+                // the same value back).
+                if enabled {
+                    if let Err(e) = whatsapp_startup.enable().await {
+                        utils::logging::log_error(&format!(
+                            "WhatsApp sidecar did not reconnect at startup: {e}"
+                        ));
+                    }
+                }
+            });
+
             let window = build_main_window(app, http_port)?;
             // Same shape as the updater: the HTTP route that drives the zoom was
             // wired before this window existed, so it gets a closure over it.
@@ -151,8 +199,20 @@ pub fn run() {
         .manage(database)
         .manage(mitra_client)
         .manage(backup_scheduler)
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .manage(whatsapp)
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            // Closing the window does not stop a background sidecar on its
+            // own — this is the one path guaranteed to run before the
+            // process actually exits. Blocks briefly (see
+            // `WhatsappManager::shutdown`/`GRACEFUL_STOP_TIMEOUT`) so the
+            // sidecar closes its own browser instead of leaving it running as
+            // an orphan after the till's own window is gone.
+            if let tauri::RunEvent::Exit = event {
+                tauri::async_runtime::block_on(whatsapp_for_exit.shutdown());
+            }
+        });
 
     http_server.shutdown();
 
@@ -170,6 +230,7 @@ fn start_http_server(
     mitra_client: &Arc<Mutex<services::ppob::MitraClient>>,
     backup_scheduler: &Arc<Mutex<services::backup::BackupScheduler>>,
     updater: &Arc<updater::Updater>,
+    whatsapp: &Arc<whatsapp::WhatsappManager>,
     window_zoom: &Arc<window_zoom::WindowZoom>,
     window_icon: &Arc<window_icon::WindowIcon>,
 ) -> http::ServerHandle {
@@ -181,6 +242,7 @@ fn start_http_server(
         mitra_client.clone(),
         backup_scheduler.clone(),
         updater.clone(),
+        whatsapp.clone(),
         window_zoom.clone(),
         window_icon.clone(),
     );

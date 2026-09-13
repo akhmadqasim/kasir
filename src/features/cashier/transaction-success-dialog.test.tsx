@@ -1,6 +1,7 @@
-import { StrictMode } from "react"
+import { StrictMode, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 vi.mock("@/lib/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -65,18 +66,32 @@ interface RenderOptions {
   onNewTransaction?: () => void
 }
 
+/** One `QueryClient` per test, since `SendWhatsappButton` now polls through it. */
+function newQueryClient() {
+  return new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  })
+}
+
+function withProviders(client: QueryClient, node: ReactNode) {
+  return <QueryClientProvider client={client}>{node}</QueryClientProvider>
+}
+
 function renderDialog({
   result = RESULT,
   autoPrint = false,
   onNewTransaction = () => {},
 }: RenderOptions = {}) {
   return render(
-    <TransactionSuccessDialog
-      open
-      result={result}
-      autoPrint={autoPrint}
-      onNewTransaction={onNewTransaction}
-    />,
+    withProviders(
+      newQueryClient(),
+      <TransactionSuccessDialog
+        open
+        result={result}
+        autoPrint={autoPrint}
+        onNewTransaction={onNewTransaction}
+      />,
+    ),
   )
 }
 
@@ -85,6 +100,9 @@ let api: ApiMock
 beforeEach(() => {
   api = installApiMock({
     "POST /transactions/*/print": null,
+    // Polled by `SendWhatsappButton` on every render; the button itself only
+    // shows up once this reports `ready`, which none of these cases need.
+    "GET /whatsapp/status": { enabled: false, state: "off" },
   })
 })
 
@@ -98,8 +116,10 @@ describe("transaction success dialog", () => {
     expect(dialog).toHaveTextContent("Kembalian dari Rp 50.000")
     expect(dialog).toHaveTextContent("Tunai")
     expect(dialog).toHaveTextContent("TRX-20260913-0001")
-    // Tidak ada GET sama sekali: pengaturan printer datang dari CashierPage.
-    expect(api.calls).toHaveLength(0)
+    // Tidak ada GET pengaturan printer: itu datang dari CashierPage. Satu-satunya
+    // GET di sini adalah status WhatsApp yang dipoll tombol "Kirim WhatsApp".
+    expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
+    expect(api.calls).toHaveLength(1)
   })
 
   it("hides the change when there is none to hand back", async () => {
@@ -152,7 +172,10 @@ describe("transaction success dialog", () => {
 
     expect(await screen.findByText("Struk otomatis dicetak.")).toBeInTheDocument()
     expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1)
-    expect(api.calls.filter((call) => call.method === "GET")).toHaveLength(0)
+    // Bukan pengaturan printer — hanya status WhatsApp yang dipoll tombolnya.
+    expect(api.calls.filter((call) => call.method === "GET")).toEqual(
+      api.callsFor("GET /whatsapp/status"),
+    )
 
     // Lalu menutup sendiri supaya kasir bisa langsung melayani berikutnya.
     await waitFor(() => expect(onNewTransaction).toHaveBeenCalledTimes(1), { timeout: 3000 })
@@ -165,12 +188,15 @@ describe("transaction success dialog", () => {
     const onNewTransaction = vi.fn()
     render(
       <StrictMode>
-        <TransactionSuccessDialog
-          open
-          result={RESULT}
-          autoPrint
-          onNewTransaction={onNewTransaction}
-        />
+        {withProviders(
+          newQueryClient(),
+          <TransactionSuccessDialog
+            open
+            result={RESULT}
+            autoPrint
+            onNewTransaction={onNewTransaction}
+          />,
+        )}
       </StrictMode>,
     )
 
@@ -180,12 +206,26 @@ describe("transaction success dialog", () => {
   })
 
   it("waits for the printer settings before deciding on auto-print", async () => {
-    const view = renderDialog({ autoPrint: undefined })
+    const client = newQueryClient()
+    const view = render(
+      withProviders(
+        client,
+        <TransactionSuccessDialog
+          open
+          result={RESULT}
+          autoPrint={undefined}
+          onNewTransaction={() => {}}
+        />,
+      ),
+    )
     await screen.findByRole("dialog")
     expect(api.callsFor("POST /transactions/1/print")).toHaveLength(0)
 
     view.rerender(
-      <TransactionSuccessDialog open result={RESULT} autoPrint onNewTransaction={() => {}} />,
+      withProviders(
+        client,
+        <TransactionSuccessDialog open result={RESULT} autoPrint onNewTransaction={() => {}} />,
+      ),
     )
 
     await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))

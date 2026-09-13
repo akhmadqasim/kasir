@@ -48,6 +48,12 @@ tokio-util = { version = "0.7.18", features = ["io"] }
 # Already in `Cargo.lock` through tauri; used to check that an uploaded SVG
 # logo parses as XML before it is stored and served.
 quick-xml = "0.38"
+# Encodes the struk raster (`printing::raster`) as PNG for WhatsApp. Already in
+# `Cargo.lock` at this exact version via tauri's `image-png` feature.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# The PNG struk is base64-encoded for the WhatsApp sidecar's JSON protocol.
+# Already in `Cargo.lock` transitively at this version.
+base64 = "0.22"
 
 [dev-dependencies]
 # `ServiceExt::oneshot`, which drives the router in tests without a listener.
