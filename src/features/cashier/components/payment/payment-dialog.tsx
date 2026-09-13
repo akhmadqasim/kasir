@@ -80,10 +80,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             onKeyDown={form.handleAmountKeyDown(split.payment_method, split.amount)}
                           />
                           {split.payment_method === "transfer" && (
-                            // Judulnya bergaya "Metode Pembayaran" supaya terbaca
-                            // sebagai seksi, bukan label kolom yang mirip metode lain.
                             <div className="flex flex-col gap-2">
-                              <p>Bank Pengirim</p>
                               <TransferFields
                                 value={split.bank_name}
                                 onChange={(value) =>

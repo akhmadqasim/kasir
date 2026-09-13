@@ -374,35 +374,41 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   // yang datang dalam satu burst scan diabaikan dan nominalnya dikosongkan
   // supaya kasir tidak menagih angka barcode.
   const handleAmountKeyDown = useCallback(
-    (method: string, currentAmount: number | null) =>
-      (event: KeyboardEvent<HTMLInputElement>) => {
-        if (event.key !== "Enter") {
-          recordAmountEntry(event.timeStamp)
-          return
-        }
-
+    (method: string, currentAmount: number | null) => (event: KeyboardEvent<HTMLInputElement>) => {
+      // `\` = Uang Pas: satu tuts di sebelah Enter, tanpa melepas tangan
+      // dari deretan angka; di kolom nominal ia tidak punya arti lain.
+      if (event.key === "\\") {
         event.preventDefault()
+        handleSetRemainingAmount()
+        return
+      }
+      if (event.key !== "Enter") {
+        recordAmountEntry(event.timeStamp)
+        return
+      }
 
-        const typedAmount = currentAmount != null ? String(currentAmount) : ""
-        if (
-          isScannerBurstEntry({
-            amount: typedAmount,
-            ...amountEntryRef.current,
-            submittedAt: event.timeStamp,
-          })
-        ) {
-          amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
-          updateSplit(method, { amount: null, selected: true })
-          toast.warning(
-            "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
-          )
-          return
-        }
+      event.preventDefault()
 
-        if (canConfirm) {
-          handleConfirm()
-        }
-      },
+      const typedAmount = currentAmount != null ? String(currentAmount) : ""
+      if (
+        isScannerBurstEntry({
+          amount: typedAmount,
+          ...amountEntryRef.current,
+          submittedAt: event.timeStamp,
+        })
+      ) {
+        amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
+        updateSplit(method, { amount: null, selected: true })
+        toast.warning(
+          "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
+        )
+        return
+      }
+
+      if (canConfirm) {
+        handleConfirm()
+      }
+    },
     [canConfirm, handleConfirm, updateSplit],
   )
 
