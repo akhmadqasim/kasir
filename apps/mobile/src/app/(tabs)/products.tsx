@@ -1,8 +1,8 @@
 import { id } from "@kasir/shared";
 import { SearchField } from "heroui-native";
 import { useState, type JSX } from "react";
-import { View } from "react-native";
 
+import { PageHeader } from "@/components/page-header";
 import { ProductList } from "@/components/product-list";
 import { Screen } from "@/components/screen";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -16,21 +16,25 @@ export default function ProductsTab(): JSX.Element {
 
   return (
     <Screen>
-      <View className="py-3">
-        <SearchField value={search} onChange={setSearch}>
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input
-              placeholder={id.products.search}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
-      </View>
       <ProductList
         result={result}
+        header={
+          <>
+            <PageHeader title={id.products.title} />
+            <SearchField value={search} onChange={setSearch}>
+              <SearchField.Group>
+                <SearchField.SearchIcon />
+                <SearchField.Input
+                  placeholder={id.products.search}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                <SearchField.ClearButton />
+              </SearchField.Group>
+            </SearchField>
+          </>
+        }
         emptyMessage={query ? id.products.noResults : id.products.noProducts}
       />
     </Screen>

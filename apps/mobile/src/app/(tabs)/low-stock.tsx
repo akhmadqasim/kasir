@@ -1,8 +1,7 @@
 import { id } from "@kasir/shared";
-import { Typography } from "heroui-native";
 import type { JSX } from "react";
-import { View } from "react-native";
 
+import { PageHeader } from "@/components/page-header";
 import { ProductList } from "@/components/product-list";
 import { Screen } from "@/components/screen";
 import { useProductSearch } from "@/hooks/use-products";
@@ -16,12 +15,12 @@ export default function LowStockTab(): JSX.Element {
 
   return (
     <Screen>
-      <View className="py-3">
-        <Typography type="body-sm" color="muted">
-          {id.lowStock.description}
-        </Typography>
-      </View>
-      <ProductList result={result} emptyMessage={id.lowStock.empty} emphasizeStock />
+      <ProductList
+        result={result}
+        header={<PageHeader title={id.lowStock.title} subtitle={id.lowStock.description} />}
+        emptyMessage={id.lowStock.empty}
+        emphasizeStock
+      />
     </Screen>
   );
 }

@@ -1,6 +1,5 @@
 import type { Product } from "@kasir/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 
 import { primeProduct } from "@/hooks/use-products";
 import { productsApi } from "@/lib/api";
@@ -23,20 +22,22 @@ export async function lookupProductByCode(code: string): Promise<Product | null>
   return page.data.find((product) => product.sku === code || product.barcode === code) ?? null;
 }
 
-/** Look a code up and, when it exists, open the product. */
+/**
+ * Look a code up and put whatever it found into the detail cache.
+ *
+ * Navigation is deliberately *not* here. The scanner runs inside a modal, and a
+ * push that happens while the modal is still on screen lands behind it — so the
+ * caller decides when the camera is closed and the detail may open.
+ */
 export function useProductLookup() {
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   return useMutation<LookupResult, Error, string>({
     mutationFn: async (raw) => {
       const code = raw.trim();
-      return { code, product: await lookupProductByCode(code) };
-    },
-    onSuccess: ({ product }) => {
-      if (!product) return;
-      primeProduct(queryClient, product);
-      router.push({ pathname: "/products/[id]", params: { id: String(product.id) } });
+      const product = await lookupProductByCode(code);
+      if (product) primeProduct(queryClient, product);
+      return { code, product };
     },
   });
 }

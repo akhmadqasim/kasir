@@ -10,16 +10,21 @@ import {
   type WriteoffReason,
 } from "@kasir/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
+import { Input, Label, TextField, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
+import { View } from "react-native";
 
 import { FieldRow } from "@/components/field-row";
 import { NumberField } from "@/components/number-field";
 import { ReasonSelect } from "@/components/reason-select";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
+import { Section } from "@/components/section";
 import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
 import { useCreateWriteoff, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
+import { savedThenBack } from "@/lib/mutation-feedback";
+import { fieldVariant } from "@/lib/platform";
 
 /**
  * Take units out of stock with a reason. `quantity` and `reason` may arrive
@@ -64,7 +69,7 @@ export default function WriteoffScreen(): JSX.Element {
             input: { productId: product.data.id, quantity, reason, notes: notes || undefined },
           },
           // Back to the detail, which now shows the reduced stock.
-          { onSuccess: () => router.back() }
+          savedThenBack(router)
         )
       }
     />
@@ -112,56 +117,69 @@ function WriteoffForm({
     onSubmit(quantity, reason, notes.trim());
   };
 
+  const lossValue =
+    showLossValue && quantity !== null && quantityRule === null
+      ? formatRupiah(product.buy_price * quantity)
+      : null;
+
   return (
     <ScrollScreen>
-      <Typography.Heading type="h4">{product.name}</Typography.Heading>
-      <Typography type="body-sm" color="muted">
-        {id.stock.writeoffDescription}
-      </Typography>
+      <View className="gap-1">
+        <Typography.Heading type="h4">{product.name}</Typography.Heading>
+        <Typography type="body-sm" color="muted">
+          {id.stock.writeoffDescription}
+        </Typography>
+      </View>
 
-      <FieldRow
-        label={id.stock.systemLabel}
-        value={`${formatNumber(product.stock)} ${product.unit}`}
-      />
-
-      <NumberField
-        label={id.stock.quantity}
-        value={quantityText}
-        onChangeText={setQuantityText}
-        parsed={quantity}
-        error={quantityError}
-        isRequired
-        autoFocus={initialQuantity.length === 0}
-        returnKeyType="next"
-      />
-
-      <ReasonSelect
-        reasons={reasons}
-        value={reason}
-        onChange={setReason}
-        description={reasons.includes("lost") ? undefined : id.stock.lostAdminOnly}
-      />
-
-      <TextField>
-        <Label>{id.stock.notes}</Label>
-        <Input
-          value={notes}
-          onChangeText={setNotes}
-          placeholder={id.stock.notesPlaceholder}
-          multiline
-          numberOfLines={3}
+      <Section>
+        <FieldRow
+          label={id.stock.systemLabel}
+          value={`${formatNumber(product.stock)} ${product.unit}`}
         />
-      </TextField>
+        {lossValue ? <FieldRow label={id.stock.lossValue} value={lossValue} emphasize /> : null}
+      </Section>
 
-      {showLossValue && quantity !== null && quantityRule === null ? (
-        <FieldRow label={id.stock.lossValue} value={formatRupiah(product.buy_price * quantity)} />
-      ) : null}
+      <Section variant="fields">
+        <NumberField
+          label={id.stock.quantity}
+          value={quantityText}
+          onChangeText={setQuantityText}
+          parsed={quantity}
+          error={quantityError}
+          isRequired
+          autoFocus={initialQuantity.length === 0}
+          returnKeyType="next"
+        />
+
+        <ReasonSelect
+          reasons={reasons}
+          value={reason}
+          onChange={setReason}
+          description={reasons.includes("lost") ? undefined : id.stock.lostAdminOnly}
+        />
+
+        <TextField>
+          <Label>{id.stock.notes}</Label>
+          <Input
+            variant={fieldVariant}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder={id.stock.notesPlaceholder}
+            multiline
+            numberOfLines={3}
+          />
+        </TextField>
+      </Section>
 
       <InlineError error={error} />
 
-      <Button variant="danger" isDisabled={!valid || isPending} onPress={submit}>
-        {isPending ? <Spinner size="sm" /> : <Button.Label>{id.stock.submitWriteoff}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={id.stock.submitWriteoff}
+        destructive
+        isDisabled={!valid}
+        isPending={isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }

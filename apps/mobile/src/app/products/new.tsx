@@ -7,15 +7,19 @@ import {
 } from "@kasir/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
+import { Input, Label, TextField, Typography } from "heroui-native";
 import { useState, type JSX } from "react";
 
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
+import { FormSubmit } from "@/components/form-submit";
 import { ScrollScreen } from "@/components/screen";
+import { Section } from "@/components/section";
 import { InlineError } from "@/components/state-view";
 import { primeProduct, useCategories, useCreateProduct } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
+import { hapticError, hapticSuccess } from "@/lib/haptics";
+import { fieldVariant } from "@/lib/platform";
 
 /**
  * Admin: register a product the scanner did not know. The barcode arrives
@@ -80,86 +84,116 @@ export default function NewProductScreen(): JSX.Element {
       },
       {
         onSuccess: (product: Product) => {
+          hapticSuccess();
           primeProduct(queryClient, product);
           router.replace({ pathname: "/products/[id]", params: { id: String(product.id) } });
         },
+        onError: hapticError,
       }
     );
   };
 
   return (
     <ScrollScreen>
-      <TextField isRequired>
-        <Label>{id.products.name}</Label>
-        <Input value={name} onChangeText={setName} autoFocus returnKeyType="next" />
-      </TextField>
+      <Section title={id.products.sectionIdentity} variant="fields">
+        <TextField isRequired>
+          <Label>{id.products.name}</Label>
+          <Input
+            variant={fieldVariant}
+            value={name}
+            onChangeText={setName}
+            autoFocus
+            returnKeyType="next"
+          />
+        </TextField>
 
-      <TextField>
-        <Label>{id.products.barcode}</Label>
-        <Input
-          value={barcode}
-          onChangeText={setBarcode}
-          keyboardType="number-pad"
-          autoCorrect={false}
+        <TextField>
+          <Label>{id.products.barcode}</Label>
+          <Input
+            variant={fieldVariant}
+            value={barcode}
+            onChangeText={setBarcode}
+            keyboardType="number-pad"
+            autoCorrect={false}
+          />
+        </TextField>
+
+        <TextField>
+          <Label>{id.products.sku}</Label>
+          <Input
+            variant={fieldVariant}
+            value={sku}
+            onChangeText={setSku}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+        </TextField>
+
+        <TextField isRequired>
+          <Label>{id.products.unit}</Label>
+          <Input
+            variant={fieldVariant}
+            value={unit}
+            onChangeText={setUnit}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </TextField>
+
+        <CategorySelect
+          categories={categories.data ?? []}
+          value={categoryId}
+          onChange={setCategoryId}
         />
-      </TextField>
+      </Section>
 
-      <TextField>
-        <Label>{id.products.sku}</Label>
-        <Input value={sku} onChangeText={setSku} autoCapitalize="characters" autoCorrect={false} />
-      </TextField>
+      <Section title={id.products.sectionPrice} variant="fields">
+        <NumberField
+          label={id.products.sellPrice}
+          value={sellPrice}
+          onChangeText={setSellPrice}
+          parsed={sell}
+          decimal
+          isRequired
+          returnKeyType="next"
+        />
+        <NumberField
+          label={id.products.buyPrice}
+          value={buyPrice}
+          onChangeText={setBuyPrice}
+          parsed={buy}
+          decimal
+          returnKeyType="next"
+        />
+      </Section>
 
-      <NumberField
-        label={id.products.sellPrice}
-        value={sellPrice}
-        onChangeText={setSellPrice}
-        parsed={sell}
-        decimal
-        isRequired
-        returnKeyType="next"
-      />
-      <NumberField
-        label={id.products.buyPrice}
-        value={buyPrice}
-        onChangeText={setBuyPrice}
-        parsed={buy}
-        decimal
-        returnKeyType="next"
-      />
-
-      <TextField isRequired>
-        <Label>{id.products.unit}</Label>
-        <Input value={unit} onChangeText={setUnit} autoCapitalize="none" autoCorrect={false} />
-      </TextField>
-
-      <NumberField
-        label={id.products.stock}
-        value={stock}
-        onChangeText={setStock}
-        parsed={stockValue}
-        isRequired
-        returnKeyType="next"
-      />
-      <NumberField
-        label={id.products.minStock}
-        value={minStock}
-        onChangeText={setMinStock}
-        parsed={min}
-        isRequired
-        onSubmitEditing={submit}
-      />
-
-      <CategorySelect
-        categories={categories.data ?? []}
-        value={categoryId}
-        onChange={setCategoryId}
-      />
+      <Section title={id.products.sectionStock} variant="fields">
+        <NumberField
+          label={id.products.stock}
+          value={stock}
+          onChangeText={setStock}
+          parsed={stockValue}
+          isRequired
+          returnKeyType="next"
+        />
+        <NumberField
+          label={id.products.minStock}
+          value={minStock}
+          onChangeText={setMinStock}
+          parsed={min}
+          isRequired
+          onSubmitEditing={submit}
+        />
+      </Section>
 
       <InlineError error={create.error} />
 
-      <Button isDisabled={!valid || create.isPending} onPress={submit}>
-        {create.isPending ? <Spinner size="sm" /> : <Button.Label>{id.common.save}</Button.Label>}
-      </Button>
+      <FormSubmit
+        label={id.common.save}
+        isDisabled={!valid}
+        isPending={create.isPending}
+        onPress={submit}
+      />
     </ScrollScreen>
   );
 }

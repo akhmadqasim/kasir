@@ -1,160 +1,173 @@
 import { canEditProduct, id } from "@kasir/shared";
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Alert, Button, Input, Label, Spinner, TextField, Typography } from "heroui-native";
-import { useCallback, useRef, useState, type JSX } from "react";
+import { Alert, Button, SearchField } from "heroui-native";
+import { useCallback, useState, type JSX } from "react";
 import { View } from "react-native";
 
-import { ScrollScreen } from "@/components/screen";
+import { BarcodeScannerModal } from "@/components/barcode-scanner-modal";
+import { PageHeader } from "@/components/page-header";
+import { PlatformIcon } from "@/components/platform-icon";
+import { ProductList } from "@/components/product-list";
+import { Screen } from "@/components/screen";
 import { InlineError } from "@/components/state-view";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useOpenProduct } from "@/hooks/use-open-product";
 import { useProductLookup } from "@/hooks/use-product-lookup";
+import { useProductSearch } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
+import { hapticSuccess, hapticWarning } from "@/lib/haptics";
 
 /**
- * Retail barcodes only. EAN-13 is the Indonesian standard; EAN-8 for small
- * packs; Code 128 for the internal labels the desktop prints; UPC-A because
- * iOS reports an EAN-13 that starts with 0 as UPC-A.
+ * Find one item, by whatever the stock-taker has to hand.
+ *
+ * A field and a list — the same rows and the same navigation as Produk — with
+ * the camera behind a barcode button rather than running underneath the whole
+ * screen. Typing searches as you go; the camera opens only when asked and
+ * closes as soon as it has read something, which is also when the permission
+ * prompt appears for the first time.
  */
-const BARCODE_TYPES = ["ean13", "ean8", "code128", "upc_a"] as const;
-
-/** Ignore the same code re-read within this window: a steady hand scans 10×/s. */
-const RESCAN_COOLDOWN_MS = 1500;
-
 export default function ScanTab(): JSX.Element {
   const router = useRouter();
   const user = useCurrentUser();
+  const openProduct = useOpenProduct();
   const [permission, requestPermission] = useCameraPermissions();
   const lookup = useProductLookup();
 
-  const [manual, setManual] = useState("");
-  const [focused, setFocused] = useState(false);
-  const lastScan = useRef<{ code: string; at: number } | null>(null);
+  const [search, setSearch] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [notFound, setNotFound] = useState<string | null>(null);
 
-  // Only run the camera while this tab is on screen.
+  const query = useDebouncedValue(search.trim(), 300);
+  const result = useProductSearch({ query });
+
+  // Coming back to the tab should not land on the last scan's error.
   useFocusEffect(
     useCallback(() => {
-      setFocused(true);
+      setNotFound(null);
       lookup.reset();
-      return () => setFocused(false);
       // `lookup` is a fresh object each render; `reset` itself is stable.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
 
-  const notFound = lookup.data && lookup.data.product === null ? lookup.data.code : null;
-
-  const onScanned = ({ data }: BarcodeScanningResult) => {
-    const now = Date.now();
-    const previous = lastScan.current;
-    if (lookup.isPending || notFound) return;
-    if (previous && previous.code === data && now - previous.at < RESCAN_COOLDOWN_MS) return;
-    lastScan.current = { code: data, at: now };
-    lookup.mutate(data);
-  };
-
-  const submitManual = () => {
-    const code = manual.trim();
-    if (!code || lookup.isPending) return;
-    lookup.mutate(code);
-  };
-
-  const scanAgain = () => {
+  const openScanner = async () => {
+    setNotFound(null);
     lookup.reset();
-    lastScan.current = null;
+    if (!permission?.granted) {
+      const next = await requestPermission();
+      if (!next.granted) return;
+    }
+    setScanning(true);
+  };
+
+  const onScanned = (code: string) => {
+    lookup.mutate(code, {
+      onSuccess: ({ product }) => {
+        setScanning(false);
+        if (product) {
+          hapticSuccess();
+          openProduct(product);
+          return;
+        }
+        hapticWarning();
+        setNotFound(code);
+      },
+      onError: () => {
+        setScanning(false);
+        hapticWarning();
+      },
+    });
   };
 
   return (
-    <ScrollScreen>
-      {permission?.granted ? (
-        <View className="aspect-[3/4] w-full overflow-hidden rounded-3xl bg-surface-secondary">
-          {focused ? (
-            <CameraView
-              style={{ flex: 1 }}
-              facing="back"
-              barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }}
-              onBarcodeScanned={notFound || lookup.isPending ? undefined : onScanned}
-            />
-          ) : null}
-          {lookup.isPending ? (
-            <View className="absolute inset-0 items-center justify-center">
-              <Spinner />
-            </View>
-          ) : null}
-        </View>
-      ) : (
-        <Alert status="warning">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{id.scan.permissionTitle}</Alert.Title>
-            <Alert.Description>{id.scan.permissionBody}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
+    <Screen>
+      <ProductList
+        result={result}
+        emptyMessage={query ? id.products.noResults : id.scan.searchPrompt}
+        header={
+          <>
+            <PageHeader title={id.scan.title} />
 
-      {!permission?.granted && permission?.canAskAgain !== false ? (
-        <Button variant="secondary" onPress={() => void requestPermission()}>
-          {id.scan.permissionButton}
-        </Button>
-      ) : null}
-
-      {permission?.granted && !notFound ? (
-        <Typography type="body-sm" color="muted" align="center">
-          {id.scan.hint}
-        </Typography>
-      ) : null}
-
-      {notFound ? (
-        <View className="gap-3">
-          <Alert status="danger">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>{id.scan.notFound}</Alert.Title>
-              <Alert.Description>{`${id.scan.notFoundBody} (${notFound})`}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-          <View className="flex-row gap-3">
-            <Button variant="secondary" className="flex-1" onPress={scanAgain}>
-              {id.scan.scanAgain}
-            </Button>
-            {canEditProduct(user.role) ? (
-              <Button
+            <View className="flex-row items-center gap-3">
+              <SearchField
                 className="flex-1"
-                onPress={() => {
-                  scanAgain();
-                  router.push({ pathname: "/products/new", params: { barcode: notFound } });
-                }}
+                value={search}
+                onChange={setSearch}
+                accessibilityLabel={id.scan.searchLabel}
               >
-                {id.scan.addProduct}
+                <SearchField.Group>
+                  <SearchField.SearchIcon />
+                  <SearchField.Input
+                    placeholder={id.scan.searchPlaceholder}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                  />
+                  <SearchField.ClearButton />
+                </SearchField.Group>
+              </SearchField>
+
+              <Button
+                variant="secondary"
+                isIconOnly
+                accessibilityLabel={id.scan.openCamera}
+                onPress={() => void openScanner()}
+              >
+                <PlatformIcon sf="barcode.viewfinder" md="barcode-scan" size={22} />
               </Button>
+            </View>
+
+            {permission?.granted === false && permission.canAskAgain === false ? (
+              <Alert status="warning">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>{id.scan.permissionTitle}</Alert.Title>
+                  <Alert.Description>{id.scan.permissionBody}</Alert.Description>
+                </Alert.Content>
+              </Alert>
             ) : null}
-          </View>
-        </View>
-      ) : null}
 
-      <InlineError error={lookup.error} />
+            {notFound ? (
+              <View className="gap-3">
+                <Alert status="danger">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{id.scan.notFound}</Alert.Title>
+                    <Alert.Description>{`${id.scan.notFoundBody} (${notFound})`}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+                <View className="flex-row gap-3">
+                  <Button variant="secondary" className="flex-1" onPress={() => void openScanner()}>
+                    {id.scan.scanAgain}
+                  </Button>
+                  {canEditProduct(user.role) ? (
+                    <Button
+                      className="flex-1"
+                      onPress={() => {
+                        const barcode = notFound;
+                        setNotFound(null);
+                        router.push({ pathname: "/products/new", params: { barcode } });
+                      }}
+                    >
+                      {id.scan.addProduct}
+                    </Button>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
 
-      <TextField>
-        <Label>{id.scan.manualLabel}</Label>
-        <View className="flex-row gap-3">
-          <Input
-            className="flex-1"
-            value={manual}
-            onChangeText={setManual}
-            placeholder={id.scan.manualPlaceholder}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            returnKeyType="search"
-            onSubmitEditing={submitManual}
-          />
-          <Button
-            variant="secondary"
-            isDisabled={manual.trim().length === 0 || lookup.isPending}
-            onPress={submitManual}
-          >
-            {id.scan.lookup}
-          </Button>
-        </View>
-      </TextField>
-    </ScrollScreen>
+            <InlineError error={lookup.error} />
+          </>
+        }
+      />
+
+      <BarcodeScannerModal
+        visible={scanning}
+        isBusy={lookup.isPending}
+        onScanned={onScanned}
+        onClose={() => setScanning(false)}
+      />
+    </Screen>
   );
 }

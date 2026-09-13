@@ -8,6 +8,11 @@ embedded HTTP API over the shop Wi-Fi and stores nothing of its own.
 Stack: Expo SDK 57 (managed, Expo Router) · React Native 0.86 · HeroUI Native
 1.0.9 via Uniwind/Tailwind v4 · TanStack Query · Zustand · `@kasir/shared`.
 
+**UI work: read [`DESIGN.md`](DESIGN.md) first.** It is the platform matrix — what
+iOS 26 does, what Material 3 does, and which component implements each on which
+platform. The root [`../../DESIGN.md`](../../DESIGN.md) still owns colour, number
+and language rules for both clients.
+
 ## Run
 
 ```sh
