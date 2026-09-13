@@ -12,6 +12,7 @@ import { useApiQuery } from "@/hooks/use-api"
 import { getPopularProducts, toggleProductPin } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { ProductRow } from "./product-row"
+import type { ProductSortColumn } from "../sort"
 import type { Product, Category, ShortcutProduct } from "../types"
 
 /** How many shortcut rows to read when deciding which products show a filled pin. */
@@ -19,37 +20,47 @@ const SHORTCUT_LIMIT = 50
 
 const COLUMN_COUNT = 6
 
+/** Kolom yang bisa diurutkan, dengan `id` yang dikirim apa adanya sebagai `sort_by`. */
+const SORTABLE_COLUMNS: ReadonlyArray<{
+  id: ProductSortColumn
+  label: string
+  isRowHeader?: boolean
+  className?: string
+}> = [
+  { id: "name", label: id.products.name, isRowHeader: true },
+  { id: "barcode", label: id.products.barcode },
+  { id: "category", label: id.products.category },
+  { id: "sell_price", label: id.products.sellPrice, className: "text-right" },
+  { id: "stock", label: id.products.stock, className: "text-right" },
+]
+
 /*
- * Kepala tabel dibuat sekali di tingkat modul, bukan di dalam render: React
- * Aria membangun ulang koleksinya begitu ada elemen kolom yang berubah, dan
- * pembangunan ulang itu berarti satu gambar ulang penuh tambahan untuk kelima
- * puluh baris. Elemen yang identitasnya tetap tidak memicunya.
+ * Kepala tabel mengikuti contoh "Sorting" di dokumentasi Table HeroUI:
+ * `allowsSorting` di kolom, `sortDirection` dari render prop diteruskan ke
+ * `Table.SortableColumnHeader` yang menggambar panahnya.
+ *
+ * Dibuat sekali di tingkat modul, bukan di dalam render: React Aria membangun
+ * ulang koleksinya begitu ada elemen kolom yang berubah, dan pembangunan ulang
+ * itu berarti satu gambar ulang penuh tambahan untuk kelima puluh baris.
+ * Elemen yang identitasnya tetap tidak memicunya.
  */
 const HEADER = (
   <Table.Header>
-    <Table.Column allowsSorting isRowHeader id="name">
-      {({ sortDirection }) => (
-        <Table.SortableColumnHeader sortDirection={sortDirection}>
-          {id.products.name}
-        </Table.SortableColumnHeader>
-      )}
-    </Table.Column>
-    <Table.Column id="barcode">{id.products.barcode}</Table.Column>
-    <Table.Column id="category">{id.products.category}</Table.Column>
-    <Table.Column allowsSorting className="text-right" id="sell_price">
-      {({ sortDirection }) => (
-        <Table.SortableColumnHeader sortDirection={sortDirection}>
-          {id.products.sellPrice}
-        </Table.SortableColumnHeader>
-      )}
-    </Table.Column>
-    <Table.Column allowsSorting className="text-right" id="stock">
-      {({ sortDirection }) => (
-        <Table.SortableColumnHeader sortDirection={sortDirection}>
-          {id.products.stock}
-        </Table.SortableColumnHeader>
-      )}
-    </Table.Column>
+    {SORTABLE_COLUMNS.map((column) => (
+      <Table.Column
+        key={column.id}
+        allowsSorting
+        className={column.className}
+        id={column.id}
+        isRowHeader={column.isRowHeader}
+      >
+        {({ sortDirection }) => (
+          <Table.SortableColumnHeader sortDirection={sortDirection}>
+            {column.label}
+          </Table.SortableColumnHeader>
+        )}
+      </Table.Column>
+    ))}
     <Table.Column className="text-right" id="actions">
       {id.products.action}
     </Table.Column>
@@ -67,9 +78,8 @@ interface ProductTableProps {
   totalPages: number
   onPageChange: (page: number) => void
   onEdit: (product: Product) => void
-  sortBy?: string
-  sortOrder?: "asc" | "desc"
-  onSortChange: (column: string) => void
+  sortDescriptor: SortDescriptor
+  onSortChange: (descriptor: SortDescriptor) => void
 }
 
 /**
@@ -85,8 +95,7 @@ export const ProductTable = memo(function ProductTable({
   totalPages,
   onPageChange,
   onEdit,
-  sortBy,
-  sortOrder,
+  sortDescriptor,
   onSortChange,
 }: ProductTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
@@ -126,22 +135,6 @@ export const ProductTable = memo(function ProductTable({
     })
   }
 
-  // React Aria hanya mengenal dua arah, sedangkan layar ini bersiklus tiga
-  // langkah: naik, turun, lalu kembali tanpa urutan. Arah yang dihitung React
-  // Aria dibuang dan induknya yang memutuskan langkah berikutnya, persis seperti
-  // sebelum pindah ke `Table`.
-  const sortDescriptor = useMemo<SortDescriptor>(
-    () => ({
-      column: sortBy ?? "",
-      direction: sortOrder === "desc" ? "descending" : "ascending",
-    }),
-    [sortBy, sortOrder],
-  )
-  const handleSortChange = useCallback(
-    (descriptor: SortDescriptor) => onSortChange(String(descriptor.column)),
-    [onSortChange],
-  )
-
   return (
     <div className="flex flex-col gap-4">
       <Table variant="secondary">
@@ -149,7 +142,7 @@ export const ProductTable = memo(function ProductTable({
           <Table.Content
             aria-label={id.products.title}
             sortDescriptor={sortDescriptor}
-            onSortChange={handleSortChange}
+            onSortChange={onSortChange}
           >
             {HEADER}
             <Table.Body renderEmptyState={renderEmptyState}>

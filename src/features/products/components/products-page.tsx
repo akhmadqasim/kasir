@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from "react"
 import { Plus, Tags, Upload } from "lucide-react"
 import { Button } from "@heroui/react"
+import type { SortDescriptor } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { StatCard } from "@/components/stat-card"
@@ -13,6 +14,7 @@ import { ProductTable } from "./product-table"
 import { ProductFormDialog } from "./product-form-dialog"
 import { CategoryManager } from "./category-manager"
 import { ImportDialog } from "./import-dialog"
+import { defaultSort, toSearchSort } from "../sort"
 import type { Product, ProductQuickFilter } from "../types"
 
 export function ProductsPage() {
@@ -20,23 +22,21 @@ export function ProductsPage() {
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [quickFilter, setQuickFilter] = useState<ProductQuickFilter>("all")
   const [page, setPage] = useState(1)
-  const [sortBy, setSortBy] = useState<string | undefined>(undefined)
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  // `null` sampai pengguna memilih kolom: urutan bawaan mengikuti filter yang
+  // aktif (lihat `defaultSort`). Ganti filter mengembalikannya ke `null`, supaya
+  // "Stok Rendah" selalu mulai dari yang paling menipis.
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  const effectiveSortBy =
-    !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
-      ? "stock"
-      : (sortBy ?? "created_at")
-  const effectiveSortOrder =
-    !sortBy && (quickFilter === "low_stock" || quickFilter === "negative_stock")
-      ? "asc"
-      : sortBy
-        ? sortOrder
-        : "desc"
+  // Di-memo karena `ProductTable` di-`memo` dan membandingkan prop-nya
+  // dengan identitas; deskriptor baru tiap render sama saja tanpa memo.
+  const effectiveSort = useMemo(
+    () => sortDescriptor ?? defaultSort(quickFilter),
+    [sortDescriptor, quickFilter],
+  )
 
   const { data: productsData, isLoading } = useSearchProducts({
     query: searchQuery || undefined,
@@ -44,8 +44,7 @@ export function ProductsPage() {
     quick_filter: quickFilter === "all" ? undefined : quickFilter,
     page,
     per_page: 50,
-    sort_by: effectiveSortBy,
-    sort_order: effectiveSortOrder,
+    ...toSearchSort(effectiveSort),
   })
 
   const { data: categories } = useCategories()
@@ -77,23 +76,14 @@ export function ProductsPage() {
 
   const handleQuickFilterChange = useCallback((filter: ProductQuickFilter) => {
     setQuickFilter(filter)
+    setSortDescriptor(null)
     setPage(1)
   }, [])
 
-  const handleSortChange = useCallback(
-    (column: string) => {
-      if (sortBy !== column) {
-        setSortBy(column)
-        setSortOrder("asc")
-      } else if (sortOrder === "asc") {
-        setSortOrder("desc")
-      } else {
-        setSortBy(undefined)
-        setSortOrder("asc")
-      }
-    },
-    [sortBy, sortOrder],
-  )
+  const handleSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor)
+    setPage(1)
+  }, [])
 
   const handleEdit = useCallback((product: Product) => {
     setEditingProduct(product)
@@ -153,8 +143,7 @@ export function ProductsPage() {
         totalPages={productsData?.total_pages ?? 1}
         onPageChange={setPage}
         onEdit={handleEdit}
-        sortBy={effectiveSortBy}
-        sortOrder={effectiveSortOrder}
+        sortDescriptor={effectiveSort}
         onSortChange={handleSortChange}
       />
 
