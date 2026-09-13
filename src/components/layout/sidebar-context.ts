@@ -64,7 +64,9 @@ export function useSidebar(): SidebarContextValue {
  *
  * Ukurannya diambil dari computed style template dashboard HeroUI Pro, bukan
  * dikira-kira: baris 36px, `padding: 6px 8px`, `gap: 12px`, sudut 16px, ikon
- * 20px, label `text-sm font-medium` untuk semua item, dan yang aktif memakai
+ * 20px, label `text-sm` dengan `font-normal` (400) untuk item biasa dan
+ * `font-medium` (500) hanya untuk yang aktif — di template, bobot hurufnya
+ * yang membedakan item aktif, bukan cuma latarnya. Yang aktif memakai
  * `--default` — bukan `--surface`, yang di kanvas yang sama akan terlihat
  * seperti kartu tersesat di navigasi. Hover memakai warna yang sama dengan
  * aktif, seperti `.list-box-item` HeroUI.
@@ -74,12 +76,12 @@ export function useSidebar(): SidebarContextValue {
  */
 const MENU_BUTTON_BASE = [
   "group/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-2xl px-2 py-1.5",
-  "text-left text-sm font-medium text-foreground outline-none no-highlight",
+  "text-left text-sm font-normal text-foreground outline-none no-highlight",
   "transition-[background-color,box-shadow] duration-150 motion-reduce:transition-none",
   "hover:bg-default",
   "focus-visible:status-focused",
   "active:scale-[0.98]",
-  "data-[active=true]:bg-default",
+  "data-[active=true]:bg-default data-[active=true]:font-medium",
   "disabled:status-disabled aria-disabled:status-disabled",
   "[&_svg]:size-5 [&_svg]:shrink-0",
   "group-data-[state=collapsed]/sidebar:w-9 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0",
