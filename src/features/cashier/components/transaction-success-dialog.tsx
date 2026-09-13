@@ -233,14 +233,14 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
           <Printer />
           Cetak struk
           <Kbd aria-hidden="true">
-            <Kbd.Abbr keyValue="enter" />
+            <Kbd.Content>Enter</Kbd.Content>
           </Kbd>
         </PendingButton>
         <SendWhatsappButton transactionId={transaction.id} />
         <Button autoFocus onPress={onNewTransaction}>
           Transaksi baru
           <Kbd aria-hidden="true" variant="light">
-            <Kbd.Abbr keyValue="escape" />
+            <Kbd.Content>Esc</Kbd.Content>
           </Kbd>
         </Button>
       </Modal.Footer>
