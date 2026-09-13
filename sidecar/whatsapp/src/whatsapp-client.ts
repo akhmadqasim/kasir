@@ -7,6 +7,7 @@
  * one client at a time.
  */
 
+import { join } from "node:path"
 import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js"
 
 import { findBrowserExecutable } from "./chrome-finder"
@@ -54,6 +55,12 @@ export class WhatsAppSession {
 
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: sessionDir }),
+      // whatsapp-web.js caches the WhatsApp Web bundle in `.wwebjs_cache`
+      // under the process's working directory by default. In development that
+      // directory is `src-tauri/`, which the Tauri dev watcher treats as a
+      // source change — every cache write restarted the app. Kept next to the
+      // session instead.
+      webVersionCache: { type: "local", path: join(sessionDir, "wwebjs-cache") },
       puppeteer: {
         executablePath,
         headless: true,

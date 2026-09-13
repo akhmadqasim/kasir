@@ -30,10 +30,14 @@ pub fn dev_spawn_factory(
                 script.display()
             )));
         }
-        Ok(app.shell().command("node").args([
-            script.to_string_lossy().to_string(),
-            session_dir.to_string(),
-        ]))
+        // Working directory = the session directory, so anything the
+        // sidecar writes relative to its cwd lands there and never inside
+        // `src-tauri/`, which the dev watcher would take as a source change.
+        Ok(app
+            .shell()
+            .command("node")
+            .current_dir(PathBuf::from(session_dir))
+            .args([script.to_string_lossy().to_string(), session_dir.to_string()]))
     }
 }
 
@@ -63,10 +67,9 @@ pub fn release_spawn_factory(
             .shell()
             .sidecar("whatsapp-sidecar")
             .map_err(|e| AppError::Internal(format!("Sidecar WhatsApp tidak ditemukan: {e}")))?;
-        Ok(command.args([
-            script.to_string_lossy().to_string(),
-            session_dir.to_string(),
-        ]))
+        Ok(command
+            .current_dir(PathBuf::from(session_dir))
+            .args([script.to_string_lossy().to_string(), session_dir.to_string()]))
     }
 }
 
