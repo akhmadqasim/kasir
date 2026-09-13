@@ -30,7 +30,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
     <Modal.Backdrop isOpen={open} onOpenChange={form.handleOpenChange}>
       {/* Dua sisi: kiri apa yang dibayar dan dengan apa, kanan berapa yang
           diterima — kasir membaca total dan mengetik nominal tanpa menggulir. */}
-      <Modal.Container size="lg">
+      <Modal.Container size="xl">
         <Modal.Dialog aria-label="Pembayaran">
           <Modal.CloseTrigger />
           <Modal.Header>
