@@ -60,9 +60,18 @@ const PPOB_LINE: TransactionItem = {
   created_at: "2026-09-13 01:00:00",
 }
 
+/** Baris yang dijawab GET receipt/lines di setiap test. */
+const RECEIPT_LINES = [
+  { text: "TOKO SEMBAKO JAYA", bold: true, size: "normal" },
+  { text: "--------------------------------", bold: false, size: "normal" },
+  { text: "Indomie Goreng", bold: false, size: "normal" },
+  { text: "TOTAL Rp 6.000", bold: true, size: "normal" },
+]
+
 interface RenderOptions {
   result?: TransactionResult
   autoPrint?: boolean | undefined
+  paperWidth?: number | null
   onNewTransaction?: () => void
 }
 
@@ -80,6 +89,7 @@ function withProviders(client: QueryClient, node: ReactNode) {
 function renderDialog({
   result = RESULT,
   autoPrint = false,
+  paperWidth = 58,
   onNewTransaction = () => {},
 }: RenderOptions = {}) {
   return render(
@@ -89,6 +99,7 @@ function renderDialog({
         open
         result={result}
         autoPrint={autoPrint}
+        paperWidth={paperWidth}
         onNewTransaction={onNewTransaction}
       />,
     ),
@@ -100,6 +111,7 @@ let api: ApiMock
 beforeEach(() => {
   api = installApiMock({
     "POST /transactions/*/print": null,
+    "GET /transactions/*/receipt/lines": RECEIPT_LINES,
     // Polled by `SendWhatsappButton` on every render; the button itself only
     // shows up once this reports `ready`, which none of these cases need.
     "GET /whatsapp/status": { enabled: false, state: "off" },
@@ -110,16 +122,18 @@ describe("transaction success dialog", () => {
   it("renders the sale from the checkout response without asking the server", async () => {
     renderDialog()
 
-    const dialog = await screen.findByRole("dialog", { name: "Transaksi tersimpan" })
+    const dialog = await screen.findByRole("dialog", { name: "Transaksi selesai" })
     expect(dialog).toHaveTextContent("Rp 6.000")
     expect(dialog).toHaveTextContent("Rp 44.000")
     expect(dialog).toHaveTextContent("Kembalian dari Rp 50.000")
     expect(dialog).toHaveTextContent("Tunai")
     expect(dialog).toHaveTextContent("TRX-20260913-0001")
-    // Tidak ada GET pengaturan printer: itu datang dari CashierPage. Satu-satunya
-    // GET di sini adalah status WhatsApp yang dipoll tombol "Kirim WhatsApp".
+    // Tidak ada GET pengaturan printer: itu datang dari CashierPage. Yang tersisa
+    // hanya status WhatsApp yang dipoll tombolnya, dan baris struk pratinjau.
     expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
-    expect(api.calls).toHaveLength(1)
+    expect(await screen.findByText("Indomie Goreng")).toBeInTheDocument()
+    expect(api.callsFor("GET /transactions/1/receipt/lines")).toHaveLength(1)
+    expect(api.calls).toHaveLength(2)
   })
 
   it("hides the change when there is none to hand back", async () => {
@@ -172,10 +186,11 @@ describe("transaction success dialog", () => {
 
     expect(await screen.findByText("Struk otomatis dicetak.")).toBeInTheDocument()
     expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1)
-    // Bukan pengaturan printer — hanya status WhatsApp yang dipoll tombolnya.
-    expect(api.calls.filter((call) => call.method === "GET")).toEqual(
-      api.callsFor("GET /whatsapp/status"),
-    )
+    // Bukan pengaturan printer — hanya status WhatsApp yang dipoll tombolnya,
+    // dan baris struk pratinjau.
+    expect(api.calls.filter((call) => call.method === "GET")).toHaveLength(2)
+    expect(api.callsFor("GET /whatsapp/status")).toHaveLength(1)
+    expect(api.callsFor("GET /transactions/1/receipt/lines")).toHaveLength(1)
 
     // Lalu menutup sendiri supaya kasir bisa langsung melayani berikutnya.
     await waitFor(() => expect(onNewTransaction).toHaveBeenCalledTimes(1), { timeout: 3000 })
@@ -194,6 +209,7 @@ describe("transaction success dialog", () => {
             open
             result={RESULT}
             autoPrint
+            paperWidth={58}
             onNewTransaction={onNewTransaction}
           />,
         )}
@@ -214,6 +230,7 @@ describe("transaction success dialog", () => {
           open
           result={RESULT}
           autoPrint={undefined}
+          paperWidth={58}
           onNewTransaction={() => {}}
         />,
       ),
@@ -224,7 +241,13 @@ describe("transaction success dialog", () => {
     view.rerender(
       withProviders(
         client,
-        <TransactionSuccessDialog open result={RESULT} autoPrint onNewTransaction={() => {}} />,
+        <TransactionSuccessDialog
+          open
+          result={RESULT}
+          autoPrint
+          paperWidth={58}
+          onNewTransaction={() => {}}
+        />,
       ),
     )
 
@@ -237,5 +260,25 @@ describe("transaction success dialog", () => {
     const dialog = await screen.findByRole("dialog")
     expect(dialog).toHaveTextContent("Pulsa Telkomsel 50.000")
     expect(dialog).toHaveTextContent("Menunggu")
+  })
+
+  it("shows a struk preview drawn from the exact lines the printer would get", async () => {
+    renderDialog()
+
+    const preview = await screen.findByLabelText("Pratinjau struk")
+    await waitFor(() => expect(preview).toHaveTextContent("TOKO SEMBAKO JAYA"))
+    for (const line of RECEIPT_LINES) {
+      expect(preview).toHaveTextContent(line.text)
+    }
+    expect(api.callsFor("GET /transactions/1/receipt/lines")).toHaveLength(1)
+  })
+
+  it("asks the preview for the same paper width configured for printing", async () => {
+    renderDialog({ paperWidth: 80 })
+
+    await screen.findByLabelText("Pratinjau struk")
+
+    const call = api.lastCall("GET /transactions/1/receipt/lines")
+    expect(call?.query.get("paper")).toBe("80")
   })
 })

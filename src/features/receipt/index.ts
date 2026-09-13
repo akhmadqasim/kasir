@@ -5,4 +5,5 @@
 // plugged into the till the server runs on. What lives here is the HTML
 // rendering of a receipt.
 export { generateReceiptHtml } from "./utils/print-receipt"
-export type { ReceiptData, ReceiptItem } from "./types"
+export { ReceiptPreview } from "./components/receipt-preview"
+export type { ReceiptData, ReceiptItem, ReceiptLine } from "./types"

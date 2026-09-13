@@ -1,5 +1,5 @@
 import type { CheckoutTransactionInput, TransactionResult } from "@/features/cashier/types"
-import type { ReceiptData } from "@/features/receipt/types"
+import type { ReceiptData, ReceiptLine } from "@/features/receipt/types"
 import type {
   ListTransactionsInput,
   PaginatedTransactions,
@@ -66,6 +66,22 @@ export function updateTransactionPaymentMethod(
 /** Everything a receipt needs, for the browser to render. */
 export function getReceiptData(transactionId: number): Promise<ReceiptData> {
   return apiGet<ReceiptData>(`/transactions/${transactionId}/receipt`)
+}
+
+/**
+ * The exact lines the printer would be handed for this sale, for the success
+ * dialog's struk preview. `paperWidth` (58 or 80) overrides the store's
+ * configured paper size; omitted, the server falls back to that same
+ * setting — the one the print button itself uses, so the preview cannot
+ * show a different width than what comes out of the printer.
+ */
+export function getSaleReceiptLines(
+  transactionId: number,
+  paperWidth?: number | null,
+): Promise<ReceiptLine[]> {
+  return apiGet<ReceiptLine[]>(`/transactions/${transactionId}/receipt/lines`, {
+    paper: paperWidth ?? undefined,
+  })
 }
 
 /**

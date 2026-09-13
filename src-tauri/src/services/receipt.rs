@@ -846,6 +846,37 @@ async fn load_payment_breakdown(
     }])
 }
 
+/// The lines the printer would be handed for this sale, for the success
+/// dialog to show a struk preview before anything is printed.
+///
+/// Built from [`build_sale_receipt_data`] and
+/// [`crate::printing::receipt::format_receipt_text`] — the same two calls
+/// [`print`] makes — so the preview cannot drift from what actually comes out
+/// of the printer. `paper_width` overrides the configured paper size (58 or
+/// 80mm) for a preview at a width other than what is set up; without it, the
+/// same width `print` would use.
+pub async fn sale_receipt_lines(
+    db: &DatabaseConnection,
+    transaction_id: i64,
+    paper_width: Option<u8>,
+) -> Result<Vec<ReceiptLineResponse>, AppError> {
+    let ReceiptRenderSettings {
+        store,
+        paper_width: default_paper_width,
+        footer_text,
+    } = receipt_render_settings(db).await?;
+
+    let (receipt_data, _items) =
+        build_sale_receipt_data(db, &store, footer_text, transaction_id).await?;
+
+    Ok(
+        format_receipt_text(&receipt_data, paper_width.unwrap_or(default_paper_width))
+            .into_iter()
+            .map(ReceiptLineResponse::from)
+            .collect(),
+    )
+}
+
 pub async fn receipt_data(
     db: &DatabaseConnection,
     transaction_id: i64,

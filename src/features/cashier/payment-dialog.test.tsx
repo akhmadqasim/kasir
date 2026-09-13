@@ -17,7 +17,7 @@ import type { User } from "@/features/auth/types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "@/stores/cart-store"
-import { PaymentDialog } from "./components/payment-dialog"
+import { PaymentDialog } from "./components/payment/payment-dialog"
 import type { CartItem, TransactionResult } from "./types"
 
 const KASIR: User = {
@@ -76,17 +76,20 @@ function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
 }
 
 /**
- * Penjaga scan membaca `event.timeStamp`, jadi test-nya harus mengarangnya sendiri.
- * Kalau jaraknya dibiarkan ikut waktu nyata, satu worker yang sedang sibuk sudah
- * cukup untuk membuat semburan 13 karakter terbaca sebagai ketikan manusia.
+ * Penjaga scan membaca `event.timeStamp` dari `onKeyDown` (bukan `onChange`
+ * seperti sebelum `RupiahField`: `TextField` HeroUI hanya meneruskan
+ * nilainya, bukan event DOM), jadi test-nya harus mengarang keduanya —
+ * sebuah keydown per digit untuk waktunya, lalu change supaya nilai kolomnya
+ * ikut berubah seperti pengetikan sungguhan.
  */
 function fireWithTimeStamp(field: HTMLElement, event: Event, timeStamp: number) {
   Object.defineProperty(event, "timeStamp", { value: timeStamp })
   fireEvent(field, event)
 }
 
-function typeAmount(field: HTMLElement, value: string, timeStamp: number) {
-  fireWithTimeStamp(field, createEvent.change(field, { target: { value } }), timeStamp)
+function typeDigit(field: HTMLElement, valueSoFar: string, timeStamp: number) {
+  fireWithTimeStamp(field, createEvent.keyDown(field, { key: valueSoFar.slice(-1) }), timeStamp)
+  fireWithTimeStamp(field, createEvent.change(field, { target: { value: valueSoFar } }), timeStamp)
 }
 
 function pressEnter(field: HTMLElement, timeStamp: number) {
@@ -96,7 +99,7 @@ function pressEnter(field: HTMLElement, timeStamp: number) {
 /** Scanner mengetik seluruh payload-nya dalam satu semburan, lalu Enter. */
 function scanIntoField(field: HTMLElement, barcode: string) {
   for (let length = 1; length <= barcode.length; length++) {
-    typeAmount(field, barcode.slice(0, length), 1000 + length * 10)
+    typeDigit(field, barcode.slice(0, length), 1000 + length * 10)
   }
   pressEnter(field, 1000 + barcode.length * 10 + 20)
 }
@@ -127,6 +130,26 @@ describe("payment dialog", () => {
     expect(screen.getByText("Rp 6.000")).toBeInTheDocument()
   })
 
+  it("has no on-screen keypad — the till is a PC with a keyboard", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    for (const digit of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "00", "000"]) {
+      expect(screen.queryByRole("button", { name: digit })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByRole("button", { name: /Hapus/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Kosongkan/ })).not.toBeInTheDocument()
+  })
+
+  it("still offers the quick round-up amounts and Uang Pas as plain buttons", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    expect(screen.getByRole("button", { name: "5k" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "100k" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Uang Pas" })).toBeInTheDocument()
+  })
+
   it("refuses a barcode burst instead of closing the sale", async () => {
     renderDialog()
     const field = await screen.findByLabelText("Nominal Tunai")
@@ -146,7 +169,7 @@ describe("payment dialog", () => {
 
     // Kasir mengetik, lalu berhenti sejenak sebelum Enter — jauh di luar jarak
     // Enter sebuah scanner.
-    typeAmount(field, "50000", 1000)
+    fireEvent.change(field, { target: { value: "50000" } })
     pressEnter(field, 3000)
 
     await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
@@ -166,6 +189,26 @@ describe("payment dialog", () => {
     fireEvent.change(field, { target: { value: "200000000" } })
 
     expect(await screen.findByText(/Nominal pembayaran melebihi/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+  })
+
+  it("shows kembalian in a success tone once cash covers the total", async () => {
+    renderDialog()
+    const field = await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.change(field, { target: { value: "10000" } })
+
+    expect(await screen.findByText("Kembalian")).toBeInTheDocument()
+    expect(screen.getByText("Rp 4.000")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
+  it("keeps Bayar disabled while cash is short of the total", async () => {
+    renderDialog()
+    const field = await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.change(field, { target: { value: "1000" } })
+
     expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
   })
 
@@ -200,5 +243,67 @@ describe("payment dialog", () => {
       await screen.findByText("Isi nama bank untuk pembayaran transfer bank."),
     ).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+  })
+
+  it("accepts a bank picked from the curated list", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+    fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
+
+    const bankField = await screen.findByRole("combobox", { name: "Bank" })
+    bankField.focus()
+    fireEvent.click(await screen.findByRole("option", { name: "BCA" }))
+
+    expect(bankField).toHaveValue("BCA")
+
+    fireEvent.change(await screen.findByLabelText("Nominal Transfer Bank"), {
+      target: { value: "6000" },
+    })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
+  it("accepts a bank name typed free-hand, not just the curated list", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+    fireEvent.click(screen.getByRole("button", { name: /Transfer Bank/ }))
+
+    const bankField = await screen.findByRole("combobox", { name: "Bank" })
+    fireEvent.change(bankField, { target: { value: "BPR Toko Sebelah" } })
+
+    expect(bankField).toHaveValue("BPR Toko Sebelah")
+    expect(
+      screen.queryByText("Isi nama bank untuk pembayaran transfer bank."),
+    ).not.toBeInTheDocument()
+
+    fireEvent.change(await screen.findByLabelText("Nominal Transfer Bank"), {
+      target: { value: "6000" },
+    })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
+  it("sums split payments across methods before enabling Bayar", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    // Tunai tunggal → QRIS menggantikan (radio), lalu Tunai ditambahkan lagi
+    // (mode split, bukan radio lagi karena pilihannya sudah bukan tunai tunggal).
+    fireEvent.click(screen.getByRole("button", { name: /QRIS/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Tunai$/ }))
+
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "2000" },
+    })
+    fireEvent.change(await screen.findByLabelText("Nominal QRIS"), {
+      target: { value: "3000" },
+    })
+
+    // Rp 2.000 + Rp 3.000 = Rp 5.000, masih kurang dari total Rp 6.000.
+    expect(await screen.findByText(/masih kurang/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText("Nominal QRIS"), { target: { value: "4000" } })
+
+    expect(screen.queryByText(/masih kurang/)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
   })
 })

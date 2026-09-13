@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react"
+import type { KeyboardEvent, Ref } from "react"
 import { FieldError, Input, Label, TextField } from "@heroui/react"
 
 import { formatNumber } from "@/lib/format"
@@ -17,6 +17,12 @@ interface RupiahFieldProps {
   errorMessage?: string
   className?: string
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+  onFocus?: () => void
+  /** Focus the field as soon as it mounts — a dialog's one obvious first field. */
+  autoFocus?: boolean
+  /** The underlying `<input>`, for a caller that needs to re-focus it later
+   * (a keyboard shortcut that fills the field and hands focus back to it). */
+  ref?: Ref<HTMLInputElement>
 }
 
 /** `-10.000` → -10000; digits only, one optional leading minus. */
@@ -58,6 +64,9 @@ export function RupiahField({
   errorMessage,
   className,
   onKeyDown,
+  onFocus,
+  autoFocus,
+  ref,
 }: RupiahFieldProps) {
   return (
     <TextField
@@ -71,7 +80,14 @@ export function RupiahField({
       onChange={(text) => onChange(parseTyped(text, allowNegative))}
     >
       <Label>{label}</Label>
-      <Input className="text-right tabular-nums" placeholder={placeholder} onKeyDown={onKeyDown} />
+      <Input
+        ref={ref}
+        autoFocus={autoFocus}
+        className="text-right tabular-nums"
+        placeholder={placeholder}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+      />
       {errorMessage ? <FieldError>{errorMessage}</FieldError> : null}
     </TextField>
   )
