@@ -1,8 +1,9 @@
 import type { ReactNode } from "react"
 import { Tabs } from "@heroui/react"
-import { Store, ShoppingCart, Printer, Database, Zap } from "lucide-react"
+import { Store, ShoppingCart, Printer, Database, Zap, Download } from "lucide-react"
 
 import { useAuthStore } from "@/features/auth"
+import { AppUpdateCard } from "@/features/updater"
 import { id } from "@/i18n/id"
 import { StoreInfoTab } from "./store-info-tab"
 import { SalesSettingsTab } from "./sales-settings-tab"
@@ -63,6 +64,12 @@ export function SettingsPage() {
           },
         ]
       : []),
+    {
+      key: "app",
+      label: id.settings.tabApp,
+      icon: <Download aria-hidden="true" className="size-4" />,
+      panel: <AppUpdateCard />,
+    },
   ]
 
   // Judul "Pengaturan" sudah digambar navbar dari daftar navigasi; halaman ini

@@ -144,6 +144,11 @@ export const queryKeys = {
     status: ["backups", "status"] as const,
   },
 
+  updates: {
+    all: ["updates"] as const,
+    status: ["updates", "status"] as const,
+  },
+
   printers: {
     all: ["printers"] as const,
     list: ["printers", "list"] as const,
