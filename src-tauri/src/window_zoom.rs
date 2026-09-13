@@ -14,6 +14,7 @@
 //! Persistence is not here; `services::settings::save_ui_zoom` keeps the factor
 //! in `store_info.additional_info` so a restart opens at the same size.
 
+use std::future::Future;
 use std::sync::OnceLock;
 
 use crate::utils::AppError;
@@ -29,6 +30,9 @@ pub struct WindowZoom {
     /// Set once from Tauri's `setup`; empty in tests and before the window
     /// exists.
     applier: OnceLock<ZoomApplier>,
+    /// Serialises [`WindowZoom::store_then_apply`]: two keypresses in flight
+    /// at once must not store one factor and leave the window at the other.
+    serial: tokio::sync::Mutex<()>,
 }
 
 impl WindowZoom {
@@ -54,6 +58,21 @@ impl WindowZoom {
             AppError::Internal("window zoom used before the window was attached".into())
         })?;
         apply(factor).map_err(|e| AppError::Internal(format!("failed to zoom the window: {e}")))
+    }
+
+    /// Run `store` — the write that persists the factor and answers it as
+    /// stored — then zoom the window to that answer, with no other store/apply
+    /// pair interleaving. Without the lock, requests A and B could run
+    /// store(A), store(B), apply(B), apply(A): the window shows A while a
+    /// restart would open at B.
+    pub async fn store_then_apply(
+        &self,
+        store: impl Future<Output = Result<f64, AppError>>,
+    ) -> Result<f64, AppError> {
+        let _serial = self.serial.lock().await;
+        let factor = store.await?;
+        self.apply(factor)?;
+        Ok(factor)
     }
 }
 
@@ -86,5 +105,29 @@ mod tests {
         zoom.apply(1.5).expect("applies");
         zoom.apply(0.8).expect("applies");
         assert_eq!(*seen.lock().expect("lock"), vec![1.5, 0.8]);
+    }
+
+    /// The window is only zoomed to what the store actually answered — which
+    /// is what a restart will open at — and never when the store failed.
+    #[tokio::test]
+    async fn store_then_apply_zooms_to_the_stored_answer_or_not_at_all() {
+        let zoom = WindowZoom::new();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        zoom.attach(move |factor| {
+            sink.lock().expect("lock").push(factor);
+            Ok(())
+        });
+
+        // Asked for 2.5, the store clamps to 2.0; the window gets 2.0.
+        let stored = zoom.store_then_apply(async { Ok(2.0) }).await.expect("ok");
+        assert_eq!(stored, 2.0);
+
+        let failed = zoom
+            .store_then_apply(async { Err(AppError::Validation("x".into())) })
+            .await;
+        assert!(matches!(failed, Err(AppError::Validation(_))));
+
+        assert_eq!(*seen.lock().expect("lock"), vec![2.0]);
     }
 }

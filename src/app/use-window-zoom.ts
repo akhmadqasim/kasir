@@ -57,7 +57,6 @@ export function useWindowZoom() {
   const { factor: zoom, available } = query.data ?? UNKNOWN
 
   const { mutate } = useApiMutation(setWindowZoom, {
-    mutationKey: zoomKey,
     onMutate: async (factor) => {
       await queryClient.cancelQueries({ queryKey: zoomKey })
       queryClient.setQueryData<WindowZoom>(zoomKey, (current) => ({
@@ -65,10 +64,11 @@ export function useWindowZoom() {
         factor,
       }))
     },
-    onSettled: (data) => {
-      // Counting this mutation too, so `1` means it is the last one out. An
-      // earlier answer landing late must not overwrite a later keypress.
-      if (queryClient.isMutating({ mutationKey: zoomKey }) !== 1) return
+    onSettled: (data, _error, factor) => {
+      // Only the request for the factor the cache currently shows may settle
+      // it. Two keypresses go out on two connections, so the answer to the
+      // first can land after the second's — and must not overwrite it.
+      if (queryClient.getQueryData<WindowZoom>(zoomKey)?.factor !== factor) return
       if (data) queryClient.setQueryData(zoomKey, data)
       else void queryClient.invalidateQueries({ queryKey: zoomKey })
     },

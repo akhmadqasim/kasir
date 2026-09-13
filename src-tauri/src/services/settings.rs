@@ -238,10 +238,13 @@ pub(crate) async fn merge_additional_info<T>(
         .await?
         .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
 
+    // Valid JSON that is not an object (`[]`, `5`) would make `info["key"] = …`
+    // panic, so it is treated like unreadable JSON: replaced by an empty one.
     let mut info: serde_json::Value = store
         .additional_info
         .as_ref()
         .and_then(|s| serde_json::from_str(s).ok())
+        .filter(serde_json::Value::is_object)
         .unwrap_or(serde_json::json!({}));
     let out = mutate(&mut info)?;
 
@@ -427,6 +430,20 @@ mod tests {
         let err = save_ui_zoom(&db, f64::NAN).await.expect_err("refused");
         assert!(matches!(err, AppError::Validation(_)));
         assert_eq!(ui_zoom(&db).await.expect("read"), UI_ZOOM_DEFAULT);
+    }
+
+    /// `additional_info` that parses but is not an object must not panic the
+    /// merge; it is replaced the way unreadable JSON is.
+    #[tokio::test]
+    async fn a_non_object_settings_blob_is_replaced_rather_than_indexed() {
+        let db = setup_test_db().await;
+        let store = insert_store_info(&db, false).await;
+        let mut active: store_info::ActiveModel = store.into();
+        active.additional_info = Set(Some("[1,2]".into()));
+        active.update(&db).await.expect("seed");
+
+        assert_eq!(save_ui_zoom(&db, 1.3).await.expect("save"), 1.3);
+        assert_eq!(ui_zoom(&db).await.expect("read"), 1.3);
     }
 
     #[tokio::test]

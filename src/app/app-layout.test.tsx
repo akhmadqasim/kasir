@@ -97,6 +97,31 @@ describe("AppLayout zoom", () => {
     expect(api.callsFor("GET /window/zoom")).toHaveLength(1)
   })
 
+  it("jawaban PUT yang terlambat tidak menimpa tekanan tombol yang lebih baru", async () => {
+    installZoomServer({ factor: 1, available: true })
+    renderLayout()
+    await screen.findByRole("button", { name: "100%" })
+
+    // First press: the answer is held back. Second press: answered at once.
+    let releaseFirst: (value: WindowZoom) => void = () => {}
+    api.route(
+      "PUT /window/zoom",
+      () => new Promise<WindowZoom>((resolve) => (releaseFirst = resolve)),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Perbesar tampilan" }))
+    await vi.waitFor(() => expect(api.callsFor("PUT /window/zoom")).toHaveLength(1))
+    api.route("PUT /window/zoom", echoZoom)
+    fireEvent.click(screen.getByRole("button", { name: "Perbesar tampilan" }))
+    await vi.waitFor(() => expect(api.callsFor("PUT /window/zoom")).toHaveLength(2))
+    expect(api.lastCall("PUT /window/zoom")?.body).toEqual({ factor: 1.2 })
+    await vi.waitFor(() => expect(zoomLabel()).toHaveTextContent("120%"))
+
+    releaseFirst({ factor: 1.1, available: true })
+    await screen.findByText("Isi halaman")
+    expect(zoomLabel()).toHaveTextContent("120%")
+    expect(api.callsFor("GET /window/zoom")).toHaveLength(1)
+  })
+
   it("Ctrl+/−/0 menggerakkan zoom dan tidak lolos ke webview", async () => {
     installZoomServer({ factor: 1, available: true })
     renderLayout()

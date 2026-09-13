@@ -62,8 +62,10 @@ async fn set_zoom(
     }
     // Stored first, then applied: the factor the window shows is the one a
     // restart will open at, already clamped and rounded by the store.
-    let factor = services::settings::save_ui_zoom(&state.db, input.factor).await?;
-    state.window_zoom.apply(factor)?;
+    let factor = state
+        .window_zoom
+        .store_then_apply(services::settings::save_ui_zoom(&state.db, input.factor))
+        .await?;
     Ok(axum::Json(ZoomResponse {
         factor,
         available: true,
