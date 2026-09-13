@@ -49,9 +49,11 @@ export function ProductsPage() {
   })
 
   const { data: categories } = useCategories()
-  // `?? []` membuat array baru tiap render, jadi memo di bawahnya tidak pernah
-  // menyimpan apa pun. Kunci identitasnya di sini.
+  // `?? []` membuat array baru tiap render, dan `ProductTable` di-`memo`:
+  // kunci identitasnya di sini supaya membuka dialog tidak menggambar ulang
+  // lima puluh baris.
   const products = useMemo(() => productsData?.data ?? [], [productsData])
+  const categoryList = useMemo(() => categories ?? [], [categories])
 
   const reviewSummary = useMemo(() => {
     const noBarcode = products.filter((product) => !product.barcode?.trim()).length
@@ -93,10 +95,10 @@ export function ProductsPage() {
     [sortBy, sortOrder],
   )
 
-  const handleEdit = (product: Product) => {
+  const handleEdit = useCallback((product: Product) => {
     setEditingProduct(product)
     setFormOpen(true)
-  }
+  }, [])
 
   const handleFormOpenChange = (open: boolean) => {
     setFormOpen(open)
@@ -145,7 +147,7 @@ export function ProductsPage() {
 
       <ProductTable
         products={products}
-        categories={categories ?? []}
+        categories={categoryList}
         isLoading={isLoading}
         page={productsData?.page ?? 1}
         totalPages={productsData?.total_pages ?? 1}
