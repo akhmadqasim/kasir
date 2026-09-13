@@ -49,7 +49,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
           .map(
             (split) => `
     <tr>
-      <td>Bayar (${escapeHtml(paymentSplitLabel(split.payment_method, split.bank_name))})</td>
+      <td>${escapeHtml(paymentSplitLabel(split.payment_method, split.bank_name))}</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(split.amount)}</td>
     </tr>`,
@@ -64,7 +64,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
       <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
     </tr>
     <tr>
-      <td>Kembalian</td>
+      <td>Kembali</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(data.change_amount)}</td>
     </tr>`
@@ -72,14 +72,14 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
         }`
       : `
     <tr>
-      <td>Bayar (${escapeHtml(paymentLabel)})</td>
+      <td>${escapeHtml(paymentLabel)}</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(data.payment_amount)}</td>
     </tr>
     ${
       hasChange
         ? `<tr>
-      <td>Kembalian</td>
+      <td>Kembali</td>
       <td></td>
       <td style="text-align:right">${formatRupiah(data.change_amount)}</td>
     </tr>`
@@ -91,7 +91,7 @@ export function generateReceiptHtml(data: ReceiptData, paperWidth: number): stri
         .split("\n")
         .map((line: string) => `<div>${escapeHtml(line)}</div>`)
         .join("")
-    : `<div>Terima kasih!</div><div>Barang yang sudah dibeli</div><div>tidak dapat dikembalikan</div>`
+    : `<div>Terima kasih!</div>`
 
   const titleSuffix = data.is_deleted ? " - VOID" : ""
   const voidInfoHtml = data.is_deleted

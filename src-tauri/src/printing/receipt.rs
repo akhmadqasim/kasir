@@ -205,11 +205,13 @@ pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
     format!("{}{}{}", left, " ".repeat(spaces), right)
 }
 
-/// The shop's own name and contact details, between two rules.
+/// The shop's own name and contact details. Sales receipt only — a PPOB
+/// struk opens with the store's name and nothing else, because it is the
+/// provider's document and Mitra's own slip carries no address either.
 ///
-/// The sales receipt alone. A PPOB struk opens with the store's name and nothing
-/// else, because it is the provider's document and Mitra's own slip carries no
-/// address either.
+/// Draws no rule of its own; the caller puts one `-` line between this and
+/// whatever comes next, so the same banner works whether it is followed
+/// straight by the transaction header or by a VOID heading first.
 pub(super) fn push_store_banner(
     lines: &mut Vec<ReceiptTextLine>,
     store_name: &str,
@@ -217,7 +219,6 @@ pub(super) fn push_store_banner(
     store_phone: Option<&str>,
     cpl: usize,
 ) {
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
     lines.push(ReceiptTextLine::bold(center_text(store_name, cpl)));
 
     if let Some(address) = store_address.map(str::trim).filter(|a| !a.is_empty()) {
@@ -229,31 +230,30 @@ pub(super) fn push_store_banner(
             cpl,
         )));
     }
-
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
 }
 
-/// Which sale this is: its number, when it happened, who rang it up.
-pub(super) fn push_sale_details(
+/// The date/time and cashier name on one line, date/time flush left and the
+/// cashier's full name flush right. Names are not truncated — a long enough
+/// name (a long-name test covers this) pushes the pair onto two lines instead
+/// of overflowing the paper width, date/time on its own line and the cashier
+/// name right-aligned below it.
+fn push_transaction_meta(
     lines: &mut Vec<ReceiptTextLine>,
-    receipt_number: &str,
     date_time: &str,
     cashier_name: &str,
     cpl: usize,
 ) {
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "No:",
-        receipt_number,
-        cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Tanggal:", date_time, cpl,
-    )));
-    lines.push(ReceiptTextLine::plain(two_col_text(
-        "Kasir:",
-        cashier_name,
-        cpl,
-    )));
+    // `two_col_text` pads to exactly `cpl` when the two sides fit, and only
+    // overshoots once its forced single space can't make them fit — so
+    // measuring its own output tells us which case this is, without
+    // re-deriving the same fits-or-not rule from the two lengths by hand.
+    let one_line = two_col_text(date_time, cashier_name, cpl);
+    if one_line.chars().count() <= cpl {
+        lines.push(ReceiptTextLine::plain(one_line));
+    } else {
+        lines.push(ReceiptTextLine::plain(date_time.to_string()));
+        lines.push(ReceiptTextLine::plain(two_col_text("", cashier_name, cpl)));
+    }
 }
 
 /// Generate receipt as text lines for ESC/POS printing
@@ -273,16 +273,11 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
             "RECEIPT SALINAN (VOID)",
             cpl,
         )));
-        lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
     }
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
-    push_sale_details(
-        &mut lines,
-        &data.receipt_number,
-        &data.date_time,
-        &data.cashier_name,
-        cpl,
-    );
+    lines.push(ReceiptTextLine::plain(data.receipt_number.clone()));
+    push_transaction_meta(&mut lines, &data.date_time, &data.cashier_name, cpl);
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Items
@@ -323,7 +318,7 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
             let method_label =
                 payment_method_label_with_bank(&split.payment_method, split.bank_name.as_deref());
             lines.push(ReceiptTextLine::plain(two_col_text(
-                &format!("Bayar ({})", method_label),
+                &method_label,
                 &format_rupiah(split.amount),
                 cpl,
             )));
@@ -335,7 +330,7 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
                 cpl,
             )));
             lines.push(ReceiptTextLine::plain(two_col_text(
-                "Kembalian",
+                "Kembali",
                 &format_rupiah(data.change_amount),
                 cpl,
             )));
@@ -348,13 +343,13 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
                 .and_then(|split| split.bank_name.as_deref()),
         );
         lines.push(ReceiptTextLine::plain(two_col_text(
-            &format!("Bayar ({})", method_label),
+            &method_label,
             &format_rupiah(data.payment_amount),
             cpl,
         )));
         if data.payment_method == "cash" && data.change_amount > 0.0 {
             lines.push(ReceiptTextLine::plain(two_col_text(
-                "Kembalian",
+                "Kembali",
                 &format_rupiah(data.change_amount),
                 cpl,
             )));
@@ -376,7 +371,7 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         }
     }
 
-    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Footer
     if let Some(ref footer) = data.footer_text {
@@ -385,14 +380,6 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         }
     } else {
         lines.push(ReceiptTextLine::plain(center_text("Terima kasih!", cpl)));
-        lines.push(ReceiptTextLine::plain(center_text(
-            "Barang yang sudah dibeli",
-            cpl,
-        )));
-        lines.push(ReceiptTextLine::plain(center_text(
-            "tidak dapat dikembalikan",
-            cpl,
-        )));
     }
 
     lines
@@ -457,57 +444,169 @@ mod tests {
         assert!(line.ends_with("100.000"));
     }
 
-    #[test]
-    fn test_format_receipt_text() {
-        let data = ReceiptData {
-            store_name: "Toko Makmur".to_string(),
-            store_address: Some("Jl. Raya No. 1".to_string()),
-            store_phone: Some("08123456789".to_string()),
-            receipt_number: "TRX-20250118-0001".to_string(),
-            date_time: "18/01/2025 14:30".to_string(),
-            cashier_name: "Ahmad".to_string(),
+    fn sample_receipt_data() -> ReceiptData {
+        ReceiptData {
+            store_name: "Cahaya513 Mini Mart".to_string(),
+            store_address: Some("Jl. Contoh No. 1 Samarinda".to_string()),
+            store_phone: Some("0812-xxxx-xxxx".to_string()),
+            receipt_number: "TRX-20260913-0001".to_string(),
+            date_time: "13/09/2026 07:15".to_string(),
+            cashier_name: "Dini Fadilah".to_string(),
             items: vec![
                 ReceiptItem {
-                    name: "Beras 5kg".to_string(),
-                    quantity: 1,
-                    price: 65000.0,
-                    subtotal: 65000.0,
+                    name: "Indomie Goreng".to_string(),
+                    quantity: 3,
+                    price: 3500.0,
+                    subtotal: 10500.0,
                 },
                 ReceiptItem {
-                    name: "Minyak Goreng 1L".to_string(),
-                    quantity: 2,
-                    price: 18000.0,
-                    subtotal: 36000.0,
+                    name: "Gula Pasir 1kg".to_string(),
+                    quantity: 1,
+                    price: 17000.0,
+                    subtotal: 17000.0,
                 },
             ],
-            subtotal_amount: 101000.0,
+            subtotal_amount: 27500.0,
             discount_amount: 0.0,
             payment_method: "cash".to_string(),
-            payment_amount: 110000.0,
-            change_amount: 9000.0,
+            payment_amount: 30000.0,
+            change_amount: 2500.0,
             payment_breakdown: vec![ReceiptPaymentSplit {
                 payment_method: "cash".to_string(),
                 bank_name: None,
-                amount: 101000.0,
+                amount: 27500.0,
             }],
             footer_text: None,
             is_deleted: false,
             deleted_reason: None,
             deleted_by_name: None,
-            original_total_amount: 101000.0,
-        };
+            original_total_amount: 27500.0,
+        }
+    }
+
+    /// The approved 58mm layout, reproduced line for line: banner, a `-` rule,
+    /// the receipt number alone, date/time and cashier on one line, items,
+    /// totals with the new payment labels, and the single-line default footer.
+    #[test]
+    fn test_format_receipt_text() {
+        let data = sample_receipt_data();
+        let cpl = columns(58);
+        let dash = "-".repeat(cpl);
 
         let lines = format_receipt_text(&data, 58);
-        assert!(!lines.is_empty());
+        let rendered: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
 
+        assert_eq!(
+            rendered,
+            vec![
+                center_text("Cahaya513 Mini Mart", cpl),
+                center_text("Jl. Contoh No. 1 Samarinda", cpl),
+                center_text("Telp: 0812-xxxx-xxxx", cpl),
+                dash.clone(),
+                "TRX-20260913-0001".to_string(),
+                two_col_text("13/09/2026 07:15", "Dini Fadilah", cpl),
+                dash.clone(),
+                "Indomie Goreng".to_string(),
+                two_col_text("  3 x 3.500", "10.500", cpl),
+                "Gula Pasir 1kg".to_string(),
+                two_col_text("  1 x 17.000", "17.000", cpl),
+                dash.clone(),
+                two_col_text("TOTAL", "27.500", cpl),
+                two_col_text("Tunai", "30.000", cpl),
+                two_col_text("Kembali", "2.500", cpl),
+                dash.clone(),
+                center_text("Terima kasih!", cpl),
+            ]
+        );
+
+        assert!(lines[0].bold, "the store name banner is the heading");
+        let total_line = lines
+            .iter()
+            .find(|l| l.text.trim_start().starts_with("TOTAL"))
+            .expect("TOTAL line present");
+        assert!(total_line.bold, "TOTAL is the other heading");
+    }
+
+    /// Every rule on a sales receipt is `-`; `=` never appears anywhere on it
+    /// (`format_test_page_text` is the only formatter still allowed one).
+    #[test]
+    fn sales_receipt_never_uses_a_double_rule() {
+        let lines = format_receipt_text(&sample_receipt_data(), 58);
+        assert!(
+            lines.iter().all(|l| !l.text.contains('=')),
+            "found a `=` rule on the sales receipt"
+        );
+    }
+
+    /// Date/time and cashier name share one line when they fit.
+    #[test]
+    fn date_and_cashier_share_one_line_when_they_fit() {
+        let lines = format_receipt_text(&sample_receipt_data(), 58);
+        assert!(lines
+            .iter()
+            .any(|l| l.text.contains("13/09/2026 07:15") && l.text.contains("Dini Fadilah")));
+    }
+
+    /// A cashier name long enough that `date_time + " " + cashier_name`
+    /// overflows the line splits onto two lines instead of running past the
+    /// paper width.
+    #[test]
+    fn date_and_cashier_wrap_to_two_lines_for_a_long_name() {
+        let mut data = sample_receipt_data();
+        data.cashier_name = "Kartika Wulandari Puspitasari".to_string();
+
+        let cpl = columns(58);
+        let lines = format_receipt_text(&data, 58);
+        let rendered: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+
+        let date_pos = rendered
+            .iter()
+            .position(|text| *text == "13/09/2026 07:15")
+            .expect("date/time printed on its own line");
+        assert!(
+            rendered[date_pos + 1].contains("Kartika Wulandari Puspitasari"),
+            "cashier name follows on the next line"
+        );
+        assert!(
+            rendered
+                .iter()
+                .all(|text| text.chars().count() <= cpl || text.contains("Kartika")),
+            "no unrelated line overflows the paper width"
+        );
+    }
+
+    /// The new label: `Kembali`, never the old `Kembalian`, and no `Bayar
+    /// (...)` wrapper around the payment method line.
+    #[test]
+    fn payment_lines_use_the_new_labels() {
+        let lines = format_receipt_text(&sample_receipt_data(), 58);
         let all_text: String = lines
             .iter()
-            .map(|l| l.text.clone())
+            .map(|l| l.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(all_text.contains("Toko Makmur"));
-        assert!(all_text.contains("TRX-20250118-0001"));
-        assert!(all_text.contains("Beras 5kg"));
-        assert!(all_text.contains("Terima kasih!"));
+
+        assert!(all_text.contains("Kembali"));
+        assert!(!all_text.contains("Kembalian"));
+        assert!(!all_text.contains("Bayar ("));
+        assert!(all_text.contains("Tunai"));
+    }
+
+    /// The default footer (no `footer_text` configured) is exactly one
+    /// centred line: "Terima kasih!" and nothing else.
+    #[test]
+    fn default_footer_is_a_single_line() {
+        let lines = format_receipt_text(&sample_receipt_data(), 58);
+        let cpl = columns(58);
+        let dash = "-".repeat(cpl);
+
+        let last_dash = lines
+            .iter()
+            .rposition(|l| l.text == dash)
+            .expect("closing rule present");
+        let footer_lines = &lines[last_dash + 1..];
+
+        assert_eq!(footer_lines.len(), 1);
+        assert_eq!(footer_lines[0].text, center_text("Terima kasih!", cpl));
     }
 }
