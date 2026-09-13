@@ -8,7 +8,7 @@ import { MAX_PAYMENT_AMOUNT } from "../../payment-behavior"
 import { formatRupiah } from "../../utils"
 import type { TransactionResult } from "../../types"
 import { CashFields } from "./cash-fields"
-import { TransferFields } from "./transfer-fields"
+import { BankField } from "./bank-field"
 import { PAYMENT_METHODS, usePaymentForm } from "./use-payment-form"
 
 interface PaymentDialogProps {
@@ -79,9 +79,10 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                             onFocus={() => form.setActivePaymentMethod(split.payment_method)}
                             onKeyDown={form.handleAmountKeyDown(split.payment_method, split.amount)}
                           />
-                          {split.payment_method === "transfer" && (
+                          {!isCash && (
                             <div className="flex flex-col gap-2">
-                              <TransferFields
+                              <BankField
+                                method={split.payment_method}
                                 value={split.bank_name}
                                 onChange={(value) =>
                                   form.handleBankNameChange(split.payment_method, value)

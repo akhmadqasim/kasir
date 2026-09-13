@@ -242,18 +242,12 @@ fn calculate_payment_amount_with_breakdown(
             .collect();
 
         if !splits.is_empty() {
+            // `bank_name` is optional on every method: the sender bank on a
+            // transfer, the issuing bank on a debit card, the app on an
+            // e-wallet or QRIS payment. Left empty, the receipt and reports
+            // just name the method.
             for split in &splits {
                 validate_payment_method(&split.payment_method)?;
-                if split.payment_method == "transfer"
-                    && split
-                        .bank_name
-                        .as_ref()
-                        .is_none_or(|name| name.trim().is_empty())
-                {
-                    return Err(AppError::Validation(
-                        "Nama bank wajib diisi untuk pembayaran transfer bank".into(),
-                    ));
-                }
             }
 
             let mut seen = std::collections::HashSet::new();
@@ -332,12 +326,6 @@ fn calculate_payment_amount_with_breakdown(
 
     let (payment_amount, change_amount, splits) =
         calculate_payment_amount(&input.payment_method, input.payment_amount, total_amount)?;
-
-    if input.payment_method == "transfer" {
-        return Err(AppError::Validation(
-            "Nama bank wajib diisi untuk pembayaran transfer bank".into(),
-        ));
-    }
 
     Ok((
         input.payment_method.clone(),

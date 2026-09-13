@@ -1,9 +1,11 @@
 import { ComboBox, EmptyState, FieldError, Input, ListBox } from "@heroui/react"
 
-import { BANKS, bankMatchesQuery } from "../../banks"
+import { BANK_CHOICE_BY_METHOD, BANKS, bankMatchesQuery, type Bank } from "../../banks"
 import { BankLogo } from "./bank-logo"
 
-interface TransferFieldsProps {
+interface BankFieldProps {
+  /** Metode pembayaran yang kolom ini milik — menentukan daftar dan placeholder. */
+  method: string
   /** Nama bank yang sudah diketik/dipilih; string kosong = belum diisi. */
   value: string
   onChange: (value: string) => void
@@ -18,25 +20,28 @@ function filterBank(itemText: string, query: string): boolean {
 }
 
 /** Bank yang namanya persis sama dengan teks yang sedang diketik/dipilih. */
-function findBankByExactName(value: string): (typeof BANKS)[number] | undefined {
+function findBankByExactName(value: string): Bank | undefined {
   const normalized = value.trim().toLowerCase()
   if (!normalized) return undefined
   return BANKS.find((bank) => bank.name.toLowerCase() === normalized)
 }
 
 /**
- * Nama bank pengirim untuk pembayaran transfer — opsional; kosong berarti
- * struk dan laporan cuma menyebut "Transfer Bank". `ComboBox` dengan
- * `allowsCustomValue`: daftar `BANKS` menyaring lewat nama dan alias saat
- * kasir mengetik (`bsi`, `syariah` → BSI), tapi bank yang tidak ada di
- * daftar tetap bisa diketik dan dipakai apa adanya — BPD kecil dan bank baru
- * tidak semuanya masuk daftar.
+ * Bank/aplikasi di balik satu pembayaran non-tunai — bank pengirim untuk
+ * transfer, bank kartu untuk debit, dompet digital untuk e-wallet, aplikasi
+ * pembayar untuk QRIS (`BANK_CHOICE_BY_METHOD`). Opsional; kosong berarti
+ * struk dan laporan cuma menyebut metodenya. `ComboBox` dengan
+ * `allowsCustomValue`: daftarnya menyaring lewat nama dan alias saat kasir
+ * mengetik (`bsi`, `syariah` → BSI), tapi nama yang tidak ada di daftar
+ * tetap bisa diketik dan dipakai apa adanya — BPD kecil dan bank baru tidak
+ * semuanya masuk daftar.
  */
-export function TransferFields({ value, onChange, onFocus, errorMessage }: TransferFieldsProps) {
+export function BankField({ method, value, onChange, onFocus, errorMessage }: BankFieldProps) {
   const matchedBank = findBankByExactName(value)
+  const choice = BANK_CHOICE_BY_METHOD[method] ?? BANK_CHOICE_BY_METHOD.transfer!
 
   return (
-    // Tanpa label terlihat: kolom ini menempel di bawah "Nominal Transfer Bank"
+    // Tanpa label terlihat: kolom ini menempel di bawah "Nominal <metode>"
     // dan judul "Bank" sendiri terbaca seperti metode pembayaran lain.
     <ComboBox
       allowsCustomValue
@@ -55,7 +60,7 @@ export function TransferFields({ value, onChange, onFocus, errorMessage }: Trans
             biasa, jadi logonya melayang di atas kolom, dan `Input` diberi
             `ps-9` supaya teksnya tidak tertindih. */}
         <BankLogo className="absolute start-1.5 top-1/2 -translate-y-1/2" name={matchedBank?.name} />
-        <Input className="ps-9" placeholder="Bank pengirim" />
+        <Input className="ps-9" placeholder={choice.placeholder} />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>
       <ComboBox.Popover>
@@ -65,7 +70,7 @@ export function TransferFields({ value, onChange, onFocus, errorMessage }: Trans
             <EmptyState>Tidak ada di daftar — nama yang diketik tetap dipakai</EmptyState>
           )}
         >
-          {BANKS.map((bank) => (
+          {choice.options.map((bank) => (
             <ListBox.Item key={bank.name} id={bank.name} textValue={bank.name}>
               <BankLogo name={bank.name} />
               {bank.name}

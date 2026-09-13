@@ -63,8 +63,12 @@ import uobLogo from "@/assets/banks/uob.svg"
  * legal belakangan ini (mis. BTPN → SMBC Indonesia, Bukopin → KB Bank) tapi
  * tetap didaftar dengan nama yang sehari-hari dikenal kasir (Jenius, KB Bank).
  */
+export type BankKind = "bank" | "ewallet"
+
 export interface Bank {
   name: string
+  /** Bank sungguhan (punya rekening) atau dompet digital; default `"bank"`. */
+  kind?: BankKind
   /** Kode bank SKN/RTGS 3 digit, kalau ada satu yang baku. */
   code?: string
   /** Kata kunci lain yang mungkin diketik kasir, huruf kecil semua. */
@@ -84,11 +88,11 @@ const BANKS_BASE: readonly Omit<Bank, "logo">[] = [
   { name: "CIMB Niaga", code: "022", aliases: ["cimb", "niaga"] },
   { name: "Danamon", code: "011", aliases: ["danamon"] },
   { name: "Permata", code: "013", aliases: ["permata", "bank permata"] },
-  { name: "GoPay", aliases: ["gopay", "go-pay"] },
-  { name: "OVO", aliases: ["ovo"] },
-  { name: "DANA", aliases: ["dana"] },
-  { name: "ShopeePay", aliases: ["shopeepay", "shopee pay"] },
-  { name: "LinkAja", aliases: ["linkaja", "link aja"] },
+  { name: "GoPay", kind: "ewallet", aliases: ["gopay", "go-pay"] },
+  { name: "OVO", kind: "ewallet", aliases: ["ovo"] },
+  { name: "DANA", kind: "ewallet", aliases: ["dana"] },
+  { name: "ShopeePay", kind: "ewallet", aliases: ["shopeepay", "shopee pay"] },
+  { name: "LinkAja", kind: "ewallet", aliases: ["linkaja", "link aja"] },
 
   // --- Sisanya, alfabetis ---------------------------------------------------
   { name: "Allo Bank", code: "567", aliases: ["allo", "allobank"] },
@@ -192,6 +196,28 @@ export const BANKS: readonly Bank[] = BANKS_BASE.map((bank) => ({
   ...bank,
   logo: BANK_LOGOS[bank.name],
 }))
+
+/**
+ * Apa yang ditanyakan kolom "bank" untuk tiap metode pembayaran selain tunai —
+ * daftar yang ditawarkan dan placeholder-nya. Transfer bisa datang dari
+ * rekening bank maupun dompet digital (DANA → rekening toko), debit selalu
+ * kartu bank, e-wallet selalu dompet digital, dan QRIS dibayar dari aplikasi
+ * mana saja — semua tetap `allowsCustomValue`, ini cuma urutan tawaran.
+ */
+export interface BankChoice {
+  placeholder: string
+  options: readonly Bank[]
+}
+
+const ONLY_BANKS = BANKS.filter((bank) => (bank.kind ?? "bank") === "bank")
+const ONLY_EWALLETS = BANKS.filter((bank) => bank.kind === "ewallet")
+
+export const BANK_CHOICE_BY_METHOD: Partial<Record<string, BankChoice>> = {
+  transfer: { placeholder: "Bank pengirim", options: BANKS },
+  debit: { placeholder: "Bank kartu", options: ONLY_BANKS },
+  ewallet: { placeholder: "Dompet digital", options: ONLY_EWALLETS },
+  qris: { placeholder: "Aplikasi pembayar", options: BANKS },
+}
 
 /** Cocok untuk `ComboBox`'s `defaultFilter`: nama bank atau salah satu aliasnya. */
 export function bankMatchesQuery(bank: Bank, query: string): boolean {

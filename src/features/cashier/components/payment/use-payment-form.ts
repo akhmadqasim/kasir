@@ -114,8 +114,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     .filter((split) => split.payment_method && (split.amount ?? 0) > 0)
     .map((split) => ({
       payment_method: split.payment_method,
-      bank_name:
-        split.payment_method === "transfer" ? split.bank_name.trim() || undefined : undefined,
+      bank_name: split.bank_name.trim() || undefined,
       amount: split.amount ?? 0,
     }))
   const splitMethods = normalizedSplits.map((split) => split.payment_method)
@@ -310,12 +309,11 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         })),
         payment_method: finalPaymentMethod,
         payment_amount: finalPaymentAmount,
+        // A single cash sale is fully described by the two fields above; any
+        // other single method may carry a bank/app name, which only the
+        // breakdown has room for.
         payment_breakdown:
-          selectedMethodCount > 1
-            ? normalizedSplits
-            : primaryPaymentMethod === "transfer"
-              ? normalizedSplits
-              : undefined,
+          selectedMethodCount > 1 || primaryPaymentMethod !== "cash" ? normalizedSplits : undefined,
         transaction_discount: getTransactionDiscountAmount() || undefined,
         shift_id: activeShift?.id,
         notes: notes.trim() || undefined,

@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { BANK_LOGOS, BANKS } from "./banks"
+import { BANK_CHOICE_BY_METHOD, BANK_LOGOS, BANKS } from "./banks"
 
 // Path resolves the same in the worktree and in the future main checkout —
 // `banks.test.ts` sits next to `banks.ts`, three levels below `src/`.
@@ -62,5 +62,28 @@ describe("BANK_LOGOS", () => {
     for (const bank of BANKS) {
       expect(bank.logo).toBe(BANK_LOGOS[bank.name])
     }
+  })
+})
+
+describe("BANK_CHOICE_BY_METHOD", () => {
+  it("offers only banks for a debit card and only wallets for an e-wallet", () => {
+    const debit = BANK_CHOICE_BY_METHOD.debit!.options.map((bank) => bank.name)
+    const ewallet = BANK_CHOICE_BY_METHOD.ewallet!.options.map((bank) => bank.name)
+
+    expect(debit).toContain("BCA")
+    expect(debit).not.toContain("GoPay")
+    expect(ewallet).toEqual(["GoPay", "OVO", "DANA", "ShopeePay", "LinkAja"])
+  })
+
+  it("lets a transfer or QRIS payment come from either kind", () => {
+    for (const method of ["transfer", "qris"] as const) {
+      const names = BANK_CHOICE_BY_METHOD[method]!.options.map((bank) => bank.name)
+      expect(names).toContain("BCA")
+      expect(names).toContain("DANA")
+    }
+  })
+
+  it("has no chooser for cash", () => {
+    expect(BANK_CHOICE_BY_METHOD.cash).toBeUndefined()
   })
 })

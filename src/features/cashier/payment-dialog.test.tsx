@@ -279,6 +279,50 @@ describe("payment dialog", () => {
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
   })
 
+  it("asks which wallet paid an e-wallet sale and sends it along", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+    fireEvent.click(screen.getByRole("button", { name: /E-Wallet/ }))
+
+    const walletField = await screen.findByPlaceholderText("Dompet digital")
+    walletField.focus()
+    // Only wallets are offered here — a bank is not something an e-wallet pays from.
+    expect(await screen.findByRole("option", { name: "DANA" })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "BCA" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("option", { name: "DANA" }))
+
+    const amount = await screen.findByLabelText("Nominal E-Wallet")
+    fireEvent.change(amount, { target: { value: "6000" } })
+    pressEnter(amount, 3000)
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    const body = api.lastCall("POST /transactions")?.body as {
+      payment_breakdown: { payment_method: string; bank_name?: string }[]
+    }
+    expect(body.payment_breakdown).toEqual([
+      { payment_method: "ewallet", bank_name: "DANA", amount: 6000 },
+    ])
+  })
+
+  it("offers a bank for debit and any app for QRIS, both optional", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.click(screen.getByRole("button", { name: /Debit/ }))
+    expect(await screen.findByPlaceholderText("Bank kartu")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /QRIS/ }))
+    expect(await screen.findByPlaceholderText("Aplikasi pembayar")).toBeInTheDocument()
+
+    fireEvent.change(await screen.findByLabelText("Nominal Debit"), {
+      target: { value: "3000" },
+    })
+    fireEvent.change(await screen.findByLabelText("Nominal QRIS"), {
+      target: { value: "3000" },
+    })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
   it("sums split payments across methods before enabling Bayar", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
