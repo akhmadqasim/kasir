@@ -174,7 +174,7 @@ function HeldCartsList({
                   <Button
                     aria-label={`Buka ${held.label}`}
                     size="sm"
-                    variant="secondary"
+                    variant="tertiary"
                     onPress={() => onRecall(held.id)}
                   >
                     <PlayCircle />
