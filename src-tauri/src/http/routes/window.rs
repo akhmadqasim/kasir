@@ -8,8 +8,6 @@
 //! and a window is attached; anyone else is told `available: false` and left
 //! to their browser's own zoom.
 
-use std::net::IpAddr;
-
 use axum::extract::State;
 use axum::routing::get;
 use axum::Router;
@@ -37,16 +35,8 @@ pub struct SetZoomInput {
     pub factor: f64,
 }
 
-/// Only the app's own webview reaches the server over loopback. A forwarded
-/// address (nginx with `KASIR_TRUST_PROXY=1`) is the tablet's, not the proxy's,
-/// so it fails this the way it should.
 fn is_the_till_window(state: &AppState, client: &ClientInfo) -> bool {
-    state.window_zoom.is_attached()
-        && client
-            .address
-            .as_deref()
-            .and_then(|address| address.parse::<IpAddr>().ok())
-            .is_some_and(|ip| ip.is_loopback())
+    state.window_zoom.is_attached() && client.is_loopback()
 }
 
 async fn zoom(

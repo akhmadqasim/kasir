@@ -93,6 +93,8 @@ describe("AppLayout zoom", () => {
     await vi.waitFor(() => expect(api.callsFor("PUT /window/zoom")).toHaveLength(3))
     expect(api.lastCall("PUT /window/zoom")?.body).toEqual({ factor: 1 })
     expect(zoomLabel()).toHaveTextContent("100%")
+    // The PUT answer is the truth; nothing is refetched to learn it again.
+    expect(api.callsFor("GET /window/zoom")).toHaveLength(1)
   })
 
   it("Ctrl+/−/0 menggerakkan zoom dan tidak lolos ke webview", async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
@@ -43,8 +43,11 @@ function readLegacyZoom(): number | null {
  * `available` is false until the first answer arrives and stays false on a
  * LAN browser; callers hide the toolbar and leave Ctrl+/− to the browser then.
  * Writes are optimistic — the label moves on the keypress, not on the round
- * trip — and the cache is only refetched once the last in-flight write lands,
+ * trip — and the answer of the *last* in-flight write is what the cache keeps,
  * so a burst of keypresses does not flicker through every intermediate answer.
+ * The three callbacks are stable: they read the current factor from the cache
+ * when pressed rather than closing over it, so the keydown listener bound to
+ * them is registered once.
  */
 export function useWindowZoom() {
   const queryClient = useQueryClient()
@@ -53,7 +56,7 @@ export function useWindowZoom() {
   const query = useApiQuery(zoomKey, getWindowZoom, { staleTime: Infinity })
   const { factor: zoom, available } = query.data ?? UNKNOWN
 
-  const mutation = useApiMutation(setWindowZoom, {
+  const { mutate } = useApiMutation(setWindowZoom, {
     mutationKey: zoomKey,
     onMutate: async (factor) => {
       await queryClient.cancelQueries({ queryKey: zoomKey })
@@ -62,27 +65,31 @@ export function useWindowZoom() {
         factor,
       }))
     },
-    onSettled: () => {
-      // Counting this mutation too, so `1` means it is the last one out.
-      if (queryClient.isMutating({ mutationKey: zoomKey }) === 1) {
-        void queryClient.invalidateQueries({ queryKey: zoomKey })
-      }
+    onSettled: (data) => {
+      // Counting this mutation too, so `1` means it is the last one out. An
+      // earlier answer landing late must not overwrite a later keypress.
+      if (queryClient.isMutating({ mutationKey: zoomKey }) !== 1) return
+      if (data) queryClient.setQueryData(zoomKey, data)
+      else void queryClient.invalidateQueries({ queryKey: zoomKey })
     },
   })
-  const { mutate } = mutation
 
   const setZoom = useCallback(
-    (factor: number) => {
-      if (factor !== zoom) mutate(factor)
+    (next: (current: number) => number) => {
+      const current = queryClient.getQueryData<WindowZoom>(zoomKey)?.factor ?? ZOOM_DEFAULT
+      const factor = next(current)
+      if (factor !== current) mutate(factor)
     },
-    [mutate, zoom],
+    [queryClient, zoomKey, mutate],
   )
 
   // The one-time move from localStorage. Runs after the first answer, because
   // only then is it known whether this client may set the zoom at all; a LAN
   // browser just drops the key.
+  const migrated = useRef(false)
   useEffect(() => {
-    if (!query.data) return
+    if (!query.data || migrated.current) return
+    migrated.current = true
     const legacy = readLegacyZoom()
     if (legacy !== null && query.data.available && legacy !== query.data.factor) {
       mutate(legacy)
@@ -92,8 +99,8 @@ export function useWindowZoom() {
   return {
     zoom,
     available,
-    zoomIn: useCallback(() => setZoom(stepZoom(zoom, ZOOM_STEP)), [setZoom, zoom]),
-    zoomOut: useCallback(() => setZoom(stepZoom(zoom, -ZOOM_STEP)), [setZoom, zoom]),
-    zoomReset: useCallback(() => setZoom(ZOOM_DEFAULT), [setZoom]),
+    zoomIn: useCallback(() => setZoom((z) => stepZoom(z, ZOOM_STEP)), [setZoom]),
+    zoomOut: useCallback(() => setZoom((z) => stepZoom(z, -ZOOM_STEP)), [setZoom]),
+    zoomReset: useCallback(() => setZoom(() => ZOOM_DEFAULT), [setZoom]),
   }
 }

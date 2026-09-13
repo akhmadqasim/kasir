@@ -13,7 +13,7 @@
 //! the server cannot verify. Checking `Origin` is the server-side half.
 
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use axum::extract::{ConnectInfo, FromRequestParts, Request, State};
 use axum::http::header;
@@ -53,6 +53,19 @@ pub struct ClientInfo {
     /// True only when the request demonstrably arrived over HTTPS. Decides the
     /// `Secure` flag on the session cookie.
     pub secure: bool,
+}
+
+impl ClientInfo {
+    /// Whether the caller is this machine — the app's own webview, which
+    /// loads `http://127.0.0.1:<port>`. Behind nginx with `KASIR_TRUST_PROXY=1`
+    /// the address is the forwarded one, so a tablet proxied from the LAN is
+    /// not mistaken for the till because the proxy happens to run here.
+    pub fn is_loopback(&self) -> bool {
+        self.address
+            .as_deref()
+            .and_then(|address| address.parse::<IpAddr>().ok())
+            .is_some_and(|ip| ip.is_loopback())
+    }
 }
 
 impl FromRequestParts<AppState> for ClientInfo {

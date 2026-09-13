@@ -157,46 +157,28 @@ pub async fn update_app_settings(
     // both fail silently, so they are refused here rather than discovered later.
     settings.backup.validate()?;
 
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
-
-    let mut info: serde_json::Value = store
-        .additional_info
-        .as_ref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or(serde_json::json!({}));
-    let current_settings = parse_app_settings(&store.additional_info);
-    let should_reset_ppob_session = !settings.ppob.enabled
-        || current_settings.ppob.enabled != settings.ppob.enabled
-        || current_settings.ppob.phone_number != settings.ppob.phone_number
-        || current_settings.ppob.password != settings.ppob.password
-        || current_settings.ppob.device_id != settings.ppob.device_id
-        || current_settings.ppob.pin != settings.ppob.pin;
-
     // Obfuscate sensitive PPOB credentials before storing
     let mut ppob_to_store = settings.ppob.clone();
     ppob_to_store.password = obfuscate(&ppob_to_store.password);
     ppob_to_store.pin = obfuscate(&ppob_to_store.pin);
 
-    // Merge sales and security keys, preserving existing printer keys
-    info["sales"] = serde_json::to_value(&settings.sales)
-        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
-    info["security"] = serde_json::to_value(&settings.security)
-        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
-    info["ppob"] = serde_json::to_value(&ppob_to_store)
-        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
-    info["backup"] = serde_json::to_value(&settings.backup)
-        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))?;
+    let should_reset_ppob_session = merge_additional_info(db, |info| {
+        let current_settings = parse_app_settings(&Some(info.to_string()));
+        let should_reset = !settings.ppob.enabled
+            || current_settings.ppob.enabled != settings.ppob.enabled
+            || current_settings.ppob.phone_number != settings.ppob.phone_number
+            || current_settings.ppob.password != settings.ppob.password
+            || current_settings.ppob.device_id != settings.ppob.device_id
+            || current_settings.ppob.pin != settings.ppob.pin;
 
-    let mut active: store_info::ActiveModel = store.into();
-    active.additional_info =
-        Set(Some(serde_json::to_string(&info).map_err(|e| {
-            AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
-        })?));
-    active.updated_at = Set(Some(now_ts()));
-    active.update(db).await?;
+        // Merge the four sections, preserving the printer and `ui` keys.
+        info["sales"] = to_json(&settings.sales)?;
+        info["security"] = to_json(&settings.security)?;
+        info["ppob"] = to_json(&ppob_to_store)?;
+        info["backup"] = to_json(&settings.backup)?;
+        Ok(should_reset)
+    })
+    .await?;
 
     if should_reset_ppob_session {
         clear_tokens(db).await?;
@@ -224,6 +206,33 @@ pub async fn save_ui_zoom(db: &DatabaseConnection, factor: f64) -> Result<f64, A
     let factor = clamp_ui_zoom(factor)
         .ok_or_else(|| AppError::Validation("Faktor zoom tidak valid.".into()))?;
 
+    merge_additional_info(db, |info| {
+        // `info["ui"]["zoom"] = …` builds the object when `ui` is absent but
+        // panics when it holds a non-object, so anything that is not a section
+        // is replaced.
+        if !info["ui"].is_object() {
+            info["ui"] = serde_json::json!({});
+        }
+        info["ui"]["zoom"] = serde_json::json!(factor);
+        Ok(())
+    })
+    .await?;
+
+    Ok(factor)
+}
+
+/// Read-modify-write on `store_info.additional_info`, the one JSON blob every
+/// settings section shares: the four `AppSettings` sections, the printer keys
+/// and `ui.zoom`. Each writer merges its own keys into `info` and leaves the
+/// rest alone, so this is the only place that knows how the blob is loaded,
+/// serialised and stamped.
+///
+/// `mutate` runs on the parsed blob (an empty object when the column is null
+/// or unreadable) and its return value is handed back.
+pub(crate) async fn merge_additional_info<T>(
+    db: &DatabaseConnection,
+    mutate: impl FnOnce(&mut serde_json::Value) -> Result<T, AppError>,
+) -> Result<T, AppError> {
     let store = store_info::Entity::find_by_id(1_i64)
         .one(db)
         .await?
@@ -234,12 +243,7 @@ pub async fn save_ui_zoom(db: &DatabaseConnection, factor: f64) -> Result<f64, A
         .as_ref()
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(serde_json::json!({}));
-    // `info["ui"]["zoom"] = …` builds the object when `ui` is absent but panics
-    // when it holds a non-object, so anything that is not a section is replaced.
-    if !info["ui"].is_object() {
-        info["ui"] = serde_json::json!({});
-    }
-    info["ui"]["zoom"] = serde_json::json!(factor);
+    let out = mutate(&mut info)?;
 
     let mut active: store_info::ActiveModel = store.into();
     active.additional_info =
@@ -249,7 +253,12 @@ pub async fn save_ui_zoom(db: &DatabaseConnection, factor: f64) -> Result<f64, A
     active.updated_at = Set(Some(now_ts()));
     active.update(db).await?;
 
-    Ok(factor)
+    Ok(out)
+}
+
+fn to_json<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, AppError> {
+    serde_json::to_value(value)
+        .map_err(|e| AppError::Internal(format!("Gagal serialisasi pengaturan: {}", e)))
 }
 
 /// Change the actor's own PIN. The current PIN is the proof of identity here, so

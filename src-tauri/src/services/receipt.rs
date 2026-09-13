@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tokio::sync::Mutex;
 
 use crate::domain::ppob::HistoryPaymentItem;
@@ -767,46 +767,28 @@ pub async fn update_printer_settings(
     db: &DatabaseConnection,
     input: UpdatePrinterSettingsInput,
 ) -> Result<(), AppError> {
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
-
-    let mut info: serde_json::Value = store
-        .additional_info
-        .as_ref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or(serde_json::json!({}));
-
-    if let Some(id) = &input.printer_id {
-        info["printer_id"] = serde_json::json!(id);
-    }
-    if let Some(width) = &input.paper_width {
-        info["paper_width"] = serde_json::json!(width);
-    }
-    if let Some(auto) = &input.auto_print {
-        info["auto_print"] = serde_json::json!(auto);
-    }
-    if let Some(footer) = &input.footer_text {
-        info["footer_text"] = serde_json::json!(footer);
-    }
-    if let Some(mode) = &input.print_mode {
-        // Normalised on the way in, so an unknown value cannot sit in the
-        // settings looking like it means something.
-        info["print_mode"] = serde_json::json!(PrintMode::from_setting(Some(mode)).as_setting());
-    }
-
-    let mut active: store_info::ActiveModel = store.into();
-    active.additional_info =
-        Set(Some(serde_json::to_string(&info).map_err(|e| {
-            AppError::Internal(format!("Gagal menyimpan pengaturan: {}", e))
-        })?));
-    active.updated_at = Set(Some(
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    ));
-    active.update(db).await?;
-
-    Ok(())
+    services::settings::merge_additional_info(db, |info| {
+        if let Some(id) = &input.printer_id {
+            info["printer_id"] = serde_json::json!(id);
+        }
+        if let Some(width) = &input.paper_width {
+            info["paper_width"] = serde_json::json!(width);
+        }
+        if let Some(auto) = &input.auto_print {
+            info["auto_print"] = serde_json::json!(auto);
+        }
+        if let Some(footer) = &input.footer_text {
+            info["footer_text"] = serde_json::json!(footer);
+        }
+        if let Some(mode) = &input.print_mode {
+            // Normalised on the way in, so an unknown value cannot sit in the
+            // settings looking like it means something.
+            info["print_mode"] =
+                serde_json::json!(PrintMode::from_setting(Some(mode)).as_setting());
+        }
+        Ok(())
+    })
+    .await
 }
 
 async fn load_payment_breakdown(
