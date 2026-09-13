@@ -137,7 +137,10 @@ export const ProductTable = memo(function ProductTable({
 
   return (
     <div className="flex flex-col gap-4">
-      <Table variant="secondary">
+      {/* Varian bawaan (`primary`), bukan `secondary` seperti tabel lain: isi
+          tabelnya kartu putih bersudut membulat di atas kanvas, seperti tabel
+          di template HeroUI Pro — permintaan pemilik toko untuk layar ini. */}
+      <Table>
         <Table.ScrollContainer>
           <Table.Content
             aria-label={id.products.title}
