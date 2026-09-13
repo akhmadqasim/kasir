@@ -10,7 +10,8 @@ export function HistoryPrintFields({ control }: { control: HistoryPrintControl }
 
   const grandTotal: SummaryItem = {
     label: t.ppob.grandTotal,
-    value: hasPrice ? formatRupiah(sellPrice) : "-",
+    // `hasPrice` already implies non-null; the extra check is for the type checker.
+    value: hasPrice && sellPrice != null ? formatRupiah(sellPrice) : "-",
     tone: hasPrice && fee != null && fee < 0 ? "danger" : "default",
   }
 
