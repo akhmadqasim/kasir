@@ -30,9 +30,9 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::domain::ppob::{
-    EmoneyDenom, HistoryDetailItem, HistoryPaymentItem, InquiryResult, MutasiItem,
-    NotificationListResult, PdamProduct, PlnDenom, PpSubMenuItem, PpobMenuGroup, PpobSaldoResponse,
-    PulsaDetailsResponse, PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
+    EmoneyDenom, HistoryPaymentItem, InquiryResult, MutasiItem, NotificationListResult,
+    PdamProduct, PlnDenom, PpSubMenuItem, PpobMenuGroup, PpobSaldoResponse, PulsaDetailsResponse,
+    PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
 };
 use crate::domain::Actor;
 use crate::http::error::ApiResult;
@@ -524,7 +524,7 @@ async fn history(
 async fn history_detail(
     State(state): State<AppState>,
     Path(trx_id): Path<String>,
-) -> ApiResult<axum::Json<HistoryDetailItem>> {
+) -> ApiResult<axum::Json<HistoryPaymentItem>> {
     Ok(axum::Json(
         services::ppob::history::detail(&state.db, &state.mitra, trx_id).await?,
     ))
