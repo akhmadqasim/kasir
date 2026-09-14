@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Spinner } from "@heroui/react"
 
 import { useApiQuery } from "@/hooks/use-api"
@@ -7,16 +7,21 @@ import { TransactionSuccessDialog } from "@/features/cashier/components/transact
 
 /**
  * Hanya di `bun run dev`: buka `/__success` untuk melihat dialog "Transaksi
- * selesai" dengan penjualan terakhir yang ada, tanpa harus menjual sesuatu
- * dulu — pasangan `/__error`. Cetak otomatis dimatikan supaya sekadar
- * membuka halaman ini tidak mengeluarkan kertas.
+ * selesai" dengan penjualan terakhir yang ada (atau `/__success?id=2487`
+ * untuk penjualan tertentu), tanpa harus menjual sesuatu dulu — pasangan
+ * `/__error`. Cetak otomatis dimatikan supaya sekadar membuka halaman ini
+ * tidak mengeluarkan kertas.
  */
 export function SuccessDialogForQa() {
   const navigate = useNavigate()
-  const latest = useApiQuery(["qa", "latest-transaction"], () =>
-    listTransactions({ page: 1, per_page: 1 }),
+  const [params] = useSearchParams()
+  const requested = Number(params.get("id"))
+  const latest = useApiQuery(
+    ["qa", "latest-transaction"],
+    () => listTransactions({ page: 1, per_page: 1 }),
+    { enabled: !requested },
   )
-  const id = latest.data?.data[0]?.id
+  const id = requested || latest.data?.data[0]?.id
   const detail = useApiQuery(
     ["qa", "transaction", id ?? 0],
     () => getTransactionDetail(id as number),
