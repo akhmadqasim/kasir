@@ -3,6 +3,13 @@
 /// All data needed to generate a receipt
 use super::ppob_receipt::wrap_words;
 
+/// Present and not just whitespace or a placeholder dash.
+fn non_blank(value: Option<&str>) -> Option<&str> {
+    value
+        .map(str::trim)
+        .filter(|text| !text.is_empty() && *text != "-")
+}
+
 pub struct ReceiptData {
     pub store_name: String,
     pub store_address: Option<String>,
@@ -38,6 +45,11 @@ pub struct ReceiptItem {
     pub quantity: i32,
     pub price: f64,
     pub subtotal: f64,
+    /// PPOB lines only: Mitra's `payment_code` ("D0813…-932-2609…") — the
+    /// number the customer quotes when a top-up does not arrive.
+    pub payment_code: Option<String>,
+    /// PPOB lines only: the provider's `no_ref`, when there was one.
+    pub reference_number: Option<String>,
 }
 
 /// Format currency in Indonesian style: 100.000
@@ -300,6 +312,20 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
             &subtotal_str,
             cpl,
         )));
+        // A PPOB line carries its proof under it: the code on its own row
+        // (thirty characters — it would not fit beside a label), the ref
+        // beside a short label. Indented two like the qty row.
+        if let Some(code) = non_blank(item.payment_code.as_deref()) {
+            lines.push(ReceiptTextLine::plain("  Kode Transaksi:".to_string()));
+            for row in wrap_words(code, cpl.saturating_sub(2)) {
+                lines.push(ReceiptTextLine::plain(format!("  {row}")));
+            }
+        }
+        if let Some(reference) = non_blank(item.reference_number.as_deref()) {
+            for row in wrap_words(&format!("No. Ref: {reference}"), cpl.saturating_sub(2)) {
+                lines.push(ReceiptTextLine::plain(format!("  {row}")));
+            }
+        }
     }
 
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
@@ -488,12 +514,16 @@ mod tests {
                     quantity: 3,
                     price: 3500.0,
                     subtotal: 10500.0,
+                    payment_code: None,
+                    reference_number: None,
                 },
                 ReceiptItem {
                     name: "Gula Pasir 1kg".to_string(),
                     quantity: 1,
                     price: 17000.0,
                     subtotal: 17000.0,
+                    payment_code: None,
+                    reference_number: None,
                 },
             ],
             subtotal_amount: 27500.0,
@@ -703,5 +733,51 @@ mod long_name_tests {
             .expect("first row of the name");
         assert_eq!(text[at + 1], "50.000,- Masa Aktif 45 Hari");
         assert!(text[at + 2].starts_with("  "), "qty line follows the name");
+    }
+}
+
+#[cfg(test)]
+mod ppob_line_tests {
+    use super::*;
+
+    #[test]
+    fn a_ppob_line_prints_its_payment_code_and_reference_under_the_qty_row() {
+        let mut data = tests::sample_receipt_data();
+        data.items[0].name = "Pulsa TELKOMSEL - TELKOMSEL 50.000,-".to_string();
+        data.items[0].payment_code = Some("D081347085447-932-260913064438".to_string());
+        data.items[0].reference_number = Some("04273700000625739077".to_string());
+        let text: Vec<String> = format_receipt_text(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+
+        let at = text
+            .iter()
+            .position(|line| line == "  Kode Transaksi:")
+            .expect("code heading");
+        assert!(
+            text[at - 1].starts_with("  3 x "),
+            "under the qty row: {text:?}"
+        );
+        assert_eq!(text[at + 1], "  D081347085447-932-260913064438");
+        assert_eq!(text[at + 2], "  No. Ref: 04273700000625739077");
+        assert!(
+            text.iter().all(|line| line.chars().count() <= 32),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn a_dash_or_blank_reference_prints_nothing() {
+        let mut data = tests::sample_receipt_data();
+        data.items[0].payment_code = Some("  ".to_string());
+        data.items[0].reference_number = Some("-".to_string());
+        let text: Vec<String> = format_receipt_text(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+        assert!(!text
+            .iter()
+            .any(|line| line.contains("Kode Transaksi") || line.contains("No. Ref")));
     }
 }

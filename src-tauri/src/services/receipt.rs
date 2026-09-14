@@ -271,13 +271,35 @@ pub(crate) async fn build_sale_receipt_data(
         .map(|dt| utc_to_local_formatted(dt))
         .unwrap_or_else(|| "N/A".to_string());
 
+    // PPOB lines print their payment code and the provider's reference under
+    // the item — the customer's proof if a top-up never lands. The code is on
+    // our own row; the reference only lives in the stored provider blob.
+    let blobs = load_ppob_receipts(
+        db,
+        items
+            .iter()
+            .filter(|item| item.service_type.is_some())
+            .map(|item| item.id),
+    )
+    .await?;
     let receipt_items: Vec<ReceiptItem> = items
         .iter()
-        .map(|item| ReceiptItem {
-            name: item.product_name.clone(),
-            quantity: item.quantity as i32,
-            price: item.product_price,
-            subtotal: item.subtotal,
+        .map(|item| {
+            let slip = item
+                .service_type
+                .as_ref()
+                .map(|_| ProviderSlip::from_response(blobs.get(&item.id).map(String::as_str)));
+            ReceiptItem {
+                name: item.product_name.clone(),
+                quantity: item.quantity as i32,
+                price: item.product_price,
+                subtotal: item.subtotal,
+                payment_code: item
+                    .ppob_payment_code
+                    .clone()
+                    .or_else(|| slip.as_ref().and_then(|slip| slip.payment_code.clone())),
+                reference_number: slip.and_then(|slip| slip.reference_number),
+            }
         })
         .collect();
     let payment_breakdown = load_payment_breakdown(db, &transaction).await?;
