@@ -5,6 +5,7 @@ import { AdminRouteGuard, AppGuard } from "./app-guard"
 import { AppLayout } from "./app-layout"
 import { readStoredResumeRoute, resolveResumeRoute } from "./resume-route"
 import { RouteErrorPage } from "./route-error-page"
+import { SuccessDialogForQa } from "./qa-success-dialog"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 
 const OnboardingPage = lazy(() =>
@@ -185,7 +186,12 @@ const router = createBrowserRouter([
                 // di tempat halaman, di dalam Outlet AppLayout.
                 errorElement: <RouteErrorPage />,
                 children: [
-                  ...(import.meta.env.DEV ? [{ path: "__error", element: <CrashForQa /> }] : []),
+                  ...(import.meta.env.DEV
+                    ? [
+                        { path: "__error", element: <CrashForQa /> },
+                        { path: "__success", element: <SuccessDialogForQa /> },
+                      ]
+                    : []),
                   {
                     path: "cashier",
                     element: (
