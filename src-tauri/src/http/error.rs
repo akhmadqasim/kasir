@@ -67,6 +67,15 @@ impl ApiError {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, "validation", message)
     }
 
+    /// A third party this server depends on refused or lost its own
+    /// authentication — the Mitra Indogrosir upstream, right now. Distinct
+    /// from [`Self::unauthorized`] on purpose: this server *is* handling the
+    /// request correctly, so the frontend must not treat it as its own
+    /// session going away.
+    pub fn upstream(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_GATEWAY, "upstream", message)
+    }
+
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, "not_found", message)
     }
@@ -116,6 +125,7 @@ impl From<AppError> for ApiError {
             AppError::Forbidden(message) => ApiError::forbidden(message),
             AppError::NotFound(message) => ApiError::not_found(message),
             AppError::Validation(message) => ApiError::validation(message),
+            AppError::Upstream(message) => ApiError::upstream(message),
             // The two that must not be echoed. `Display` on the sea-orm error
             // includes the failing SQL; `Internal` routinely carries a path.
             AppError::Database(err) => {
@@ -194,6 +204,10 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY
         );
         assert_eq!(
+            status_of(AppError::Upstream("x".into())),
+            StatusCode::BAD_GATEWAY
+        );
+        assert_eq!(
             status_of(AppError::Internal("x".into())),
             StatusCode::INTERNAL_SERVER_ERROR
         );
@@ -210,6 +224,20 @@ mod tests {
         let err = ApiError::from(AppError::Validation("Nama toko tidak boleh kosong".into()));
         assert_eq!(err.message, "Nama toko tidak boleh kosong");
         assert_eq!(err.code(), "validation");
+    }
+
+    /// An upstream provider auth failure must come back as 502 `"upstream"`,
+    /// never 401 `"auth"` — the frontend's global 401 handler logs the whole
+    /// app out, and this has nothing to do with the cashier's own session.
+    #[test]
+    fn upstream_auth_failures_are_not_our_session_expiring() {
+        let err = ApiError::from(AppError::Upstream(
+            "Sesi Mitra expired. Silakan coba lagi.".into(),
+        ));
+        assert_eq!(err.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(err.code(), "upstream");
+        assert_ne!(err.code(), "auth");
+        assert_eq!(err.message, "Sesi Mitra expired. Silakan coba lagi.");
     }
 
     /// A database error's `Display` contains the failing statement. It must not

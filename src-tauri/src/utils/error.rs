@@ -17,6 +17,14 @@ pub enum AppError {
     #[error("{0}")]
     Forbidden(String),
 
+    /// A third party we depend on (right now: the Mitra Indogrosir PPOB
+    /// upstream) refused or lost its own authentication. This is never about
+    /// *our* session — mapping it to 401 would make the frontend's "the
+    /// session is gone, log out" handler fire for a problem that has nothing
+    /// to do with the cashier's login.
+    #[error("{0}")]
+    Upstream(String),
+
     #[error("{0}")]
     Internal(String),
 }

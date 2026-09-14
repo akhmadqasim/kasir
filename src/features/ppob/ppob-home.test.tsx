@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 
-import { installApiMock } from "@/test-utils/api-mock"
+import { apiFailure, installApiMock } from "@/test-utils/api-mock"
 import { TestNavbar } from "@/test-utils/test-navbar"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { User } from "@/features/auth/types"
+import { setUnauthorizedHandler } from "@/lib/api/client"
+import { id } from "@/i18n/id"
 import { PLN_ROW } from "./history-fixture"
 import { PpobHome } from "./components/ppob-home"
 
@@ -202,5 +204,36 @@ describe("ppob home search", () => {
         'preselect: {"preselectGroup":{"id":33,"name":"Internet & TV"},"preselectItemId":354}',
       ),
     ).toBeInTheDocument()
+  })
+})
+
+/**
+ * The bug this guards against: opening this page used to log the cashier out
+ * of the whole app whenever the *upstream* Mitra account had an auth problem
+ * (wrong/expired credentials, an expired Mitra session) — a 401 the frontend's
+ * global handler cannot tell apart from its own session dying. The backend now
+ * answers those with 502 `"upstream"` instead, which must reach this page as
+ * an inline error, not as a forced logout.
+ */
+describe("ppob home when the Mitra upstream itself is failing", () => {
+  afterEach(() => {
+    setUnauthorizedHandler(null)
+  })
+
+  it("shows an inline error on the saldo card and never calls the global 401 handler", async () => {
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    installApiMock({
+      "GET /ppob/balance": apiFailure(502, "upstream", "Sesi Mitra expired. Silakan coba lagi."),
+      "GET /ppob/history": [PLN_ROW],
+    })
+
+    renderHome()
+
+    expect(await screen.findByText(id.ppob.notConfigured)).toBeInTheDocument()
+    // The rest of the page is still there — the failure is scoped to the
+    // saldo card, not a blank screen.
+    expect(screen.getByRole("button", { name: "Pulsa" })).toBeInTheDocument()
+    expect(onUnauthorized).not.toHaveBeenCalled()
   })
 })

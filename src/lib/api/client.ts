@@ -38,6 +38,13 @@ export type ApiErrorCode =
   | "bad_request"
   | "validation"
   | "internal"
+  /**
+   * A third party the server depends on (right now: the Mitra Indogrosir PPOB
+   * upstream) refused or lost its own authentication. Deliberately not "auth":
+   * that code drives the global 401 handler that logs the cashier out, and
+   * this has nothing to do with the cashier's own session.
+   */
+  | "upstream"
   /** The request never got an answer: the server is down, or the LAN dropped. */
   | "network"
 
@@ -51,6 +58,7 @@ const API_ERROR_CODES: readonly ApiErrorCode[] = [
   "bad_request",
   "validation",
   "internal",
+  "upstream",
   "network",
 ]
 
@@ -195,7 +203,15 @@ function fallbackMessage(status: number): string {
   return "Permintaan tidak dapat diproses."
 }
 
-/** A status with no `{code, message}` body still has to become *some* code. */
+/**
+ * A status with no `{code, message}` body still has to become *some* code.
+ *
+ * 502 is deliberately not mapped to `"upstream"` here: the server always
+ * sends a `{code, message}` body for its own upstream failures (caught by
+ * `isErrorBody` below), so a *bodyless* 502 only happens in front of this
+ * server — a proxy or the process being down — which is the generic
+ * server-side fault this falls through to, not a PPOB provider problem.
+ */
 function fallbackCode(status: number): ApiErrorCode {
   if (status === 401) return "auth"
   if (status === 403) return "forbidden"
