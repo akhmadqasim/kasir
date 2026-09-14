@@ -11,7 +11,6 @@ import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
 import { toast } from "@/lib/toast"
-import { cn } from "@/lib/utils"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
 
@@ -188,12 +187,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
                   kadang muncul kadang tidak membuat kasir mencari-cari. */}
               <div className="flex items-start justify-between gap-4">
                 <p className="text-muted">{id.cashier.change}</p>
-                <p
-                  className={cn(
-                    "text-3xl font-semibold tracking-tight tabular-nums",
-                    changeAmount > 0 ? "text-success" : "text-foreground",
-                  )}
-                >
+                <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
                   {formatRupiah(changeAmount)}
                 </p>
               </div>
