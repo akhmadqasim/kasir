@@ -167,7 +167,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     const text = ["```", ...lines.map((line) => line.text), "```"].join("\n")
     try {
       await navigator.clipboard.writeText(text)
-      toast.success("Struk disalin. Tempel di WhatsApp.")
+      toast.success("Struk disalin.")
     } catch {
       toast.error("Gagal menyalin struk.")
     }
