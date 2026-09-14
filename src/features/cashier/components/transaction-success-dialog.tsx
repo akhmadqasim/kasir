@@ -4,9 +4,7 @@ import { Printer } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
-import { StatusBadge } from "@/components/status-badge"
 import { ReceiptPreview } from "@/features/receipt"
-import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
 import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
@@ -129,7 +127,6 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   // cash the customer put on the counter comes straight back as change. Gating
   // this on "a cash entry exists" hid the whole amount from the cashier.
   const changeAmount = transaction.change_amount
-  const ppobItems = result.items.filter((item) => item.service_type)
 
   const handlePrint = async () => {
     if (isPrinting) return
@@ -177,8 +174,9 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
         <div className="grid min-w-0 gap-6 md:grid-cols-2">
           {/* Kiri: yang bukan isi struk — total dan kembalian yang harus
               diserahkan (dibaca pelanggan dari seberang meja — peran "Total
-              keranjang" §3.4), status PPOB yang masih berjalan, nasib cetak
-              otomatis, lalu kedua tombolnya di dasar kolom. */}
+              keranjang" §3.4), nasib cetak otomatis, lalu kedua tombolnya di
+              dasar kolom. Status PPOB tidak diulang di sini — ia ada di struk
+              dan di Riwayat. */}
           <div className="flex flex-col gap-4">
             {/* Kembalian di paling atas: itu yang diserahkan sekarang dan
                 dibaca pelanggan dari seberang meja; total tinggal pengingat. */}
@@ -198,28 +196,6 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
                 </p>
               </div>
             </InfoPanel>
-
-            {ppobItems.length > 0 && (
-              <ul className="flex flex-col gap-1">
-                {ppobItems.map((item) => {
-                  const status = ppobStatusConfig(item.ppob_status)
-                  return (
-                    <li key={item.id} className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-foreground">{item.product_name}</span>
-                      {status && (
-                        <StatusBadge size="sm" status={status.variant}>
-                          {isPpobInFlight(item.ppob_status) && (
-                            <Spinner className="size-3" color="current" size="sm" />
-                          )}
-                          {status.label}
-                        </StatusBadge>
-                      )}
-                    </li>
-                  )
-                })}
-                <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
-              </ul>
-            )}
 
             {autoPrintState.status === "printing" && (
               <p className="flex items-center gap-2">

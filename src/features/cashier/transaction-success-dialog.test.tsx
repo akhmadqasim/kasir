@@ -253,12 +253,12 @@ describe("transaction success dialog", () => {
     await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
   })
 
-  it("lists each PPOB line with its fulfilment status", async () => {
+  it("does not repeat PPOB lines or their status — the struk and Riwayat carry them", async () => {
     renderDialog({ result: { ...RESULT, items: [PPOB_LINE] } })
 
     const dialog = await screen.findByRole("dialog")
-    expect(dialog).toHaveTextContent("Pulsa Telkomsel 50.000")
-    expect(dialog).toHaveTextContent("Menunggu")
+    expect(dialog).not.toHaveTextContent("Menunggu")
+    expect(dialog).not.toHaveTextContent("PPOB diproses di latar belakang")
   })
 
   it("shows a struk preview drawn from the exact lines the printer would get", async () => {
