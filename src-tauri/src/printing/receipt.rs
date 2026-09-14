@@ -1,6 +1,8 @@
 //! Receipt formatter: takes store info + transaction data and produces text lines for ESC/POS printing
 
 /// All data needed to generate a receipt
+use super::ppob_receipt::wrap_words;
+
 pub struct ReceiptData {
     pub store_name: String,
     pub store_address: Option<String>,
@@ -16,6 +18,9 @@ pub struct ReceiptData {
     pub change_amount: f64,
     pub payment_breakdown: Vec<ReceiptPaymentSplit>,
     pub footer_text: Option<String>,
+    /// The cashier's note on the sale ("cash 300", a customer's name) —
+    /// printed under the payment block, since it was written for the paper.
+    pub notes: Option<String>,
     pub is_deleted: bool,
     pub deleted_reason: Option<String>,
     pub deleted_by_name: Option<String>,
@@ -356,6 +361,18 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         }
     }
 
+    if let Some(notes) = data
+        .notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|notes| !notes.is_empty())
+    {
+        lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+        for row in wrap_words(&format!("Catatan: {notes}"), cpl) {
+            lines.push(ReceiptTextLine::plain(row));
+        }
+    }
+
     if data.is_deleted {
         lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
         if let Some(ref deleted_by_name) = data.deleted_by_name {
@@ -452,7 +469,7 @@ mod tests {
         assert!(line.ends_with("100.000"));
     }
 
-    fn sample_receipt_data() -> ReceiptData {
+    pub(super) fn sample_receipt_data() -> ReceiptData {
         ReceiptData {
             store_name: "Cahaya513 Mini Mart".to_string(),
             store_address: Some("Jl. Contoh No. 1 Samarinda".to_string()),
@@ -485,6 +502,7 @@ mod tests {
                 amount: 27500.0,
             }],
             footer_text: None,
+            notes: None,
             is_deleted: false,
             deleted_reason: None,
             deleted_by_name: None,
@@ -615,5 +633,43 @@ mod tests {
 
         assert_eq!(footer_lines.len(), 1);
         assert_eq!(footer_lines[0].text, center_text("Terima kasih!", cpl));
+    }
+}
+
+#[cfg(test)]
+mod notes_tests {
+    use super::*;
+
+    #[test]
+    fn the_cashiers_note_prints_under_the_payment_block_wrapped_to_the_paper() {
+        let mut data = tests::sample_receipt_data();
+        data.notes =
+            Some("  cash 300 untuk Bu Dini, ambil besok pagi sekalian galon  ".to_string());
+        let text: Vec<String> = format_receipt_text(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+
+        let at = text
+            .iter()
+            .position(|line| line.starts_with("Catatan: cash 300"))
+            .expect("note line");
+        assert_eq!(text[at - 1], "-".repeat(32));
+        assert!(
+            text.iter().all(|line| line.chars().count() <= 32),
+            "{text:?}"
+        );
+        // The footer still follows, after its own rule.
+        assert!(text[at..].iter().any(|line| line.contains("Terima kasih!")));
+    }
+
+    #[test]
+    fn a_blank_note_prints_nothing() {
+        let mut data = tests::sample_receipt_data();
+        data.notes = Some("   ".to_string());
+        let with = format_receipt_text(&data, 58).len();
+        data.notes = None;
+        let without = format_receipt_text(&data, 58).len();
+        assert_eq!(with, without);
     }
 }

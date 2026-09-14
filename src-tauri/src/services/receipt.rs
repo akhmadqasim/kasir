@@ -307,6 +307,7 @@ pub(crate) async fn build_sale_receipt_data(
             })
             .collect(),
         footer_text,
+        notes: transaction.notes.clone(),
         is_deleted,
         deleted_reason,
         deleted_by_name,

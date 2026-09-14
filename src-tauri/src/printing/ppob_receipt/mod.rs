@@ -1053,7 +1053,7 @@ fn group_token(serial: &str, width: usize) -> Vec<String> {
 
 /// Greedy word wrap. A word longer than `width` is chopped — there is nothing
 /// cleverer to do on 32 columns, and dropping characters would be worse.
-fn wrap_words(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrap_words(text: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![text.to_string()];
     }
