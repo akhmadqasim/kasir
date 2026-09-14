@@ -276,8 +276,11 @@ export function CartPanel({
         {/* Tombol aksi kecil di kiri, Bayar lebar di kanan: tangan kasir sudah
             ada di sisi kanan setelah mengetik total, dan tombol yang paling
             sering ditekan harus yang paling mudah dijangkau. */}
-        <div className="flex items-stretch gap-2">
-          <div className="grid grid-cols-[repeat(2,minmax(7.5rem,1fr))] gap-2">
+        {/* `flex-wrap`: pada panel sempit (layar 1280) tiga kolom tidak muat
+            dan Bayar tadinya terpotong di tepi kartu; sekarang ia turun ke
+            baris sendiri selebar panel, dan di layar lebar tetap di kanan. */}
+        <div className="flex flex-wrap items-stretch gap-2">
+          <div className="grid grow basis-[15.5rem] grid-cols-2 gap-2">
             <Button
               isDisabled={items.length === 0}
               fullWidth
@@ -331,7 +334,7 @@ export function CartPanel({
             )}
           </div>
           <Button
-            className="h-auto min-h-12 flex-1 text-lg"
+            className="h-auto min-h-12 grow basis-32 text-lg"
             isDisabled={items.length === 0 || disabled}
             size="lg"
             onPress={onPay}
