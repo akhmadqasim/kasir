@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react"
+import { useState, type KeyboardEvent, type MouseEvent } from "react"
 import { Trash2 } from "lucide-react"
 import { Button, Description, Label, ListBox, Modal } from "@heroui/react"
 
@@ -129,10 +129,21 @@ function HeldCartsList({
     }
   }
 
+  // Satu klik pada baris membukanya. Dengan `selectionBehavior="replace"`
+  // React Aria memakai klik untuk memilih dan baru memanggil `onAction` pada
+  // klik ganda — di meja kasir itu terasa seperti "tidak bisa dibuka". Klik
+  // yang mendarat di tombol Buka/Hapus di dalam baris dibiarkan ke tombolnya.
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest("button")) return
+    const key = target.closest("[data-key]")?.getAttribute("data-key")
+    if (key) onRecall(key)
+  }
+
   return (
     <>
       <Modal.Body>
-        <div onKeyDownCapture={handleKeyDownCapture}>
+        <div onClick={handleClick} onKeyDownCapture={handleKeyDownCapture}>
           <ListBox
             aria-label="Daftar transaksi tersimpan"
             autoFocus="first"

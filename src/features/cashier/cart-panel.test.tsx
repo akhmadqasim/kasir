@@ -186,6 +186,24 @@ describe("cart panel", () => {
     expect(recallCart).toHaveBeenCalledWith("hold-2")
   })
 
+  it("recalls a cart with one click on its row, but not from its Hapus button", async () => {
+    const recallCart = vi.fn()
+    const removeHeldCart = vi.fn()
+    resetStore({
+      heldCarts: [heldCart(), heldCart({ id: "hold-2", label: "Pelanggan 2" })],
+    })
+    useCartStore.setState({ recallCart, removeHeldCart })
+    renderPanel()
+
+    await openHeldCartsDialog()
+
+    fireEvent.click(screen.getByRole("button", { name: "Hapus Pelanggan 2" }))
+    expect(recallCart).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText("Pelanggan 2"))
+    expect(recallCart).toHaveBeenCalledWith("hold-2")
+  })
+
   it("recalls by its row number", async () => {
     const recallCart = vi.fn()
     resetStore({
