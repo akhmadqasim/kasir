@@ -180,13 +180,9 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
               keranjang" §3.4), status PPOB yang masih berjalan, nasib cetak
               otomatis, lalu kedua tombolnya di dasar kolom. */}
           <div className="flex flex-col gap-4">
+            {/* Kembalian di paling atas: itu yang diserahkan sekarang dan
+                dibaca pelanggan dari seberang meja; total tinggal pengingat. */}
             <InfoPanel className="flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-4">
-                <p className="text-muted">Total</p>
-                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-                  {formatRupiah(transaction.total_amount)}
-                </p>
-              </div>
               {changeAmount > 0 && (
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -198,6 +194,12 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
                   </p>
                 </div>
               )}
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-muted">Total</p>
+                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {formatRupiah(transaction.total_amount)}
+                </p>
+              </div>
             </InfoPanel>
 
             {ppobItems.length > 0 && (
