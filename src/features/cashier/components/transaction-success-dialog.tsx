@@ -11,6 +11,7 @@ import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { getSaleReceiptLines } from "@/lib/api/transactions"
+import { flashPress } from "@/lib/flash-press"
 import { toast } from "@/lib/toast"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
@@ -181,6 +182,9 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   printRef.current = handlePrint
   const copyRef = useRef(handleCopy)
   copyRef.current = handleCopy
+  // Tombolnya sendiri, supaya pintasan memantulkan kedipan "ditekan" di sana.
+  const printButtonRef = useRef<HTMLButtonElement>(null)
+  const copyButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -189,14 +193,15 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
       }
       const action =
         event.key === "Enter"
-          ? printRef.current
+          ? { run: printRef.current, button: printButtonRef.current }
           : event.key.toLowerCase() === "c"
-            ? copyRef.current
+            ? { run: copyRef.current, button: copyButtonRef.current }
             : null
       if (!action) return
       event.preventDefault()
       event.stopPropagation()
-      void action()
+      flashPress(action.button)
+      void action.run()
     }
     window.addEventListener("keydown", onKeyDown, true)
     return () => window.removeEventListener("keydown", onKeyDown, true)
@@ -258,7 +263,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             )}
 
             <div className="mt-auto flex flex-col gap-2">
-              <Button fullWidth variant="tertiary" onPress={handleCopy}>
+              <Button ref={copyButtonRef} fullWidth variant="tertiary" onPress={handleCopy}>
                 <Copy />
                 Salin struk
                 <Kbd aria-hidden="true">
@@ -266,6 +271,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
                 </Kbd>
               </Button>
               <PendingButton
+                ref={printButtonRef}
                 fullWidth
                 isPending={isPrinting}
                 variant="tertiary"

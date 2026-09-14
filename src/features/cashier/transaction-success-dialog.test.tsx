@@ -176,6 +176,11 @@ describe("transaction success dialog", () => {
 
     pressKey("c")
 
+    // The shortcut flashes the button as pressed, so the cashier sees it land.
+    expect(screen.getByRole("button", { name: /Salin struk/ })).toHaveAttribute(
+      "data-pressed",
+      "true",
+    )
     await waitFor(() => expect(write).toHaveBeenCalledTimes(1))
     const [items] = write.mock.calls[0] as [FakeClipboardItem[]]
     expect(items[0].parts["image/png"].type).toBe("image/png")
