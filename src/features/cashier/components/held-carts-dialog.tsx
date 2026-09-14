@@ -17,9 +17,9 @@ interface HeldCartsDialogProps {
 /** Berapa nama barang yang dimuat kolom barang; lebihnya jadi "5+". */
 const NAMES_SHOWN = 2
 
+/** Kapan disimpan; jumlah barang sudah terbaca dari kolom barang di sebelahnya. */
 function describeHeldCart(held: HeldCart): string {
-  const itemCount = held.items.reduce((sum, item) => sum + item.quantity, 0)
-  return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item`
+  return formatDateTime(new Date(held.heldAt).toISOString())
 }
 
 /** Kolom barang: dua nama, satu per baris, lalu "3+" kalau ada lebih. */
