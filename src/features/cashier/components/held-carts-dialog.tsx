@@ -131,9 +131,11 @@ function HeldCartsList({
 
   // Satu klik pada baris membukanya. Dengan `selectionBehavior="replace"`
   // React Aria memakai klik untuk memilih dan baru memanggil `onAction` pada
-  // klik ganda — di meja kasir itu terasa seperti "tidak bisa dibuka". Klik
-  // yang mendarat di tombol Buka/Hapus di dalam baris dibiarkan ke tombolnya.
-  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+  // klik ganda — di meja kasir itu terasa seperti "tidak bisa dibuka". Fase
+  // capture, karena `usePress` di tiap baris menghentikan perambatan `click`
+  // tetikus sungguhan (di jsdom tidak, jadi test saja tidak cukup bukti).
+  // Klik yang mendarat di tombol Buka/Hapus di dalam baris dibiarkan ke tombolnya.
+  const handleClickCapture = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement
     if (target.closest("button")) return
     const key = target.closest("[data-key]")?.getAttribute("data-key")
@@ -143,7 +145,7 @@ function HeldCartsList({
   return (
     <>
       <Modal.Body>
-        <div onClick={handleClick} onKeyDownCapture={handleKeyDownCapture}>
+        <div onClickCapture={handleClickCapture} onKeyDownCapture={handleKeyDownCapture}>
           <ListBox
             aria-label="Daftar transaksi tersimpan"
             autoFocus="first"
