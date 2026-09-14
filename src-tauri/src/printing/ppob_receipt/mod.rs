@@ -228,8 +228,11 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     // Pulsa and data print Mitra's own "Cetak Struk" layout, but only when
     // there is no provider slip to print instead — a provider that does send
     // one is handled exactly like every other service, below.
+    // `meaningful`, not `non_empty`: the history endpoint answers `"-"` for
+    // a pulsa/data line's `receipt_text`, and a struk that is one dash is not
+    // a slip.
     if matches!(data.service_type.as_str(), "pulsa" | "data")
-        && non_empty(data.provider_receipt_text.as_deref()).is_none()
+        && meaningful(data.provider_receipt_text.as_deref()).is_none()
     {
         return format_pulsa_receipt(data, cpl);
     }
@@ -248,7 +251,7 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     // is wobbly enough to plant a stray colon at the start of a line it
     // never meant as a label; see `reflow_provider_lines`'s doc for why this
     // has to run before them, not after).
-    let block = non_empty(data.provider_receipt_text.as_deref()).map(provider_lines);
+    let block = meaningful(data.provider_receipt_text.as_deref()).map(provider_lines);
     let (body, footer) = match block {
         Some(block) => split_body_footer(reflow_provider_lines(&block), cpl),
         None => (Vec::new(), Vec::new()),

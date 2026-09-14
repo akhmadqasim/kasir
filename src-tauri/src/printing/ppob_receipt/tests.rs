@@ -1164,3 +1164,17 @@ fn wrap_labelled_line_character_chunks_a_spaceless_value() {
         ]
     );
 }
+
+#[test]
+fn a_dash_for_receipt_text_is_no_slip_at_all() {
+    // Mitra's history endpoint answers `"-"` for a pulsa/data line's
+    // `receipt_text`; that must select the pulsa layout, not print one dash.
+    let mut data = pulsa();
+    data.provider_receipt_text = Some("-".to_string());
+    let text = text_of(&format_ppob_receipt(&data, 58));
+
+    assert!(text.contains("TRANSAKSI:"), "{text}");
+    assert!(text.contains("RINCIAN"), "{text}");
+    assert!(!text.lines().any(|line| line == "-
+--------------------------------"));
+}
