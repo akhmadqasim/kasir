@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chrono::TimeZone;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tokio::sync::Mutex;
 
@@ -44,6 +45,51 @@ fn utc_to_local_formatted(utc_str: &str) -> String {
                 .to_string()
         })
         .unwrap_or_else(|| "N/A".to_string())
+}
+
+/// Mitra's own `"DD-MM-YYYY HH:MM:SS"` timestamp, already WIB — its history
+/// and its payment responses are never anything else, see
+/// `services::ppob::history` and `services::ppob::notifications` — split into
+/// the pulsa/data struk's date and time fields.
+fn split_provider_wib_timestamp(value: &str) -> Option<(String, String)> {
+    let (date, time) = value.trim().split_once(' ')?;
+    let hm = time.get(0..5)?;
+    Some((date.to_string(), format!("{hm} WIB")))
+}
+
+/// `transaction_items.created_at`, stored in UTC, converted to WIB —
+/// Asia/Jakarta, a fixed UTC+7 with no daylight saving — for the pulsa/data
+/// struk's date and time fields.
+///
+/// Deliberately not `chrono::Local`: the shop's own machine is not
+/// necessarily in WIB (`services::ppob::history::detail`'s "the vendor
+/// reports WIB and the shop runs an hour ahead of it" is exactly this), and a
+/// struk that prints a WITA hour under the label "WIB" is wrong regardless of
+/// which zone the till happens to be set to.
+fn utc_to_wib_timestamp(utc_str: &str) -> Option<(String, String)> {
+    let naive = chrono::NaiveDateTime::parse_from_str(utc_str, "%Y-%m-%d %H:%M:%S").ok()?;
+    let wib_offset = chrono::FixedOffset::east_opt(7 * 3600).unwrap();
+    let wib = wib_offset.from_utc_datetime(&naive);
+    Some((
+        wib.format("%d-%m-%Y").to_string(),
+        format!("{} WIB", wib.format("%H:%M")),
+    ))
+}
+
+/// The pulsa/data struk's date and time: the provider's own timestamp when it
+/// sent one, our own row's `created_at` converted from UTC otherwise.
+fn pulsa_date_time(
+    provider_wib_timestamp: Option<&str>,
+    item_created_at_utc: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let resolved = provider_wib_timestamp
+        .and_then(split_provider_wib_timestamp)
+        .or_else(|| item_created_at_utc.and_then(utc_to_wib_timestamp));
+
+    match resolved {
+        Some((date, time)) => (Some(date), Some(time)),
+        None => (None, None),
+    }
 }
 
 /// Get printer settings from store_info.additional_info JSON
@@ -360,7 +406,12 @@ pub async fn print(db: &DatabaseConnection, transaction_id: i64) -> Result<(), A
 
     let mut jobs = vec![text_lines];
     jobs.extend(fulfilled.into_iter().map(|item| {
-        let data = ppob_item_receipt_data(&store, item, blobs.get(&item.id).map(String::as_str));
+        let data = ppob_item_receipt_data(
+            &store,
+            item,
+            blobs.get(&item.id).map(String::as_str),
+            &receipt_data.receipt_number,
+        );
         format_ppob_receipt(&data, paper_width)
     }));
 
@@ -421,14 +472,22 @@ pub async fn print_ppob_item(
     } = print_target(db).await?;
 
     // The struk carries nothing about the sale itself — no receipt number, no
-    // cashier — so the transaction row is never read here. See
-    // `printing::ppob_receipt` for why: it is the provider's document.
+    // cashier — so the transaction row is never read for its own sake here.
+    // See `printing::ppob_receipt` for why: it is the provider's document.
+    // Pulsa/data is the one exception: its invoice line falls back to our own
+    // receipt number when Mitra sent no id of its own, which is why the
+    // transaction is still looked up, just for that one field.
     let blob = ppob_receipts::Entity::find_by_id(item.id)
         .one(db)
         .await?
         .map(|row| row.data);
+    let receipt_number = transactions::Entity::find_by_id(item.transaction_id)
+        .one(db)
+        .await?
+        .map(|t| t.receipt_number)
+        .unwrap_or_default();
 
-    let data = ppob_item_receipt_data(&store, &item, blob.as_deref());
+    let data = ppob_item_receipt_data(&store, &item, blob.as_deref(), &receipt_number);
     let lines = format_ppob_receipt(&data, paper_width);
 
     send_jobs(printer_id, vec![lines], paper_width, mode).await
@@ -493,6 +552,13 @@ pub(crate) struct ProviderSlip {
     pub admin_fee: Option<f64>,
     /// What the provider charged, admin fee included.
     pub total: Option<f64>,
+    /// Mitra's own transaction id — `trx_id` in a history row, the same
+    /// field under the same name in a stored payment response if it carried
+    /// one. Pulsa/data's `Nomor Invoice #…`; every other service ignores it.
+    pub invoice_number: Option<String>,
+    /// Mitra's own `"DD-MM-YYYY HH:MM:SS"`, WIB, unconverted. Pulsa/data's
+    /// date/time line; every other service ignores it.
+    pub formatted_date: Option<String>,
 }
 
 impl ProviderSlip {
@@ -531,6 +597,13 @@ impl ProviderSlip {
             bill_amount: provider_number(&raw, &["base_price", "nominal", "denom"]),
             admin_fee: provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]),
             total: provider_number(&raw, &["total", "total_payment", "total_amount"]),
+            // Kept apart from `reference_number`'s own fallback list even
+            // though both would otherwise read `trx_id`: they are different
+            // Mitra ids (the struk prints both, under "Nomor Invoice #" and
+            // "No. Ref:"), and `reference_number`'s existing fallback order
+            // is left as it was for every other service.
+            invoice_number: provider_field(&raw, &["trx_id", "trxid"]),
+            formatted_date: provider_field(&raw, &["formatted_date", "created_at"]),
         }
     }
 
@@ -551,6 +624,8 @@ impl ProviderSlip {
             bill_amount: item.base_price,
             admin_fee: item.admin_fee,
             total: item.amount.or(item.total),
+            invoice_number: stored(&item.trx_id),
+            formatted_date: stored(&item.created_at),
         }
     }
 }
@@ -570,10 +645,18 @@ pub(crate) struct PpobLine {
     pub payment_code: Option<String>,
     /// What the customer hands over for this line, our markup in it.
     pub grand_total: f64,
+    /// `transaction_items.created_at`, UTC. Pulsa/data's date/time fallback
+    /// when the provider sent no timestamp of its own; every other service
+    /// ignores it.
+    pub created_at_utc: Option<String>,
+    /// The sale's own receipt number, `TRX-YYYYMMDD-XXXX`. Pulsa/data's
+    /// invoice-line fallback when Mitra sent no id of its own; every other
+    /// service ignores it.
+    pub our_receipt_number: Option<String>,
 }
 
 impl PpobLine {
-    fn from_item(item: &transaction_items::Model) -> Self {
+    fn from_item(item: &transaction_items::Model, our_receipt_number: &str) -> Self {
         Self {
             service_type: item.service_type.clone().unwrap_or_default(),
             flag_id: item.ppob_flag_id.clone(),
@@ -586,6 +669,8 @@ impl PpobLine {
             serial_number: stored(&item.ppob_serial_number),
             payment_code: stored(&item.ppob_payment_code),
             grand_total: item.net_subtotal,
+            created_at_utc: item.created_at.clone(),
+            our_receipt_number: Some(our_receipt_number.to_string()),
         }
     }
 
@@ -605,6 +690,10 @@ impl PpobLine {
             serial_number: None,
             payment_code: None,
             grand_total: sell_price,
+            // There is no sale of ours behind a history struk to read either
+            // of these from.
+            created_at_utc: None,
+            our_receipt_number: None,
         }
     }
 }
@@ -657,6 +746,13 @@ fn build_ppob_receipt_data(
         .or_else(|| (bill_amount > 0.0).then_some(bill_amount + admin_fee))
         .unwrap_or(line.grand_total);
 
+    // Pulsa/data only — see `PpobReceiptData` and `printing::ppob_receipt`.
+    // Every other service carries these four fields around unused.
+    let (date, time) = pulsa_date_time(
+        slip.formatted_date.as_deref(),
+        line.created_at_utc.as_deref(),
+    );
+
     PpobReceiptData {
         store_name: store_name.to_string(),
         service_type: line.service_type,
@@ -680,19 +776,26 @@ fn build_ppob_receipt_data(
         admin_fee,
         total: provider_total,
         grand_total: line.grand_total,
+        date,
+        time,
+        mitra_invoice_number: slip.invoice_number,
+        our_receipt_number: line.our_receipt_number,
     }
 }
 
 /// The struk for a line sold here, from its row and the provider blob stored
-/// with it.
+/// with it. `our_receipt_number` is the sale's own `TRX-…` number — the
+/// pulsa/data invoice line's fallback when Mitra's response carried no id of
+/// its own.
 fn ppob_item_receipt_data(
     store: &store_info::Model,
     item: &transaction_items::Model,
     provider_response: Option<&str>,
+    our_receipt_number: &str,
 ) -> PpobReceiptData {
     build_ppob_receipt_data(
         &store.name,
-        PpobLine::from_item(item),
+        PpobLine::from_item(item, our_receipt_number),
         ProviderSlip::from_response(provider_response),
     )
 }
@@ -1254,6 +1357,146 @@ mod tests {
         assert_eq!(data.admin_fee, 0.0);
     }
 
+    // -----------------------------------------------------------------------
+    // Pulsa/data: date, invoice number, and the sale's own receipt number as
+    // its fallback. See `printing::ppob_receipt::format_pulsa_receipt` for
+    // where these four fields end up on the paper.
+    // -----------------------------------------------------------------------
+
+    /// A real row's numbers: `ppob_serial_number` holding a copy of the
+    /// reference number rather than an actual token, and `created_at` in
+    /// UTC, an hour and change before midnight.
+    fn pulsa_item_row() -> transaction_items::Model {
+        transaction_items::Model {
+            id: 1,
+            transaction_id: 1,
+            product_id: None,
+            product_name: "Pulsa TELKOMSEL - TELKOMSEL 20.000,- Masa Aktif 30 Hari".to_string(),
+            product_price: 20070.0,
+            buy_price: Some(20000.0),
+            quantity: 1,
+            subtotal: 20070.0,
+            item_discount: 0.0,
+            net_subtotal: 20070.0,
+            service_type: Some("pulsa".to_string()),
+            service_ref: Some("081348172197".to_string()),
+            ppob_product_id: None,
+            ppob_product_code: None,
+            ppob_inquiry_id: None,
+            ppob_payment_code: Some("P081348172197-861-260327091340".to_string()),
+            ppob_flag_id: None,
+            ppob_status: Some(PPOB_STATUS_SUCCESS.to_string()),
+            ppob_message: None,
+            ppob_serial_number: Some("04273700000625739077".to_string()),
+            created_at: Some("2026-09-12 23:44:34".to_string()),
+        }
+    }
+
+    /// `utc_to_wib_timestamp` is a fixed +7h, not the machine's own zone: 23:44
+    /// UTC is 06:44 the *next* day in WIB, and the date has to move with it.
+    #[test]
+    fn transaction_items_created_at_is_converted_from_utc_to_a_fixed_wib_offset() {
+        assert_eq!(
+            utc_to_wib_timestamp("2026-09-12 23:44:34"),
+            Some(("13-09-2026".to_string(), "06:44 WIB".to_string()))
+        );
+    }
+
+    /// The provider's own timestamp is already WIB and is only ever split,
+    /// never re-zoned.
+    #[test]
+    fn a_providers_own_timestamp_is_split_not_reinterpreted() {
+        assert_eq!(
+            split_provider_wib_timestamp("27-03-2026 09:13:00"),
+            Some(("27-03-2026".to_string(), "09:13 WIB".to_string()))
+        );
+    }
+
+    /// No provider response at all: the invoice line and the clock both fall
+    /// back to our own side — the sale's receipt number and the row's own
+    /// `created_at`, converted from UTC.
+    #[test]
+    fn a_sold_here_pulsa_line_with_no_provider_response_falls_back_to_our_own_side() {
+        let line = PpobLine::from_item(&pulsa_item_row(), "TRX-20260912-0007");
+        assert_eq!(line.created_at_utc.as_deref(), Some("2026-09-12 23:44:34"));
+        assert_eq!(
+            line.our_receipt_number.as_deref(),
+            Some("TRX-20260912-0007")
+        );
+
+        let data = build_ppob_receipt_data("Toko Contoh", line, ProviderSlip::default());
+
+        assert_eq!(data.mitra_invoice_number, None);
+        assert_eq!(
+            data.our_receipt_number.as_deref(),
+            Some("TRX-20260912-0007")
+        );
+        assert_eq!(data.date.as_deref(), Some("13-09-2026"));
+        assert_eq!(data.time.as_deref(), Some("06:44 WIB"));
+    }
+
+    /// A provider response that does carry its own id and timestamp outranks
+    /// our own side — same precedence every other field on the slip already
+    /// has.
+    #[test]
+    fn a_sold_here_pulsa_line_prefers_the_providers_own_invoice_and_timestamp() {
+        let blob = json!({
+            "trx_id": "50151852",
+            "formatted_date": "27-03-2026 09:13:00",
+        })
+        .to_string();
+        let line = PpobLine::from_item(&pulsa_item_row(), "TRX-20260912-0007");
+        let slip = ProviderSlip::from_response(Some(&blob));
+
+        let data = build_ppob_receipt_data("Toko Contoh", line, slip);
+
+        assert_eq!(data.mitra_invoice_number.as_deref(), Some("50151852"));
+        // Still carried, even though the provider's id wins the invoice line.
+        assert_eq!(
+            data.our_receipt_number.as_deref(),
+            Some("TRX-20260912-0007")
+        );
+        assert_eq!(data.date.as_deref(), Some("27-03-2026"));
+        assert_eq!(data.time.as_deref(), Some("09:13 WIB"));
+    }
+
+    /// A row of Mitra's own history: `trx_id` is the invoice number, its
+    /// `created_at` (Mitra's `formatted_date`, WIB) the timestamp, and there
+    /// is no sale of ours behind it for either to fall back to.
+    fn pulsa_history_row() -> HistoryPaymentItem {
+        HistoryPaymentItem {
+            trx_id: Some("50151852".to_string()),
+            service_type: Some("PULSA".to_string()),
+            product_name: Some("-".to_string()),
+            customer_no: Some("081348172197".to_string()),
+            created_at: Some("27-03-2026 09:13:00".to_string()),
+            no_ref: Some("04103400001446365784".to_string()),
+            payment_code: Some("P081348172197-861-260327091340".to_string()),
+            token_number: Some("-".to_string()),
+            amount: Some(20070.0),
+            admin_fee: Some(0.0),
+            base_price: Some(20000.0),
+            ..HistoryPaymentItem::default()
+        }
+    }
+
+    #[test]
+    fn a_pulsa_history_row_carries_mitras_own_invoice_number_and_timestamp() {
+        let row = pulsa_history_row();
+        let data = build_ppob_receipt_data(
+            "Toko Contoh",
+            PpobLine::from_history(&row, 20070.0),
+            ProviderSlip::from_history(&row),
+        );
+
+        assert_eq!(data.service_type, "pulsa");
+        assert_eq!(data.mitra_invoice_number.as_deref(), Some("50151852"));
+        // No sale of ours behind a history struk.
+        assert_eq!(data.our_receipt_number, None);
+        assert_eq!(data.date.as_deref(), Some("27-03-2026"));
+        assert_eq!(data.time.as_deref(), Some("09:13 WIB"));
+    }
+
     /// The stored payment blob is read the way it always was: a wrapped
     /// response yields the slip with the provider's own spellings resolved.
     #[test]
@@ -1284,5 +1527,25 @@ mod tests {
         assert_eq!(slip.total, None);
         assert_eq!(slip.receipt_text.as_deref(), Some("NO METER : 14300000001"));
         assert_eq!(ProviderSlip::from_response(None), ProviderSlip::default());
+    }
+
+    /// A stored pulsa response carries its own invoice id and timestamp
+    /// the same way any other field is read off it: found under a nested
+    /// wrapper as readily as at the root.
+    #[test]
+    fn a_stored_pulsa_response_carries_the_invoice_id_and_timestamp() {
+        let blob = json!({
+            "message": "OK",
+            "history_payment": {
+                "trx_id": "50151852",
+                "formatted_date": "27-03-2026 09:13:00",
+            }
+        })
+        .to_string();
+
+        let slip = ProviderSlip::from_response(Some(&blob));
+
+        assert_eq!(slip.invoice_number.as_deref(), Some("50151852"));
+        assert_eq!(slip.formatted_date.as_deref(), Some("27-03-2026 09:13:00"));
     }
 }

@@ -26,10 +26,20 @@
 //! because each one is a decision about what belongs on the paper, and because
 //! the fixtures that justify them are the ones in this file's tests.
 //!
+//! Pulsa and paket data are the one exception to all of the above. Mitra's own
+//! `pulsa/v2` API never answers with a `receipt_text` — there is no provider
+//! slip to print verbatim — so its Android app composes the struk itself from
+//! the same history fields this module holds, and [`format_pulsa_receipt`]
+//! reconstructs that composition rather than falling back to the generic
+//! `LABEL : VALUE` block every other service without a slip gets. A pulsa or
+//! data line that *does* carry a `provider_receipt_text` (a provider that
+//! changes its mind, or a future service reusing these two keys) still prints
+//! it verbatim, same as PLN or PDAM would.
+//!
 //! Pure and side-effect free: it takes a [`PpobReceiptData`] and returns lines.
 //! Loading that struct out of the database is `services::receipt`'s job.
 
-use super::receipt::{center_text, columns, format_rupiah, ReceiptTextLine};
+use super::receipt::{center_text, columns, format_rupiah, two_col_text, ReceiptTextLine};
 
 /// A field worth printing: present, and something other than whitespace.
 ///
@@ -92,6 +102,28 @@ pub struct PpobReceiptData {
     /// What the customer handed us for this line. The difference from `total`
     /// is our own margin, or a discount when the sale carried one.
     pub grand_total: f64,
+
+    // -- Pulsa/data only. See `format_pulsa_receipt`; every other service
+    // ignores these four fields entirely. --
+    /// `27-03-2026`, already in display form. The provider's own timestamp
+    /// when it sent one — Mitra's are always WIB, never anything else — or
+    /// our own `transaction_items.created_at` converted from UTC. See
+    /// `services::receipt` for which, and why the conversion is a fixed
+    /// +7h rather than the machine's own time zone.
+    pub date: Option<String>,
+    /// `09:13 WIB`, alongside `date`.
+    pub time: Option<String>,
+    /// Mitra's own transaction id for this line — its history's `trx_id`
+    /// (`services::ppob::history::HistoryPaymentItem::trx_id`, also `id` on
+    /// the wire), or the same field read off a stored payment response.
+    /// `None` when neither said one, which [`PpobReceiptData::invoice_number`]
+    /// falls back for.
+    pub mitra_invoice_number: Option<String>,
+    /// Our own sale's receipt number ("TRX-YYYYMMDD-XXXX"), the invoice
+    /// line's fallback when Mitra sent no id of its own. `None` for a struk
+    /// printed from Mitra's history, where there is no sale of ours behind
+    /// it to fall back to.
+    pub our_receipt_number: Option<String>,
 }
 
 impl PpobReceiptData {
@@ -145,6 +177,33 @@ impl PpobReceiptData {
         let digits: String = serial.chars().filter(char::is_ascii_digit).collect();
         (digits.len() == 20).then_some(digits)
     }
+
+    /// The invoice number line's value: Mitra's own id if it sent one, our
+    /// own sale's receipt number otherwise. `None` only when neither
+    /// exists — a struk with no invoice line at all beats one that reads
+    /// `Nomor Invoice #` with nothing after the `#`.
+    fn invoice_number(&self) -> Option<&str> {
+        non_empty(self.mitra_invoice_number.as_deref())
+            .or_else(|| non_empty(self.our_receipt_number.as_deref()))
+    }
+
+    /// The pulsa/data token line: a real token or serial if there is one,
+    /// `-` otherwise — Mitra's own placeholder for "no token", which is
+    /// every pulsa and data top-up there is.
+    ///
+    /// `serial_number` on these two services is `token_number` if the
+    /// provider sent one (always `-`, in practice) or else our own
+    /// `ppob_serial_number` column, which for at least one real row holds a
+    /// copy of the reference number rather than an actual token — printing
+    /// it here would show the same digits twice under two different
+    /// labels, so a value equal to `reference_number` is treated as no
+    /// value at all.
+    fn pulsa_token(&self) -> &str {
+        match meaningful(self.serial_number.as_deref()) {
+            Some(value) if Some(value) != non_empty(self.reference_number.as_deref()) => value,
+            _ => "-",
+        }
+    }
 }
 
 /// Render a PPOB struk: the store's name, the token if there is one, the
@@ -156,6 +215,16 @@ impl PpobReceiptData {
 /// [`super::receipt::columns`].
 pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<ReceiptTextLine> {
     let cpl = columns(paper_width_mm);
+
+    // Pulsa and data print Mitra's own "Cetak Struk" layout, but only when
+    // there is no provider slip to print instead — a provider that does send
+    // one is handled exactly like every other service, below.
+    if matches!(data.service_type.as_str(), "pulsa" | "data")
+        && non_empty(data.provider_receipt_text.as_deref()).is_none()
+    {
+        return format_pulsa_receipt(data, cpl);
+    }
+
     let mut lines = Vec::new();
 
     lines.push(ReceiptTextLine::plain(center_text(&data.store_name, cpl)));
@@ -191,6 +260,163 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     push_footer(&mut lines, footer, cpl);
 
     lines
+}
+
+/// Render a pulsa or data struk the way Mitra's own app prints it from its
+/// "Cetak Struk" screen — the layout the module doc explains, minus the
+/// "MITRA INDOGROSIR" line and the "Struk ini merupakan bukti pembayaran
+/// yang sah" footer, which the shop asked to leave off.
+///
+/// Only reached when there is no `provider_receipt_text` to print verbatim
+/// instead; see [`format_ppob_receipt`].
+fn format_pulsa_receipt(data: &PpobReceiptData, cpl: usize) -> Vec<ReceiptTextLine> {
+    let mut lines = Vec::new();
+
+    lines.push(ReceiptTextLine::plain(center_text(&data.store_name, cpl)));
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+
+    // Date left, time right, on one line — skipped entirely rather than
+    // printed as bare padding when neither is known.
+    if data.date.is_some() || data.time.is_some() {
+        lines.push(ReceiptTextLine::plain(two_col_text(
+            data.date.as_deref().unwrap_or(""),
+            data.time.as_deref().unwrap_or(""),
+            cpl,
+        )));
+    }
+    if let Some(invoice) = data.invoice_number() {
+        lines.push(ReceiptTextLine::plain(format!("Nomor Invoice #{invoice}")));
+    }
+    lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
+
+    lines.push(ReceiptTextLine::plain("TRANSAKSI:".to_string()));
+    let (description_first, description_second) = pulsa_description(data.product_name.as_deref());
+    let phone = non_empty(data.customer_id.as_deref());
+    let heading = match (phone, description_first.is_empty()) {
+        (Some(phone), false) => format!("{phone} - {description_first}"),
+        (Some(phone), true) => phone.to_string(),
+        (None, _) => description_first,
+    };
+    if !heading.is_empty() {
+        lines.extend(
+            wrap_words(&heading, cpl)
+                .into_iter()
+                .map(ReceiptTextLine::plain),
+        );
+    }
+    if let Some(second) = description_second {
+        lines.extend(
+            wrap_words(&second, cpl)
+                .into_iter()
+                .map(ReceiptTextLine::plain),
+        );
+    }
+
+    lines.push(ReceiptTextLine::plain(String::new()));
+    lines.push(ReceiptTextLine::plain(data.pulsa_token().to_string()));
+    lines.push(ReceiptTextLine::plain(String::new()));
+
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Biaya Admin",
+        &format!("Rp {}", format_rupiah(data.admin_fee)),
+        cpl,
+    )));
+    lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
+    // What the customer paid, our own markup folded in — the Mitra app has
+    // no separate "Biaya Layanan"/"Grand Total" block on this screen, unlike
+    // the other services' provider slip.
+    lines.push(ReceiptTextLine::plain(two_col_text(
+        "Total",
+        &format!("Rp {}", format_rupiah(data.grand_total)),
+        cpl,
+    )));
+
+    // "RINCIAN" and everything under it is only worth printing if there is
+    // at least one of the two fields it exists to show.
+    let mut rincian = Vec::new();
+    if let Some(reference) = non_empty(data.reference_number.as_deref()) {
+        rincian.extend(wrap_words(&format!("No. Ref: {reference}"), cpl));
+    }
+    if let Some(code) = non_empty(data.payment_code.as_deref()) {
+        rincian.push("Kode Transaksi:".to_string());
+        rincian.extend(wrap_words(code, cpl));
+    }
+    if !rincian.is_empty() {
+        lines.push(ReceiptTextLine::plain(String::new()));
+        lines.push(ReceiptTextLine::plain("RINCIAN".to_string()));
+        lines.extend(rincian.into_iter().map(ReceiptTextLine::plain));
+    }
+
+    lines
+}
+
+/// Split a pulsa/data `product_name` back into the provider's own two-line
+/// description, undoing the flattening checkout does to it.
+///
+/// The frontend composes `product_name` at checkout as `"Pulsa <provider> -
+/// <description with its \n replaced by a space>"` (see
+/// `src/features/ppob/components/quick-access/pulsa-input.tsx`), because the
+/// cart line is one string and the provider's description is two. Nothing
+/// stores the original two lines separately — that would be a new column and
+/// a migration for a field only this struk reads — so they are recovered
+/// here instead, from the one shape the frontend is known to produce: strip
+/// the `"Pulsa "`/`"Data "` prefix and the provider name in front of the
+/// first `" - "`, then break what is left before `"Masa Aktif"` if it is
+/// there.
+///
+/// A `product_name` that does not match — a history row Mitra sent us, which
+/// never went through our checkout — prints as one line, exactly as given.
+fn pulsa_description(product_name: Option<&str>) -> (String, Option<String>) {
+    let Some(name) = non_empty(product_name) else {
+        return (String::new(), None);
+    };
+
+    match strip_pulsa_prefix(name) {
+        Some(description) => match split_before_masa_aktif(description) {
+            Some((first, second)) => (first, Some(second)),
+            None => (description.to_string(), None),
+        },
+        None => (name.to_string(), None),
+    }
+}
+
+/// Strips a leading `"Pulsa <provider> - "` or `"Data <provider> - "`,
+/// returning what follows. `None` when `name` does not start with either
+/// literal prefix the frontend uses, or has nothing after it.
+fn strip_pulsa_prefix(name: &str) -> Option<&str> {
+    ["Pulsa ", "Data "].iter().find_map(|prefix| {
+        name.strip_prefix(prefix)
+            .and_then(|rest| rest.split_once(" - "))
+            .map(|(_provider, description)| description)
+    })
+}
+
+/// Breaks `text` into what comes before `"Masa Aktif"` and `"Masa Aktif"`
+/// onward, matched case-insensitively (Mitra's own capitalisation is not
+/// perfectly consistent) and only on a word boundary, so `"SMS Masa Aktif 30
+/// Hari"` splits and `"Bonus Masaaktif"` does not. `None` when the text has
+/// no such break.
+///
+/// Matched byte-by-byte with `eq_ignore_ascii_case` rather than
+/// `str::to_lowercase`, which is not the identity on every character it
+/// touches (Turkish İ, German ß) and could shift a byte offset computed on
+/// the lowercased copy off a char boundary in `text` itself. The needle is
+/// plain ASCII, so a match can only land on plain ASCII bytes in `text` too,
+/// and slicing on it is always safe.
+fn split_before_masa_aktif(text: &str) -> Option<(String, String)> {
+    const NEEDLE: &[u8] = b"masa aktif";
+    let bytes = text.as_bytes();
+    let at = bytes
+        .windows(NEEDLE.len())
+        .position(|window| window.eq_ignore_ascii_case(NEEDLE))?;
+    if !(at == 0 || bytes[at - 1] == b' ') {
+        return None;
+    }
+
+    let first = text[..at].trim_end().to_string();
+    let second = text[at..].trim_start().to_string();
+    Some((first, second))
 }
 
 /// The provider's slip, as they sent it.
