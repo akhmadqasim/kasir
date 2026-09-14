@@ -41,10 +41,13 @@ export interface PpobMarkup {
 /**
  * PPOB settings as the server is willing to send them.
  *
- * The password and the PIN are deliberately missing. `GET /api/settings` used
- * to hand a shop's payment-gateway credentials to anyone who could call it,
- * which on a LAN is anyone who can reach the port. What comes back now is
- * `has_credentials` — whether both are stored — and nothing else.
+ * The password is deliberately missing. `GET /api/settings` used to hand a
+ * shop's payment-gateway credential to anyone who could call it, which on a
+ * LAN is anyone who can reach the port. What comes back now is
+ * `has_credentials` — whether one is stored — and nothing else. The Mitra
+ * transaction PIN is not part of this at all: it is never a setting, only a
+ * field the cashier fills in on the checkout and retry requests that spend
+ * money — see `CheckoutTransactionInput.ppob_pin` and `retryPpobFulfillment`.
  */
 export interface PpobSettings {
   enabled: boolean
@@ -54,7 +57,7 @@ export interface PpobSettings {
   markup: PpobMarkup
 }
 
-/** What `PUT /api/settings` accepts for PPOB: everything except the secrets. */
+/** What `PUT /api/settings` accepts for PPOB: everything except the password. */
 export interface UpdatePpobSettingsInput {
   enabled: boolean
   phone_number: string
@@ -63,12 +66,11 @@ export interface UpdatePpobSettingsInput {
 }
 
 /**
- * The only way to change the credentials, through `PUT /api/settings/ppob/credentials`.
- * Saving markup settings therefore cannot blank them by omission.
+ * The only way to change the password, through `PUT /api/settings/ppob/credentials`.
+ * Saving markup settings therefore cannot blank it by omission.
  */
 export interface UpdatePpobCredentialsInput {
   password: string
-  pin: string
 }
 
 export interface BackupSettings {

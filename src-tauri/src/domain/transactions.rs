@@ -35,6 +35,12 @@ pub struct CheckoutTransactionInput {
     pub notes: Option<String>,
     pub transaction_discount: Option<f64>,
     pub shift_id: Option<i64>,
+    /// The cashier's Mitra transaction PIN, typed at the moment of sale.
+    /// Required only when `items` has a PPOB line — see
+    /// `crate::services::ppob::executor::validate_pin` — and never persisted:
+    /// it is read out of this struct once, on the way into a
+    /// `PpobFulfillmentRequest`, and does not outlive the checkout call.
+    pub ppob_pin: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

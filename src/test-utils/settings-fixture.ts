@@ -4,9 +4,9 @@ import type { AppSettings } from "@/features/settings/types"
  * What `GET /api/settings` answers, shared by the settings-screen tests and
  * the Mitra Indogrosir settings tests.
  *
- * The PPOB password and PIN are absent, and not by omission in this fixture:
- * the endpoint stopped sending them. Only `has_credentials` remains, which says
- * whether both are stored without saying what they are.
+ * The PPOB password is absent, and not by omission in this fixture: the
+ * endpoint stopped sending it. Only `has_credentials` remains, which says
+ * whether one is stored without saying what it is.
  */
 export const SETTINGS: AppSettings = {
   sales: { allow_negative_stock: false, default_payment_method: "cash" },

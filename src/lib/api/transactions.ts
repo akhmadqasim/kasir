@@ -88,8 +88,10 @@ export function getSaleReceiptLines(
  * Re-run a PPOB line whose upstream fulfilment failed after the sale committed.
  *
  * Only valid for an item in `failed`. An item in `processing` is already in
- * flight upstream and the server refuses to claim it twice.
+ * flight upstream and the server refuses to claim it twice. `pin` is the
+ * cashier's Mitra transaction PIN, typed again for this attempt — the one
+ * from the original sale was never kept anywhere to reuse.
  */
-export function retryPpobFulfillment(transactionItemId: number): Promise<string> {
-  return apiPost<string>(`/transaction-items/${transactionItemId}/ppob/retry`)
+export function retryPpobFulfillment(transactionItemId: number, pin: string): Promise<string> {
+  return apiPost<string>(`/transaction-items/${transactionItemId}/ppob/retry`, { pin })
 }

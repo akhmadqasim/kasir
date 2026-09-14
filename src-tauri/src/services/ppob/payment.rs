@@ -22,9 +22,15 @@ pub struct ConfirmPaymentInput {
     pub amount: Option<f64>,
 }
 
+/// `pin` is not on [`ConfirmPaymentInput`] — it is validated by the caller
+/// (`crate::http::routes::ppob::pay`) via
+/// `crate::services::ppob::executor::validate_pin` and passed in on its own,
+/// so it never sits on a `Debug`-derived struct with everything else this
+/// endpoint carries.
 pub async fn confirm(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
+    pin: String,
     input: ConfirmPaymentInput,
 ) -> Result<PaymentResult, AppError> {
     execute_fulfillment_request(
@@ -40,6 +46,7 @@ pub async fn confirm(
             flag_id: input.flag_id,
             phone_number: input.phone_number,
             amount: input.amount,
+            pin,
         },
     )
     .await

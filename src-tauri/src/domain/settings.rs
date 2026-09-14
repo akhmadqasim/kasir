@@ -143,13 +143,22 @@ pub struct PpobMarkup {
     pub custom_prices: std::collections::HashMap<String, f64>,
 }
 
+/// The Mitra Indogrosir connection settings.
+///
+/// There used to be a `pin` field here, obfuscated on disk next to
+/// `password`. The owner's call: a transaction PIN must be typed by the
+/// cashier at the moment a PPOB sale is paid, not read back silently from
+/// storage — so it is gone. `#[serde(default)]` is not even needed for the
+/// removal to be safe: serde ignores unknown JSON fields by default, so a
+/// store row saved by an older build that still has `"pin": "OBF:…"` in its
+/// `additional_info` parses fine here and the stray key is simply dropped.
+/// See `parse_app_settings_ignores_a_legacy_pin_field` below.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PpobSettings {
     pub enabled: bool,
     pub phone_number: String,
     pub password: String,
     pub device_id: String,
-    pub pin: String,
     #[serde(default)]
     pub markup: PpobMarkup,
 }
@@ -162,27 +171,27 @@ pub struct AppSettings {
     pub backup: BackupSettings,
 }
 
-/// [`AppSettings`] with the PPOB credentials taken out.
+/// [`AppSettings`] with the PPOB password taken out.
 ///
 /// [`AppSettings`] is what the settings *service* works with, and it carries
-/// `ppob.password` and `ppob.pin` in the clear — `parse_app_settings`
-/// deobfuscates them on the way out of the database, because the PPOB executor
-/// needs them to log in upstream. Serialising that struct to a client is a
-/// credential leak, and over HTTP it is a credential leak to anything that can
-/// reach the port.
+/// `ppob.password` in the clear — `parse_app_settings` deobfuscates it on the
+/// way out of the database, because the PPOB executor needs it to log in
+/// upstream. Serialising that struct to a client is a credential leak, and
+/// over HTTP it is a credential leak to anything that can reach the port.
 ///
-/// So the read side answers with this instead. It says whether a password and
-/// PIN are on file; it never says what they are. There is no round-trip either:
-/// [`UpdateAppSettingsInput`] cannot carry credentials back, so a client editing
-/// the markup table has no way to blank them by accident, and no way to read
-/// them by saving and reloading.
+/// So the read side answers with this instead. It says whether a password is
+/// on file; it never says what it is. There is no round-trip either:
+/// [`UpdateAppSettingsInput`] cannot carry it back, so a client editing the
+/// markup table has no way to blank it by accident, and no way to read it by
+/// saving and reloading. The transaction PIN is not part of this at all — it
+/// is never stored, so there is nothing here for it to report.
 #[derive(Debug, Serialize)]
 pub struct PublicPpobSettings {
     pub enabled: bool,
     pub phone_number: String,
     pub device_id: String,
-    /// True only when both a password and a PIN are stored. Anything less
-    /// cannot authenticate upstream, so the UI should treat it as "not set up".
+    /// True only when a password is stored. Without one, nothing
+    /// authenticates upstream, so the UI should treat it as "not set up".
     pub has_credentials: bool,
     pub markup: PpobMarkup,
 }
@@ -204,8 +213,7 @@ impl From<AppSettings> for PublicAppSettings {
                 enabled: settings.ppob.enabled,
                 phone_number: settings.ppob.phone_number,
                 device_id: settings.ppob.device_id,
-                has_credentials: !settings.ppob.password.is_empty()
-                    && !settings.ppob.pin.is_empty(),
+                has_credentials: !settings.ppob.password.is_empty(),
                 markup: settings.ppob.markup,
             },
             backup: settings.backup,
@@ -213,7 +221,7 @@ impl From<AppSettings> for PublicAppSettings {
     }
 }
 
-/// The PPOB block a client may write: everything except the two secrets.
+/// The PPOB block a client may write: everything except the password.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdatePpobSettingsInput {
     pub enabled: bool,
@@ -233,15 +241,17 @@ pub struct UpdateAppSettingsInput {
     pub backup: BackupSettings,
 }
 
-/// The one payload that carries the PPOB secrets, on its own route.
+/// The one payload that carries the PPOB password, on its own route.
 ///
 /// Separating it from the settings write is what makes the redaction hold: a
-/// GET can never produce these values, so the only way they change is a request
-/// that deliberately sets them.
+/// GET can never produce this value, so the only way it changes is a request
+/// that deliberately sets it. There used to be a `pin` field alongside it;
+/// the transaction PIN is no longer a setting at all, so this struct has
+/// nowhere left to carry one — see `services::ppob::executor::validate_pin`
+/// for where it lives now.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdatePpobCredentialsInput {
     pub password: String,
-    pub pin: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -288,9 +298,8 @@ pub fn parse_app_settings(additional_info: &Option<String>) -> AppSettings {
         .get("ppob")
         .and_then(|v| serde_json::from_value::<PpobSettings>(v.clone()).ok())
         .map(|mut p| {
-            // Deobfuscate sensitive fields when reading from DB
+            // Deobfuscate the sensitive field when reading from DB
             p.password = deobfuscate(&p.password);
-            p.pin = deobfuscate(&p.pin);
             p
         })
         .unwrap_or_default();
@@ -429,6 +438,10 @@ mod tests {
     /// A corrupt PPOB block must not take the rest of the settings with it.
     #[test]
     fn parse_app_settings_survives_a_corrupt_credential() {
+        // The stray `pin` key is what an older build's stored row still looks
+        // like; kept here (rather than dropped from the fixture) so this test
+        // also proves a corrupt password does not take a legacy PIN key down
+        // with it.
         let json = serde_json::json!({
             "sales": { "allow_negative_stock": false, "default_payment_method": "qris" },
             "ppob": {
@@ -448,7 +461,31 @@ mod tests {
         assert_eq!(settings.backup.interval_hours, 6);
         assert_eq!(settings.ppob.phone_number, "0812");
         assert_eq!(settings.ppob.password, "");
-        assert_eq!(settings.ppob.pin, "");
+    }
+
+    /// A store row saved by a build that still had `PpobSettings.pin` keeps
+    /// that key in its `additional_info` forever (nothing rewrites old rows).
+    /// `PpobSettings` no longer has a `pin` field to put it in — there is no
+    /// `settings.ppob.pin` left to even write in this test — so the only way
+    /// to show it is tolerated is that parsing the rest of the block still
+    /// succeeds with the stray key present.
+    #[test]
+    fn parse_app_settings_ignores_a_legacy_pin_field() {
+        let json = serde_json::json!({
+            "ppob": {
+                "enabled": true,
+                "phone_number": "0812",
+                "password": obfuscate("rahasia"),
+                "device_id": "dev",
+                "pin": obfuscate("123456"),
+            }
+        })
+        .to_string();
+
+        let settings = parse_app_settings(&Some(json));
+        assert_eq!(settings.ppob.password, "rahasia");
+        assert_eq!(settings.ppob.phone_number, "0812");
+        assert_eq!(settings.ppob.device_id, "dev");
     }
 
     #[test]

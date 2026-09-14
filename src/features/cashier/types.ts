@@ -58,6 +58,12 @@ export interface CheckoutTransactionInput {
   notes?: string
   transaction_discount?: number
   shift_id?: number
+  /**
+   * The cashier's Mitra transaction PIN, typed at the moment of sale. Only
+   * meaningful when the cart has a PPOB line — see `usePaymentForm` — and
+   * never kept past this one request.
+   */
+  ppob_pin?: string
 }
 
 export interface PaymentSplit {

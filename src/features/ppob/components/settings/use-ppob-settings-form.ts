@@ -32,7 +32,6 @@ export interface PpobConnectionFields {
   phoneNumber: string
   password: string
   deviceId: string
-  pin: string
 }
 
 const EMPTY_CONNECTION: PpobConnectionFields = {
@@ -40,7 +39,6 @@ const EMPTY_CONNECTION: PpobConnectionFields = {
   phoneNumber: "",
   password: "",
   deviceId: "",
-  pin: "",
 }
 
 export interface PpobSettingsForm {
@@ -72,10 +70,10 @@ export function usePpobSettingsForm(): PpobSettingsForm {
   const settingsQuery = useApiQuery<AppSettings>(queryKeys.settings.app, getAppSettings)
 
   /**
-   * The password and the PIN are never sent back by the server, so the two
-   * fields start empty every time and mean "leave what is stored alone".
-   * `has_credentials` is all this screen can know about them — enough to say
-   * whether any are stored, which is the only question an admin actually asks.
+   * The password is never sent back by the server, so the field starts empty
+   * every time and means "leave what is stored alone". `has_credentials` is
+   * all this screen can know about it — enough to say whether one is stored,
+   * which is the only question an admin actually asks.
    */
   const hasStoredCredentials = settingsQuery.data?.ppob.has_credentials ?? false
 
@@ -104,16 +102,13 @@ export function usePpobSettingsForm(): PpobSettingsForm {
         throw new Error("Pengaturan belum dimuat, coba lagi sebentar")
       }
 
-      // Credentials travel on their own request, and only when both were typed.
-      // `PUT /api/settings` cannot carry them at all, which is what stops a
-      // markup change from blanking a password by omission — the failure mode
-      // the old single-blob save had every time this form loaded before the
-      // query resolved.
-      const { password, pin } = connection
-      const wantsCredentialChange = password.length > 0 || pin.length > 0
-      if (wantsCredentialChange && (password.length === 0 || pin.length === 0)) {
-        throw new Error("Isi password dan PIN sekaligus untuk menggantinya")
-      }
+      // The password travels on its own request, and only when it was typed.
+      // `PUT /api/settings` cannot carry it at all, which is what stops a
+      // markup change from blanking it by omission — the failure mode the old
+      // single-blob save had every time this form loaded before the query
+      // resolved.
+      const { password } = connection
+      const wantsCredentialChange = password.length > 0
 
       await updateAppSettings({
         ...toUpdateAppSettingsInput(currentSettings),
@@ -126,12 +121,12 @@ export function usePpobSettingsForm(): PpobSettingsForm {
       })
 
       if (wantsCredentialChange) {
-        await updatePpobCredentials({ password, pin })
+        await updatePpobCredentials({ password })
       }
     },
     {
       onSuccess: () => {
-        setConnection((prev) => ({ ...prev, password: "", pin: "" }))
+        setConnection((prev) => ({ ...prev, password: "" }))
         queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
         // New credentials mean a different upstream account, so the cached
         // balance is no longer about the same shop.
