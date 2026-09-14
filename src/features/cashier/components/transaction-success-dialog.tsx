@@ -185,10 +185,7 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             <InfoPanel className="flex flex-col gap-3">
               {changeAmount > 0 && (
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-muted">{id.cashier.change}</p>
-                    <p className="text-muted">dari {formatRupiah(transaction.payment_amount)}</p>
-                  </div>
+                  <p className="text-muted">{id.cashier.change}</p>
                   <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
                     {formatRupiah(changeAmount)}
                   </p>
