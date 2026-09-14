@@ -15,14 +15,14 @@ interface HeldCartsDialogProps {
 }
 
 /** Berapa nama barang yang dimuat kolom barang; lebihnya jadi "5+". */
-const NAMES_SHOWN = 4
+const NAMES_SHOWN = 2
 
 function describeHeldCart(held: HeldCart): string {
   const itemCount = held.items.reduce((sum, item) => sum + item.quantity, 0)
   return `${formatDateTime(new Date(held.heldAt).toISOString())} · ${itemCount} item`
 }
 
-/** Kolom barang: sampai empat nama, satu per baris, lalu "5+" kalau lebih. */
+/** Kolom barang: dua nama, satu per baris, lalu "3+" kalau ada lebih. */
 function HeldCartItems({ held }: { held: HeldCart }) {
   const names = held.items.slice(0, NAMES_SHOWN).map((item) => item.product_name)
   const more = held.items.length > NAMES_SHOWN
