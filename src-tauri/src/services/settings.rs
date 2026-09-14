@@ -288,7 +288,10 @@ pub async fn change_pin(
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if !pin_valid {
-        return Err(AppError::Auth("PIN saat ini tidak sesuai".into()));
+        // A wrong current PIN is a rejected input, not a dead session — it
+        // must not map to 401, or the frontend's global "session is gone, log
+        // out" handler fires on a simple typo in this form.
+        return Err(AppError::Validation("PIN saat ini tidak sesuai".into()));
     }
 
     // Validate new PIN: 4-6 digits
@@ -393,6 +396,83 @@ pub fn database_info() -> Result<DatabaseInfo, AppError> {
 mod tests {
     use super::*;
     use crate::test_support::{insert_store_info, setup_test_db};
+
+    /// Insert a user whose PIN really is hashed, which the shared fixture does
+    /// not do — it stores the literal string `"hash"`, which `bcrypt::verify`
+    /// rejects as a malformed hash rather than as a wrong PIN.
+    async fn insert_user_with_pin(db: &DatabaseConnection, username: &str, pin: &str) -> i64 {
+        let now = now_ts();
+        let user = users::ActiveModel {
+            id: sea_orm::NotSet,
+            username: Set(username.to_string()),
+            pin_hash: Set(bcrypt::hash(pin, bcrypt::DEFAULT_COST).expect("hash")),
+            full_name: Set(username.to_string()),
+            role: Set("kasir".to_string()),
+            is_active: Set(true),
+            created_at: Set(Some(now.clone())),
+            updated_at: Set(Some(now)),
+        }
+        .insert(db)
+        .await
+        .expect("user insert");
+        user.id
+    }
+
+    /// A wrong current PIN is a rejected input, not a dead session: it must
+    /// come back as `Validation`, never `Auth`. `Auth` maps to HTTP 401, and
+    /// the frontend treats every 401 as its own session having disappeared —
+    /// which would log the cashier out of the whole app over a typo in this
+    /// form.
+    #[tokio::test]
+    async fn a_wrong_current_pin_is_a_validation_error_not_an_auth_error() {
+        let db = setup_test_db().await;
+        let user_id = insert_user_with_pin(&db, "kasir1", "1234").await;
+        let actor = Actor::new(user_id, "kasir");
+
+        let err = change_pin(
+            &db,
+            &actor,
+            ChangePinInput {
+                current_pin: "9999".into(),
+                new_pin: "5678".into(),
+            },
+        )
+        .await
+        .expect_err("wrong current PIN is refused");
+
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "expected AppError::Validation, got {err:?}"
+        );
+        assert_eq!(err.to_string(), "PIN saat ini tidak sesuai");
+    }
+
+    /// The right current PIN still changes it — the classification fix above
+    /// must not have broken the success path.
+    #[tokio::test]
+    async fn the_right_current_pin_changes_it() {
+        let db = setup_test_db().await;
+        let user_id = insert_user_with_pin(&db, "kasir1", "1234").await;
+        let actor = Actor::new(user_id, "kasir");
+
+        change_pin(
+            &db,
+            &actor,
+            ChangePinInput {
+                current_pin: "1234".into(),
+                new_pin: "5678".into(),
+            },
+        )
+        .await
+        .expect("right current PIN is accepted");
+
+        let updated = users::Entity::find_by_id(user_id)
+            .one(&db)
+            .await
+            .expect("query")
+            .expect("row");
+        assert!(bcrypt::verify("5678", &updated.pin_hash).expect("verify"));
+    }
 
     #[tokio::test]
     async fn ui_zoom_defaults_before_the_shop_is_set_up_and_before_a_save() {

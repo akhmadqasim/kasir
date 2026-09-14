@@ -72,7 +72,10 @@ impl MitraClient {
 
         if body["message"].as_str() != Some("OK") {
             let err_msg = body["errorMessage"].as_str().unwrap_or("Login gagal");
-            return Err(AppError::Auth(format!("Login Mitra gagal: {}", err_msg)));
+            return Err(AppError::Upstream(format!(
+                "Login Mitra gagal: {}",
+                err_msg
+            )));
         }
 
         self.token = body["access_token"].as_str().map(String::from);
@@ -134,7 +137,7 @@ impl MitraClient {
 
     pub fn request_context(&self) -> Result<MitraRequestContext, AppError> {
         let token = self.token.clone().ok_or_else(|| {
-            AppError::Auth("Belum login ke Mitra. Atur kredensial di Pengaturan PPOB".into())
+            AppError::Upstream("Belum login ke Mitra. Atur kredensial di Pengaturan PPOB".into())
         })?;
 
         Ok(MitraRequestContext {
@@ -201,7 +204,7 @@ fn validate_mitra_response(result: Value) -> Result<Value, AppError> {
             .unwrap_or("Unknown error");
 
         if err_msg.contains("Unauthenticated") || err_msg.contains("unauthenticated") {
-            return Err(AppError::Auth(
+            return Err(AppError::Upstream(
                 "Sesi Mitra expired. Silakan coba lagi.".into(),
             ));
         }
@@ -230,4 +233,63 @@ fn validate_mitra_response(result: Value) -> Result<Value, AppError> {
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An "Unauthenticated" body is the upstream account's own session dying,
+    /// not ours. It must become `Upstream` (the http layer maps that to 502),
+    /// never `Auth` — `Auth` maps to 401, and the frontend treats every 401 as
+    /// "our session is gone, log out", which would boot the cashier out of the
+    /// whole app over a Mitra token expiring.
+    #[test]
+    fn an_unauthenticated_upstream_body_is_an_upstream_error_not_our_auth() {
+        let body = json!({
+            "message": "Unauthorized",
+            "errorMessage": "Unauthenticated."
+        });
+
+        let err = validate_mitra_response(body).expect_err("Unauthenticated must fail");
+        assert!(
+            matches!(err, AppError::Upstream(_)),
+            "expected AppError::Upstream, got {err:?}"
+        );
+        assert!(!matches!(err, AppError::Auth(_)));
+    }
+
+    /// The lowercase form the API also uses must be classified the same way.
+    #[test]
+    fn a_lowercase_unauthenticated_body_is_also_upstream() {
+        let body = json!({
+            "message": "error",
+            "errorMessage": "unauthenticated token"
+        });
+
+        let err = validate_mitra_response(body).expect_err("unauthenticated must fail");
+        assert!(matches!(err, AppError::Upstream(_)));
+    }
+
+    /// A validation-shaped failure from Mitra (not an auth problem at all)
+    /// still becomes `Internal` — this test pins today's behaviour so the
+    /// `Unauthenticated` branch above cannot silently start swallowing it.
+    #[test]
+    fn a_non_auth_mitra_error_stays_internal() {
+        let body = json!({
+            "message": "error",
+            "errorMessage": "Nomor tidak valid",
+            "errors": { "phone_number": ["Nomor tidak valid"] }
+        });
+
+        let err = validate_mitra_response(body).expect_err("validation error must fail");
+        assert!(matches!(err, AppError::Internal(_)));
+    }
+
+    #[test]
+    fn an_ok_response_passes_through_unchanged() {
+        let body = json!({ "message": "OK", "data": 1 });
+        let result = validate_mitra_response(body.clone()).expect("OK must pass");
+        assert_eq!(result, body);
+    }
 }

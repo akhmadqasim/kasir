@@ -71,6 +71,7 @@ describe("pemetaan error", () => {
       ["bad_request", 400],
       ["validation", 422],
       ["internal", 500],
+      ["upstream", 502],
     ] as const
 
     for (const [code, status] of codes) {
@@ -187,6 +188,21 @@ describe("penanganan 401 terpusat", () => {
     await apiGet("/settings").catch(() => {})
 
     expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  /**
+   * A Mitra Indogrosir (PPOB) auth failure comes back as 502 `"upstream"`,
+   * never 401 — this is the regression the bug report was about: opening the
+   * PPOB page must not log the cashier out of the whole app.
+   */
+  it("tidak memanggil handler untuk 502 upstream, dan pesan server tetap tampil", async () => {
+    stubFetch(errorBody(502, "upstream", "Sesi Mitra expired. Silakan coba lagi."))
+
+    const error = await failureOf(apiGet("/ppob/balance"))
+
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    expect(error.code).toBe("upstream")
+    expect(errorMessage(error)).toBe("Sesi Mitra expired. Silakan coba lagi.")
   })
 
   it("tetap melempar ApiError setelah handler dijalankan", async () => {
