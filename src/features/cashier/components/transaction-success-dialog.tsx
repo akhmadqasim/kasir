@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button, Kbd, Modal, Spinner } from "@heroui/react"
 import { Printer } from "lucide-react"
 
+import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { ReceiptPreview } from "@/features/receipt"
@@ -54,11 +55,11 @@ export function TransactionSuccessDialog({
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={() => onNewTransaction()}>
-      <Modal.Container size="md">
-        {/* `w-fit`: dialognya seramping struknya (atau deretan tombolnya, mana
-            yang lebih lebar), bukan selebar `max-w-md` dengan kertas kecil di
-            tengah kekosongan. */}
-        <Modal.Dialog aria-label="Transaksi selesai" className="w-fit">
+      {/* Dua sisi seperti dialog Pembayaran: kiri total, kembalian dan
+          tombolnya; kanan struk persis seperti yang tercetak. Lebarnya sama
+          dengan dialog Pembayaran supaya matanya tidak berpindah tempat. */}
+      <Modal.Container size="lg">
+        <Modal.Dialog aria-label="Transaksi selesai" className="max-w-[44rem]">
           {/* Isi dan status cetaknya ikut penjualannya: `key` mengganti
               keduanya untuk struk berikutnya, dan Modal melepasnya saat tertutup. */}
           <SuccessContent
@@ -173,84 +174,105 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
       </Modal.Header>
 
       <Modal.Body>
-        {/* Struknya sendiri sudah memuat total, metode, nomor transaksi dan
-            rinciannya — tidak diulang di atasnya. Yang ditambahkan hanya apa
-            yang bukan isi struk: kembalian yang harus diserahkan (dibaca
-            pelanggan dari seberang meja — peran "Total keranjang" §3.4),
-            status PPOB yang masih berjalan, dan nasib cetak otomatis. */}
-        <div className="flex flex-col gap-4">
-          {changeAmount > 0 && (
-            <div>
-              <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                {formatRupiah(changeAmount)}
+        <div className="grid min-w-0 gap-6 md:grid-cols-2">
+          {/* Kiri: yang bukan isi struk — total dan kembalian yang harus
+              diserahkan (dibaca pelanggan dari seberang meja — peran "Total
+              keranjang" §3.4), status PPOB yang masih berjalan, nasib cetak
+              otomatis, lalu kedua tombolnya di dasar kolom. */}
+          <div className="flex flex-col gap-4">
+            <InfoPanel className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-muted">Total</p>
+                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {formatRupiah(transaction.total_amount)}
+                </p>
+              </div>
+              {changeAmount > 0 && (
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-muted">{id.cashier.change}</p>
+                    <p className="text-muted">dari {formatRupiah(transaction.payment_amount)}</p>
+                  </div>
+                  <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
+                    {formatRupiah(changeAmount)}
+                  </p>
+                </div>
+              )}
+            </InfoPanel>
+
+            {ppobItems.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {ppobItems.map((item) => {
+                  const status = ppobStatusConfig(item.ppob_status)
+                  return (
+                    <li key={item.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-foreground">{item.product_name}</span>
+                      {status && (
+                        <StatusBadge size="sm" status={status.variant}>
+                          {isPpobInFlight(item.ppob_status) && (
+                            <Spinner className="size-3" color="current" size="sm" />
+                          )}
+                          {status.label}
+                        </StatusBadge>
+                      )}
+                    </li>
+                  )
+                })}
+                <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
+              </ul>
+            )}
+
+            {autoPrintState.status === "printing" && (
+              <p className="flex items-center gap-2">
+                <Spinner color="current" size="sm" />
+                Struk sedang dicetak otomatis…
               </p>
-              <p>
-                {id.cashier.change} dari {formatRupiah(transaction.payment_amount)}
+            )}
+            {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
+            {autoPrintState.status === "failed" && (
+              <p className="text-danger">
+                Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
+                struk".
               </p>
+            )}
+
+            <div className="mt-auto flex flex-col gap-2">
+              <PendingButton
+                fullWidth
+                isPending={isPrinting}
+                variant="tertiary"
+                onPress={handlePrint}
+              >
+                <Printer />
+                Cetak struk
+                <Kbd aria-hidden="true">
+                  <Kbd.Content>Enter</Kbd.Content>
+                </Kbd>
+              </PendingButton>
+              <Button
+                autoFocus
+                className="min-h-12 text-lg"
+                fullWidth
+                size="lg"
+                onPress={onNewTransaction}
+              >
+                Transaksi baru
+                {/* Di tombol primary teks abu-abu Kbd tenggelam di biru; ikut warna teks tombolnya. */}
+                <Kbd aria-hidden="true" className="text-accent-foreground" variant="light">
+                  <Kbd.Content>Esc</Kbd.Content>
+                </Kbd>
+              </Button>
             </div>
-          )}
+          </div>
 
-          {ppobItems.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {ppobItems.map((item) => {
-                const status = ppobStatusConfig(item.ppob_status)
-                return (
-                  <li key={item.id} className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-foreground">{item.product_name}</span>
-                    {status && (
-                      <StatusBadge size="sm" status={status.variant}>
-                        {isPpobInFlight(item.ppob_status) && (
-                          <Spinner className="size-3" color="current" size="sm" />
-                        )}
-                        {status.label}
-                      </StatusBadge>
-                    )}
-                  </li>
-                )
-              })}
-              <li>PPOB diproses di latar belakang; cek statusnya di Riwayat.</li>
-            </ul>
-          )}
-
-          {autoPrintState.status === "printing" && (
-            <p className="flex items-center gap-2">
-              <Spinner color="current" size="sm" />
-              Struk sedang dicetak otomatis…
-            </p>
-          )}
-          {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
-          {autoPrintState.status === "failed" && (
-            <p className="text-danger">
-              Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
-              struk".
-            </p>
-          )}
-
-          {/* Struk panjang menggulir di dalam kertasnya; dialognya tetap muat di layar. */}
+          {/* Kanan: struk panjang menggulir di dalam kertasnya. */}
           <ReceiptPreview
-            className="max-h-[50vh]"
+            className="max-h-[60vh]"
             paperWidth={paperWidth}
             transactionId={transaction.id}
           />
         </div>
       </Modal.Body>
-
-      <Modal.Footer>
-        <PendingButton isPending={isPrinting} variant="tertiary" onPress={handlePrint}>
-          <Printer />
-          Cetak struk
-          <Kbd aria-hidden="true">
-            <Kbd.Content>Enter</Kbd.Content>
-          </Kbd>
-        </PendingButton>
-        <Button autoFocus onPress={onNewTransaction}>
-          Transaksi baru
-          {/* Di tombol primary teks abu-abu Kbd tenggelam di biru; ikut warna teks tombolnya. */}
-          <Kbd aria-hidden="true" className="text-accent-foreground" variant="light">
-            <Kbd.Content>Esc</Kbd.Content>
-          </Kbd>
-        </Button>
-      </Modal.Footer>
     </>
   )
 }

@@ -120,9 +120,10 @@ describe("transaction success dialog", () => {
     renderDialog()
 
     const dialog = await screen.findByRole("dialog", { name: "Transaksi selesai" })
-    // Only what the receipt itself does not carry: the change to hand back.
+    // The headline figures: the total and the change to hand back.
+    expect(dialog).toHaveTextContent("Rp 6.000")
     expect(dialog).toHaveTextContent("Rp 44.000")
-    expect(dialog).toHaveTextContent("Kembalian dari Rp 50.000")
+    expect(dialog).toHaveTextContent("dari Rp 50.000")
     // Total, method and receipt number are read off the receipt preview, not
     // repeated above it.
     expect(dialog).not.toHaveTextContent("TRX-20260913-0001")
