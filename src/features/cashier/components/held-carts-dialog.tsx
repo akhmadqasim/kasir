@@ -67,7 +67,10 @@ export function HeldCartsDialog({
       {/* Lebar: tiap baris memuat label, total, empat nama barang, dan dua
           tombol — di "md" nama barang terpotong, di "xl" terlalu lapang. */}
       <Modal.Container size="lg">
-        <Modal.Dialog aria-label="Transaksi Tersimpan">
+        {/* Lima kolom per baris butuh ~44rem; pada `max-w-lg` bawaan kolom
+            label tinggal nol lebar dan tanggalnya jatuh satu huruf per baris
+            di layar 1280. */}
+        <Modal.Dialog aria-label="Transaksi Tersimpan" className="max-w-[44rem]">
           <Modal.CloseTrigger />
           <Modal.Header>
             <Modal.Heading>Transaksi Tersimpan</Modal.Heading>
@@ -157,9 +160,9 @@ function HeldCartsList({
                 <span className="w-4 self-center text-center text-sm text-muted tabular-nums">
                   {index + 1}
                 </span>
-                <div className="flex min-w-0 flex-1 flex-col self-center">
-                  <Label>{held.label}</Label>
-                  <Description>{describeHeldCart(held)}</Description>
+                <div className="flex min-w-24 flex-1 flex-col self-center">
+                  <Label className="truncate">{held.label}</Label>
+                  <Description className="truncate">{describeHeldCart(held)}</Description>
                 </div>
                 <div className="w-44 shrink-0 self-center">
                   <HeldCartItems held={held} />
