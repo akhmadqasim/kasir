@@ -64,24 +64,26 @@ export function useSidebar(): SidebarContextValue {
  *
  * Ukurannya diambil dari computed style template dashboard HeroUI Pro, bukan
  * dikira-kira: baris 36px, `padding: 6px 8px`, `gap: 12px`, sudut 16px, ikon
- * 20px, label `text-sm` dengan `font-normal` (400) untuk item biasa dan
- * `font-medium` (500) hanya untuk yang aktif — di template, bobot hurufnya
- * yang membedakan item aktif, bukan cuma latarnya. Yang aktif memakai
- * `--default` — bukan `--surface`, yang di kanvas yang sama akan terlihat
- * seperti kartu tersesat di navigasi. Hover memakai warna yang sama dengan
- * aktif, seperti `.list-box-item` HeroUI.
+ * 20px. Yang aktif sekarang meniru sidebar dokumentasi heroui.com, bukan lagi
+ * template dashboard-nya: kartu putih `--surface` + `shadow-surface` dengan
+ * sudut `rounded-lg`, duduk di atas `--background` abu-abu sidebar, teks dan
+ * ikon `--foreground` pada bobot yang sama dengan baris lain (tidak ada lagi
+ * `font-medium` yang cuma menempel di item aktif). Item diam memakai
+ * `text-muted`, tanpa latar; hover melunakkan `--default` ke setengah opasitas
+ * alih-alih memakai warna penuh yang sama dengan aktif seperti sebelumnya —
+ * di sidebar dokumentasinya, hanya item aktif yang benar-benar berupa kartu.
  *
  * The collapsed rail is driven by `data-state` on the sidebar root (group
  * `sidebar`) instead of a prop, so a row does not need to re-render to shrink.
  */
 const MENU_BUTTON_BASE = [
   "group/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-2xl px-2 py-1.5",
-  "text-left text-sm font-normal text-foreground outline-none no-highlight",
-  "transition-[background-color,box-shadow] duration-150 motion-reduce:transition-none",
-  "hover:bg-default",
+  "text-left text-sm font-normal text-muted outline-none no-highlight",
+  "transition-[background-color,box-shadow,color] duration-150 motion-reduce:transition-none",
+  "hover:bg-default/50 hover:text-foreground",
   "focus-visible:status-focused",
   "active:scale-[0.98]",
-  "data-[active=true]:bg-default data-[active=true]:font-medium",
+  "data-[active=true]:rounded-lg data-[active=true]:bg-surface data-[active=true]:text-foreground data-[active=true]:shadow-surface",
   "disabled:status-disabled aria-disabled:status-disabled",
   "[&_svg]:size-5 [&_svg]:shrink-0",
   "group-data-[state=collapsed]/sidebar:w-9 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0",
@@ -100,15 +102,22 @@ export function sidebarMenuButtonClass(
   return cn(MENU_BUTTON_BASE, MENU_BUTTON_SIZE[size], className)
 }
 
-/** Rows of a nested menu: indented, and gone entirely once the rail collapses. */
+/**
+ * Rows of a nested menu: indented, and gone entirely once the rail collapses.
+ *
+ * Same active treatment as {@link sidebarMenuButtonClass} — `bg-surface` +
+ * `shadow-surface` + `rounded-lg`, no `font-medium` — kept consistent between
+ * the two so a sub-menu row does not look like it belongs to a different
+ * sidebar than its parent.
+ */
 export function sidebarSubMenuButtonClass(className?: string): string {
   return cn(
     "flex min-h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl px-2 text-xs",
     "text-muted outline-none no-highlight",
-    "transition-[background-color,color] duration-150 motion-reduce:transition-none",
-    "hover:bg-default hover:text-foreground",
+    "transition-[background-color,box-shadow,color] duration-150 motion-reduce:transition-none",
+    "hover:bg-default/50 hover:text-foreground",
     "focus-visible:status-focused",
-    "data-[active=true]:bg-default data-[active=true]:font-medium data-[active=true]:text-foreground",
+    "data-[active=true]:rounded-lg data-[active=true]:bg-surface data-[active=true]:text-foreground data-[active=true]:shadow-surface",
     className,
   )
 }
