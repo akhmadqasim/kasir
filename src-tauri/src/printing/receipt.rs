@@ -368,7 +368,8 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         .filter(|notes| !notes.is_empty())
     {
         lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
-        for row in wrap_words(&format!("Catatan: {notes}"), cpl) {
+        lines.push(ReceiptTextLine::plain("Catatan:".to_string()));
+        for row in wrap_words(notes, cpl) {
             lines.push(ReceiptTextLine::plain(row));
         }
     }
@@ -652,9 +653,10 @@ mod notes_tests {
 
         let at = text
             .iter()
-            .position(|line| line.starts_with("Catatan: cash 300"))
-            .expect("note line");
+            .position(|line| line == "Catatan:")
+            .expect("note heading");
         assert_eq!(text[at - 1], "-".repeat(32));
+        assert!(text[at + 1].starts_with("cash 300"), "{text:?}");
         assert!(
             text.iter().all(|line| line.chars().count() <= 32),
             "{text:?}"
