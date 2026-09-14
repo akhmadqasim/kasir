@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from "react"
 import { Button, Description, Label, ListBox, Modal } from "@heroui/react"
-import { PlayCircle, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
 import { formatDateTime } from "@/lib/format"
 import type { HeldCart } from "@/stores/cart-store"
@@ -177,10 +177,8 @@ function HeldCartsList({
                   <Button
                     aria-label={`Buka ${held.label}`}
                     size="sm"
-                    variant="tertiary"
                     onPress={() => onRecall(held.id)}
                   >
-                    <PlayCircle />
                     Buka
                   </Button>
                   <Button
