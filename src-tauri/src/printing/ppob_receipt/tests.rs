@@ -1206,8 +1206,8 @@ fn a_top_up_from_history_prints_the_provider_description_once_and_no_phone_as_to
     );
     assert_eq!(
         text.matches("081347085447").count(),
-        2,
-        "phone: heading + no_ref only\n{text}"
+        1,
+        "the phone appears in the heading only\n{text}"
     );
     assert!(text.contains("\n\n-\n\n"), "no token → a lone dash\n{text}");
 }
