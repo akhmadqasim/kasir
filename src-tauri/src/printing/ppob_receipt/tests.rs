@@ -35,6 +35,10 @@ fn base() -> PpobReceiptData {
         admin_fee: 0.0,
         total: 0.0,
         grand_total: 0.0,
+        date: None,
+        time: None,
+        mitra_invoice_number: None,
+        our_receipt_number: None,
     }
 }
 
@@ -122,18 +126,29 @@ fn payment_point() -> PpobReceiptData {
     }
 }
 
+/// The fixture behind the dedicated pulsa test below: the numbers from a
+/// screenshot of Mitra's own "Cetak Struk" screen for a Telkomsel top-up, with
+/// `product_name` in the shape checkout actually produces (see
+/// `pulsa_description` in the parent module).
 fn pulsa() -> PpobReceiptData {
     PpobReceiptData {
         service_type: "pulsa".to_string(),
-        product_name: Some("Telkomsel 25.000".to_string()),
-        customer_id: Some("081200000002".to_string()),
-        serial_number: Some("SN0001234567890123".to_string()),
-        reference_number: Some("4323384".to_string()),
-        payment_code: Some("TS25-1-260911094954".to_string()),
-        amount: 25000.0,
+        product_name: Some("Pulsa TELKOMSEL - TELKOMSEL 20.000,- Masa Aktif 30 Hari".to_string()),
+        customer_id: Some("081348172197".to_string()),
+        // Mitra's own placeholder for "no token" on pulsa/data.
+        serial_number: Some("-".to_string()),
+        reference_number: Some("04103400001446365784".to_string()),
+        payment_code: Some("P081348172197-861-260327091340".to_string()),
+        amount: 20000.0,
         admin_fee: 0.0,
-        total: 25000.0,
-        grand_total: 27000.0,
+        total: 20000.0,
+        // What the customer paid — Mitra folds the outlet's markup in here,
+        // with no separate service-fee line the way other services get one.
+        grand_total: 20070.0,
+        date: Some("27-03-2026".to_string()),
+        time: Some("09:13 WIB".to_string()),
+        mitra_invoice_number: Some("50151852".to_string()),
+        our_receipt_number: None,
         ..base()
     }
 }
@@ -153,6 +168,7 @@ fn all_fixtures() -> Vec<PpobReceiptData> {
         pdam(),
         bpjs(),
         payment_point(),
+        pulsa(),
     ]
 }
 
@@ -420,15 +436,32 @@ fn the_store_name_is_all_that_identifies_us() {
     assert!(!lines[0].bold);
     assert_eq!(lines[0].size, LineSize::Normal);
 
-    // None of the furniture a sales receipt carries.
-    let text = text_of(&lines);
-    for absent in [
-        "Telp:",
-        "=",
-        "Cahaya513 Mini Mart
-Cahaya",
+    // None of the furniture a sales receipt carries — the '=' rules are the
+    // one exception, and only for pulsa/data: they are part of Mitra's own
+    // layout for those two services, not ours, so pulsa/data is left out of
+    // this check on purpose (see `a_pulsa_struk_matches_the_mitra_app_line_by_line`
+    // for what it prints instead).
+    for data in [
+        pln_prepaid(),
+        pln_postpaid(),
+        pdam(),
+        bpjs(),
+        payment_point(),
     ] {
-        assert!(!text.contains(absent), "{} is on the struk", absent);
+        let text = text_of(&format_ppob_receipt(&data, 58));
+        for absent in [
+            "Telp:",
+            "=",
+            "Cahaya513 Mini Mart
+Cahaya",
+        ] {
+            assert!(
+                !text.contains(absent),
+                "{} is on the {} struk",
+                absent,
+                data.service_type
+            );
+        }
     }
 }
 
@@ -569,4 +602,198 @@ fn without_token_lines_drops_the_pair_and_its_continuation_only() {
 fn a_blank_or_empty_provider_text_yields_no_lines() {
     assert!(provider_lines("").is_empty());
     assert!(provider_lines("\r\n\r\n   \r\n").is_empty());
+}
+
+// -----------------------------------------------------------------------
+// Pulsa/data: Mitra's own "Cetak Struk" layout, used whenever there is no
+// `provider_receipt_text` to print instead. See `format_pulsa_receipt`.
+// -----------------------------------------------------------------------
+
+/// The whole struk, in the order Mitra's own screen shows it, reconstructed
+/// from a screenshot of a Telkomsel top-up. The phone-and-description line is
+/// one character over 32 columns — `081348172197 - TELKOMSEL 20.000,-` is 33
+/// — and wraps at a word boundary like any other line this module cannot fit
+/// (see `eighty_millimetre_paper_fits_the_pulsa_heading_on_one_line` for that
+/// same wording fitting on 42 columns unwrapped).
+#[test]
+fn a_pulsa_struk_matches_the_mitra_app_line_by_line() {
+    let rows: Vec<String> = format_ppob_receipt(&pulsa(), 58)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+
+    assert_eq!(
+        rows,
+        vec![
+            center_text("Cahaya513 Mini Mart", 32),
+            "=".repeat(32),
+            format!("27-03-2026{}09:13 WIB", " ".repeat(13)),
+            "Nomor Invoice #50151852".to_string(),
+            "=".repeat(32),
+            "TRANSAKSI:".to_string(),
+            "081348172197 - TELKOMSEL".to_string(),
+            "20.000,-".to_string(),
+            "Masa Aktif 30 Hari".to_string(),
+            String::new(),
+            "-".to_string(),
+            String::new(),
+            "-".repeat(32),
+            format!("Biaya Admin{}Rp 0", " ".repeat(17)),
+            "-".repeat(32),
+            format!("Total{}Rp 20.070", " ".repeat(18)),
+            String::new(),
+            "RINCIAN".to_string(),
+            "No. Ref: 04103400001446365784".to_string(),
+            "Kode Transaksi:".to_string(),
+            "P081348172197-861-260327091340".to_string(),
+        ]
+    );
+    assert!(rows.iter().all(|row| row.chars().count() <= 32));
+}
+
+/// Nothing of Mitra's usual PPOB furniture is on this struk: no double-size
+/// token block (that is PLN prepaid only), no `LABEL : VALUE` fallback body.
+#[test]
+fn a_pulsa_struk_has_none_of_the_other_services_furniture() {
+    let text = text_of(&format_ppob_receipt(&pulsa(), 58));
+    assert!(!text.contains("Stroom/Token"));
+    assert!(!text.contains("PRODUK"));
+    assert!(!text.contains("NO PELANGGAN"));
+}
+
+/// 42 columns is wide enough to hold the phone and its description on one
+/// line, where 32 was not.
+#[test]
+fn eighty_millimetre_paper_fits_the_pulsa_heading_on_one_line() {
+    let cpl = columns(80);
+    let rows: Vec<String> = format_ppob_receipt(&pulsa(), 80)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+
+    assert_eq!(rows[1], "=".repeat(cpl));
+    assert_eq!(rows[4], "=".repeat(cpl));
+    assert!(rows.contains(&"081348172197 - TELKOMSEL 20.000,-".to_string()));
+    assert!(rows.iter().all(|row| row.chars().count() <= cpl));
+}
+
+/// A description with no `Masa Aktif` prints as one line — nothing invented,
+/// nothing left dangling.
+#[test]
+fn a_pulsa_description_without_masa_aktif_prints_as_one_line() {
+    let mut data = pulsa();
+    data.product_name = Some("Pulsa TELKOMSEL - TELKOMSEL 20.000,-".to_string());
+
+    let rows: Vec<String> = format_ppob_receipt(&data, 58)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+
+    assert!(!rows.iter().any(|row| row.contains("Masa Aktif")));
+    assert_eq!(rows[6], "081348172197 - TELKOMSEL");
+    assert_eq!(rows[7], "20.000,-");
+    // A blank line follows immediately — no second description line.
+    assert_eq!(rows[8], "");
+}
+
+/// A `product_name` that never went through our checkout — a history row
+/// Mitra sent us, in whatever shape its own description arrived in — has no
+/// `"Pulsa "`/`"Data "` prefix to strip, and prints exactly as given.
+#[test]
+fn a_product_name_without_the_checkout_prefix_prints_as_is() {
+    let mut data = pulsa();
+    // No phone on this one, so the assertion below is not at the mercy of
+    // the wrap a 33-column heading would need — see the exact-match test for
+    // that.
+    data.customer_id = None;
+    data.product_name = Some("pulsa - 081347085447".to_string());
+
+    let text = text_of(&format_ppob_receipt(&data, 58));
+    assert!(text.contains("pulsa - 081347085447"));
+}
+
+/// No Mitra id at all: the invoice line falls back to our own sale's receipt
+/// number rather than going blank.
+#[test]
+fn a_missing_mitra_invoice_id_falls_back_to_our_receipt_number() {
+    let mut data = pulsa();
+    data.mitra_invoice_number = None;
+    data.our_receipt_number = Some("TRX-20260327-0004".to_string());
+
+    let text = text_of(&format_ppob_receipt(&data, 58));
+    assert!(text.contains("Nomor Invoice #TRX-20260327-0004"));
+    assert!(!text.contains("#50151852"));
+}
+
+/// Neither Mitra nor our own side has an id: the invoice line is left off
+/// entirely rather than printed with nothing after the `#`.
+#[test]
+fn no_invoice_number_at_all_omits_the_line_rather_than_printing_a_bare_hash() {
+    let mut data = pulsa();
+    data.mitra_invoice_number = None;
+    data.our_receipt_number = None;
+
+    let text = text_of(&format_ppob_receipt(&data, 58));
+    assert!(!text.contains("Nomor Invoice"));
+    assert!(!text.contains('#'));
+}
+
+/// No real token, printed as `-`, is the base fixture already
+/// (`token_number` is always `-` for pulsa/data); this is the positive case,
+/// checked against the same row the exact-match test above checked as `-`.
+#[test]
+fn a_real_pulsa_token_is_printed_when_there_is_one() {
+    let mut data = pulsa();
+    data.serial_number = Some("6991524380306764".to_string());
+
+    let rows: Vec<String> = format_ppob_receipt(&data, 58)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+    assert_eq!(rows[10], "6991524380306764");
+}
+
+/// Our stored `ppob_serial_number` sometimes holds a copy of the reference
+/// number rather than an actual token; printing it on the token line would
+/// show the same digits twice under two different labels, so it is treated
+/// as no token at all.
+#[test]
+fn a_token_equal_to_the_reference_number_prints_as_no_token() {
+    let mut data = pulsa();
+    data.serial_number = data.reference_number.clone();
+
+    let rows: Vec<String> = format_ppob_receipt(&data, 58)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+    assert_eq!(rows[10], "-");
+}
+
+/// Paket data (`service_type == "data"`) uses the exact same layout as
+/// pulsa — Mitra's history calls both `PULSA`/`DATA` under one screen.
+#[test]
+fn a_paket_data_struk_uses_the_same_layout_as_pulsa() {
+    let mut data = pulsa();
+    data.service_type = "data".to_string();
+    data.product_name = Some("Data TELKOMSEL - Kuota 5GB 30 Hari".to_string());
+
+    let text = text_of(&format_ppob_receipt(&data, 58));
+    assert!(text.contains("TRANSAKSI:"));
+    assert!(text.contains("RINCIAN"));
+    assert!(text.contains("081348172197 - Kuota 5GB 30 Hari"));
+}
+
+/// A pulsa/data line that does carry a `provider_receipt_text` is handled
+/// exactly like every other service: the slip prints verbatim and none of
+/// the Mitra "Cetak Struk" layout above is used.
+#[test]
+fn a_pulsa_line_with_a_provider_receipt_text_still_prints_it_verbatim() {
+    let mut data = pulsa();
+    data.provider_receipt_text = Some("NO METER : 14300000001".to_string());
+
+    let text = text_of(&format_ppob_receipt(&data, 58));
+    assert!(text.contains("NO METER : 14300000001"));
+    assert!(!text.contains("TRANSAKSI:"));
+    assert!(!text.contains("RINCIAN"));
+    assert!(!text.contains("Nomor Invoice"));
 }

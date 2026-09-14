@@ -100,5 +100,11 @@ fn from_history_fixture(fixture: &serde_json::Value) -> PpobReceiptData {
         admin_fee: number("adminFee"),
         total,
         grand_total: total,
+        // These captured fixtures are all PLN/PDAM/BPJS, which never read
+        // any of the four.
+        date: None,
+        time: None,
+        mitra_invoice_number: None,
+        our_receipt_number: None,
     }
 }
