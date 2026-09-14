@@ -191,7 +191,9 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
               </div>
               <div className="flex items-start justify-between gap-4">
                 <p className="text-muted">Total</p>
-                <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                {/* Sengaja kecil: total sudah dibayar, yang harus dikerjakan
+                    kasir sekarang adalah kembaliannya. */}
+                <p className="text-base font-medium tabular-nums text-muted">
                   {formatRupiah(transaction.total_amount)}
                 </p>
               </div>
