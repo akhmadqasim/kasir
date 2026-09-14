@@ -863,8 +863,12 @@ async fn an_admin_can_deactivate_an_account_through_the_active_route() {
 // Settings
 // ---------------------------------------------------------------------------
 
-/// A store row whose PPOB block holds real credentials, stored the way
-/// `update_app_settings` stores them.
+/// A store row whose PPOB block holds a real password, stored the way
+/// `update_app_settings` stores it — plus a legacy obfuscated `pin` key next
+/// to it, the shape a build from before the PIN was removed from settings
+/// left behind. `PpobSettings` has no field to read that key into any more;
+/// every test using this fixture is incidentally proving the stray key does
+/// not break anything.
 async fn insert_store_with_ppob_credentials(
     db: &DatabaseConnection,
     password: &str,
@@ -1066,6 +1070,12 @@ async fn the_ppob_payment_point_search_route_requires_a_session() {
 
 /// Because the client never receives the credentials, it cannot send them back
 /// — so a settings save must not read their absence as "clear them".
+///
+/// `insert_store_with_ppob_credentials` still plants a legacy `"pin"` key
+/// alongside the password (see its doc comment) purely so this exercises a
+/// store row shaped like one an older build would have written; there is no
+/// `stored.ppob.pin` to assert on any more — the field is gone — which is
+/// itself the proof that the stray key is tolerated rather than read back.
 #[tokio::test]
 async fn saving_the_settings_leaves_the_stored_credentials_intact() {
     let db = setup_test_db().await;
@@ -1099,11 +1109,14 @@ async fn saving_the_settings_leaves_the_stored_credentials_intact() {
         .await
         .expect("settings");
     assert_eq!(stored.ppob.password, "rahasia-sekali");
-    assert_eq!(stored.ppob.pin, "424242");
     assert_eq!(stored.sales.default_payment_method, "qris");
     assert_eq!(stored.security.session_timeout_minutes, 45);
 }
 
+/// The PIN in the request body is a client bug (there is nowhere left to put
+/// one — `UpdatePpobCredentialsInput` is password-only) rather than a request
+/// this route need refuse: unknown JSON fields are ignored, same as the
+/// legacy stored `"pin"` key the fixture plants.
 #[tokio::test]
 async fn the_credentials_route_is_the_only_way_to_change_them() {
     let db = setup_test_db().await;
@@ -1130,7 +1143,6 @@ async fn the_credentials_route_is_the_only_way_to_change_them() {
         .await
         .expect("settings");
     assert_eq!(stored.ppob.password, "sandi-baru");
-    assert_eq!(stored.ppob.pin, "111111");
 
     // And what is on disk is still obfuscated, not the plain string.
     let row = store_info::Entity::find_by_id(1_i64)
@@ -1824,9 +1836,12 @@ async fn the_receipt_lines_route_requires_a_session() {
 
     let response = router(&state(db))
         .oneshot(
-            same_origin(Method::GET, &format!("/api/transactions/{}/receipt/lines", sale.id))
-                .body(Body::empty())
-                .expect("request"),
+            same_origin(
+                Method::GET,
+                &format!("/api/transactions/{}/receipt/lines", sale.id),
+            )
+            .body(Body::empty())
+            .expect("request"),
         )
         .await
         .expect("response");
@@ -1933,10 +1948,13 @@ async fn the_receipt_lines_route_defaults_to_the_configured_paper_width() {
 
     let response = router(&state(db))
         .oneshot(
-            same_origin(Method::GET, &format!("/api/transactions/{}/receipt/lines", sale.id))
-                .header(header::COOKIE, cookie(&token))
-                .body(Body::empty())
-                .expect("request"),
+            same_origin(
+                Method::GET,
+                &format!("/api/transactions/{}/receipt/lines", sale.id),
+            )
+            .header(header::COOKIE, cookie(&token))
+            .body(Body::empty())
+            .expect("request"),
         )
         .await
         .expect("response");
@@ -2789,10 +2807,13 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
     // A bare server has no window: the route answers 409 rather than 500.
     let no_window = router(&state)
         .oneshot(
-            from_address(same_origin(Method::DELETE, "/api/window/icon"), [127, 0, 0, 1])
-                .header(header::COOKIE, cookie(&token))
-                .body(Body::empty())
-                .expect("request"),
+            from_address(
+                same_origin(Method::DELETE, "/api/window/icon"),
+                [127, 0, 0, 1],
+            )
+            .header(header::COOKIE, cookie(&token))
+            .body(Body::empty())
+            .expect("request"),
         )
         .await
         .expect("response");
@@ -2807,11 +2828,14 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
 
     let set = router(&state)
         .oneshot(
-            from_address(same_origin(Method::POST, "/api/window/icon"), [127, 0, 0, 1])
-                .header(header::COOKIE, cookie(&token))
-                .header(header::CONTENT_TYPE, multipart_content_type())
-                .body(multipart_file("file", "icon.png", b"png-bytes"))
-                .expect("request"),
+            from_address(
+                same_origin(Method::POST, "/api/window/icon"),
+                [127, 0, 0, 1],
+            )
+            .header(header::COOKIE, cookie(&token))
+            .header(header::CONTENT_TYPE, multipart_content_type())
+            .body(multipart_file("file", "icon.png", b"png-bytes"))
+            .expect("request"),
         )
         .await
         .expect("response");
@@ -2819,10 +2843,13 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
 
     let reset = router(&state)
         .oneshot(
-            from_address(same_origin(Method::DELETE, "/api/window/icon"), [127, 0, 0, 1])
-                .header(header::COOKIE, cookie(&token))
-                .body(Body::empty())
-                .expect("request"),
+            from_address(
+                same_origin(Method::DELETE, "/api/window/icon"),
+                [127, 0, 0, 1],
+            )
+            .header(header::COOKIE, cookie(&token))
+            .body(Body::empty())
+            .expect("request"),
         )
         .await
         .expect("response");

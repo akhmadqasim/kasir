@@ -76,10 +76,10 @@ pub async fn get_app_settings(db: &DatabaseConnection) -> Result<AppSettings, Ap
 /// The settings with the PPOB credentials removed, for a caller that is not the
 /// PPOB executor.
 ///
-/// [`get_app_settings`] hands back `ppob.password` and `ppob.pin` in the clear
-/// and checks no role at all, which was survivable while the only caller was a
-/// local webview. It is not survivable on a LAN. Every transport-facing read
-/// goes through this instead.
+/// [`get_app_settings`] hands back `ppob.password` in the clear and checks no
+/// role at all, which was survivable while the only caller was a local
+/// webview. It is not survivable on a LAN. Every transport-facing read goes
+/// through this instead.
 pub async fn public_app_settings(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -91,7 +91,7 @@ pub async fn public_app_settings(
 /// Just the PPOB markup table, open to any logged-in session.
 ///
 /// `GET /api/settings` is admin-only because it is the one place the PPOB
-/// password and PIN used to leak; the markup that turns a vendor's cost into a
+/// password used to leak; the markup that turns a vendor's cost into a
 /// counter price is not a secret, and `PpobQuickAccess` is a cashier screen
 /// that needs it to price a sale. Reusing [`get_app_settings`] and returning
 /// only `ppob.markup` keeps this endpoint from ever being able to grow a
@@ -101,11 +101,11 @@ pub async fn ppob_markup(db: &DatabaseConnection) -> Result<PpobMarkup, AppError
 }
 
 /// Save the settings a client is allowed to send, keeping the stored PPOB
-/// credentials.
+/// password.
 ///
-/// The client never sees the password and PIN, so it cannot send them back —
-/// which means a settings save that did not carry them would otherwise wipe
-/// them. They are read from the database and put back unchanged.
+/// The client never sees the password, so it cannot send it back — which
+/// means a settings save that did not carry it would otherwise wipe it. It is
+/// read from the database and put back unchanged.
 pub async fn update_public_app_settings(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -123,7 +123,6 @@ pub async fn update_public_app_settings(
             phone_number: input.ppob.phone_number,
             device_id: input.ppob.device_id,
             password: stored.ppob.password,
-            pin: stored.ppob.pin,
             markup: input.ppob.markup,
         },
         backup: input.backup,
@@ -132,7 +131,7 @@ pub async fn update_public_app_settings(
     update_app_settings(db, actor, mitra, settings).await
 }
 
-/// Set the PPOB credentials. The only write that can change them.
+/// Set the PPOB password. The only write that can change it.
 pub async fn update_ppob_credentials(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -143,7 +142,6 @@ pub async fn update_ppob_credentials(
 
     let mut settings = get_app_settings(db).await?;
     settings.ppob.password = input.password;
-    settings.ppob.pin = input.pin;
 
     update_app_settings(db, actor, mitra, settings).await
 }
@@ -164,10 +162,9 @@ pub async fn update_app_settings(
     // both fail silently, so they are refused here rather than discovered later.
     settings.backup.validate()?;
 
-    // Obfuscate sensitive PPOB credentials before storing
+    // Obfuscate the sensitive PPOB field before storing
     let mut ppob_to_store = settings.ppob.clone();
     ppob_to_store.password = obfuscate(&ppob_to_store.password);
-    ppob_to_store.pin = obfuscate(&ppob_to_store.pin);
 
     let should_reset_ppob_session = merge_additional_info(db, |info| {
         let current_settings = parse_app_settings(&Some(info.to_string()));
@@ -175,8 +172,7 @@ pub async fn update_app_settings(
             || current_settings.ppob.enabled != settings.ppob.enabled
             || current_settings.ppob.phone_number != settings.ppob.phone_number
             || current_settings.ppob.password != settings.ppob.password
-            || current_settings.ppob.device_id != settings.ppob.device_id
-            || current_settings.ppob.pin != settings.ppob.pin;
+            || current_settings.ppob.device_id != settings.ppob.device_id;
 
         // Merge the four sections, preserving the printer and `ui` keys.
         info["sales"] = to_json(&settings.sales)?;

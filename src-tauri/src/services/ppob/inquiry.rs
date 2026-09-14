@@ -426,6 +426,9 @@ pub async fn emoney(
 
 /// Airtime and data bundles are bought outright — there is nothing to inquire
 /// first, so this goes straight to fulfilment.
+///
+/// `pin` is validated by the caller (`crate::http::routes::ppob::topup`) via
+/// `crate::services::ppob::executor::validate_pin` before it reaches here.
 pub async fn pulsa_purchase(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
@@ -433,6 +436,7 @@ pub async fn pulsa_purchase(
     product_code: String,
     product_id: i64,
     product_type: String,
+    pin: String,
 ) -> Result<PaymentResult, AppError> {
     execute_fulfillment_request(
         db,
@@ -447,6 +451,7 @@ pub async fn pulsa_purchase(
             flag_id: None,
             phone_number: None,
             amount: None,
+            pin,
         },
     )
     .await

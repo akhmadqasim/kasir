@@ -15,14 +15,17 @@
 //! safe in the `session` group rather than `admin`.
 //!
 //! `/settings` is the whole configuration blob, and it is admin-only on both
-//! sides for one specific reason: it used to contain the PPOB password and PIN
-//! in the clear. `get_app_settings` deobfuscates them and checks no role, so
-//! the Tauri command that wraps it hands a shop's payment-gateway credentials
-//! to anyone who can invoke it — which, on a LAN, is anyone who can reach the
-//! port. The read here answers with [`PublicAppSettings`], which reports
-//! `has_credentials` and nothing else, and the write cannot carry them either.
-//! Setting them is a separate request to `/settings/ppob/credentials`, so the
-//! secrets travel in exactly one direction.
+//! sides for one specific reason: it used to contain the PPOB password in the
+//! clear. `get_app_settings` deobfuscates it and checks no role, so the Tauri
+//! command that wraps it hands a shop's payment-gateway credential to anyone
+//! who can invoke it — which, on a LAN, is anyone who can reach the port. The
+//! read here answers with [`PublicAppSettings`], which reports
+//! `has_credentials` and nothing else, and the write cannot carry it either.
+//! Setting it is a separate request to `/settings/ppob/credentials`, so the
+//! secret travels in exactly one direction. The PPOB transaction PIN is not
+//! part of any of this: it is never a setting, only ever a field on the
+//! checkout/retry requests that spend money — see
+//! `services::ppob::executor::validate_pin`.
 //!
 //! [`PublicAppSettings`]: crate::domain::settings::PublicAppSettings
 
@@ -147,7 +150,7 @@ async fn get_settings(
     ))
 }
 
-/// The PPOB markup table only — no password, no PIN, open to any session.
+/// The PPOB markup table only — no password, open to any session.
 async fn get_ppob_markup(State(state): State<AppState>) -> ApiResult<axum::Json<PpobMarkup>> {
     Ok(axum::Json(
         services::settings::ppob_markup(&state.db).await?,

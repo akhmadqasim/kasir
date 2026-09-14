@@ -416,13 +416,19 @@ struct PaymentBody {
     flag_id: Option<String>,
     phone_number: Option<String>,
     amount: Option<f64>,
+    /// The cashier's Mitra transaction PIN, typed for this purchase and never
+    /// stored. See `services::ppob::executor::validate_pin`.
+    #[serde(default)]
+    pin: Option<String>,
 }
 
 /// Complete an inquiry into a purchase.
 ///
 /// Same shape as checkout: parse, claim the key, then act. A failure releases
 /// the key, because a bill that was not paid must stay payable with the key the
-/// cashier's screen already generated.
+/// cashier's screen already generated. The PIN is checked before the key is
+/// claimed, same as everything else malformed about the body — a request that
+/// was always going to be refused must not consume it.
 async fn pay(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
@@ -431,6 +437,7 @@ async fn pay(
 ) -> ApiResult<Response> {
     let key = idempotency::key_from_headers(&headers)?;
     let input: PaymentBody = json_from_slice(&body)?;
+    let pin = services::ppob::executor::validate_pin(input.pin, true)?;
 
     let guard = match idempotency::claim(
         &state.db,
@@ -449,6 +456,7 @@ async fn pay(
     let result = services::ppob::payment::confirm(
         &state.db,
         &state.mitra,
+        pin,
         ConfirmPaymentInput {
             service_type: input.service_type,
             inquiry_id: input.inquiry_id,
@@ -478,6 +486,10 @@ struct TopupBody {
     product_code: String,
     product_id: i64,
     product_type: String,
+    /// The cashier's Mitra transaction PIN, typed for this purchase and never
+    /// stored. See `services::ppob::executor::validate_pin`.
+    #[serde(default)]
+    pin: Option<String>,
 }
 
 /// Buy airtime or a data package outright — no inquiry step, so the request
@@ -491,6 +503,7 @@ async fn topup(
 ) -> ApiResult<Response> {
     let key = idempotency::key_from_headers(&headers)?;
     let input: TopupBody = json_from_slice(&body)?;
+    let pin = services::ppob::executor::validate_pin(input.pin, true)?;
 
     let guard = match idempotency::claim(
         &state.db,
@@ -513,6 +526,7 @@ async fn topup(
         input.product_code,
         input.product_id,
         input.product_type,
+        pin,
     )
     .await;
 

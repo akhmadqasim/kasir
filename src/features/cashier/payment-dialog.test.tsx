@@ -362,3 +362,111 @@ describe("payment dialog", () => {
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
   })
 })
+
+/** A PPOB line the way `addPpobItem` builds one (`src/stores/cart-store.ts`). */
+const PPOB_LINE: CartItem = {
+  cart_id: "ppob-1-1000",
+  product_name: "Pulsa Telkomsel 10K",
+  product_price: 12000,
+  quantity: 1,
+  stock: 0,
+  unit: "pcs",
+  is_ppob: true,
+  service_type: "pulsa",
+  service_ref: "08123456789",
+  buy_price: 10000,
+  sell_price: 12000,
+  ppob_product_id: 101,
+  ppob_product_code: "TS10",
+}
+
+describe("PIN Mitra untuk transaksi PPOB", () => {
+  it("tidak menampilkan kolom PIN untuk keranjang tanpa barang PPOB", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    expect(screen.queryByLabelText("PIN Mitra")).not.toBeInTheDocument()
+  })
+
+  it("menampilkan kolom PIN saat keranjang berisi barang PPOB", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+
+    expect(await screen.findByLabelText("PIN Mitra")).toBeInTheDocument()
+  })
+
+  it("mematikan Bayar sampai PIN 4-6 digit terisi", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+    const cashField = await screen.findByLabelText("Nominal Tunai")
+    const pinField = await screen.findByLabelText("PIN Mitra")
+
+    fireEvent.change(cashField, { target: { value: "12000" } })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+
+    fireEvent.change(pinField, { target: { value: "123" } })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+
+    fireEvent.change(pinField, { target: { value: "123456" } })
+    expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
+  it("membawa ppob_pin di body checkout saat keranjang berisi PPOB", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "12000" },
+    })
+    fireEvent.change(await screen.findByLabelText("PIN Mitra"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Bayar" }))
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    const body = api.lastCall("POST /transactions")?.body as { ppob_pin?: string }
+    expect(body.ppob_pin).toBe("123456")
+  })
+
+  it("tidak mengirim ppob_pin sama sekali untuk keranjang tanpa barang PPOB", async () => {
+    renderDialog()
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "50000" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Bayar" }))
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    const body = api.lastCall("POST /transactions")?.body as Record<string, unknown>
+    expect(body.ppob_pin).toBeUndefined()
+  })
+
+  it("Enter di kolom PIN membayar seperti Enter di kolom nominal", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "12000" },
+    })
+    const pinField = await screen.findByLabelText("PIN Mitra")
+    fireEvent.change(pinField, { target: { value: "123456" } })
+    fireEvent.keyDown(pinField, { key: "Enter" })
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+  })
+
+  it("mengosongkan PIN saat dialog ditutup", async () => {
+    const onOpenChange = vi.fn()
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog(onOpenChange)
+
+    const pinField = await screen.findByLabelText("PIN Mitra")
+    fireEvent.change(pinField, { target: { value: "123456" } })
+    fireEvent.keyDown(pinField, { key: "Escape" })
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    // `open` stays true here (the mock does not act on it), so the field is
+    // still mounted — and now empty, because clearing does not wait for the
+    // parent to actually unmount the dialog.
+    expect(screen.getByLabelText("PIN Mitra")).toHaveValue("")
+  })
+})

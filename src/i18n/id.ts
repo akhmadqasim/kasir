@@ -516,8 +516,6 @@ export const id = {
     mitraPasswordPlaceholder: "Password akun Mitra",
     mitraDeviceId: "Device ID",
     mitraDeviceIdPlaceholder: "Android Device ID",
-    mitraPin: "PIN Transaksi",
-    mitraPinPlaceholder: "PIN untuk konfirmasi transaksi",
     settingsSaved: "Pengaturan Mitra Indogrosir berhasil disimpan",
     testConnection: "Tes Koneksi",
     testConnectionSuccess: "Koneksi berhasil",

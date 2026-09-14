@@ -32,6 +32,14 @@ export const PAYMENT_METHODS = [
 
 export const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
 
+/**
+ * The PIN field's `name`, so the global Uang Pas shortcut (below) can tell it
+ * apart from every other field without a ref — `usePaymentForm` returning one
+ * more ref alongside `cashInputRef` is what trips the `react-hooks/refs` lint
+ * rule across the rest of this file's JSX.
+ */
+export const PPOB_PIN_FIELD_NAME = "ppob_pin"
+
 export interface PaymentSplitForm {
   payment_method: string
   bank_name: string
@@ -64,6 +72,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(createInitialPaymentSplits)
   const [requestedPaymentMethod, setActivePaymentMethod] = useState("cash")
   const [notes, setNotes] = useState("")
+  const [ppobPin, setPpobPin] = useState("")
   const cashInputRef = useRef<HTMLInputElement>(null)
   const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
   const user = useAuthStore((s) => s.user)
@@ -144,11 +153,16 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const hasImplausibleAmount = selectedPaymentSplits.some((split) =>
     isImplausiblePaymentAmount(split.amount ?? 0),
   )
+  // Sebuah keranjang berisi barang PPOB wajib membawa PIN Mitra — diminta di
+  // sini, saat transaksi dibayar, bukan dibaca diam-diam dari Pengaturan.
+  const hasPpobItems = items.some((item) => item.is_ppob)
+  const isPpobPinValid = /^\d{4,6}$/.test(ppobPin)
   const canConfirm =
     items.length > 0 &&
     selectedMethodCount > 0 &&
     !hasImplausibleAmount &&
     (isSingleCashSelection ? isCashValid : allSelectedMethodsHaveAmount && isSplitSelectionValid) &&
+    (!hasPpobItems || isPpobPinValid) &&
     !checkoutTransaction.isPending
 
   // Auto-focus kolom nominal tunai saat dialog terbuka. React Aria sudah
@@ -213,6 +227,12 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
 
       const target = event.target
       if (target instanceof HTMLTextAreaElement) {
+        return
+      }
+      // A PIN is typed digit by digit like an amount, but it is not one —
+      // the shortcut must not overwrite the cash split while the cashier is
+      // in the middle of typing it.
+      if (target instanceof HTMLInputElement && target.name === PPOB_PIN_FIELD_NAME) {
         return
       }
 
@@ -345,6 +365,10 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         transaction_discount: getTransactionDiscountAmount() || undefined,
         shift_id: activeShift?.id,
         notes: notes.trim() || undefined,
+        // Only sent when the cart actually needs it — a cart with no PPOB
+        // line ignores this field on the server too, but there is no reason
+        // to send a PIN the sale never uses.
+        ppob_pin: hasPpobItems ? ppobPin : undefined,
       },
       {
         onSuccess: (result) => {
@@ -363,6 +387,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
           onSuccess(result)
           setPaymentSplits(createInitialPaymentSplits())
           setNotes("")
+          setPpobPin("")
         },
         onError: (err) => {
           toast.error(`Gagal memproses transaksi: ${err.message}`)
@@ -380,6 +405,8 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     primaryPaymentMethod,
     items,
     notes,
+    hasPpobItems,
+    ppobPin,
     activeShift,
     checkoutTransaction,
     queryClient,
@@ -431,6 +458,19 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     [canConfirm, handleConfirm, handleSetRemainingAmount, updateSplit],
   )
 
+  // Enter di kolom PIN membayar seperti Enter di kolom nominal — tanpa
+  // pemeriksaan burst scanner, karena PIN diketik tangan, bukan discan.
+  const handlePinKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") return
+      event.preventDefault()
+      if (canConfirm) {
+        handleConfirm()
+      }
+    },
+    [canConfirm, handleConfirm],
+  )
+
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
@@ -438,6 +478,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         setPaymentSplits(createInitialPaymentSplits())
         setActivePaymentMethod("cash")
         setNotes("")
+        setPpobPin("")
       }
       onOpenChange(isOpen)
     },
@@ -477,6 +518,12 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     // Notes
     notes,
     setNotes,
+    // PPOB PIN
+    hasPpobItems,
+    ppobPin,
+    setPpobPin,
+    isPpobPinValid,
+    handlePinKeyDown,
     // Confirm
     canConfirm,
     isPending: checkoutTransaction.isPending,

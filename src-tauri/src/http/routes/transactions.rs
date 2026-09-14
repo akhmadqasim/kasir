@@ -200,6 +200,15 @@ async fn receipt_lines(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct RetryPpobBody {
+    /// The cashier's Mitra transaction PIN, typed again for this retry — the
+    /// original one was never kept. See
+    /// `crate::services::ppob::executor::validate_pin`.
+    #[serde(default)]
+    pin: Option<String>,
+}
+
 /// Re-run a PPOB line whose upstream fulfilment failed after the sale committed.
 ///
 /// Not idempotency-guarded, and it does not need to be: the service claims the
@@ -208,8 +217,10 @@ async fn receipt_lines(
 async fn retry_ppob(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Json(body): Json<RetryPpobBody>,
 ) -> ApiResult<axum::Json<String>> {
     Ok(axum::Json(
-        services::transactions::retry_ppob_fulfillment(&state.db, &state.mitra, id).await?,
+        services::transactions::retry_ppob_fulfillment(&state.db, &state.mitra, id, body.pin)
+            .await?,
     ))
 }

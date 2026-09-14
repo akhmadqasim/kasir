@@ -25,7 +25,7 @@ export function updateStoreInfo(input: UpdateStoreInfoInput): Promise<StoreInfo>
   return apiPut<StoreInfo>("/store", input)
 }
 
-/** Never contains the PPOB password or PIN — only `ppob.has_credentials`. */
+/** Never contains the PPOB password — only `ppob.has_credentials`. */
 export function getAppSettings(): Promise<AppSettings> {
   return apiGet<AppSettings>("/settings")
 }

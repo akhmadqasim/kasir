@@ -104,7 +104,7 @@ describe("pengaturan Mitra Indogrosir", () => {
     expect(api.callsFor("PUT /settings/ppob/credentials")).toHaveLength(0)
   })
 
-  it("mengirim kredensial lewat endpoint sendiri saat keduanya diisi", async () => {
+  it("mengirim kredensial lewat endpoint sendiri saat kolomnya diisi", async () => {
     api = installApiMock({
       "GET /settings": SETTINGS,
       "PUT /settings": null,
@@ -117,24 +117,32 @@ describe("pengaturan Mitra Indogrosir", () => {
     fireEvent.change(screen.getByLabelText("Password Mitra"), {
       target: { value: "rahasia-baru" },
     })
-    fireEvent.change(screen.getByLabelText("PIN Transaksi"), {
-      target: { value: "654321" },
-    })
     fireEvent.click(saveButtons()[0])
 
     await vi.waitFor(() => {
       expect(api.lastCall("PUT /settings/ppob/credentials")?.body).toEqual({
         password: "rahasia-baru",
-        pin: "654321",
       })
     })
-    // The settings blob still cannot carry them, whatever was typed.
+    // The settings blob still cannot carry it, whatever was typed.
     expect(api.lastCall("PUT /settings")?.body).toEqual({
       sales: SETTINGS.sales,
       security: SETTINGS.security,
       backup: SETTINGS.backup,
       ppob: WRITABLE_PPOB,
     })
+  })
+
+  /** There used to be a PIN field here; a transaction PIN is asked from the
+   * cashier at checkout instead — see `usePaymentForm` — and is never a
+   * setting at all. */
+  it("tidak menampilkan kolom PIN", async () => {
+    api = installApiMock({ "GET /settings": SETTINGS })
+    renderSettings()
+
+    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
+    expect(screen.queryByLabelText("PIN Transaksi")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("PIN Mitra")).not.toBeInTheDocument()
   })
 
   /** The markup card's Simpan writes the whole form, connection fields included. */

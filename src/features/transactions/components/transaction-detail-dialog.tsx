@@ -7,6 +7,7 @@ import {
   AlertDialog,
   Button,
   Dropdown,
+  Input,
   Label,
   Modal,
   Skeleton,
@@ -103,6 +104,8 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
   const [isRetrying, setIsRetrying] = useState(false)
+  const [showRetryConfirm, setShowRetryConfirm] = useState(false)
+  const [retryPin, setRetryPin] = useState("")
   const [isPrintingPpob, setIsPrintingPpob] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteReason, setDeleteReason] = useState("")
@@ -120,6 +123,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
   const ppobItem = detail?.items.find((item) => item.service_type)
   const ppobCanRetry = isPpobRetryable(ppobItem?.ppob_status)
+  const isRetryPinValid = /^\d{4,6}$/.test(retryPin)
   const ppobPrintableItems =
     detail?.items.filter((item) => isPpobPrintable(item.ppob_status)) ?? []
   const isDeleted = detail?.transaction.status === "deleted"
@@ -211,11 +215,13 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   }
 
   const handleRetryPpob = async () => {
-    if (!ppobItem) return
+    if (!ppobItem || !isRetryPinValid) return
     setIsRetrying(true)
     try {
-      await retryPpobFulfillment(ppobItem.id)
+      await retryPpobFulfillment(ppobItem.id, retryPin)
       toast.success("PPOB sedang diproses ulang di latar belakang")
+      setShowRetryConfirm(false)
+      setRetryPin("")
       // One prefix covers both the detail and the list; both live under
       // `["transactions", ...]`.
       queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
@@ -490,14 +496,10 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   )}
                   <div className="flex items-center gap-2">
                     {ppobCanRetry && (
-                      <PendingButton
-                        isPending={isRetrying}
-                        variant="secondary"
-                        onPress={handleRetryPpob}
-                      >
+                      <Button variant="secondary" onPress={() => setShowRetryConfirm(true)}>
                         <RefreshCcw />
                         Retry PPOB
-                      </PendingButton>
+                      </Button>
                     )}
                     {ppobPrintableItems.length > 0 && (
                       <PendingButton
@@ -571,6 +573,59 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                 onPress={handleDelete}
               >
                 {id.common.delete}
+              </PendingButton>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+
+      {/* Retry PPOB Confirmation Dialog — the PIN travels once, with this
+          request only, and is cleared as soon as the dialog closes. */}
+      <AlertDialog.Backdrop
+        isKeyboardDismissDisabled={false}
+        isOpen={showRetryConfirm}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRetryPin("")
+            setShowRetryConfirm(false)
+          }
+        }}
+      >
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog aria-label="Retry PPOB">
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="accent" />
+              <AlertDialog.Heading>Retry PPOB</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>Masukkan PIN Mitra untuk mencoba ulang fulfillment PPOB ini.</p>
+              <TextField fullWidth value={retryPin} variant="secondary" onChange={setRetryPin}>
+                <Label>PIN Mitra</Label>
+                <Input
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="PIN transaksi Mitra"
+                  type="password"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && isRetryPinValid) {
+                      event.preventDefault()
+                      handleRetryPpob()
+                    }
+                  }}
+                />
+              </TextField>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button isDisabled={isRetrying} slot="close" variant="tertiary">
+                {id.common.cancel}
+              </Button>
+              <PendingButton
+                isDisabled={!isRetryPinValid}
+                isPending={isRetrying}
+                onPress={handleRetryPpob}
+              >
+                Retry PPOB
               </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>

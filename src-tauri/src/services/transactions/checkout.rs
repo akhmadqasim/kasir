@@ -26,7 +26,9 @@ use crate::domain::Actor;
 use crate::entity::{
     ppob_receipts, products, transaction_items, transaction_payments, transactions,
 };
-use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
+use crate::services::ppob::executor::{
+    execute_fulfillment_request, validate_pin, PpobFulfillmentRequest,
+};
 use crate::services::ppob::MitraClient;
 use crate::utils::AppError;
 
@@ -558,7 +560,12 @@ async fn fetch_transaction_result(
         payment_breakdown,
     })
 }
-fn build_ppob_request(item: &transaction_items::Model) -> Result<PpobFulfillmentRequest, AppError> {
+/// `pin` comes from the checkout (or retry) call, never from `item` — a
+/// `transaction_items` row has no PIN column and never will.
+fn build_ppob_request(
+    item: &transaction_items::Model,
+    pin: String,
+) -> Result<PpobFulfillmentRequest, AppError> {
     let service_type = item
         .service_type
         .clone()
@@ -586,6 +593,7 @@ fn build_ppob_request(item: &transaction_items::Model) -> Result<PpobFulfillment
         } else {
             None
         },
+        pin,
     })
 }
 
@@ -725,6 +733,9 @@ where
     validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
+    // Checked before anything is written: a cart with a PPOB line and no PIN
+    // (or a malformed one) must not create a transaction at all.
+    let ppob_pin = validate_pin(input.ppob_pin.clone(), has_ppob)?;
     let allow_negative_stock = load_allow_negative_stock(db).await?;
     let resolved_items = resolve_items(db, &input.items, allow_negative_stock).await?;
 
@@ -752,7 +763,7 @@ where
         .iter()
         .filter(|item| item.service_type.is_some())
     {
-        let request = build_ppob_request(ppob_item)?;
+        let request = build_ppob_request(ppob_item, ppob_pin.clone())?;
         let ppob_item_id = ppob_item.id;
 
         match fulfill_ppob(request).await {
@@ -787,6 +798,9 @@ pub async fn checkout(
     validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
+    // Checked before anything is written: a cart with a PPOB line and no PIN
+    // (or a malformed one) must not create a transaction at all.
+    let ppob_pin = validate_pin(input.ppob_pin.clone(), has_ppob)?;
     let allow_negative_stock = load_allow_negative_stock(&conn).await?;
     let resolved_items = resolve_items(&conn, &input.items, allow_negative_stock).await?;
 
@@ -811,11 +825,14 @@ pub async fn checkout(
             .iter()
             .filter(|item| item.service_type.is_some())
         {
-            let request = build_ppob_request(ppob_item)?;
+            let request = build_ppob_request(ppob_item, ppob_pin.clone())?;
             let ppob_item_id = ppob_item.id;
             let bg_conn = conn.clone();
             let bg_mitra = mitra.clone();
 
+            // `request` (and the PIN on it) is moved into the task below and
+            // dropped when it finishes — nothing outside this task ever holds
+            // it, and it is never written back to `conn`.
             tokio::spawn(async move {
                 match execute_fulfillment_request(&bg_conn, &bg_mitra, &request).await {
                     Ok(payment_result) => {
@@ -858,6 +875,7 @@ pub async fn checkout(
 async fn claim_ppob_retry(
     db: &DatabaseConnection,
     item_id: i64,
+    pin: String,
 ) -> Result<PpobFulfillmentRequest, AppError> {
     let item = transaction_items::Entity::find_by_id(item_id)
         .one(db)
@@ -878,7 +896,7 @@ async fn claim_ppob_retry(
         }
     }
 
-    let request = build_ppob_request(&item)?;
+    let request = build_ppob_request(&item, pin)?;
 
     let claimed = db
         .execute(Statement::from_sql_and_values(
@@ -905,15 +923,22 @@ async fn claim_ppob_retry(
 }
 
 /// Ask the provider once more for a line that came back failed.
+///
+/// `pin` is validated first, before the item is even looked up: a retry with
+/// no PIN (or a malformed one) must not claim the line, so a corrected retry
+/// right after finds nothing already stuck in `processing`.
 pub async fn retry_ppob_fulfillment(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
     item_id: i64,
+    pin: Option<String>,
 ) -> Result<String, AppError> {
+    let pin = validate_pin(pin, true)?;
+
     let conn = db.clone();
     let mitra = mitra.clone();
 
-    let request = claim_ppob_retry(&conn, item_id).await?;
+    let request = claim_ppob_retry(&conn, item_id, pin).await?;
 
     let bg_conn = conn.clone();
     tokio::spawn(async move {
@@ -982,6 +1007,7 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1028,9 +1054,13 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("123456".to_string()),
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
+                // The PIN travels with the request the executor is handed —
+                // never read back from settings.
+                assert_eq!(request.pin, "123456");
                 Ok(PaymentResult {
                     success: true,
                     receipt_data: serde_json::json!({ "receipt_text": "STRUK", "no_ref": "R-9" }),
@@ -1099,6 +1129,7 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("654321".to_string()),
             },
             |request| async move {
                 assert_eq!(request.service_type, "pp");
@@ -1109,6 +1140,7 @@ mod tests {
                 assert_eq!(request.flag_id, None);
                 assert_eq!(request.phone_number, None);
                 assert_eq!(request.amount, None);
+                assert_eq!(request.pin, "654321");
                 Ok(PaymentResult {
                     success: true,
                     receipt_data: serde_json::json!({ "receipt_text": "STRUK PP" }),
@@ -1185,6 +1217,7 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("111111".to_string()),
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1248,9 +1281,11 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("222222".to_string()),
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
+                assert_eq!(request.pin, "222222");
                 Ok(PaymentResult {
                     success: true,
                     receipt_data: serde_json::json!({}),
@@ -1341,8 +1376,12 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("333333".to_string()),
             },
             |request| async move {
+                // One PIN on the cart, and both lines' fulfilment requests
+                // must carry it.
+                assert_eq!(request.pin, "333333");
                 let sn = if request.service_type == "pulsa" {
                     "SN-PULSA"
                 } else {
@@ -1464,6 +1503,7 @@ mod tests {
                 transaction_discount: None,
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: Some("123456".to_string()),
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1510,7 +1550,7 @@ mod tests {
         let conn = setup_test_db().await;
         let item = seed_ppob_sale(&conn, PPOB_STATUS_FAILED).await;
 
-        claim_ppob_retry(&conn, item.id)
+        claim_ppob_retry(&conn, item.id, "654321".to_string())
             .await
             .expect("first retry claims the line");
         assert_eq!(
@@ -1520,7 +1560,7 @@ mod tests {
 
         // A second click, while the first attempt is still in flight, must not
         // reach the provider again.
-        match claim_ppob_retry(&conn, item.id).await {
+        match claim_ppob_retry(&conn, item.id, "654321".to_string()).await {
             Err(AppError::Validation(msg)) => assert!(
                 msg.contains("diproses"),
                 "Error should say a call is in flight, got: {msg}"
@@ -1535,7 +1575,7 @@ mod tests {
         // Checkout leaves the line `pending` while its background task runs.
         let item = seed_ppob_sale(&conn, PPOB_STATUS_PENDING).await;
 
-        match claim_ppob_retry(&conn, item.id).await {
+        match claim_ppob_retry(&conn, item.id, "654321".to_string()).await {
             Err(AppError::Validation(msg)) => assert!(
                 msg.contains("diproses"),
                 "Error should say a call is in flight, got: {msg}"
@@ -1554,7 +1594,7 @@ mod tests {
         let conn = setup_test_db().await;
         let item = seed_ppob_sale(&conn, PPOB_STATUS_SUCCESS).await;
 
-        match claim_ppob_retry(&conn, item.id).await {
+        match claim_ppob_retry(&conn, item.id, "654321".to_string()).await {
             Err(AppError::Validation(msg)) => assert!(
                 msg.contains("gagal"),
                 "Error should say only failed lines retry, got: {msg}"
@@ -1566,6 +1606,121 @@ mod tests {
             ppob_status_of(&conn, item.id).await.as_deref(),
             Some(PPOB_STATUS_SUCCESS)
         );
+    }
+
+    /// A checkout with a PPOB line and no PIN never reaches the executor or
+    /// persists anything — validation runs before the transaction is written.
+    #[tokio::test]
+    async fn ppob_checkout_without_a_pin_is_rejected() {
+        let conn = setup_test_db().await;
+
+        let result = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: None,
+                    quantity: 1,
+                    product_name: Some("Pulsa Telkomsel 10K".to_string()),
+                    product_price: Some(12_000.0),
+                    buy_price: Some(10_000.0),
+                    service_type: Some("pulsa".to_string()),
+                    service_ref: Some("08123456789".to_string()),
+                    ppob_product_id: Some(101),
+                    ppob_product_code: Some("TS10".to_string()),
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 12_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: None,
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert_eq!(msg, "PIN Mitra wajib diisi untuk transaksi PPOB")
+            }
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    /// Same cart, but the PIN is the wrong shape rather than missing.
+    #[tokio::test]
+    async fn ppob_checkout_with_a_malformed_pin_is_rejected() {
+        let conn = setup_test_db().await;
+
+        let result = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: None,
+                    quantity: 1,
+                    product_name: Some("Pulsa Telkomsel 10K".to_string()),
+                    product_price: Some(12_000.0),
+                    buy_price: Some(10_000.0),
+                    service_type: Some("pulsa".to_string()),
+                    service_ref: Some("08123456789".to_string()),
+                    ppob_product_id: Some(101),
+                    ppob_product_code: Some("TS10".to_string()),
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 12_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: Some("12".to_string()),
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert_eq!(msg, "PIN Mitra harus terdiri dari 4-6 digit angka")
+            }
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+    }
+
+    /// A retry without a PIN is refused before the line is claimed, so it is
+    /// left exactly as it was — still `failed`, not stuck in `processing`.
+    #[tokio::test]
+    async fn ppob_retry_without_a_pin_is_rejected() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_FAILED).await;
+
+        match retry_ppob_fulfillment(&conn, &test_mitra(), item.id, None).await {
+            Err(AppError::Validation(msg)) => {
+                assert_eq!(msg, "PIN Mitra wajib diisi untuk transaksi PPOB")
+            }
+            other => panic!("Expected Validation error, got: {:?}", other),
+        }
+
+        assert_eq!(
+            ppob_status_of(&conn, item.id).await.as_deref(),
+            Some(PPOB_STATUS_FAILED)
+        );
+    }
+
+    /// A `Mitra` client for the retry seam above — never actually reached,
+    /// since the PIN is rejected first.
+    fn test_mitra() -> Arc<Mutex<MitraClient>> {
+        Arc::new(Mutex::new(MitraClient::new()))
     }
 
     /// A completed one-line cash sale, ready to be voided or amended.
@@ -1587,6 +1742,7 @@ mod tests {
             notes: None,
             transaction_discount: None,
             shift_id: None,
+            ppob_pin: None,
         }
     }
 
@@ -1692,6 +1848,7 @@ mod tests {
                 transaction_discount: Some(5_000.0),
                 shift_id: None,
                 payment_breakdown: None,
+                ppob_pin: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )

@@ -1,4 +1,4 @@
-import { Kbd, Label, Modal, TextArea, TextField, ToggleButton } from "@heroui/react"
+import { Input, Kbd, Label, Modal, TextArea, TextField, ToggleButton } from "@heroui/react"
 import { InfoPanel } from "@/components/info-panel"
 import { NoData } from "@/components/no-data"
 import { PendingButton } from "@/components/pending-button"
@@ -9,7 +9,7 @@ import { formatRupiah } from "../../utils"
 import type { TransactionResult } from "../../types"
 import { CashFields } from "./cash-fields"
 import { BankField } from "./bank-field"
-import { PAYMENT_METHODS, usePaymentForm } from "./use-payment-form"
+import { PAYMENT_METHODS, PPOB_PIN_FIELD_NAME, usePaymentForm } from "./use-payment-form"
 
 /** Q W di baris atas, A S di tengah, Z di bawah — urutan tuts, bukan urutan metode. */
 const METHODS_IN_KEYBOARD_ORDER = ["qris", "ewallet", "cash", "transfer", "debit"].map(
@@ -168,6 +168,29 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   <Label>Catatan</Label>
                   <TextArea className="resize-none" placeholder="Opsional" rows={2} />
                 </TextField>
+
+                {/* Diminta di sini, saat transaksi dibayar — bukan dibaca
+                    diam-diam dari Pengaturan. Hanya muncul kalau keranjang
+                    memuat barang PPOB. */}
+                {form.hasPpobItems && (
+                  <TextField
+                    fullWidth
+                    value={form.ppobPin}
+                    variant="secondary"
+                    onChange={form.setPpobPin}
+                  >
+                    <Label>PIN Mitra</Label>
+                    <Input
+                      autoComplete="one-time-code"
+                      inputMode="numeric"
+                      maxLength={6}
+                      name={PPOB_PIN_FIELD_NAME}
+                      placeholder="PIN transaksi Mitra"
+                      type="password"
+                      onKeyDown={form.handlePinKeyDown}
+                    />
+                  </TextField>
+                )}
               </div>
 
               <div className="flex flex-col gap-4">

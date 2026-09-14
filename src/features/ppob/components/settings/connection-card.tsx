@@ -16,7 +16,7 @@ import type { PpobSettingsForm } from "./use-ppob-settings-form"
 
 const STORED_PLACEHOLDER = "Tersimpan — isi hanya jika ingin mengganti"
 
-/** Kartu koneksi Mitra: saklar aktif, nomor HP, password, device ID, dan PIN. */
+/** Kartu koneksi Mitra: saklar aktif, nomor HP, password, dan device ID. */
 export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
   const { connection, updateConnection, hasStoredCredentials } = form
   const { enabled } = connection
@@ -101,24 +101,10 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
             </Description>
           </TextField>
 
-          <TextField
-            fullWidth
-            isDisabled={!enabled}
-            type="password"
-            value={connection.pin}
-            variant="secondary"
-            onChange={(value) => updateConnection({ pin: value })}
-          >
-            <Label>{id.ppob.mitraPin}</Label>
-            <Input
-              placeholder={hasStoredCredentials ? STORED_PLACEHOLDER : id.ppob.mitraPinPlaceholder}
-            />
-          </TextField>
-
           <p className="text-sm text-muted">
             {hasStoredCredentials
-              ? "Password dan PIN sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan keduanya untuk mempertahankannya, atau isi keduanya sekaligus untuk mengganti."
-              : "Password dan PIN belum tersimpan. Isi keduanya untuk mengaktifkan layanan PPOB."}
+              ? "Password sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan untuk mempertahankannya, atau isi untuk menggantinya."
+              : "Password belum tersimpan. Isi untuk mengaktifkan layanan PPOB."}
           </p>
         </div>
       </Card.Content>
