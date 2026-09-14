@@ -750,6 +750,16 @@ fn wrap_labelled_line(label: &str, value: &str, width: usize, cpl: usize) -> Vec
         return vec![format!("{head}{value}")];
     }
 
+    // One unbroken number that misses the value column by a little — BPJS's
+    // sixteen-digit VA beside a fifteen-wide column — is worth more whole
+    // than aligned: it goes on its own line under the label, indented two,
+    // rather than as `888880227041324` and a lone `7`. The colon stays in
+    // its column; only the value moves down.
+    let is_one_token = !value.contains(char::is_whitespace);
+    if is_one_token && 2 + value.chars().count() <= cpl {
+        return vec![format!("{label:<width$}:"), format!("  {value}")];
+    }
+
     let avail = cpl.saturating_sub(head_len).max(1);
     wrap_words(value, avail)
         .into_iter()

@@ -525,8 +525,9 @@ fn a_pln_postpaid_struk_has_no_stray_single_character_lines() {
 }
 
 /// 80mm has room for `NAMA`'s value and the trailing trace stamp to fit on
-/// one line each — only `NO REF`, at 33 characters of reference code against
-/// 25 columns of room after a 17-wide head, still needs to wrap.
+/// one line each — only `NO REF`, 32 characters of reference code against
+/// 25 columns of room after a 17-wide head, does not fit beside its label;
+/// being one unbroken number it drops under the label whole.
 #[test]
 fn a_pln_postpaid_struk_at_eighty_millimetres_needs_less_wrapping() {
     let cpl = columns(80);
@@ -534,7 +535,10 @@ fn a_pln_postpaid_struk_at_eighty_millimetres_needs_less_wrapping() {
 
     assert!(text.contains("NAMA           : RIZAL GAZULI HUDARI"));
     assert!(text.contains("[I001IGR1-(13/09/2026 15:33:08)-CA]"));
-    assert!(text.contains("NO REF         : 22002500CLH2HC486AA65FBE2\n                 82718A6"));
+    assert!(
+        text.contains("NO REF         :\n  22002500CLH2HC486AA65FBE282718A6\n"),
+        "{text}"
+    );
     assert!(text.contains(
         "Informasi Hubungi Call Center 123 Atau Hub\nPLN Terdekat :\nDownload PLN Mobile"
     ));
@@ -1281,4 +1285,37 @@ fn a_history_description_that_already_leads_with_the_phone_is_not_doubled() {
     let text = text_of(&format_ppob_receipt(&data, 58));
 
     assert!(!text.contains("081347085447 - 081347085447"), "{text}");
+}
+
+/// BPJS pads its labels to eighteen but leaves `Nomor VA :` unpadded on
+/// purpose — the sixteen-digit number would not fit beside the column. With
+/// the colons lined up, that number drops to its own line rather than
+/// losing a digit to the next one.
+#[test]
+fn a_number_that_misses_the_column_by_a_digit_moves_under_its_label_whole() {
+    let text = "Nomor VA : 8888802270413247
+Periode           : 1 BULAN
+Jumlah Peserta    : 3
+";
+    let mut data = bpjs();
+    data.provider_receipt_text = Some(text.to_string());
+    let printed = text_of(&format_ppob_receipt(&data, 58));
+
+    assert!(
+        printed.contains(
+            "Nomor VA       :
+  8888802270413247
+Periode        : 1 BULAN
+"
+        ),
+        "{printed}"
+    );
+    assert!(
+        !printed.contains(
+            "
+                 7
+"
+        ),
+        "{printed}"
+    );
 }
