@@ -6,8 +6,15 @@
 //! is the provider's own wording: the meter number, the tariff, the KWH figure,
 //! the call-centre line at the bottom. Most services hand that back already
 //! formatted, one key per line, in `receipt_text` (some call it
-//! `invoice_string`), and when they do the honest thing is to print it verbatim
-//! rather than re-derive it from fields whose names change per service.
+//! `invoice_string`), and when they do the honest thing is to print their own
+//! wording rather than re-derive it from fields whose names change per
+//! service — but not their own line breaks. The provider wraps that text for
+//! its *own* printer, at its own column count, and does it sloppily (a
+//! continuation line eighteen spaces deep next to a label column that is
+//! seventeen wide overflows by one character); reflowing it for our paper
+//! before it goes out is not us improving on their document, it is printing
+//! the same words the Mitra app itself shows on screen, which re-flows this
+//! same text rather than showing the provider's raw line breaks.
 //!
 //! The layout is the Mitra app's, byte for byte where it can be. Its print job
 //! was captured off the phone — the till's Bluetooth posing as the printer —
@@ -22,9 +29,11 @@
 //! The judgements this module does make are about what the provider *meant* —
 //! that a twenty-digit run of digits is a PLN token and a reference number is
 //! not, that a table ends at its last labelled line only when the provider
-//! left a blank line under it. They live here rather than in the service layer
-//! because each one is a decision about what belongs on the paper, and because
-//! the fixtures that justify them are the ones in this file's tests.
+//! left a blank line under it, that a line the provider cut off mid-word to
+//! fit its own column count is one field, however many lines it takes on
+//! ours. They live here rather than in the service layer because each one is
+//! a decision about what belongs on the paper, and because the fixtures that
+//! justify them are the ones in this file's tests.
 //!
 //! Pulsa and paket data are the one exception to all of the above. Mitra's own
 //! `pulsa/v2` API never answers with a `receipt_text` — there is no provider
@@ -232,9 +241,16 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
 
     let has_token = push_token_block(&mut lines, data, cpl);
 
+    // Re-flow first — join every field back to one logical line, whatever
+    // the provider cut it into — so `split_body_footer` and
+    // `without_token_lines` below see the same one-line-per-field shape they
+    // were written against, rather than the provider's own wrapping (which
+    // is wobbly enough to plant a stray colon at the start of a line it
+    // never meant as a label; see `reflow_provider_lines`'s doc for why this
+    // has to run before them, not after).
     let block = non_empty(data.provider_receipt_text.as_deref()).map(provider_lines);
     let (body, footer) = match block {
-        Some(block) => split_body_footer(block, cpl),
+        Some(block) => split_body_footer(reflow_provider_lines(&block), cpl),
         None => (Vec::new(), Vec::new()),
     };
     // The token is already on the paper in characters twice the size; the
@@ -251,7 +267,7 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     } else {
         lines.extend(
             body.iter()
-                .flat_map(|line| fit_verbatim(line, cpl))
+                .flat_map(|line| wrap_joined_line(line, cpl))
                 .map(ReceiptTextLine::plain),
         );
     }
@@ -477,24 +493,265 @@ fn without_token_lines(body: Vec<String>, cpl: usize) -> Vec<String> {
     out
 }
 
-/// Get one of the provider's lines onto the paper without rewriting it.
+/// One field of the provider's slip, once its own continuation lines (if it
+/// had any) are joined back onto it.
 ///
-/// Most of them already fit — they wrapped to the same 32 columns we print in.
-/// The ones that do not are their continuation lines, eighteen columns of
-/// padding on top of a full-width run of text: PLN's footer arrives as eighteen
-/// spaces then `3 Atau hubungi PLN TerdekatDownl`. A printer given that line
-/// cuts it at the column, mid-word, padding and all — and that is what the
-/// Mitra print shows, so it is cut the same way here rather than tidied.
-fn fit_verbatim(line: &str, cpl: usize) -> Vec<String> {
-    if line.chars().count() <= cpl {
-        return vec![line.to_string()];
+/// `column` is the char position of the colon in the line the provider
+/// actually sent — the width it padded every label in this block to, not the
+/// length of this particular label — so a block whose widest key is `RP
+/// STROOM/TOKEN` still lines up `JML KWH` under the same colon. Only a label
+/// of upper-case letters, digits, spaces, `/`, `-` and `.` earns this
+/// treatment (see [`match_label_line`]); everything else — PDAM's `Nama
+/// PDAM`, BPJS's `Nomor Peserta`, the provider's own heading and closing
+/// prose — is [`Text`](LogicalLine::Text), laid out with no column of its
+/// own.
+enum LogicalLine {
+    /// A blank line the provider used to separate sections of its own table.
+    Blank,
+    Labelled {
+        label: String,
+        value: String,
+        column: usize,
+    },
+    Text(String),
+}
+
+/// A line that continues the one above it: the provider's own wrap, not a
+/// new field. Loose on purpose — the indent wobbles between eighteen and
+/// nineteen spaces depending on the service — but never so loose that a
+/// label line (which always starts at column zero) could be mistaken for one.
+fn is_continuation_line(line: &str) -> bool {
+    let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+    indent >= 2 && !line.trim().is_empty()
+}
+
+/// A line shaped like `LABEL : value` — a label of upper-case letters,
+/// digits, spaces, `/`, `-` and `.`, starting with a letter, then a colon,
+/// then at most one space before the value. Deliberately hand-rolled rather
+/// than pulled in via a regex crate: the grammar is small enough that a
+/// linear scan over one `find(':')` reads as plainly as a pattern would, for
+/// one dependency fewer.
+///
+/// The upper-case-only rule is what keeps this from firing on PDAM's `Nama
+/// PDAM          : Kota Samarinda` or BPJS's `Nama Peserta      : AHMAD
+/// FAUZI NUGROHO` — those providers' own key/value shape is real, but it is
+/// not the Mitra app's `LABEL : value` convention this module re-derives a
+/// column width from, so those lines are laid out as plain prose instead
+/// (see [`wrap_text_line`]) rather than under a label column of their own.
+fn match_label_line(line: &str) -> Option<(&str, &str, usize)> {
+    let colon = line.find(':')?;
+    let label = line[..colon].trim_end();
+    let is_label_char = |c: char| {
+        c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c, ' ' | '/' | '-' | '.')
+    };
+    if label.is_empty()
+        || !label.starts_with(|c: char| c.is_ascii_uppercase())
+        || !label.chars().all(is_label_char)
+    {
+        return None;
     }
 
-    line.chars()
-        .collect::<Vec<_>>()
-        .chunks(cpl)
-        .map(|chunk| chunk.iter().collect::<String>().trim_end().to_string())
+    let after = &line[colon + 1..];
+    let value = after.strip_prefix(' ').unwrap_or(after);
+    let column = line[..colon].chars().count();
+    Some((label, value, column))
+}
+
+/// Parse the provider's own lines into one entry per logical field, rejoining
+/// every continuation onto the line it continues.
+///
+/// The join is a plain concatenation, no separator inserted: the provider
+/// only ever continues a line by cutting the one before it at its own column
+/// limit, mid-token — `HU` + `DARI` is `HUDARI`, and `Call Center 12` + `3
+/// Atou hubungi…` is `123 Atou hubungi…`, the same cut, just one that happens
+/// to fall between two digits instead of inside a word. There is no fixture
+/// where the provider's own wrap needed a space reinserted at the seam; see
+/// this module's tests for the ones it was checked against.
+fn parse_logical_lines(lines: &[String]) -> Vec<LogicalLine> {
+    let mut out: Vec<LogicalLine> = Vec::with_capacity(lines.len());
+
+    for line in lines {
+        if line.trim().is_empty() {
+            out.push(LogicalLine::Blank);
+            continue;
+        }
+
+        let is_continuation = is_continuation_line(line);
+        if is_continuation {
+            let fragment = line.trim();
+            match out.last_mut() {
+                Some(LogicalLine::Labelled { value, .. }) => {
+                    value.push_str(fragment);
+                    continue;
+                }
+                Some(LogicalLine::Text(text)) => {
+                    text.push_str(fragment);
+                    continue;
+                }
+                // A continuation with nothing above it to continue — the
+                // block opened mid-wrap, or the line above was blank — has
+                // no logical line to join onto, so it starts one of its own
+                // instead of being dropped — its own indent trimmed off, the
+                // same as it would be if it had something to join.
+                Some(LogicalLine::Blank) | None => {}
+            }
+        }
+
+        // A line that fell through the continuation check above starts a
+        // fresh logical line from its trimmed self, not its raw indent.
+        let content = if is_continuation {
+            line.trim()
+        } else {
+            line.as_str()
+        };
+        out.push(match match_label_line(content) {
+            Some((label, value, column)) => LogicalLine::Labelled {
+                label: label.to_string(),
+                value: value.to_string(),
+                column,
+            },
+            None => LogicalLine::Text(content.to_string()),
+        });
+    }
+
+    out
+}
+
+/// The label column every [`LogicalLine::Labelled`] in this block pads to:
+/// the widest one the provider actually sent, detected from where its colon
+/// landed rather than assumed from label text length (a block's shortest
+/// label is not necessarily unpadded). `0` when the block has none — PDAM,
+/// BPJS and payment point never do, their keys being title case rather than
+/// the Mitra app's own shouted `LABEL :` convention.
+fn detect_label_width(logical: &[LogicalLine]) -> usize {
+    logical
+        .iter()
+        .filter_map(|line| match line {
+            LogicalLine::Labelled { column, .. } => Some(*column),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// One logical line, written out in full — not yet wrapped to any paper
+/// width, so a long value still makes for a long string here. That is
+/// deliberate: [`split_body_footer`] and [`without_token_lines`] both look
+/// for a label at the *start* of a line, and a value re-flow had already cut
+/// into several rows could plant one of its own mid-string — the digits
+/// after a trace stamp's first colon, say — somewhere `split_pair` would read
+/// as a second, spurious label. One line in, one line out keeps every label
+/// this block has at column zero, where those two functions expect it.
+fn join_logical_line(line: &LogicalLine, label_width: usize) -> String {
+    match line {
+        LogicalLine::Blank => String::new(),
+        LogicalLine::Labelled { label, value, .. } => {
+            format!("{label:<label_width$}: {value}")
+        }
+        LogicalLine::Text(text) => text.clone(),
+    }
+}
+
+/// Parse the provider's block and join every field back to one line —
+/// [`split_body_footer`] and [`without_token_lines`] run on the result
+/// exactly as they always have, seeing one line per field regardless of how
+/// many lines the provider (or later, [`wrap_joined_line`]) cut it into.
+fn reflow_provider_lines(lines: &[String]) -> Vec<String> {
+    let logical = parse_logical_lines(lines);
+    let label_width = detect_label_width(&logical);
+    logical
+        .iter()
+        .map(|line| join_logical_line(line, label_width))
         .collect()
+}
+
+/// Lay one already-rejoined logical line out for the paper, wrapping it if it
+/// does not fit. Re-parses the line rather than carrying `LogicalLine`
+/// through `split_body_footer`/`without_token_lines`: both only ever drop or
+/// reorder whole lines, never edit one, so whatever shape a line had going in
+/// — `LABEL : value` or plain prose — it still has coming out.
+fn wrap_joined_line(line: &str, cpl: usize) -> Vec<String> {
+    match match_label_line(line) {
+        Some((label, value, column)) => wrap_labelled_line(label, value, column, cpl),
+        None => wrap_text_line(line, cpl),
+    }
+}
+
+/// `LABEL : value`, wrapped if it has to be: continuation lines indented to
+/// the value column (label width plus the `: ` after it), so a value that
+/// took the provider three lines to say still reads as one field on ours.
+///
+/// [`wrap_words`] already does the right thing for both kinds of value this
+/// module ever wraps here — greedy word wrap for one with spaces in it
+/// (`BUDI SANTOSA WIJAYA`), and, for a value that is one unbroken run with no
+/// spaces at all (a reference number, a trace stamp), the same function
+/// degrades to cutting it every `avail` characters, because `split_whitespace`
+/// hands it back as a single "word" that does not fit and its own char loop
+/// chops that one word instead. One function, no separate token-vs-prose
+/// branch needed.
+fn wrap_labelled_line(label: &str, value: &str, width: usize, cpl: usize) -> Vec<String> {
+    let head = format!("{label:<width$}: ");
+    let head_len = head.chars().count();
+
+    if head_len + value.chars().count() <= cpl {
+        return vec![format!("{head}{value}")];
+    }
+
+    let avail = cpl.saturating_sub(head_len).max(1);
+    wrap_words(value, avail)
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            if i == 0 {
+                format!("{head}{chunk}")
+            } else {
+                format!("{}{chunk}", " ".repeat(head_len))
+            }
+        })
+        .collect()
+}
+
+/// A line with no label column of its own: the provider's heading, its
+/// closing prose, PDAM/BPJS/payment point's title-case `key : value` lines
+/// (see [`match_label_line`]'s doc for why those do not get one either).
+///
+/// Printed unchanged when it already fits — this is the branch that keeps
+/// PDAM's `Total Tagihan      : 69,163` on the paper with its own padding
+/// intact rather than every line here being run through a word wrap that
+/// would collapse it to one space. Word-wrapped, with no indent, only when it
+/// does not.
+///
+/// One line is not really prose, though: a footer line of the shape
+/// `MKM|"…"|…` is the provider's own pipe-delimited list, not a sentence —
+/// each `|`-separated part (quotes stripped) is its own paragraph, and is
+/// word-wrapped as one.
+fn wrap_text_line(text: &str, cpl: usize) -> Vec<String> {
+    if let Some(rest) = text.strip_prefix("MKM|") {
+        return rest
+            .split('|')
+            .map(strip_quotes)
+            .filter(|part| !part.is_empty())
+            .flat_map(|part| wrap_words(&part, cpl))
+            .collect();
+    }
+
+    if text.chars().count() <= cpl {
+        return vec![text.to_string()];
+    }
+    wrap_words(text, cpl)
+}
+
+/// One `MKM|"…"|…` part, its surrounding quotes (if it has them — only the
+/// first part, wrapped in the provider's own `"…"`, ever does) trimmed off.
+fn strip_quotes(part: &str) -> String {
+    let trimmed = part.trim();
+    match trimmed
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    {
+        Some(inner) => inner.to_string(),
+        None => trimmed.to_string(),
+    }
 }
 
 /// The provider's closing prose, under our totals.
@@ -507,7 +764,7 @@ fn push_footer(lines: &mut Vec<ReceiptTextLine>, footer: Vec<String>, cpl: usize
 
     for line in footer {
         lines.extend(
-            fit_verbatim(&line, cpl)
+            wrap_joined_line(&line, cpl)
                 .into_iter()
                 .map(ReceiptTextLine::plain),
         );

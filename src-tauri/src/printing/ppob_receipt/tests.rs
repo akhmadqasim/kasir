@@ -18,6 +18,17 @@ const BPJS_TEXT: &str = "Nomor VA          : 8888800000000001\r\nPeriode        
 
 const PAYMENT_POINT_TEXT: &str = "Merchant/Biller: Indihome\r\nNo.Pelanggan   : 161300000001\r\nNama Pelanggan : RIZKY PRATAMA\r\n--Detail Tagihan 1--\r\nPeriode 09-2026\r\nNilai   316350\r\n";
 
+/// A real captured PLN postpaid payload — the one that exposed the bug.
+/// `NO REF`'s own second continuation line, `                  86AA65FBE282718`,
+/// is 33 characters: eighteen of the provider's own continuation indent
+/// (one more than this block's 17-wide head needs) plus fifteen reference
+/// digits, one column over the 32-column paper. The old verbatim printer
+/// hard-wrapped every provider line at 32 regardless of what it was, so this
+/// one line split into a 32-character row and a lone trailing `8` — see
+/// `a_pln_postpaid_struk_has_no_stray_single_character_lines` below, which
+/// is the fixture [`PLN_POSTPAID_TEXT`] above never triggered.
+const PLN_POSTPAID_REAL_TEXT: &str = "\r\n\r\nSTRUK PEMBAYARAN TAGIHAN LISTRIK\r\n\r\nIDPEL          : 231001286317\r\nNAMA           : RIZAL GAZULI HU\r\n                  DARI\r\nTARIF/DAYA     : R1/000001300VA\r\nSTAND METER    : 41298-41492\r\nBL/TH          : SEP26\r\nRP TAG PLN     : Rp 308.299,00\r\nNO REF         : 22002500CLH2HC4\r\n                  86AA65FBE282718\r\n                  A6\r\n\r\nADMIN BANK     : Rp 3.500,00\r\nTOTAL BAYAR    : Rp 311.799,00\r\n\r\nMKM|\"Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :\"|Download PLN Mobile\r\n[I001IGR1-(13/09/2026 15:33:08)-\r\n                  CA]";
+
 fn base() -> PpobReceiptData {
     PpobReceiptData {
         store_name: "Cahaya513 Mini Mart".to_string(),
@@ -73,6 +84,23 @@ fn pln_postpaid() -> PpobReceiptData {
         admin_fee: 3500.0,
         total: 73229.0,
         grand_total: 75000.0,
+        ..base()
+    }
+}
+
+fn pln_postpaid_real() -> PpobReceiptData {
+    PpobReceiptData {
+        flag_id: Some("1".to_string()),
+        customer_id: Some("231001286317".to_string()),
+        serial_number: Some(String::new()),
+        reference_number: Some("13516346".to_string()),
+        payment_code: Some("L231001286317-2-260913153308".to_string()),
+        provider_description: Some("Post paid".to_string()),
+        provider_receipt_text: Some(PLN_POSTPAID_REAL_TEXT.to_string()),
+        amount: 308_299.0,
+        admin_fee: 3_500.0,
+        total: 311_799.0,
+        grand_total: 313_000.0,
         ..base()
     }
 }
@@ -165,6 +193,7 @@ fn all_fixtures() -> Vec<PpobReceiptData> {
     vec![
         pln_prepaid(),
         pln_postpaid(),
+        pln_postpaid_real(),
         pdam(),
         bpjs(),
         payment_point(),
@@ -196,25 +225,36 @@ fn every_line_of_every_service_fits_the_paper() {
     }
 }
 
-/// The provider's slip goes on the paper exactly as it arrived: the name
-/// broken where they broke it, the reference in their three pieces, the
-/// fused word left fused. That is the document the Mitra app prints, and
-/// matching it is the point.
+/// The provider's own words go on the paper unchanged — the name, the
+/// reference, the closing prose are exactly the text they sent — but their
+/// own line breaks are not: `BUDI SANTOSA W` / `IJAYA` is one field cut
+/// mid-word to fit *their* column count, and re-joined it wraps at the word
+/// boundary on ours instead (`BUDI SANTOSA` / `WIJAYA`), the same fix that
+/// stops PLN postpaid dropping a stray one-character line (see
+/// `a_pln_postpaid_struk_has_no_stray_single_character_lines`).
+///
+/// `NO REF`'s value has no spaces in it at all — it is one long reference
+/// code, not a name — so there is no word boundary to prefer and it still
+/// gets cut every fourteen columns (`32` of paper less `18` for the label),
+/// which for this fixture happens to land on the exact same characters the
+/// provider's own (18-space-indented) wrap already used.
 #[test]
-fn the_providers_slip_is_printed_verbatim() {
+fn the_providers_slip_is_reflowed_at_word_boundaries() {
     let text = text_of(&format_ppob_receipt(&pln_prepaid(), 58));
 
-    assert!(text.contains("NAMA            : BUDI SANTOSA W\n                  IJAYA"));
-    assert!(text.contains("NO REF          : 11002500AAA1A1\n                  111AA111AA1111"));
-    // Fifty characters of provider line for thirty-two of paper: cut at the
-    // column, padding and all, as the printer would and the Mitra print shows.
+    assert!(text.contains("NAMA            : BUDI SANTOSA\n                  WIJAYA"));
+    assert!(text.contains("NO REF          : 11002500AAA1A1\n                  111AA111AA1111\n                  AA11"));
+    // The provider's own hard mid-word cut, `3 Atau hubungi PLN TerdekatDownl`
+    // / `oad PLN Mobile`, is gone; re-joined and word-wrapped for our 32
+    // columns it reads as prose instead, `TerdekatDownload` kept as the one
+    // token the provider actually sent (no space invented inside it).
     assert!(text.contains(
-        "
-                  3 Atau hubungi
- PLN TerdekatDownl
-                  oad PLN Mobile
-"
+        "Informasi Hubungi Call Center\n123 Atau hubungi PLN\nTerdekatDownload PLN Mobile"
     ));
+    assert!(
+        !text.contains("TerdekatDownl\n"),
+        "no more mid-word hard cut"
+    );
     assert!(text.contains("STRUK PEMBELIAN LISTRIK PRABAYAR"));
 }
 
@@ -257,7 +297,12 @@ fn a_pln_prepaid_struk_reads_in_the_mitra_order() {
     assert_eq!(rows[rule + 2], "Biaya Layanan     Rp 1.500");
     assert_eq!(rows[rule + 3], "Grand Total       Rp 25.000");
     assert_eq!(rows[rule + 4], "", "one line of air before the prose");
-    assert_eq!(rows[rule + 5], "Informasi Hubungi Call Center 12");
+    // Re-joined and word-wrapped for our own 32 columns, not the provider's
+    // mid-word `Informasi Hubungi Call Center 12` / `3 Atau hubungi PLN
+    // TerdekatDownl` / `oad PLN Mobile` cut.
+    assert_eq!(rows[rule + 5], "Informasi Hubungi Call Center");
+    assert_eq!(rows[rule + 6], "123 Atau hubungi PLN");
+    assert_eq!(rows[rule + 7], "TerdekatDownload PLN Mobile");
     assert!(rows.iter().any(|row| row.contains("[I001IGR1-")));
     assert!(rows.last().expect("last row").ends_with("CA]"));
 }
@@ -381,21 +426,119 @@ fn the_payers_phone_number_never_reaches_the_paper() {
     assert!(!text_of(&format_ppob_receipt(&bpjs(), 58)).contains("08120000001"));
 }
 
-/// PLN's postpaid footer is one 84-character line. It is printed as sent
-/// and cut at the column, which is what the printer would have done with it
-/// — and what the Mitra print shows.
+/// PLN's postpaid footer is one 84-character line, but the `MKM|"…"|…`
+/// shape is not prose to word-wrap as one run — it is the provider's own
+/// pipe-delimited list. `MKM` and the pipes are dropped, the quotes around
+/// the first part come off, and what is left is word-wrapped as two
+/// separate paragraphs, not cut wherever column 32 happens to fall (which
+/// used to split `Call Cent` / `er 123` mid-word).
 #[test]
-fn a_footer_line_wider_than_the_paper_is_cut_at_the_column() {
+fn a_pipe_delimited_footer_line_is_split_into_its_own_parts() {
     let lines = format_ppob_receipt(&pln_postpaid(), 58);
     let rows: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
 
+    assert!(
+        !rows.iter().any(|row| row.starts_with("MKM|")),
+        "the MKM| delimiter is not itself printed"
+    );
     let start = rows
         .iter()
-        .position(|row| row.starts_with("MKM|"))
-        .expect("footer printed as sent");
-    assert_eq!(rows[start], "MKM|\"Informasi Hubungi Call Cent");
-    assert_eq!(rows[start + 1], "er 123 Atau Hub PLN Terdekat :\"|");
+        .position(|row| *row == "Informasi Hubungi Call Center")
+        .expect("first MKM part printed, quotes stripped");
+    assert_eq!(rows[start + 1], "123 Atau Hub PLN Terdekat :");
     assert_eq!(rows[start + 2], "Download PLN Mobile");
+}
+
+/// A doubtful one, pinned down rather than left to accident: `PLN_POSTPAID_TEXT`
+/// (an anonymised fixture, not a captured payload — see this file's own top
+/// comment) cuts `NAMA` as `PT.CONTOH SEJA H` / `TERA`. Joined with no
+/// separator, per the rule this module follows unconditionally, that reads
+/// `PT.CONTOH SEJA HTERA` — a stray space before `HTERA` that a real name
+/// (`…SEJAHTERA`, one word) would not have. The space was already in the
+/// fixture's own first line before this change (`fit_verbatim` printed it as
+/// `SEJA H` / `TERA` too, just on the provider's own line break rather than
+/// ours), so this is the fixture's own anonymisation being slightly
+/// inconsistent, not a join this module should special-case — the rule has
+/// no way to tell "a stray space to close up" apart from "a real space to
+/// keep" without guessing at what the provider's original text was.
+#[test]
+fn a_stray_space_already_in_the_fixture_survives_the_join_unchanged() {
+    let text = text_of(&format_ppob_receipt(&pln_postpaid(), 58));
+    assert!(text.contains("NAMA           : PT.CONTOH SEJA\n                 HTERA"));
+}
+
+/// The bug this whole re-flow exists to fix: PLN postpaid pads its label
+/// column to 15, its continuation lines are indented 18 — three columns more
+/// than the label column plus `": "` needs (17) — so hard-wrapping the
+/// provider's own already-wrapped text at 32 columns left a lone `8` on its
+/// own line for `NO REF`. Re-joining the field and re-wrapping it for our
+/// own label column removes the seam entirely; there is no longer a
+/// "provider's column" for our column count to disagree with.
+#[test]
+fn a_pln_postpaid_struk_has_no_stray_single_character_lines() {
+    let lines = format_ppob_receipt(&pln_postpaid_real(), 58);
+    let rows: Vec<String> = lines.iter().map(|line| line.text.clone()).collect();
+
+    for row in &rows {
+        assert_ne!(
+            row.trim().chars().count(),
+            1,
+            "stray single-character line: {row:?}"
+        );
+    }
+
+    assert_eq!(
+        rows,
+        vec![
+            center_text("Cahaya513 Mini Mart", 32),
+            String::new(),
+            "STRUK PEMBAYARAN TAGIHAN LISTRIK".to_string(),
+            String::new(),
+            "IDPEL          : 231001286317".to_string(),
+            "NAMA           : RIZAL GAZULI".to_string(),
+            "                 HUDARI".to_string(),
+            "TARIF/DAYA     : R1/000001300VA".to_string(),
+            "STAND METER    : 41298-41492".to_string(),
+            "BL/TH          : SEP26".to_string(),
+            "RP TAG PLN     : Rp 308.299,00".to_string(),
+            "NO REF         : 22002500CLH2HC4".to_string(),
+            "                 86AA65FBE282718".to_string(),
+            "                 A6".to_string(),
+            String::new(),
+            "ADMIN BANK     : Rp 3.500,00".to_string(),
+            "TOTAL BAYAR    : Rp 311.799,00".to_string(),
+            "-".repeat(32),
+            "Total             Rp 311.799".to_string(),
+            "Biaya Layanan     Rp 1.201".to_string(),
+            "Grand Total       Rp 313.000".to_string(),
+            String::new(),
+            "Informasi Hubungi Call Center".to_string(),
+            "123 Atau Hub PLN Terdekat :".to_string(),
+            "Download PLN Mobile".to_string(),
+            "[I001IGR1-(13/09/2026".to_string(),
+            "15:33:08)-CA]".to_string(),
+        ]
+    );
+}
+
+/// 80mm has room for `NAMA`'s value and the trailing trace stamp to fit on
+/// one line each — only `NO REF`, at 33 characters of reference code against
+/// 25 columns of room after a 17-wide head, still needs to wrap.
+#[test]
+fn a_pln_postpaid_struk_at_eighty_millimetres_needs_less_wrapping() {
+    let cpl = columns(80);
+    let text = text_of(&format_ppob_receipt(&pln_postpaid_real(), 80));
+
+    assert!(text.contains("NAMA           : RIZAL GAZULI HUDARI"));
+    assert!(text.contains("[I001IGR1-(13/09/2026 15:33:08)-CA]"));
+    assert!(text.contains("NO REF         : 22002500CLH2HC486AA65FBE2\n                 82718A6"));
+    assert!(text.contains(
+        "Informasi Hubungi Call Center 123 Atau Hub\nPLN Terdekat :\nDownload PLN Mobile"
+    ));
+
+    for line in format_ppob_receipt(&pln_postpaid_real(), 80) {
+        assert!(line.text.chars().count() <= cpl);
+    }
 }
 
 /// `amount` from the provider already includes the admin fee — 23.500 is
@@ -796,4 +939,228 @@ fn a_pulsa_line_with_a_provider_receipt_text_still_prints_it_verbatim() {
     assert!(!text.contains("TRANSAKSI:"));
     assert!(!text.contains("RINCIAN"));
     assert!(!text.contains("Nomor Invoice"));
+}
+
+// -----------------------------------------------------------------------
+// The re-flow helpers, in isolation: parsing the provider's own line
+// breaks back into one logical field, and laying each one out again for
+// our own paper. See `reflow_provider_lines`'s doc for why the two steps
+// are split (join first, `split_body_footer`/`without_token_lines` run
+// unchanged, only then wrap for the paper).
+// -----------------------------------------------------------------------
+
+#[test]
+fn match_label_line_accepts_the_mitra_shapes() {
+    assert_eq!(
+        match_label_line("NO REF          : 11002500AAA1A1"),
+        Some(("NO REF", "11002500AAA1A1", 16))
+    );
+    assert_eq!(
+        match_label_line("RP STROOM/TOKEN : Rp 18.181,00"),
+        Some(("RP STROOM/TOKEN", "Rp 18.181,00", 16))
+    );
+    assert_eq!(
+        match_label_line("PBJT-TL         : Rp 1.819,00"),
+        Some(("PBJT-TL", "Rp 1.819,00", 16))
+    );
+    assert_eq!(
+        match_label_line("BL/TH          : SEP26"),
+        Some(("BL/TH", "SEP26", 15))
+    );
+    // A label with no space before its colon at all - the label class
+    // allows it even though none of this module's ALL-CAPS fixtures do it.
+    assert_eq!(match_label_line("TOTAL:100"), Some(("TOTAL", "100", 5)));
+}
+
+#[test]
+fn match_label_line_only_eats_one_space_after_the_colon() {
+    // The provider's own `\s?` -- at most one space consumed after the
+    // colon, so a second one (never seen in a real fixture, but nothing
+    // stops one) stays part of the value rather than being trimmed away.
+    assert_eq!(match_label_line("NAMA :  BUDI"), Some(("NAMA", " BUDI", 5)));
+}
+
+#[test]
+fn match_label_line_rejects_titlecase_and_bracketed_lines() {
+    // PDAM/BPJS/payment point's own key/value shape: real, but not the
+    // Mitra app's shouted `LABEL :` convention this module derives a label
+    // column from -- see `match_label_line`'s doc.
+    assert_eq!(
+        match_label_line("Nama PDAM          : Kota Samarinda"),
+        None
+    );
+    assert_eq!(
+        match_label_line("Nama Peserta      : AHMAD FAUZI NUGROHO"),
+        None
+    );
+    // The trace stamp's first colon sits inside a timestamp, not after a
+    // label -- `[` as the first character rules it out before the colon
+    // position is even considered.
+    assert_eq!(
+        match_label_line("[I001IGR1-(10/09/2026 12:45:39)-CA]"),
+        None
+    );
+    // The pipe-delimited footer: upper-case `MKM` alone would pass, but the
+    // `|` and the lower-case prose after it do not.
+    let mkm_line =
+        "MKM|\"Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :\"|Download PLN Mobile";
+    assert_eq!(match_label_line(mkm_line), None);
+    // No colon at all.
+    assert_eq!(match_label_line("Nilai   316350"), None);
+}
+
+#[test]
+fn parse_logical_lines_joins_continuations_with_no_separator() {
+    let lines = vec![
+        "NAMA            : BUDI SANTOSA W".to_string(),
+        "                  IJAYA".to_string(),
+    ];
+    let logical = parse_logical_lines(&lines);
+
+    assert_eq!(logical.len(), 1);
+    match &logical[0] {
+        LogicalLine::Labelled {
+            label,
+            value,
+            column,
+        } => {
+            assert_eq!(label, "NAMA");
+            assert_eq!(value, "BUDI SANTOSA WIJAYA");
+            assert_eq!(*column, 16);
+        }
+        _ => panic!("expected a labelled line"),
+    }
+}
+
+#[test]
+fn parse_logical_lines_joins_three_continuations_in_a_row() {
+    let lines = vec![
+        "NO REF         : 11002500AAA1A11".to_string(),
+        "                  11AA111111A1AA1".to_string(),
+        "                  11".to_string(),
+    ];
+    let logical = parse_logical_lines(&lines);
+
+    assert_eq!(logical.len(), 1);
+    match &logical[0] {
+        LogicalLine::Labelled { value, .. } => {
+            assert_eq!(value, "11002500AAA1A1111AA111111A1AA111");
+        }
+        _ => panic!("expected a labelled line"),
+    }
+}
+
+#[test]
+fn parse_logical_lines_joins_unlabelled_continuations_too() {
+    let lines = vec![
+        "Informasi Hubungi Call Center 12".to_string(),
+        "                  3 Atau hubungi PLN TerdekatDownl".to_string(),
+        "                  oad PLN Mobile".to_string(),
+    ];
+    let logical = parse_logical_lines(&lines);
+
+    assert_eq!(logical.len(), 1);
+    match &logical[0] {
+        LogicalLine::Text(text) => assert_eq!(
+            text,
+            "Informasi Hubungi Call Center 123 Atau hubungi PLN TerdekatDownload PLN Mobile"
+        ),
+        _ => panic!("expected a text line"),
+    }
+}
+
+/// A continuation-shaped line with nothing above it to continue -- the block
+/// opens mid-wrap, or the line above it was blank -- is not dropped; it
+/// starts a logical line of its own instead.
+#[test]
+fn parse_logical_lines_keeps_a_continuation_with_no_line_to_join() {
+    let lines = vec!["                  orphaned".to_string()];
+    let logical = parse_logical_lines(&lines);
+
+    assert_eq!(logical.len(), 1);
+    match &logical[0] {
+        LogicalLine::Text(text) => assert_eq!(text, "orphaned"),
+        _ => panic!("expected a text line"),
+    }
+}
+
+#[test]
+fn parse_logical_lines_keeps_blanks_as_their_own_entries() {
+    let lines = vec![
+        "IDPEL          : 231000000002".to_string(),
+        String::new(),
+        "NAMA           : PT.CONTOH SEJA H".to_string(),
+    ];
+    let logical = parse_logical_lines(&lines);
+
+    assert_eq!(logical.len(), 3);
+    assert!(matches!(logical[1], LogicalLine::Blank));
+}
+
+#[test]
+fn detect_label_width_is_zero_with_no_labelled_lines() {
+    let logical = parse_logical_lines(&provider_lines(PAYMENT_POINT_TEXT));
+    assert_eq!(detect_label_width(&logical), 0);
+}
+
+#[test]
+fn detect_label_width_is_the_widest_column_in_the_block() {
+    let logical = parse_logical_lines(&provider_lines(PLN_POSTPAID_REAL_TEXT));
+    assert_eq!(detect_label_width(&logical), 15);
+
+    let logical = parse_logical_lines(&provider_lines(PLN_PREPAID_TEXT));
+    assert_eq!(detect_label_width(&logical), 16);
+}
+
+#[test]
+fn wrap_text_line_leaves_a_fitting_line_untouched() {
+    // Three internal spaces, preserved: word-wrapping this would collapse
+    // them to one, and it already fits -- so it never goes near a wrap.
+    assert_eq!(wrap_text_line("Nilai   316350", 32), vec!["Nilai   316350"]);
+}
+
+#[test]
+fn wrap_text_line_word_wraps_a_line_that_does_not_fit() {
+    assert_eq!(
+        wrap_text_line("Nama Peserta      : AHMAD FAUZI NUGROHO", 32),
+        vec!["Nama Peserta : AHMAD FAUZI", "NUGROHO"]
+    );
+}
+
+#[test]
+fn wrap_text_line_splits_the_mkm_shape_regardless_of_length() {
+    // Short enough to fit on one line unsplit, but the pipe format is a
+    // delimiter, not prose, so it still comes apart into its parts.
+    assert_eq!(
+        wrap_text_line("MKM|\"a\"|b", 32),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+#[test]
+fn wrap_labelled_line_fits_on_one_line_when_it_can() {
+    assert_eq!(
+        wrap_labelled_line("IDPEL", "231000000002", 15, 32),
+        vec!["IDPEL          : 231000000002"]
+    );
+}
+
+#[test]
+fn wrap_labelled_line_word_wraps_a_value_with_spaces() {
+    assert_eq!(
+        wrap_labelled_line("NAMA", "BUDI SANTOSA WIJAYA", 16, 32),
+        vec!["NAMA            : BUDI SANTOSA", "                  WIJAYA"]
+    );
+}
+
+#[test]
+fn wrap_labelled_line_character_chunks_a_spaceless_value() {
+    assert_eq!(
+        wrap_labelled_line("NO REF", "11002500AAA1A1111AA111AA1111AA11", 16, 32),
+        vec![
+            "NO REF          : 11002500AAA1A1",
+            "                  111AA111AA1111",
+            "                  AA11",
+        ]
+    );
 }
