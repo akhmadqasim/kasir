@@ -208,8 +208,16 @@ impl PpobReceiptData {
     /// labels, so a value equal to `reference_number` is treated as no
     /// value at all.
     fn pulsa_token(&self) -> &str {
+        // The history endpoint copies the phone number into `token_number`
+        // and `serial_number` for a top-up, and our own row keeps the
+        // reference digits there; neither is a token.
         match meaningful(self.serial_number.as_deref()) {
-            Some(value) if Some(value) != non_empty(self.reference_number.as_deref()) => value,
+            Some(value)
+                if Some(value) != non_empty(self.reference_number.as_deref())
+                    && Some(value) != non_empty(self.customer_id.as_deref()) =>
+            {
+                value
+            }
             _ => "-",
         }
     }
@@ -309,9 +317,16 @@ fn format_pulsa_receipt(data: &PpobReceiptData, cpl: usize) -> Vec<ReceiptTextLi
     lines.push(ReceiptTextLine::plain("=".repeat(cpl)));
 
     lines.push(ReceiptTextLine::plain("TRANSAKSI:".to_string()));
-    let (description_first, description_second) = pulsa_description(data.product_name.as_deref());
+    let (description_first, description_second) = pulsa_description(
+        data.provider_description.as_deref(),
+        data.product_name.as_deref(),
+    );
     let phone = non_empty(data.customer_id.as_deref());
     let heading = match (phone, description_first.is_empty()) {
+        // History's `description` already reads "<phone> - <product>".
+        (Some(phone), false) if description_first.starts_with(&format!("{phone} - ")) => {
+            description_first
+        }
         (Some(phone), false) => format!("{phone} - {description_first}"),
         (Some(phone), true) => phone.to_string(),
         (None, _) => description_first,
@@ -386,8 +401,24 @@ fn format_pulsa_receipt(data: &PpobReceiptData, cpl: usize) -> Vec<ReceiptTextLi
 ///
 /// A `product_name` that does not match — a history row Mitra sent us, which
 /// never went through our checkout — prints as one line, exactly as given.
-fn pulsa_description(product_name: Option<&str>) -> (String, Option<String>) {
-    let Some(name) = non_empty(product_name) else {
+fn pulsa_description(
+    provider_description: Option<&str>,
+    product_name: Option<&str>,
+) -> (String, Option<String>) {
+    // Mitra's `igr_desc` for a top-up is the product description itself, with
+    // its real line break ("TELKOMSEL 50.000,-\nMasa Aktif 45 Hari") — the
+    // history path has it, and it beats reconstructing the break from a
+    // flattened product name. `meaningful`: history answers "-" for a name it
+    // does not have.
+    if let Some(description) = meaningful(provider_description) {
+        let (first, second) = match description.split_once('\n') {
+            Some((first, second)) => (first.trim(), Some(second.trim().to_string())),
+            None => (description, None),
+        };
+        return (first.to_string(), second.filter(|text| !text.is_empty()));
+    }
+
+    let Some(name) = meaningful(product_name) else {
         return (String::new(), None);
     };
 

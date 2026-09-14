@@ -1175,6 +1175,50 @@ fn a_dash_for_receipt_text_is_no_slip_at_all() {
 
     assert!(text.contains("TRANSAKSI:"), "{text}");
     assert!(text.contains("RINCIAN"), "{text}");
-    assert!(!text.lines().any(|line| line == "-
---------------------------------"));
+    assert!(
+        !text.contains(
+            "
+-
+--------------------------------"
+        ),
+        "{text}"
+    );
+}
+
+/// A top-up printed from Mitra's history, exactly as the history endpoint
+/// describes it: the product name is "-", `description`/`igr_desc` carry the
+/// real two-line product text, and the phone number is copied into the
+/// token field.
+#[test]
+fn a_top_up_from_history_prints_the_provider_description_once_and_no_phone_as_token() {
+    let mut data = pulsa();
+    data.service_type = "data".to_string();
+    data.product_name = Some("-".to_string());
+    data.customer_id = Some("081347085447".to_string());
+    data.serial_number = Some("081347085447".to_string());
+    data.provider_description = Some("TELKOMSEL 50.000,-\nMasa Aktif 45 Hari".to_string());
+    data.provider_receipt_text = Some("-".to_string());
+    let text = text_of(&format_ppob_receipt(&data, 58));
+
+    assert!(
+        text.contains("TRANSAKSI:\n081347085447 - TELKOMSEL\n50.000,-\nMasa Aktif 45 Hari\n"),
+        "{text}"
+    );
+    assert_eq!(
+        text.matches("081347085447").count(),
+        2,
+        "phone: heading + no_ref only\n{text}"
+    );
+    assert!(text.contains("\n\n-\n\n"), "no token → a lone dash\n{text}");
+}
+
+#[test]
+fn a_history_description_that_already_leads_with_the_phone_is_not_doubled() {
+    let mut data = pulsa();
+    data.product_name = Some("081347085447 - TELKOMSEL 50.000,-\nMasa Aktif 45 Hari".to_string());
+    data.customer_id = Some("081347085447".to_string());
+    data.provider_description = None;
+    let text = text_of(&format_ppob_receipt(&data, 58));
+
+    assert!(!text.contains("081347085447 - 081347085447"), "{text}");
 }
