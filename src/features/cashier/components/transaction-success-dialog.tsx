@@ -170,7 +170,12 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
         <Modal.Heading>Transaksi selesai</Modal.Heading>
       </Modal.Header>
 
-      <Modal.Body>
+      {/* `overflow-visible`: bawaan `Modal.Body` menggulir (overflow-y auto,
+          yang ikut memotong sumbu x) dan hanya menyisakan 3px — kurang untuk
+          cincin fokus tombol yang menempel di tepi kolom, jadi cincin
+          "Transaksi baru" terpotong tipis. Yang panjang di sini cuma struk,
+          dan ia menggulir sendiri. Sama di dialog Pembayaran. */}
+      <Modal.Body className="overflow-visible">
         <div className="grid min-w-0 gap-6 md:grid-cols-2">
           {/* Kiri: yang bukan isi struk — total dan kembalian yang harus
               diserahkan (dibaca pelanggan dari seberang meja — peran "Total
