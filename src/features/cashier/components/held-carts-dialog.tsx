@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from "react"
+import { Trash2 } from "lucide-react"
 import { Button, Description, Label, ListBox, Modal } from "@heroui/react"
 
 import { formatDateTime } from "@/lib/format"
@@ -182,11 +183,12 @@ function HeldCartsList({
                   </Button>
                   <Button
                     aria-label={`Hapus ${held.label}`}
+                    isIconOnly
                     size="sm"
                     variant="danger"
                     onPress={() => onRemove(held.id)}
                   >
-                    Hapus
+                    <Trash2 />
                   </Button>
                 </div>
               </ListBox.Item>
