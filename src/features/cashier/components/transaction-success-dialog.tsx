@@ -258,27 +258,25 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             )}
 
             <div className="mt-auto flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-2">
-                <PendingButton
-                  fullWidth
-                  isPending={isPrinting}
-                  variant="tertiary"
-                  onPress={handlePrint}
-                >
-                  <Printer />
-                  Cetak struk
-                  <Kbd aria-hidden="true">
-                    <Kbd.Content>Enter</Kbd.Content>
-                  </Kbd>
-                </PendingButton>
-                <Button fullWidth variant="tertiary" onPress={handleCopy}>
-                  <Copy />
-                  Salin struk
-                  <Kbd aria-hidden="true">
-                    <Kbd.Content>C</Kbd.Content>
-                  </Kbd>
-                </Button>
-              </div>
+              <Button fullWidth variant="tertiary" onPress={handleCopy}>
+                <Copy />
+                Salin struk
+                <Kbd aria-hidden="true">
+                  <Kbd.Content>C</Kbd.Content>
+                </Kbd>
+              </Button>
+              <PendingButton
+                fullWidth
+                isPending={isPrinting}
+                variant="tertiary"
+                onPress={handlePrint}
+              >
+                <Printer />
+                Cetak struk
+                <Kbd aria-hidden="true">
+                  <Kbd.Content>Enter</Kbd.Content>
+                </Kbd>
+              </PendingButton>
               <Button
                 autoFocus
                 className="min-h-12 text-lg"
