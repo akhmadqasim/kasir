@@ -290,7 +290,11 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         let price_str = format_rupiah(item.price);
         let subtotal_str = format_rupiah(item.subtotal);
         let qty_price = format!("  {} x {}", item.quantity, price_str);
-        lines.push(ReceiptTextLine::plain(item.name.clone()));
+        // A name longer than the paper wraps by word here; left to the
+        // printer it would be cut mid-word at the column edge.
+        for row in wrap_words(&item.name, cpl) {
+            lines.push(ReceiptTextLine::plain(row));
+        }
         lines.push(ReceiptTextLine::plain(two_col_text(
             &qty_price,
             &subtotal_str,
@@ -673,5 +677,31 @@ mod notes_tests {
         data.notes = None;
         let without = format_receipt_text(&data, 58).len();
         assert_eq!(with, without);
+    }
+}
+
+#[cfg(test)]
+mod long_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_product_name_longer_than_the_paper_wraps_by_word() {
+        let mut data = tests::sample_receipt_data();
+        data.items[0].name = "Pulsa TELKOMSEL - TELKOMSEL 50.000,- Masa Aktif 45 Hari".to_string();
+        let text: Vec<String> = format_receipt_text(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+
+        assert!(
+            text.iter().all(|line| line.chars().count() <= 32),
+            "{text:?}"
+        );
+        let at = text
+            .iter()
+            .position(|line| line == "Pulsa TELKOMSEL - TELKOMSEL")
+            .expect("first row of the name");
+        assert_eq!(text[at + 1], "50.000,- Masa Aktif 45 Hari");
+        assert!(text[at + 2].starts_with("  "), "qty line follows the name");
     }
 }
