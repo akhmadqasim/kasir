@@ -7,6 +7,12 @@ vi.mock("@/lib/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
+vi.mock("@/features/receipt/utils/receipt-png", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/receipt/utils/receipt-png")>()),
+  renderReceiptPng: vi.fn(async () => new Blob(["png"], { type: "image/png" })),
+}))
+
+import { renderReceiptPng } from "@/features/receipt/utils/receipt-png"
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { pressKey } from "@/test-utils/keyboard"
 import { TransactionSuccessDialog } from "./components/transaction-success-dialog"
@@ -150,22 +156,33 @@ describe("transaction success dialog", () => {
     expect(dialog).toHaveTextContent("Rp 0")
   })
 
-  it("copies the struk as monospace text for WhatsApp on C and from its button", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+  it("copies the struk as a PNG on C and from its button", async () => {
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { write }, configurable: true })
+    // jsdom has neither a canvas nor ClipboardItem; the renderer is mocked at
+    // the top of the file, and ClipboardItem only needs to carry its parts.
+    class FakeClipboardItem {
+      parts: Record<string, Blob>
+      constructor(parts: Record<string, Blob>) {
+        this.parts = parts
+      }
+    }
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      value: FakeClipboardItem,
+      configurable: true,
+    })
     renderDialog()
     await screen.findByText("Indomie Goreng")
 
     pressKey("c")
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
-    const text = writeText.mock.calls[0][0] as string
-    expect(text.startsWith("```\n")).toBe(true)
-    expect(text.endsWith("\n```")).toBe(true)
-    expect(text).toContain("Indomie Goreng")
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1))
+    const [items] = write.mock.calls[0] as [FakeClipboardItem[]]
+    expect(items[0].parts["image/png"].type).toBe("image/png")
+    expect(renderReceiptPng).toHaveBeenCalledWith(RECEIPT_LINES, 32)
 
     fireEvent.click(screen.getByRole("button", { name: /Salin struk/ }))
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(2))
   })
 
   it("prints on Enter wherever focus sits, without also pressing the focused button", async () => {

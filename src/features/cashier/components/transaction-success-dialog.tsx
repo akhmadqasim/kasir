@@ -4,7 +4,7 @@ import { Copy, Printer } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
-import { ReceiptPreview } from "@/features/receipt"
+import { ReceiptPreview, receiptColumns, renderReceiptPng } from "@/features/receipt"
 import { id } from "@/i18n/id"
 import { useApiQuery } from "@/hooks/use-api"
 import { errorMessage } from "@/lib/api/client"
@@ -156,17 +156,17 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     () => getSaleReceiptLines(transaction.id, paperWidth),
   )
 
-  // Struk sebagai teks untuk ditempel ke WhatsApp: dibungkus ``` supaya
-  // WhatsApp merendernya monospace dan kolom angkanya tetap lurus.
+  // Struk sebagai gambar PNG di clipboard — ditempel ke WhatsApp jadi foto
+  // struk, bukan teks yang kolomnya berantakan di font proporsional.
   const handleCopy = async () => {
     const lines = receiptLines.data
     if (!lines) {
       toast.error("Struk belum siap disalin. Coba sesaat lagi.")
       return
     }
-    const text = ["```", ...lines.map((line) => line.text), "```"].join("\n")
     try {
-      await navigator.clipboard.writeText(text)
+      const png = await renderReceiptPng(lines, receiptColumns(paperWidth))
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
       toast.success("Struk disalin.")
     } catch {
       toast.error("Gagal menyalin struk.")

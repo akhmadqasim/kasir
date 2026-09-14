@@ -4,10 +4,9 @@ import { useApiQuery } from "@/hooks/use-api"
 import { getSaleReceiptLines } from "@/lib/api/transactions"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
+import { receiptColumns } from "../utils/receipt-png"
 
 /** Kolom struk 58mm dan 80mm — sama dengan `printing::receipt::columns` di Rust. */
-const COLUMNS_58MM = 32
-const COLUMNS_80MM = 42
 
 interface ReceiptPreviewProps {
   transactionId: number
@@ -31,7 +30,7 @@ interface ReceiptPreviewProps {
  * hasil cetaknya.
  */
 export function ReceiptPreview({ transactionId, paperWidth, className }: ReceiptPreviewProps) {
-  const columns = paperWidth === 80 ? COLUMNS_80MM : COLUMNS_58MM
+  const columns = receiptColumns(paperWidth)
   const { data: lines, isLoading } = useApiQuery(
     queryKeys.transactions.receiptLines(transactionId, paperWidth ?? null),
     () => getSaleReceiptLines(transactionId, paperWidth),

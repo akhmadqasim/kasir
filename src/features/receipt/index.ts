@@ -6,4 +6,5 @@
 // rendering of a receipt.
 export { generateReceiptHtml } from "./utils/print-receipt"
 export { ReceiptPreview } from "./components/receipt-preview"
+export { receiptColumns, renderReceiptPng } from "./utils/receipt-png"
 export type { ReceiptData, ReceiptItem, ReceiptLine } from "./types"
