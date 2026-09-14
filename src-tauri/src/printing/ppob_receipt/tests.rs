@@ -260,10 +260,13 @@ fn the_providers_slip_is_reflowed_at_word_boundaries() {
 
 /// Numbers inside the provider's block are theirs: they mix `69,163` and
 /// `Rp 69.729,00` between services and we are not the ones to correct it.
-/// Nor is their label column: PDAM's nineteen stays nineteen.
+/// Nor is their label column where the paper has room for it: PDAM's
+/// nineteen stays nineteen on 80 mm; on 58 mm it is pulled in to the widest
+/// label (see `detect_label_width`), the colons still in one column.
 #[test]
 fn provider_numbers_and_columns_are_printed_exactly_as_sent() {
-    assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan      : 69,163"));
+    assert!(text_of(&format_ppob_receipt(&pdam(), 80)).contains("Total Tagihan      : 69,163"));
+    assert!(text_of(&format_ppob_receipt(&pdam(), 58)).contains("Total Tagihan : 69,163"));
     assert!(text_of(&format_ppob_receipt(&pln_postpaid(), 58))
         .contains("RP TAG PLN     : Rp 69.729,00"));
 }
@@ -981,16 +984,22 @@ fn match_label_line_only_eats_one_space_after_the_colon() {
 }
 
 #[test]
-fn match_label_line_rejects_titlecase_and_bracketed_lines() {
-    // PDAM/BPJS/payment point's own key/value shape: real, but not the
-    // Mitra app's shouted `LABEL :` convention this module derives a label
-    // column from -- see `match_label_line`'s doc.
+fn match_label_line_accepts_any_case_but_rejects_prose_and_bracketed_lines() {
+    // PDAM/BPJS/payment point's own Title-case keys join the column: each
+    // provider pads most labels and leaves a few unpadded, and the owner's
+    // first complaint was colons that wander -- see `match_label_line`'s doc.
     assert_eq!(
         match_label_line("Nama PDAM          : Kota Samarinda"),
-        None
+        Some(("Nama PDAM", "Kota Samarinda", 19))
     );
     assert_eq!(
         match_label_line("Nama Peserta      : AHMAD FAUZI NUGROHO"),
+        Some(("Nama Peserta", "AHMAD FAUZI NUGROHO", 18))
+    );
+    // A footer sentence that happens to end in a colon is far longer than any
+    // label; the length cap keeps it prose.
+    assert_eq!(
+        match_label_line("Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :"),
         None
     );
     // The trace stamp's first colon sits inside a timestamp, not after a
@@ -1099,17 +1108,68 @@ fn parse_logical_lines_keeps_blanks_as_their_own_entries() {
 
 #[test]
 fn detect_label_width_is_zero_with_no_labelled_lines() {
-    let logical = parse_logical_lines(&provider_lines(PAYMENT_POINT_TEXT));
-    assert_eq!(detect_label_width(&logical), 0);
+    let logical = parse_logical_lines(&provider_lines(
+        "Periode 09-2026
+Nilai   255300
+",
+    ));
+    assert_eq!(detect_label_width(&logical, 32), 0);
+}
+
+/// The colon column each provider *meant* is the widest one it padded to;
+/// the unpadded stragglers are moved out to it, so every colon lines up.
+#[test]
+fn title_case_labels_are_padded_to_the_providers_own_widest_column() {
+    let text = "Nama PDAM : Kota Samarinda
+No. Pelanggan      : 1120777
+Nama : Rizul Gajuli
+";
+    let mut data = pdam();
+    data.provider_receipt_text = Some(text.to_string());
+    let printed = text_of(&format_ppob_receipt(&data, 58));
+
+    // PDAM's own 19-wide column would leave eleven characters for the value
+    // on 58 mm paper, so the column is pulled in to the widest label + 1.
+    assert!(
+        printed.contains(
+            "Nama PDAM     : Kota Samarinda
+"
+        ),
+        "{printed}"
+    );
+    assert!(
+        printed.contains(
+            "No. Pelanggan : 1120777
+"
+        ),
+        "{printed}"
+    );
+    assert!(
+        printed.contains(
+            "Nama          : Rizul Gajuli
+"
+        ),
+        "{printed}"
+    );
+
+    // 80 mm has the room, so the provider's own column stands.
+    let wide = text_of(&format_ppob_receipt(&data, 80));
+    assert!(
+        wide.contains(
+            "Nama PDAM          : Kota Samarinda
+"
+        ),
+        "{wide}"
+    );
 }
 
 #[test]
 fn detect_label_width_is_the_widest_column_in_the_block() {
     let logical = parse_logical_lines(&provider_lines(PLN_POSTPAID_REAL_TEXT));
-    assert_eq!(detect_label_width(&logical), 15);
+    assert_eq!(detect_label_width(&logical, 32), 15);
 
     let logical = parse_logical_lines(&provider_lines(PLN_PREPAID_TEXT));
-    assert_eq!(detect_label_width(&logical), 16);
+    assert_eq!(detect_label_width(&logical, 32), 16);
 }
 
 #[test]

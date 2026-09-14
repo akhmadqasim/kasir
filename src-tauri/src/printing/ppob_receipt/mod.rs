@@ -261,7 +261,7 @@ pub fn format_ppob_receipt(data: &PpobReceiptData, paper_width_mm: u8) -> Vec<Re
     // has to run before them, not after).
     let block = meaningful(data.provider_receipt_text.as_deref()).map(provider_lines);
     let (body, footer) = match block {
-        Some(block) => split_body_footer(reflow_provider_lines(&block), cpl),
+        Some(block) => split_body_footer(reflow_provider_lines(&block, cpl), cpl),
         None => (Vec::new(), Vec::new()),
     };
     // The token is already on the paper in characters twice the size; the
@@ -559,27 +559,30 @@ fn is_continuation_line(line: &str) -> bool {
     indent >= 2 && !line.trim().is_empty()
 }
 
-/// A line shaped like `LABEL : value` — a label of upper-case letters,
-/// digits, spaces, `/`, `-` and `.`, starting with a letter, then a colon,
-/// then at most one space before the value. Deliberately hand-rolled rather
-/// than pulled in via a regex crate: the grammar is small enough that a
-/// linear scan over one `find(':')` reads as plainly as a pattern would, for
-/// one dependency fewer.
+/// A line shaped like `Label : value` — a label of letters, digits, spaces,
+/// `/`, `-` and `.`, starting with a letter and no longer than
+/// [`MAX_LABEL_CHARS`], then a colon, then at most one space before the
+/// value. Deliberately hand-rolled rather than pulled in via a regex crate:
+/// the grammar is small enough that a linear scan over one `find(':')` reads
+/// as plainly as a pattern would, for one dependency fewer.
 ///
-/// The upper-case-only rule is what keeps this from firing on PDAM's `Nama
-/// PDAM          : Kota Samarinda` or BPJS's `Nama Peserta      : AHMAD
-/// FAUZI NUGROHO` — those providers' own key/value shape is real, but it is
-/// not the Mitra app's `LABEL : value` convention this module re-derives a
-/// column width from, so those lines are laid out as plain prose instead
-/// (see [`wrap_text_line`]) rather than under a label column of their own.
+/// Any case, not just Mitra's upper-case `NO METER`: PDAM's `Nama PDAM :
+/// Kota Samarinda` next to `No. Pelanggan      : 1120777`, BPJS's `Nomor VA
+/// : …` next to `Periode           : 1 BULAN`, MyRepublic's `Deskripsi :`
+/// next to `Merchant/Biller : ` — each provider pads *most* of its labels to
+/// one column and leaves a few unpadded, and a struk whose colons wander is
+/// the first thing the owner noticed. The length cap is what keeps prose
+/// with a colon in it (`Informasi Hubungi Call Center 123 Atau Hub PLN
+/// Terdekat :`) from being read as a label with an empty value.
+const MAX_LABEL_CHARS: usize = 24;
+
 fn match_label_line(line: &str) -> Option<(&str, &str, usize)> {
     let colon = line.find(':')?;
     let label = line[..colon].trim_end();
-    let is_label_char = |c: char| {
-        c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c, ' ' | '/' | '-' | '.')
-    };
+    let is_label_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, ' ' | '/' | '-' | '.');
     if label.is_empty()
-        || !label.starts_with(|c: char| c.is_ascii_uppercase())
+        || label.chars().count() > MAX_LABEL_CHARS
+        || !label.starts_with(|c: char| c.is_ascii_alphabetic())
         || !label.chars().all(is_label_char)
     {
         return None;
@@ -651,21 +654,37 @@ fn parse_logical_lines(lines: &[String]) -> Vec<LogicalLine> {
     out
 }
 
+/// The fewest columns a value may be left with beside its label before the
+/// label column is pulled in. Twelve fits `Rp 308.299,00` and a fourteen-digit
+/// reference chunk is what PLN's own column leaves — anything narrower turns
+/// `Kota Samarinda` into two lines.
+const MIN_VALUE_COLUMNS: usize = 13;
+
 /// The label column every [`LogicalLine::Labelled`] in this block pads to:
 /// the widest one the provider actually sent, detected from where its colon
 /// landed rather than assumed from label text length (a block's shortest
-/// label is not necessarily unpadded). `0` when the block has none — PDAM,
-/// BPJS and payment point never do, their keys being title case rather than
-/// the Mitra app's own shouted `LABEL :` convention.
-fn detect_label_width(logical: &[LogicalLine]) -> usize {
-    logical
-        .iter()
-        .filter_map(|line| match line {
-            LogicalLine::Labelled { column, .. } => Some(*column),
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0)
+/// label is not necessarily unpadded). PLN pads every label to that column
+/// and this keeps its print byte-identical to Mitra's. PDAM and BPJS pad
+/// theirs so wide (19, 18) that on 32-column paper the value would have
+/// eleven characters left; there the column is instead the widest label
+/// plus one, which is as far in as it can go and still line the colons up.
+/// `0` when the block has no labelled line.
+fn detect_label_width(logical: &[LogicalLine], cpl: usize) -> usize {
+    let labelled = logical.iter().filter_map(|line| match line {
+        LogicalLine::Labelled { label, column, .. } => Some((label.chars().count(), *column)),
+        _ => None,
+    });
+    let (widest_label, provider_column) = labelled.fold((0, 0), |(l, c), (label, column)| {
+        (l.max(label), c.max(column))
+    });
+    if provider_column == 0 {
+        return 0;
+    }
+    if cpl.saturating_sub(provider_column + 2) >= MIN_VALUE_COLUMNS {
+        provider_column
+    } else {
+        (widest_label + 1).min(provider_column)
+    }
 }
 
 /// One logical line, written out in full — not yet wrapped to any paper
@@ -690,9 +709,9 @@ fn join_logical_line(line: &LogicalLine, label_width: usize) -> String {
 /// [`split_body_footer`] and [`without_token_lines`] run on the result
 /// exactly as they always have, seeing one line per field regardless of how
 /// many lines the provider (or later, [`wrap_joined_line`]) cut it into.
-fn reflow_provider_lines(lines: &[String]) -> Vec<String> {
+fn reflow_provider_lines(lines: &[String], cpl: usize) -> Vec<String> {
     let logical = parse_logical_lines(lines);
-    let label_width = detect_label_width(&logical);
+    let label_width = detect_label_width(&logical, cpl);
     logical
         .iter()
         .map(|line| join_logical_line(line, label_width))
