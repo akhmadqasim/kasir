@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react"
 import { Button, Kbd, Modal, Spinner } from "@heroui/react"
-import { Printer } from "lucide-react"
+import { Copy, Printer } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
 import { ReceiptPreview } from "@/features/receipt"
 import { id } from "@/i18n/id"
+import { useApiQuery } from "@/hooks/use-api"
 import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
+import { queryKeys } from "@/lib/api/query-keys"
+import { getSaleReceiptLines } from "@/lib/api/transactions"
 import { toast } from "@/lib/toast"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
@@ -146,18 +149,54 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     }
   }
 
-  // Enter mencetak, dari mana pun fokusnya di dialog ini — tanpa harus
-  // mencari tombolnya dulu — dan Esc (bawaan Modal) membuka transaksi baru.
-  // Fase capture supaya tombol yang kebetulan sedang fokus tidak ikut ditekan.
+  // Baris struk yang sama dengan pratinjau di kanan (query yang sama, jadi
+  // satu permintaan) — untuk "Salin struk".
+  const receiptLines = useApiQuery(
+    queryKeys.transactions.receiptLines(transaction.id, paperWidth ?? null),
+    () => getSaleReceiptLines(transaction.id, paperWidth),
+  )
+
+  // Struk sebagai teks untuk ditempel ke WhatsApp: dibungkus ``` supaya
+  // WhatsApp merendernya monospace dan kolom angkanya tetap lurus.
+  const handleCopy = async () => {
+    const lines = receiptLines.data
+    if (!lines) {
+      toast.error("Struk belum siap disalin. Coba sesaat lagi.")
+      return
+    }
+    const text = ["```", ...lines.map((line) => line.text), "```"].join("\n")
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success("Struk disalin. Tempel di WhatsApp.")
+    } catch {
+      toast.error("Gagal menyalin struk.")
+    }
+  }
+
+  // Enter mencetak dan C menyalin, dari mana pun fokusnya di dialog ini —
+  // tanpa harus mencari tombolnya dulu — dan Esc (bawaan Modal) membuka
+  // transaksi baru. Fase capture supaya tombol yang kebetulan sedang fokus
+  // tidak ikut ditekan.
   const printRef = useRef(handlePrint)
   printRef.current = handlePrint
+  const copyRef = useRef(handleCopy)
+  copyRef.current = handleCopy
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey) return
-      if (event.target instanceof HTMLTextAreaElement) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
+        return
+      }
+      const action =
+        event.key === "Enter"
+          ? printRef.current
+          : event.key.toLowerCase() === "c"
+            ? copyRef.current
+            : null
+      if (!action) return
       event.preventDefault()
       event.stopPropagation()
-      void printRef.current()
+      void action()
     }
     window.addEventListener("keydown", onKeyDown, true)
     return () => window.removeEventListener("keydown", onKeyDown, true)
@@ -219,18 +258,27 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             )}
 
             <div className="mt-auto flex flex-col gap-2">
-              <PendingButton
-                fullWidth
-                isPending={isPrinting}
-                variant="tertiary"
-                onPress={handlePrint}
-              >
-                <Printer />
-                Cetak struk
-                <Kbd aria-hidden="true">
-                  <Kbd.Content>Enter</Kbd.Content>
-                </Kbd>
-              </PendingButton>
+              <div className="grid grid-cols-2 gap-2">
+                <PendingButton
+                  fullWidth
+                  isPending={isPrinting}
+                  variant="tertiary"
+                  onPress={handlePrint}
+                >
+                  <Printer />
+                  Cetak struk
+                  <Kbd aria-hidden="true">
+                    <Kbd.Content>Enter</Kbd.Content>
+                  </Kbd>
+                </PendingButton>
+                <Button fullWidth variant="tertiary" onPress={handleCopy}>
+                  <Copy />
+                  Salin struk
+                  <Kbd aria-hidden="true">
+                    <Kbd.Content>C</Kbd.Content>
+                  </Kbd>
+                </Button>
+              </div>
               <Button
                 autoFocus
                 className="min-h-12 text-lg"

@@ -150,6 +150,24 @@ describe("transaction success dialog", () => {
     expect(dialog).toHaveTextContent("Rp 0")
   })
 
+  it("copies the struk as monospace text for WhatsApp on C and from its button", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    renderDialog()
+    await screen.findByText("Indomie Goreng")
+
+    pressKey("c")
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const text = writeText.mock.calls[0][0] as string
+    expect(text.startsWith("```\n")).toBe(true)
+    expect(text.endsWith("\n```")).toBe(true)
+    expect(text).toContain("Indomie Goreng")
+
+    fireEvent.click(screen.getByRole("button", { name: /Salin struk/ }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+  })
+
   it("prints on Enter wherever focus sits, without also pressing the focused button", async () => {
     const onNewTransaction = vi.fn()
     renderDialog({ onNewTransaction })
