@@ -11,6 +11,7 @@ import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
 import { printReceipt } from "@/lib/api/printers"
 import { toast } from "@/lib/toast"
+import { cn } from "@/lib/utils"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
 
@@ -183,14 +184,19 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
             {/* Kembalian di paling atas: itu yang diserahkan sekarang dan
                 dibaca pelanggan dari seberang meja; total tinggal pengingat. */}
             <InfoPanel className="flex flex-col gap-3">
-              {changeAmount > 0 && (
-                <div className="flex items-start justify-between gap-4">
-                  <p className="text-muted">{id.cashier.change}</p>
-                  <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                    {formatRupiah(changeAmount)}
-                  </p>
-                </div>
-              )}
+              {/* Selalu ada, juga "Rp 0" saat uangnya pas: baris yang
+                  kadang muncul kadang tidak membuat kasir mencari-cari. */}
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-muted">{id.cashier.change}</p>
+                <p
+                  className={cn(
+                    "text-3xl font-semibold tracking-tight tabular-nums",
+                    changeAmount > 0 ? "text-success" : "text-foreground",
+                  )}
+                >
+                  {formatRupiah(changeAmount)}
+                </p>
+              </div>
               <div className="flex items-start justify-between gap-4">
                 <p className="text-muted">Total</p>
                 <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">

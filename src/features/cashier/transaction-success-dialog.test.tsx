@@ -135,7 +135,7 @@ describe("transaction success dialog", () => {
     expect(api.calls).toHaveLength(1)
   })
 
-  it("hides the change when there is none to hand back", async () => {
+  it("shows Rp 0 change when there is none to hand back", async () => {
     renderDialog({
       result: {
         ...RESULT,
@@ -145,7 +145,9 @@ describe("transaction success dialog", () => {
     })
 
     const dialog = await screen.findByRole("dialog")
-    expect(dialog).not.toHaveTextContent("Kembalian")
+    // Still a "Kembalian" row — reading Rp 0 beats hunting for a missing line.
+    expect(dialog).toHaveTextContent("Kembalian")
+    expect(dialog).toHaveTextContent("Rp 0")
   })
 
   it("prints on Enter wherever focus sits, without also pressing the focused button", async () => {
