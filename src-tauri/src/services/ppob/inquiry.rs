@@ -12,8 +12,10 @@ use crate::entity::store_info;
 use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::MitraClient;
 use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
-use crate::services::ppob::parsers::{extract_f64, extract_optional_string, extract_string};
-use crate::utils::AppError;
+use crate::services::ppob::parsers::{
+    extract_f64, extract_optional_string, get_str_field, response_objects,
+};
+use crate::utils::{logging, AppError};
 
 fn extract_bpjs_data_book_value(data_book: &str, label: &str) -> Option<String> {
     data_book.lines().find_map(|line| {
@@ -80,6 +82,69 @@ fn extract_bpjs_primary_name(data_book: &str, customer_id: &str) -> Option<Strin
     flush_current(&mut current_number, &mut current_name, &mut first_name).or(first_name)
 }
 
+/// Every object Mitra has been seen to put an inquiry's id in: the response
+/// itself, each known wrapper, and the `inquiry` block PLN nests the customer
+/// details under — at the root or inside `data`.
+fn inquiry_objects(result: &Value) -> impl Iterator<Item = &serde_json::Map<String, Value>> {
+    response_objects(result).chain(
+        [
+            result.get("inquiry"),
+            result.get("data").and_then(|data| data.get("inquiry")),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object),
+    )
+}
+
+/// The id a payment must quote back, wherever this endpoint put it. An
+/// `inquiry_id` anywhere wins over a bare `id` anywhere — `id` is the older
+/// alias, and the likelier of the two to mean something else at the root.
+fn resolve_inquiry_id(result: &Value) -> Option<String> {
+    ["inquiry_id", "id"].into_iter().find_map(|key| {
+        inquiry_objects(result)
+            .find_map(|obj| get_str_field(obj, &[key]))
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+    })
+}
+
+/// [`resolve_inquiry_id`], or a loud failure. An inquiry that came back
+/// without an id used to be reported as a success carrying an empty one, and
+/// the cashier only found out at checkout ("Inquiry PPOB harus dilakukan
+/// sebelum checkout") — after telling the customer the amount. The response's
+/// shape goes to warning.log so the next such change can be read off the log;
+/// keys only, never values, since the values are the customer.
+fn require_inquiry_id(service: &str, result: &Value) -> Result<String, AppError> {
+    resolve_inquiry_id(result).ok_or_else(|| {
+        logging::log_warning(&format!(
+            "[ppob] {service}/inquiry tanpa inquiry_id; bentuk respons: {}",
+            describe_shape(result)
+        ));
+        AppError::Upstream(format!(
+            "Mitra tidak mengembalikan inquiry_id untuk {service}. Coba cek tagihan lagi."
+        ))
+    })
+}
+
+/// A JSON value with every leaf replaced by its type, so a response can be
+/// logged without logging what is in it. Arrays keep their first element only.
+fn describe_shape(value: &Value) -> String {
+    fn shape(value: &Value) -> Value {
+        match value {
+            Value::Object(map) => {
+                Value::Object(map.iter().map(|(k, v)| (k.clone(), shape(v))).collect())
+            }
+            Value::Array(items) => Value::Array(items.iter().take(1).map(shape).collect()),
+            Value::String(_) => Value::String("str".into()),
+            Value::Number(_) => Value::String("num".into()),
+            Value::Bool(_) => Value::String("bool".into()),
+            Value::Null => Value::Null,
+        }
+    }
+    shape(value).to_string()
+}
+
 pub async fn pln(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
@@ -117,9 +182,10 @@ pub async fn pln(
 
     let total = extract_f64(data, &["total", "total_amount"]).max(amount);
     let admin_fee = extract_f64(data, &["total_fee", "fee", "admin_fee", "admin"]);
+    let inquiry_id = require_inquiry_id("pln", &result)?;
 
     Ok(InquiryResult {
-        inquiry_id: extract_string(data, &["inquiry_id", "id"]),
+        inquiry_id,
         customer_name,
         customer_id: customer_id.clone(),
         product_name: extract_optional_string(data, &["product_name", "denom"]),
@@ -151,9 +217,10 @@ pub async fn pdam(
         .await?;
 
     let amount = extract_f64(&result, &["amount", "tagihan", "total_tagihan"]);
+    let inquiry_id = require_inquiry_id("pdam", &result)?;
 
     Ok(InquiryResult {
-        inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
+        inquiry_id,
         customer_name: extract_optional_string(&result, &["nama_pelanggan", "customer_name"]),
         customer_id: customer_id.clone(),
         product_name: extract_optional_string(&result, &["product_name", "merchant"]),
@@ -264,14 +331,7 @@ pub async fn bpjs(
     let customer_name = extract_optional_string(data, &["nama_pelanggan", "customer_name"])
         .or_else(|| extract_bpjs_primary_name(data_book, &customer_id))
         .or_else(|| extract_bpjs_data_book_value(data_book, "Nama Peserta"));
-    let inquiry_id = {
-        let value = extract_string(data, &["inquiry_id", "id"]);
-        if value.is_empty() {
-            extract_string(&result, &["inquiry_id", "id"])
-        } else {
-            value
-        }
-    };
+    let inquiry_id = require_inquiry_id("bpjs", &result)?;
 
     Ok(InquiryResult {
         inquiry_id,
@@ -323,9 +383,10 @@ pub async fn payment_point(
     let result = client.post("pp/inquiry", body).await?;
 
     let bill_amount = resolve_pp_amount(&result, amount);
+    let inquiry_id = require_inquiry_id("pp", &result)?;
 
     Ok(InquiryResult {
-        inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
+        inquiry_id,
         customer_name: extract_optional_string(&result, &["nama_pelanggan", "customer_name"]),
         customer_id: customer_id.clone(),
         product_name: extract_optional_string(&result, &["product_name", "description"]),
@@ -379,8 +440,10 @@ pub async fn transfer(
         )
         .await?;
 
+    let inquiry_id = require_inquiry_id("transfer", &result)?;
+
     Ok(InquiryResult {
-        inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
+        inquiry_id,
         customer_name: extract_optional_string(&result, &["nama_penerima", "customer_name"]),
         customer_id: nomor_rekening.clone(),
         product_name: Some(channel_name.clone()),
@@ -410,9 +473,10 @@ pub async fn emoney(
         .await?;
 
     let amount = extract_f64(&result, &["amount", "nominal"]);
+    let inquiry_id = require_inquiry_id("emoney", &result)?;
 
     Ok(InquiryResult {
-        inquiry_id: extract_string(&result, &["inquiry_id", "id"]),
+        inquiry_id,
         customer_name: extract_optional_string(&result, &["nama_pelanggan", "customer_name"]),
         customer_id: customer_id.clone(),
         product_name: extract_optional_string(&result, &["product_name"]),
@@ -487,5 +551,83 @@ mod tests {
     fn resolve_pp_amount_is_zero_without_either() {
         let result = json!({});
         assert_eq!(resolve_pp_amount(&result, None), 0.0);
+    }
+
+    #[test]
+    fn resolve_inquiry_id_reads_the_root() {
+        let result = json!({ "message": "OK", "inquiry_id": "INQ-1" });
+        assert_eq!(resolve_inquiry_id(&result).as_deref(), Some("INQ-1"));
+    }
+
+    #[test]
+    fn resolve_inquiry_id_reads_the_data_wrapper() {
+        let result = json!({ "message": "OK", "data": { "inquiry_id": "INQ-2" } });
+        assert_eq!(resolve_inquiry_id(&result).as_deref(), Some("INQ-2"));
+    }
+
+    #[test]
+    fn resolve_inquiry_id_reads_a_nested_inquiry_block() {
+        // PLN keeps the customer details under `data.inquiry`; if the id ever
+        // moves in there with them, it must still be found.
+        let under_data = json!({
+            "message": "OK",
+            "data": { "inquiry": { "inquiry_id": "INQ-3", "Nama": "BUDI" } }
+        });
+        assert_eq!(resolve_inquiry_id(&under_data).as_deref(), Some("INQ-3"));
+
+        let at_root = json!({ "message": "OK", "inquiry": { "inquiry_id": "INQ-4" } });
+        assert_eq!(resolve_inquiry_id(&at_root).as_deref(), Some("INQ-4"));
+    }
+
+    #[test]
+    fn resolve_inquiry_id_prefers_inquiry_id_anywhere_over_a_bare_id() {
+        let result = json!({ "id": 7, "data": { "inquiry_id": "INQ-5" } });
+        assert_eq!(resolve_inquiry_id(&result).as_deref(), Some("INQ-5"));
+    }
+
+    #[test]
+    fn resolve_inquiry_id_accepts_a_numeric_id() {
+        let result = json!({ "data": { "id": 42 } });
+        assert_eq!(resolve_inquiry_id(&result).as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn resolve_inquiry_id_is_none_when_missing_or_blank() {
+        let missing = json!({ "message": "OK", "data": { "inquiry": { "Nama": "BUDI" } } });
+        assert_eq!(resolve_inquiry_id(&missing), None);
+
+        let blank = json!({ "message": "OK", "inquiry_id": "   " });
+        assert_eq!(resolve_inquiry_id(&blank), None);
+    }
+
+    /// An inquiry with no id must fail here, at "Cek Tagihan" — not later at
+    /// checkout as "Inquiry PPOB harus dilakukan sebelum checkout".
+    #[test]
+    fn require_inquiry_id_is_an_upstream_error_without_one() {
+        let result = json!({ "message": "OK", "data": { "inquiry": { "Nama": "BUDI" } } });
+        match require_inquiry_id("pln", &result) {
+            Err(AppError::Upstream(message)) => assert!(message.contains("pln"), "{message}"),
+            other => panic!("expected Upstream, got {other:?}"),
+        }
+    }
+
+    /// The logged shape must carry the keys (that is the diagnosis) and none
+    /// of the values (that is the customer).
+    #[test]
+    fn describe_shape_keeps_keys_and_drops_values() {
+        let result = json!({
+            "message": "OK",
+            "data": {
+                "inquiry": { "Nama": "BUDI SANTOSO" },
+                "price": 50000,
+                "items": [{ "a": 1 }, { "b": 2 }]
+            }
+        });
+        let shape = describe_shape(&result);
+        assert!(!shape.contains("BUDI"), "{shape}");
+        assert!(!shape.contains("50000"), "{shape}");
+        assert!(shape.contains(r#""Nama":"str""#), "{shape}");
+        assert!(shape.contains(r#""price":"num""#), "{shape}");
+        assert!(shape.contains(r#""items":[{"a":"num"}]"#), "{shape}");
     }
 }
