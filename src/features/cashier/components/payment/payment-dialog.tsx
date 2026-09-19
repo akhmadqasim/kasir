@@ -73,7 +73,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                       return (
                         <div key={split.payment_method} className="flex flex-col gap-2">
                           <RupiahField
-                            ref={isCash ? form.cashInputRef : undefined}
+                            ref={form.registerAmountInput(split.payment_method)}
                             autoFocus={isCash && form.isSingleCashSelection}
                             label={`Nominal ${label}`}
                             placeholder="0"
@@ -212,7 +212,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                         // — aturan radio-lalu-tambah ada di situ.
                         <ToggleButton
                           key={method.value}
-                          aria-keyshortcuts={`Alt+${method.shortcut}`}
+                          aria-keyshortcuts={`${method.shortcut} Alt+${method.shortcut}`}
                           // `ToggleButton` tidak punya varian outline seperti `Button`:
                           // ghost + garis tepi, yang terpilih diberi tepi aksen.
                           className="w-full justify-between border border-border data-[selected=true]:border-accent"
@@ -222,9 +222,11 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                         >
                           {method.label}
                           {/* Petunjuk visual saja — nama tombolnya tetap label metode;
-                              pembaca layar dapat tutsnya dari `aria-keyshortcuts`. */}
+                              pembaca layar dapat tutsnya dari `aria-keyshortcuts`.
+                              Satu huruf, tanpa Alt: kolom nominal itu angka, jadi
+                              huruf di sana bebas dipakai. */}
                           <Kbd aria-hidden="true">
-                            <Kbd.Content>Alt {method.shortcut}</Kbd.Content>
+                            <Kbd.Content>{method.shortcut}</Kbd.Content>
                           </Kbd>
                         </ToggleButton>
                       )

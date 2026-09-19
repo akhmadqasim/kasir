@@ -16,11 +16,13 @@ import {
 import type { PaymentSplitInput, TransactionResult } from "../../types"
 
 /**
- * `shortcut` is the letter behind Alt that toggles the method — Alt, not
- * Ctrl, because Ctrl+A/S/W already mean select-all/save/close-tab to the
- * webview, and not a bare letter because the bank and notes fields take
- * typing. Q/W/A/S/Z sit under the left hand while the right one is on the
- * numpad.
+ * `shortcut` is the letter that toggles the method — a bare letter, because
+ * the till is a keyboard and the cashier's left hand rests on Q/W/A/S/Z
+ * while the right one is on the numpad. It fires from anywhere in the
+ * dialog except a field that takes typing (bank, notes, PIN): the amount
+ * fields are numeric, so a letter typed into one has no other meaning.
+ * Alt+<letter> still works for anyone who learnt it that way. Not Ctrl,
+ * because Ctrl+A/S/W already mean select-all/save/close-tab to the webview.
  */
 export const PAYMENT_METHODS = [
   { value: "cash", label: "Tunai", shortcut: "A" },
@@ -31,6 +33,21 @@ export const PAYMENT_METHODS = [
 ] as const
 
 export const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
+
+/**
+ * A field the cashier types words into. A bare-letter shortcut must not fire
+ * from one of these — the bank field would lose the "A" in "BCA" to Tunai.
+ * Amount fields are numeric (`inputmode="numeric"`), so a letter there is
+ * free to mean the method; the PIN field is numeric too but is excluded by
+ * name, the same way the Uang Pas shortcut excludes it.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
+  if (target instanceof HTMLElement && target.isContentEditable) return true
+  if (!(target instanceof HTMLInputElement)) return false
+  if (target.name === PPOB_PIN_FIELD_NAME) return true
+  return target.getAttribute("inputmode") !== "numeric"
+}
 
 /**
  * The PIN field's `name`, so the global Uang Pas shortcut (below) can tell it
@@ -74,6 +91,11 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const [notes, setNotes] = useState("")
   const [ppobPin, setPpobPin] = useState("")
   const cashInputRef = useRef<HTMLInputElement>(null)
+  // One ref per method's amount field, so a shortcut can land the cursor in
+  // the field it just revealed. `cashInputRef` stays a named alias because
+  // the Uang Pas shortcut below wants the cash one specifically.
+  const amountInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [focusRequest, setFocusRequest] = useState<{ method: string; seq: number } | null>(null)
   const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
   const user = useAuthStore((s) => s.user)
   const activeShift = useShiftStore((s) => s.activeShift)
@@ -246,10 +268,11 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     return () => window.removeEventListener("keydown", handleShortcut)
   }, [isSingleCashSelection, open, total, updateSplit])
 
+  /** Toggles `method` like a click on its button; returns the method now active. */
   const handleMethodClick = useCallback(
-    (method: string) => {
+    (method: string): string => {
       const split = paymentSplits.find((current) => current.payment_method === method)
-      if (!split) return
+      if (!split) return activePaymentMethod
 
       // Metode sudah dipilih → klik lagi untuk melepas (klik di mana saja pada
       // tombol, bukan cuma di kotak centang). Kecuali ini satu-satunya metode
@@ -257,7 +280,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
       if (split.selected) {
         if (selectedMethodCount <= 1) {
           setActivePaymentMethod(method)
-          return
+          return method
         }
 
         setPaymentSplits((current) =>
@@ -270,8 +293,9 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         const fallback = paymentSplits.find(
           (current) => current.payment_method !== method && current.selected,
         )
-        setActivePaymentMethod(fallback?.payment_method ?? "cash")
-        return
+        const next = fallback?.payment_method ?? "cash"
+        setActivePaymentMethod(next)
+        return next
       }
 
       // Belum dipilih. Selama pilihannya masih tunai tunggal → GANTI (radio).
@@ -285,7 +309,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
           ),
         )
         setActivePaymentMethod(method)
-        return
+        return method
       }
 
       setPaymentSplits((current) =>
@@ -300,30 +324,61 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         ),
       )
       setActivePaymentMethod(method)
+      return method
     },
-    [isSingleCashSelection, paymentSplits, selectedMethodCount, total],
+    [activePaymentMethod, isSingleCashSelection, paymentSplits, selectedMethodCount, total],
   )
 
-  // Alt+<letter> toggles a method exactly like a click on its button.
+  // <letter> (or Alt+<letter>) toggles a method exactly like a click on its
+  // button, then asks for the cursor to land in the active method's amount
+  // field — see the effect below. Without that, toggling away from Tunai
+  // unmounted the very field that had focus, and the cashier's next Enter
+  // went nowhere.
   useEffect(() => {
     if (!open) return
 
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || !event.altKey || event.ctrlKey || event.metaKey) {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.repeat) {
         return
       }
       const method = PAYMENT_METHODS.find(
         (candidate) => candidate.shortcut === event.key.toUpperCase(),
       )
       if (!method) return
+      if (!event.altKey && isTypingTarget(event.target)) return
 
       event.preventDefault()
-      handleMethodClick(method.value)
+      const next = handleMethodClick(method.value)
+      setFocusRequest((previous) => ({ method: next, seq: (previous?.seq ?? 0) + 1 }))
     }
 
     window.addEventListener("keydown", handleShortcut)
     return () => window.removeEventListener("keydown", handleShortcut)
   }, [handleMethodClick, open])
+
+  // Runs after the render a shortcut caused, so the field it wants is mounted
+  // by the time it looks for it. The request names its method rather than
+  // reading the active one: that also changes when the cashier clicks into a
+  // bank field, and the click must not have its focus taken away.
+  useEffect(() => {
+    if (!focusRequest) return
+    const input = amountInputRefs.current[focusRequest.method]
+    input?.focus()
+    input?.select()
+  }, [focusRequest])
+
+  // Callback refs, one per method and stable across renders, for the amount
+  // fields to attach themselves to.
+  const registerAmountInput = useMemo(() => {
+    const refs: Record<string, (element: HTMLInputElement | null) => void> = {}
+    for (const method of PAYMENT_METHODS) {
+      refs[method.value] = (element) => {
+        amountInputRefs.current[method.value] = element
+        if (method.value === "cash") cashInputRef.current = element
+      }
+    }
+    return (method: string) => refs[method]
+  }, [])
 
   const recordAmountEntry = (at: number) => {
     amountEntryRef.current = trackAmountEntry(amountEntryRef.current, at)
@@ -506,7 +561,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     hasCashInSplit,
     hasImplausibleAmount,
     // Handlers
-    cashInputRef,
+    registerAmountInput,
     handleAmountChange,
     handleAmountKeyDown,
     handleBankNameChange,

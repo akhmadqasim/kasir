@@ -223,7 +223,23 @@ describe("payment dialog", () => {
     expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
   })
 
-  it("toggles a method from Alt+letter, the same as clicking its button", async () => {
+  it("toggles a method from its bare letter and lands the cursor in that method's amount field", async () => {
+    renderDialog()
+    const cash = await screen.findByLabelText("Nominal Tunai")
+    cash.focus()
+
+    // "q" typed into the (numeric) cash field means QRIS, not a character.
+    fireEvent.keyDown(cash, { key: "q" })
+
+    const qris = await screen.findByLabelText("Nominal QRIS")
+    expect(screen.getByRole("button", { name: /QRIS/ })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+    // The field that had focus is gone; the cursor must follow the method,
+    // so the next digits and Enter go somewhere.
+    await waitFor(() => expect(qris).toHaveFocus())
+  })
+
+  it("still toggles a method from Alt+letter, the same as clicking its button", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
 
@@ -231,9 +247,30 @@ describe("payment dialog", () => {
 
     expect(await screen.findByLabelText("Nominal QRIS")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /QRIS/ })).toHaveAttribute("aria-pressed", "true")
-    // The bare letter must not fire — it is what the bank field is typed into.
-    fireEvent.keyDown(window, { key: "s" })
+  })
+
+  it("leaves a bare letter alone inside the notes and bank fields — they are typed into", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.keyDown(screen.getByLabelText("Catatan"), { key: "s" })
     expect(screen.queryByLabelText("Nominal Transfer")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
+    await screen.findByLabelText("Nominal Transfer")
+    expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+    // The "A" in "BCA" must not switch Tunai back on.
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Bank" }), { key: "a" })
+    expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+  })
+
+  it("leaves a bare letter alone inside the PIN field", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.keyDown(await screen.findByLabelText("PIN Mitra"), { key: "q" })
+    expect(screen.queryByLabelText("Nominal QRIS")).not.toBeInTheDocument()
   })
 
   it("closes on Escape", async () => {
