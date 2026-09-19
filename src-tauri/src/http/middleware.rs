@@ -181,9 +181,9 @@ fn should_log_failure(status: StatusCode, method: &Method, path: &str) -> bool {
     if status == StatusCode::NOT_FOUND {
         return false;
     }
-    // `GET /api/session` is "am I logged in?" — a 401 there is the normal
+    // `GET /api/auth/me` is "am I logged in?" — a 401 there is the normal
     // answer on every cold start, not a failure worth a line.
-    !(status == StatusCode::UNAUTHORIZED && *method == Method::GET && path == "/api/session")
+    !(status == StatusCode::UNAUTHORIZED && *method == Method::GET && path == "/api/auth/me")
 }
 
 /// Reject a state-changing request whose `Origin` is not this server.
@@ -506,9 +506,9 @@ mod tests {
 
         assert!(!should_log_failure(StatusCode::OK, &get, "/api/products"));
         assert!(!should_log_failure(StatusCode::NOT_FOUND, &get, "/api/products/barcode/x"));
-        assert!(!should_log_failure(StatusCode::UNAUTHORIZED, &get, "/api/session"));
+        assert!(!should_log_failure(StatusCode::UNAUTHORIZED, &get, "/api/auth/me"));
 
-        assert!(should_log_failure(StatusCode::UNAUTHORIZED, &post, "/api/session"));
+        assert!(should_log_failure(StatusCode::UNAUTHORIZED, &post, "/api/auth/me"));
         assert!(should_log_failure(StatusCode::UNAUTHORIZED, &get, "/api/products"));
         assert!(should_log_failure(StatusCode::UNPROCESSABLE_ENTITY, &post, "/api/transactions"));
         assert!(should_log_failure(StatusCode::BAD_GATEWAY, &post, "/api/ppob/inquiries/pln"));
