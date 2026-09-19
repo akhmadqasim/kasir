@@ -21,6 +21,7 @@ import type { ServiceInputProps } from "./types"
 export function BpjsInput({
   onAddToCart,
   resolveSellPrice,
+  confirmLabel,
   wideLayout = false,
 }: ServiceInputProps) {
   const [customerId, setCustomerId] = useState("")
@@ -109,6 +110,7 @@ export function BpjsInput({
 
   return (
     <ServiceFlowLayout
+      confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<HeartPulse />}
       placeholderText="Cek tagihan untuk melihat detail"

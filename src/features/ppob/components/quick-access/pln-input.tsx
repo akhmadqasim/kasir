@@ -20,7 +20,12 @@ import { markupItem } from "./markup-item"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
 
-export function PlnInput({ onAddToCart, resolveSellPrice, wideLayout = false }: ServiceInputProps) {
+export function PlnInput({
+  onAddToCart,
+  resolveSellPrice,
+  confirmLabel,
+  wideLayout = false,
+}: ServiceInputProps) {
   const [mode, setMode] = useState<"token" | "postpaid">("token")
   const [customerId, setCustomerId] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<number | null>(null)
@@ -111,6 +116,7 @@ export function PlnInput({ onAddToCart, resolveSellPrice, wideLayout = false }: 
   return (
     <ServiceFlowLayout
       confirmItems={confirmItems}
+      confirmLabel={confirmLabel}
       placeholderIcon={<Zap />}
       placeholderText="Cek tagihan untuk melihat detail"
       wideLayout={wideLayout}

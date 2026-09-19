@@ -32,4 +32,6 @@ export interface ServiceInputProps {
   onAddToCart: (item: AddToCartItem) => void
   resolveSellPrice: ResolveSellPrice
   wideLayout?: boolean
+  /** What the confirm button says; "Tambah ke Keranjang" unless told otherwise. */
+  confirmLabel?: string
 }

@@ -17,6 +17,7 @@ interface PulsaInputProps extends ServiceInputProps {
 export function PulsaInput({
   onAddToCart,
   resolveSellPrice,
+  confirmLabel,
   productType,
   wideLayout = false,
 }: PulsaInputProps) {
@@ -84,6 +85,7 @@ export function PulsaInput({
 
   return (
     <ServiceFlowLayout
+      confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<Smartphone />}
       placeholderText="Pilih produk untuk melihat detail"

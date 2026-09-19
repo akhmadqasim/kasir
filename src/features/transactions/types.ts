@@ -1,3 +1,12 @@
+/**
+ * Which screen rang the sale up. `sales` is the cashier's cart — goods, with
+ * PPOB lines mixed in when the cashier sells them there. `ppob` is a purchase
+ * completed on the PPOB page itself: a real sale (same receipt, same shift
+ * drawer) that the sales history, the reports and the dashboard leave out.
+ * Mirrors `CHANNEL_*` in `services/transactions/mod.rs`.
+ */
+export type TransactionChannel = "sales" | "ppob"
+
 export interface PaymentSplit {
   payment_method: string
   bank_name?: string | null
@@ -16,6 +25,7 @@ export interface TransactionListItem {
   payment_amount: number
   change_amount: number
   status: string
+  channel: TransactionChannel
   item_count: number
   notes: string | null
   created_at: string | null
@@ -85,6 +95,7 @@ export interface Transaction {
   payment_amount: number
   change_amount: number | null
   status: string
+  channel: TransactionChannel
   notes: string | null
   deleted_at: string | null
   deleted_by: number | null
@@ -111,5 +122,7 @@ export interface ListTransactionsInput {
   date_to?: string
   payment_method?: string
   status?: string
+  /** Omitted = every channel; the history page asks for `sales`. */
+  channel?: TransactionChannel
   search?: string
 }

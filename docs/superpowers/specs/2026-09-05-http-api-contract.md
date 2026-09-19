@@ -49,7 +49,7 @@ Prefix `/api`. Role `session` berarti perlu login; `admin` berarti perlu role ad
 | | `/products/import-template` | GET | session, unduhan |
 | **categories** | `/categories` | GET session, POST admin | |
 | | `/categories/:id` | PUT, DELETE | admin |
-| **transactions** | `/transactions` | GET, POST | session, POST wajib `Idempotency-Key` |
+| **transactions** | `/transactions` | GET, POST | session, POST wajib `Idempotency-Key`; POST body opsional `channel` (`sales`\|`ppob`), GET filter `channel` |
 | | `/transactions/next-receipt-number` | GET | session |
 | | `/transactions/:id` | GET, DELETE | session, DELETE adalah void dengan `reason` |
 | | `/transactions/:id/payment-method` | PATCH | session |

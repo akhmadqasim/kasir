@@ -12,10 +12,11 @@ import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
-import { useCartStore } from "@/stores/cart-store"
 import { usePpobMenu, usePpSubMenu, usePpobMarkup, usePaymentPointInquiry } from "../hooks"
 import { resolvePpobSellPrice } from "../pricing"
 import type { InquiryResult, PpSearchGroupRef, PpobMenuGroup, PpSubMenuItem } from "../types"
+import { PpobCheckout } from "./checkout/ppob-checkout"
+import { usePpobCheckout } from "./checkout/use-ppob-checkout"
 import { ConfirmCard } from "./quick-access/confirm-card"
 import { markupItem } from "./quick-access/markup-item"
 import { FlowColumns } from "./flow-columns"
@@ -84,7 +85,7 @@ export function PpFlow() {
   } = usePpSubMenu(selectedGroup?.id ?? 0)
   const { getMarkupConfig, customPrices } = usePpobMarkup()
   const paymentPointInquiry = usePaymentPointInquiry()
-  const addPpobItem = useCartStore((s) => s.addPpobItem)
+  const checkout = usePpobCheckout()
 
   // The group half of a preselect is known synchronously (search already had
   // its id and name) and is applied above, as the state initializer. The
@@ -181,7 +182,8 @@ export function PpFlow() {
 
   const handleConfirm = () => {
     if (!inquiryResult || !selectedMerchant) return
-    addPpobItem({
+    // Paid right here, in the ppob channel — never through the cashier's cart.
+    checkout.begin({
       name: itemName,
       price: sellPrice,
       service_type: "pp",
@@ -190,8 +192,6 @@ export function PpFlow() {
       ppob_product_code: selectedMerchant.plu,
       ppob_inquiry_id: inquiryResult.inquiryId,
     })
-    toast.success(`${itemName} ditambahkan ke keranjang`)
-    navigate("/cashier")
   }
 
   const confirmItems: SummaryItem[] | null =
@@ -236,7 +236,7 @@ export function PpFlow() {
               scrollIntoView
               footer={
                 <Button fullWidth size="lg" onPress={handleConfirm}>
-                  Tambah ke Keranjang
+                  {id.cashier.pay}
                 </Button>
               }
               items={confirmItems}
@@ -374,6 +374,8 @@ export function PpFlow() {
           </Card>
         )}
       </FlowColumns>
+
+      <PpobCheckout checkout={checkout} onDone={() => navigate("/ppob")} />
     </div>
   )
 }

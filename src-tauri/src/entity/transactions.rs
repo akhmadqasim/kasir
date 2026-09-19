@@ -16,6 +16,7 @@ pub struct Model {
     pub payment_amount: f64,
     pub change_amount: Option<f64>,
     pub status: String,
+    pub channel: String,
     pub notes: Option<String>,
     pub shift_id: Option<i64>,
     pub deleted_at: Option<String>,

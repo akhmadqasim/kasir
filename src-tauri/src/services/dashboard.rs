@@ -8,7 +8,7 @@ use crate::domain::dashboard::{
     DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodDaily, PaymentMethodStat,
     RecentTransaction, TopProduct,
 };
-use crate::services::reports::{refund_adjust_cte, SALE_STATUSES};
+use crate::services::reports::{refund_adjust_cte, SALE_FILTER};
 use crate::utils::AppError;
 
 /// Converts a local calendar date (taken at 00:00:00 local time) into the UTC
@@ -53,7 +53,7 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
            SELECT COALESCE(SUM(t.total_amount), 0) as revenue, COUNT(*) as cnt \
            FROM transactions t \
            WHERE t.created_at >= $2 AND t.created_at < $3 \
-           AND {SALE_STATUSES} \
+           AND {SALE_FILTER} \
          ), \
          today_refunds AS ( \
            SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
@@ -64,7 +64,7 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
            SELECT COALESCE(SUM(t.total_amount), 0) as revenue \
            FROM transactions t \
            WHERE t.created_at >= $1 AND t.created_at < $2 \
-           AND {SALE_STATUSES} \
+           AND {SALE_FILTER} \
          ), \
          product_counts AS ( \
            SELECT \
@@ -78,7 +78,7 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
            JOIN transactions t ON ti.transaction_id = t.id \
            LEFT JOIN products p ON p.id = ti.product_id \
            WHERE t.created_at >= $2 AND t.created_at < $3 \
-           AND {SALE_STATUSES} \
+           AND {SALE_FILTER} \
          ), \
          {refund_adjust}, \
          today_adjust AS ( \
@@ -183,7 +183,7 @@ pub async fn daily_revenue(
                   COUNT(*) as transactions \
            FROM transactions t \
            WHERE t.created_at >= $1 AND t.created_at < $2 \
-           AND {SALE_STATUSES} \
+           AND {SALE_FILTER} \
            GROUP BY d \
          ), \
          {refund_adjust}, \
@@ -249,11 +249,11 @@ pub async fn payment_method_stats(
            SELECT tp.payment_method as payment_method, tp.amount as amount, tp.transaction_id as transaction_id \
            FROM transaction_payments tp \
            JOIN transactions t ON t.id = tp.transaction_id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
            UNION ALL \
            SELECT t.payment_method as payment_method, t.total_amount as amount, t.id as transaction_id \
            FROM transactions t \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
              AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
          ), \
          sales AS ( \
@@ -330,12 +330,12 @@ pub async fn payment_method_daily(
                   date(t.created_at, 'localtime') as d \
            FROM transaction_payments tp \
            JOIN transactions t ON t.id = tp.transaction_id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
            UNION ALL \
            SELECT t.payment_method as payment_method, t.total_amount as amount, \
                   date(t.created_at, 'localtime') as d \
            FROM transactions t \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_STATUSES} \
+           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
              AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
          ), \
          sales AS ( \
@@ -430,7 +430,7 @@ pub async fn top_products(
            FROM transaction_items ti \
            JOIN transactions t ON ti.transaction_id = t.id \
            WHERE t.created_at >= $1 AND t.created_at < $2 \
-             AND {SALE_STATUSES} \
+             AND {SALE_FILTER} \
              AND ti.product_id IS NOT NULL \
            GROUP BY ti.product_id \
          ), \
@@ -525,6 +525,7 @@ pub async fn recent_transactions(
              LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
              WHERE t.created_at >= $1 AND t.created_at < $2 \
              AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
+             AND t.channel = 'sales' \
              GROUP BY t.id \
              ORDER BY t.created_at DESC \
              LIMIT 10",
@@ -707,6 +708,31 @@ mod tests {
         let mut statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
         assert_eq!(statuses, vec!["completed", "partial_refund"]);
+    }
+
+    /// The dashboard reports the shop's goods trade. A bill paid on the PPOB
+    /// page belongs to the drawer, not to today's takings card or the list
+    /// under it.
+    #[tokio::test]
+    async fn a_ppob_page_sale_is_left_out_of_today_and_the_recent_list() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(Local::now().date_naive());
+        insert_transaction(&conn, 1, 50_000.0, "completed", &created_at).await;
+        crate::test_support::insert_transaction_in_channel(
+            &conn,
+            1,
+            40_000.0,
+            "completed",
+            &created_at,
+            "ppob",
+        )
+        .await;
+
+        let card = summary(&conn).await.expect("summary");
+        assert_eq!(card.today_revenue, 50_000.0);
+
+        let rows = recent_transactions(&conn).await.expect("query");
+        assert_eq!(rows.len(), 1);
     }
 
     /// Two sales on the same day, paid two different ways, land in two separate

@@ -1433,6 +1433,54 @@ async fn a_failed_checkout_frees_its_key_for_the_corrected_retry() {
     );
 }
 
+/// The PPOB page rings its own sales up through the same route, tagged so the
+/// goods reports can leave them out. The body field travels through serde; the
+/// route itself needs no say in it.
+#[tokio::test]
+async fn a_checkout_may_name_the_ppob_channel() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let token = login_token(&db, kasir.id).await;
+
+    let response = router(&state(db.clone()))
+        .oneshot(
+            same_origin(Method::POST, "/api/transactions")
+                .header(header::COOKIE, cookie(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("idempotency-key", "0198f3c1-6f2c-7a1b-9d40-2f9e0c1b7a55")
+                .body(json_body(json!({
+                    "items": [{
+                        "product_id": null,
+                        "quantity": 1,
+                        "product_name": "Pulsa Telkomsel 10K",
+                        "product_price": 12_000.0,
+                        "buy_price": 10_000.0,
+                        "service_type": "pulsa",
+                        "service_ref": "08123456789",
+                        "ppob_product_id": 101,
+                        "ppob_product_code": "TS10",
+                    }],
+                    "payment_method": "cash",
+                    "payment_amount": 12_000.0,
+                    "ppob_pin": "123456",
+                    "channel": "ppob",
+                })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let stored = crate::entity::transactions::Entity::find()
+        .all(&db)
+        .await
+        .expect("query");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].channel, "ppob");
+}
+
 /// The sale is recorded against the session, not against anything the payload
 /// says. This is the `checkout_transaction` hole the phase exists to close.
 #[tokio::test]

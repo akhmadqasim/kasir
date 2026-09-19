@@ -1,14 +1,9 @@
 import { Navigate, Routes, Route } from "react-router-dom"
 
 import { AdminRouteGuard } from "@/app/app-guard"
-import { PulsaFlow } from "./pulsa-flow"
-import { DataFlow } from "./data-flow"
-import { PlnFlow } from "./pln-flow"
-import { PdamFlow } from "./pdam-flow"
-import { BpjsFlow } from "./bpjs-flow"
+import { PpobServicePage } from "./ppob-service-page"
 import { PpFlow } from "./pp-flow"
 import { TransferFlow } from "./transfer-flow"
-import { EmoneyFlow } from "./emoney-flow"
 import { VoucherFlow } from "./voucher-flow"
 import { PpobHome } from "./ppob-home"
 import { PpobMutasi } from "./mutasi"
@@ -19,14 +14,14 @@ export function PpobPage() {
   return (
     <Routes>
       <Route index element={<PpobHome />} />
-      <Route path="pulsa" element={<PulsaFlow />} />
-      <Route path="data" element={<DataFlow />} />
-      <Route path="pln" element={<PlnFlow />} />
-      <Route path="pdam" element={<PdamFlow />} />
-      <Route path="bpjs" element={<BpjsFlow />} />
+      <Route path="pulsa" element={<PpobServicePage service="pulsa" />} />
+      <Route path="data" element={<PpobServicePage service="data" />} />
+      <Route path="pln" element={<PpobServicePage service="pln" />} />
+      <Route path="pdam" element={<PpobServicePage service="pdam" />} />
+      <Route path="bpjs" element={<PpobServicePage service="bpjs" />} />
       <Route path="pp" element={<PpFlow />} />
       <Route path="transfer" element={<TransferFlow />} />
-      <Route path="emoney" element={<EmoneyFlow />} />
+      <Route path="emoney" element={<PpobServicePage service="emoney" />} />
       <Route path="voucher" element={<VoucherFlow />} />
       <Route path="mutasi" element={<PpobMutasi />} />
       <Route path="notifications" element={<PpobNotifications />} />

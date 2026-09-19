@@ -14,9 +14,9 @@ use tokio::sync::Mutex;
 #[cfg(test)]
 use super::load_payment_breakdown;
 use super::{
-    generate_receipt_number, load_allow_negative_stock, now_timestamp, validate_cart_composition,
-    MIXED_PAYMENT_METHOD, PPOB_STATUS_FAILED, PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING,
-    PPOB_STATUS_SUCCESS, STATUS_COMPLETED, VALID_PAYMENT_METHODS,
+    generate_receipt_number, load_allow_negative_stock, now_timestamp, resolve_channel,
+    validate_cart_composition, MIXED_PAYMENT_METHOD, PPOB_STATUS_FAILED, PPOB_STATUS_PENDING,
+    PPOB_STATUS_PROCESSING, PPOB_STATUS_SUCCESS, STATUS_COMPLETED, VALID_PAYMENT_METHODS,
 };
 use crate::domain::ppob::PaymentResult;
 use crate::domain::transactions::{
@@ -404,12 +404,16 @@ fn prorated_line_nets(resolved_items: &[ResolvedItem], transaction_discount: f64
 }
 
 /// Write the sale and its lines, and move the stock.
+// Eight arguments, one over clippy's threshold: they are the whole of what a
+// sale is, and folding them into a struct would only move the same list.
+#[allow(clippy::too_many_arguments)]
 async fn persist_transaction<C: ConnectionTrait>(
     db: &C,
     input: &CheckoutTransactionInput,
     actor: &Actor,
     resolved_items: &[ResolvedItem],
     status: &str,
+    channel: &str,
     deduct_physical_stock: bool,
     allow_negative_stock: bool,
 ) -> Result<TransactionResult, AppError> {
@@ -436,6 +440,7 @@ async fn persist_transaction<C: ConnectionTrait>(
         payment_amount: Set(payment_amount),
         change_amount: Set(Some(change_amount)),
         status: Set(status.to_string()),
+        channel: Set(channel.to_string()),
         notes: Set(input.notes.clone()),
         shift_id: Set(input.shift_id),
         deleted_at: Set(None),
@@ -733,6 +738,9 @@ where
     validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
+    // Resolved before anything is written: a cart the PPOB page may not sell
+    // must not take stock off the shelf on its way to being refused.
+    let channel = resolve_channel(input.channel.as_deref(), &input.items)?;
     // Checked before anything is written: a cart with a PPOB line and no PIN
     // (or a malformed one) must not create a transaction at all.
     let ppob_pin = validate_pin(input.ppob_pin.clone(), has_ppob)?;
@@ -747,6 +755,7 @@ where
         actor,
         &resolved_items,
         STATUS_COMPLETED,
+        channel,
         true,
         allow_negative_stock,
     )
@@ -798,6 +807,9 @@ pub async fn checkout(
     validate_payment_method(&input.payment_method)?;
 
     let has_ppob = validate_cart_composition(&input.items)?;
+    // Resolved before anything is written: a cart the PPOB page may not sell
+    // must not take stock off the shelf on its way to being refused.
+    let channel = resolve_channel(input.channel.as_deref(), &input.items)?;
     // Checked before anything is written: a cart with a PPOB line and no PIN
     // (or a malformed one) must not create a transaction at all.
     let ppob_pin = validate_pin(input.ppob_pin.clone(), has_ppob)?;
@@ -812,6 +824,7 @@ pub async fn checkout(
         actor,
         &resolved_items,
         STATUS_COMPLETED,
+        channel,
         true,
         allow_negative_stock,
     )
@@ -971,6 +984,8 @@ mod tests {
     use crate::domain::transactions::PaymentSplitInput;
     use crate::entity::products;
     use crate::services::transactions::fixtures::{insert_product, setup_test_db};
+    use crate::services::transactions::{CHANNEL_PPOB, CHANNEL_SALES};
+    use sea_orm::PaginatorTrait;
 
     /// The seeded admin (id 1).
     fn actor() -> Actor {
@@ -1008,6 +1023,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: None,
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1055,6 +1071,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("123456".to_string()),
+                channel: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1130,6 +1147,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("654321".to_string()),
+                channel: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pp");
@@ -1218,6 +1236,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("111111".to_string()),
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1282,6 +1301,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("222222".to_string()),
+                channel: None,
             },
             |request| async move {
                 assert_eq!(request.service_type, "pulsa");
@@ -1377,6 +1397,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("333333".to_string()),
+                channel: None,
             },
             |request| async move {
                 // One PIN on the cart, and both lines' fulfilment requests
@@ -1504,6 +1525,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("123456".to_string()),
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("Provider timeout".into())) },
         )
@@ -1640,6 +1662,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: None,
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1684,6 +1707,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: Some("12".to_string()),
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1743,6 +1767,7 @@ mod tests {
             transaction_discount: None,
             shift_id: None,
             ppob_pin: None,
+            channel: None,
         }
     }
 
@@ -1849,6 +1874,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: None,
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )
@@ -1873,6 +1899,223 @@ mod tests {
         assert_eq!(
             soap_line.net_subtotal + rice_line.net_subtotal,
             result.transaction.total_amount
+        );
+    }
+
+    // --- Channel: which screen rang the sale up ---
+
+    #[tokio::test]
+    async fn checkout_defaults_to_the_sales_channel() {
+        let conn = setup_test_db().await;
+        let product = insert_product(&conn, "Beras", 15_000.0, 10).await;
+
+        let result = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: Some(product.id),
+                    quantity: 1,
+                    product_name: None,
+                    product_price: None,
+                    buy_price: None,
+                    service_type: None,
+                    service_ref: None,
+                    ppob_product_id: None,
+                    ppob_product_code: None,
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 15_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: None,
+                channel: None,
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await
+        .expect("checkout success");
+
+        assert_eq!(result.transaction.channel, CHANNEL_SALES);
+    }
+
+    /// A pulsa line bought on the PPOB page is a real sale — fulfilled like any
+    /// other — it is only tagged so the goods reports can leave it out.
+    #[tokio::test]
+    async fn a_ppob_page_checkout_is_stored_in_the_ppob_channel() {
+        let conn = setup_test_db().await;
+
+        let result = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: None,
+                    quantity: 1,
+                    product_name: Some("Pulsa Telkomsel 10K".to_string()),
+                    product_price: Some(12_000.0),
+                    buy_price: Some(10_000.0),
+                    service_type: Some("pulsa".to_string()),
+                    service_ref: Some("08123456789".to_string()),
+                    ppob_product_id: Some(101),
+                    ppob_product_code: Some("TS10".to_string()),
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 12_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: Some("123456".to_string()),
+                channel: Some("ppob".to_string()),
+            },
+            |request| async move {
+                Ok(PaymentResult {
+                    success: true,
+                    receipt_data: serde_json::json!({ "receipt_text": "STRUK" }),
+                    service_type: "pulsa".to_string(),
+                    customer_id: request.customer_id.unwrap_or_default(),
+                    amount: 10_000.0,
+                    admin_fee: 0.0,
+                    total: 10_000.0,
+                    product_name: Some("Pulsa Telkomsel 10K".to_string()),
+                    customer_name: None,
+                    serial_number: Some("SN-123".to_string()),
+                })
+            },
+        )
+        .await
+        .expect("ppob page checkout success");
+
+        assert_eq!(result.transaction.channel, CHANNEL_PPOB);
+        assert_eq!(result.transaction.status, STATUS_COMPLETED);
+        assert_eq!(
+            result.items[0].ppob_status.as_deref(),
+            Some(PPOB_STATUS_SUCCESS),
+            "a PPOB-page sale is still fulfilled"
+        );
+    }
+
+    /// The PPOB page cannot sell rice. Refusing before anything is written keeps
+    /// a mistyped cart from taking stock off the shelf.
+    #[tokio::test]
+    async fn the_ppob_channel_refuses_a_cart_with_a_product_line() {
+        let conn = setup_test_db().await;
+        let product = insert_product(&conn, "Beras", 15_000.0, 10).await;
+
+        let error = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: Some(product.id),
+                    quantity: 1,
+                    product_name: None,
+                    product_price: None,
+                    buy_price: None,
+                    service_type: None,
+                    service_ref: None,
+                    ppob_product_id: None,
+                    ppob_product_code: None,
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 15_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: None,
+                channel: Some("ppob".to_string()),
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await
+        .expect_err("a product line must not pass as a PPOB-page sale");
+
+        match error {
+            AppError::Validation(message) => assert_eq!(
+                message,
+                "Transaksi di halaman PPOB hanya boleh berisi item PPOB"
+            ),
+            other => panic!("expected a validation error, got {other:?}"),
+        }
+
+        assert_eq!(
+            transactions::Entity::find()
+                .count(&conn)
+                .await
+                .expect("count"),
+            0,
+            "nothing may be written when the channel is refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_channel_is_rejected() {
+        let conn = setup_test_db().await;
+        let product = insert_product(&conn, "Beras", 15_000.0, 10).await;
+
+        let error = checkout_with_executor(
+            &conn,
+            &actor(),
+            CheckoutTransactionInput {
+                items: vec![TransactionItemInput {
+                    product_id: Some(product.id),
+                    quantity: 1,
+                    product_name: None,
+                    product_price: None,
+                    buy_price: None,
+                    service_type: None,
+                    service_ref: None,
+                    ppob_product_id: None,
+                    ppob_product_code: None,
+                    ppob_inquiry_id: None,
+                    ppob_payment_code: None,
+                    ppob_flag_id: None,
+                    item_discount: None,
+                }],
+                payment_method: "cash".to_string(),
+                payment_amount: 15_000.0,
+                notes: None,
+                transaction_discount: None,
+                shift_id: None,
+                payment_breakdown: None,
+                ppob_pin: None,
+                channel: Some("warung".to_string()),
+            },
+            |_request| async { Err(AppError::Internal("should not execute".into())) },
+        )
+        .await
+        .expect_err("an unknown channel must not be stored");
+
+        match error {
+            AppError::Validation(message) => {
+                assert_eq!(message, "Channel transaksi tidak valid")
+            }
+            other => panic!("expected a validation error, got {other:?}"),
+        }
+
+        assert_eq!(
+            transactions::Entity::find()
+                .count(&conn)
+                .await
+                .expect("count"),
+            0,
+            "nothing may be written when the channel is refused"
         );
     }
 }

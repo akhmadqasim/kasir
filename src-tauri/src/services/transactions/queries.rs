@@ -74,6 +74,12 @@ pub async fn list(
         }
     }
 
+    if let Some(ref channel) = input.channel {
+        if !channel.is_empty() {
+            query = query.filter(transactions::Column::Channel.eq(channel.as_str()));
+        }
+    }
+
     if let Some(ref search) = input.search {
         if !search.is_empty() {
             query = query.filter(transactions::Column::ReceiptNumber.contains(search));
@@ -235,6 +241,73 @@ pub async fn detail(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sales history asks for one channel; the admin views ask for none and
+    /// keep seeing every sale.
+    #[tokio::test]
+    async fn list_filters_by_channel() {
+        let conn = crate::services::transactions::fixtures::setup_test_db().await;
+        let created_at = crate::services::transactions::now_timestamp();
+        let cart = crate::test_support::insert_transaction_in_channel(
+            &conn,
+            1,
+            50_000.0,
+            "completed",
+            &created_at,
+            "sales",
+        )
+        .await;
+        let bill = crate::test_support::insert_transaction_in_channel(
+            &conn,
+            1,
+            40_000.0,
+            "completed",
+            &created_at,
+            "ppob",
+        )
+        .await;
+
+        let only_ppob = list(
+            &conn,
+            ListTransactionsInput {
+                page: None,
+                per_page: None,
+                date_from: None,
+                date_to: None,
+                payment_method: None,
+                status: None,
+                search: None,
+                channel: Some("ppob".to_string()),
+            },
+        )
+        .await
+        .expect("list");
+
+        assert_eq!(only_ppob.total, 1);
+        assert_eq!(only_ppob.data.len(), 1);
+        assert_eq!(only_ppob.data[0].id, bill.id);
+
+        let everything = list(
+            &conn,
+            ListTransactionsInput {
+                page: None,
+                per_page: None,
+                date_from: None,
+                date_to: None,
+                payment_method: None,
+                status: None,
+                search: None,
+                channel: None,
+            },
+        )
+        .await
+        .expect("list");
+
+        assert_eq!(everything.total, 2);
+        let mut ids: Vec<i64> = everything.data.iter().map(|row| row.id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![cart.id, bill.id]);
+    }
 
     #[test]
     fn clamp_per_page_bounds_the_requested_page_size() {

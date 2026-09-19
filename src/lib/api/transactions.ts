@@ -15,6 +15,7 @@ function listQuery(params: ListTransactionsInput): QueryParams {
     date_to: params.date_to,
     payment_method: params.payment_method,
     status: params.status,
+    channel: params.channel,
     search: params.search,
   }
 }

@@ -13,7 +13,12 @@ import {
   isScannerBurstEntry,
   trackAmountEntry,
 } from "../../payment-behavior"
-import type { PaymentSplitInput, TransactionResult } from "../../types"
+import type {
+  CartItem,
+  PaymentSplitInput,
+  TransactionChannel,
+  TransactionResult,
+} from "../../types"
 
 /**
  * `shortcut` is the letter that toggles the method — a bare letter, because
@@ -33,6 +38,25 @@ export const PAYMENT_METHODS = [
 ] as const
 
 export const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
+
+/**
+ * A sale handed to the dialog by prop instead of read from the cart.
+ *
+ * The PPOB page rings its one confirmed line up through this same dialog. The
+ * cashier's cart may hold someone else's half-finished sale at that moment,
+ * so the line, the channel it is booked in and the `Idempotency-Key` for it
+ * all arrive here — and the cart is never read, charged or cleared.
+ */
+export interface DirectSale {
+  items: CartItem[]
+  channel: TransactionChannel
+  /** Minted when the sale started; reused by every retry of it. */
+  idempotencyKey: string
+}
+
+function directSaleTotal(items: CartItem[]): number {
+  return items.reduce((sum, item) => sum + item.product_price * item.quantity, 0)
+}
 
 /**
  * A field the cashier types words into. A bare-letter shortcut must not fire
@@ -77,6 +101,8 @@ export interface UsePaymentFormArgs {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: (result: TransactionResult) => void
+  /** Charge this instead of the cart. See [`DirectSale`]. */
+  sale?: DirectSale
 }
 
 /**
@@ -84,7 +110,7 @@ export interface UsePaymentFormArgs {
  * payments, the barcode-scanner guard on every amount field, and the
  * checkout call itself. `payment-dialog.tsx` only lays these out.
  */
-export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentFormArgs) {
+export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePaymentFormArgs) {
   const queryClient = useQueryClient()
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(createInitialPaymentSplits)
   const [requestedPaymentMethod, setActivePaymentMethod] = useState("cash")
@@ -99,17 +125,20 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
   const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
   const user = useAuthStore((s) => s.user)
   const activeShift = useShiftStore((s) => s.activeShift)
-  const items = useCartStore((s) => s.items)
+  const cartItems = useCartStore((s) => s.items)
   const getTotal = useCartStore((s) => s.getTotal)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
   const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
   const getItemDiscountAmount = useCartStore((s) => s.getItemDiscountAmount)
   const getTransactionDiscountAmount = useCartStore((s) => s.getTransactionDiscountAmount)
-  const checkoutTransaction = useCheckoutTransaction()
+  const checkoutTransaction = useCheckoutTransaction(sale?.idempotencyKey)
 
-  const total = getTotal()
-  const subtotal = getSubtotal()
-  const totalDiscount = getTotalDiscount()
+  // A direct sale is charged as handed in: its line is already priced by the
+  // PPOB markup, and the cart's discounts are not its discounts.
+  const items = sale?.items ?? cartItems
+  const total = sale ? directSaleTotal(sale.items) : getTotal()
+  const subtotal = sale ? total : getSubtotal()
+  const totalDiscount = sale ? 0 : getTotalDiscount()
   const selectedPaymentSplits = useMemo(
     () => paymentSplits.filter((split) => split.selected),
     [paymentSplits],
@@ -401,7 +430,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
           product_name: item.is_ppob ? item.product_name : undefined,
           product_price: item.is_ppob ? item.product_price : undefined,
           buy_price: item.buy_price,
-          item_discount: getItemDiscountAmount(item.cart_id) || undefined,
+          item_discount: sale ? undefined : getItemDiscountAmount(item.cart_id) || undefined,
           service_type: item.service_type,
           service_ref: item.service_ref,
           ppob_product_id: item.ppob_product_id,
@@ -417,8 +446,11 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
         // breakdown has room for.
         payment_breakdown:
           selectedMethodCount > 1 || primaryPaymentMethod !== "cash" ? normalizedSplits : undefined,
-        transaction_discount: getTransactionDiscountAmount() || undefined,
+        transaction_discount: sale ? undefined : getTransactionDiscountAmount() || undefined,
         shift_id: activeShift?.id,
+        // The cart is booked as `sales` (the server's default); a direct sale
+        // names its own channel.
+        channel: sale?.channel,
         notes: notes.trim() || undefined,
         // Only sent when the cart actually needs it — a cart with no PPOB
         // line ignores this field on the server too, but there is no reason
@@ -436,7 +468,10 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
           // tiles while the success dialog animates in is the jank the cashier
           // sees. `CashierPage` refetches it when that dialog closes.
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.products.all, refetchType: "none" })
+          // A direct sale moves no stock.
+          if (!sale) {
+            queryClient.invalidateQueries({ queryKey: queryKeys.products.all, refetchType: "none" })
+          }
           queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
           queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
           onSuccess(result)
@@ -463,6 +498,7 @@ export function usePaymentForm({ open, onOpenChange, onSuccess }: UsePaymentForm
     hasPpobItems,
     ppobPin,
     activeShift,
+    sale,
     checkoutTransaction,
     queryClient,
     onSuccess,

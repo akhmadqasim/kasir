@@ -9,7 +9,12 @@ import { formatRupiah } from "../../utils"
 import type { TransactionResult } from "../../types"
 import { CashFields } from "./cash-fields"
 import { BankField } from "./bank-field"
-import { PAYMENT_METHODS, PPOB_PIN_FIELD_NAME, usePaymentForm } from "./use-payment-form"
+import {
+  PAYMENT_METHODS,
+  PPOB_PIN_FIELD_NAME,
+  usePaymentForm,
+  type DirectSale,
+} from "./use-payment-form"
 
 /** Q W di baris atas, A S di tengah, Z di bawah — urutan tuts, bukan urutan metode. */
 const METHODS_IN_KEYBOARD_ORDER = ["qris", "ewallet", "cash", "transfer", "debit"].map(
@@ -20,6 +25,8 @@ interface PaymentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: (result: TransactionResult) => void
+  /** Charge this instead of the cart — the PPOB page's one line. */
+  sale?: DirectSale
 }
 
 /**
@@ -28,8 +35,8 @@ interface PaymentDialogProps {
  * an on-screen numpad. State and business rules live in `usePaymentForm`;
  * this component only lays them out.
  */
-export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogProps) {
-  const form = usePaymentForm({ open, onOpenChange, onSuccess })
+export function PaymentDialog({ open, onOpenChange, onSuccess, sale }: PaymentDialogProps) {
+  const form = usePaymentForm({ open, onOpenChange, onSuccess, sale })
 
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={form.handleOpenChange}>

@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Eye, Printer, RotateCcw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
-import { Button, Skeleton, Table, Tooltip } from "@heroui/react"
+import { Button, Skeleton, Table, ToggleButton, ToggleButtonGroup, Tooltip } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { NoData } from "@/components/no-data"
@@ -26,6 +26,19 @@ import type { ListTransactionsInput, PaginatedTransactions, TransactionListItem 
 
 /** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
 const ALL = "all"
+
+/**
+ * Sumber transaksi yang ditampilkan. Bawaannya `sales`: tagihan yang dibayar
+ * dari halaman PPOB memang transaksi juga, tapi bukan penjualan barang, jadi
+ * ia tidak ikut riwayat ini kecuali kasir sengaja beralih.
+ */
+type ChannelFilter = "sales" | "ppob" | typeof ALL
+
+const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
+  { key: "sales", label: id.transactions.channelSales },
+  { key: "ppob", label: id.transactions.channelPpob },
+  { key: ALL, label: id.transactions.channelAll },
+]
 
 const PAYMENT_METHOD_FILTERS = [
   { key: ALL, label: id.transactions.allMethods },
@@ -111,6 +124,7 @@ export function TransactionsPage() {
   const debouncedSearch = useDebounce(search, 300)
   const [paymentMethod, setPaymentMethod] = useState("")
   const [status, setStatus] = useState("")
+  const [channel, setChannel] = useState<ChannelFilter>("sales")
   const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
   const [detailTxn, setDetailTxn] = useState<TransactionListItem | null>(null)
 
@@ -121,10 +135,11 @@ export function TransactionsPage() {
       search: debouncedSearch || undefined,
       payment_method: paymentMethod || undefined,
       status: status || undefined,
+      channel: channel === ALL ? undefined : channel,
       date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
       date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
     }),
-    [page, debouncedSearch, paymentMethod, status, dateRange],
+    [page, debouncedSearch, paymentMethod, status, channel, dateRange],
   )
 
   const { data, isLoading, error } = useApiQuery<PaginatedTransactions>(
@@ -148,12 +163,14 @@ export function TransactionsPage() {
     setSearch("")
     setPaymentMethod("")
     setStatus("")
+    setChannel("sales")
     setDateRange(getTodayRange())
     setPage(1)
   }, [])
 
   const today = toLocalDateString(new Date())
   const hasFilters =
+    channel !== "sales" ||
     search ||
     paymentMethod ||
     status ||
@@ -174,6 +191,27 @@ export function TransactionsPage() {
     <div className="flex h-full flex-col gap-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Radiogroup, bukan Select: tiga pilihan yang selalu terlihat, dan
+            kasir langsung tahu sedang melihat penjualan atau tagihan PPOB. */}
+        <ToggleButtonGroup
+          aria-label={id.transactions.channelFilter}
+          disallowEmptySelection
+          selectedKeys={[channel]}
+          selectionMode="single"
+          onSelectionChange={(keys) => {
+            const [next] = [...keys]
+            if (!next) return
+            setChannel(String(next) as ChannelFilter)
+            setPage(1)
+          }}
+        >
+          {CHANNEL_FILTERS.map((option) => (
+            <ToggleButton key={option.key} id={option.key}>
+              {option.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+
         <SearchInput
           aria-label={id.transactions.searchPlaceholder}
           placeholder={id.transactions.searchPlaceholder}

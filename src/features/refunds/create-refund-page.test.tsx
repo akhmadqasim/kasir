@@ -66,6 +66,7 @@ const DETAIL: TransactionDetail = {
     payment_amount: 30000,
     change_amount: 0,
     status: "completed",
+    channel: "sales",
     notes: null,
     deleted_at: null,
     deleted_by: null,

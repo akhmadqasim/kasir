@@ -15,6 +15,7 @@ import type { ServiceInputProps } from "./types"
 export function EmoneyInput({
   onAddToCart,
   resolveSellPrice,
+  confirmLabel,
   wideLayout = false,
 }: ServiceInputProps) {
   const [phoneNumber, setPhoneNumber] = useState("")
@@ -72,6 +73,7 @@ export function EmoneyInput({
 
   return (
     <ServiceFlowLayout
+      confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<Wallet />}
       placeholderText="Cek nominal untuk melihat detail"

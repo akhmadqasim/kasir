@@ -216,6 +216,7 @@ mod tests {
                 shift_id: None,
                 payment_breakdown: None,
                 ppob_pin: None,
+                channel: None,
             },
             |_request| async { Err(AppError::Internal("should not execute".into())) },
         )

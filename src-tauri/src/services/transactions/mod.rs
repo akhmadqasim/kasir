@@ -25,6 +25,12 @@ use crate::entity::{transaction_items, transaction_payments, transactions};
 use crate::utils::AppError;
 
 const VALID_PAYMENT_METHODS: &[&str] = &["cash", "qris", "debit", "ewallet", "transfer"];
+
+/// The screen a sale was rung up on. `sales` is the cashier's cart; `ppob` is a
+/// purchase completed on the PPOB page. See `migrations/025_transaction_channel.sql`.
+pub(crate) const CHANNEL_SALES: &str = "sales";
+pub(crate) const CHANNEL_PPOB: &str = "ppob";
+
 const STATUS_COMPLETED: &str = "completed";
 const MIXED_PAYMENT_METHOD: &str = "mixed";
 
@@ -84,6 +90,31 @@ fn validate_cart_composition(items: &[TransactionItemInput]) -> Result<bool, App
     let has_ppob = items.iter().any(|item| item.service_type.is_some());
 
     Ok(has_ppob)
+}
+
+/// Which channel the cart may be stored under.
+///
+/// An absent channel is the cashier's cart, so a client that never heard of the
+/// field keeps working. The PPOB page may only ring up PPOB lines: it has no
+/// stock to move and its sales are deliberately excluded from the goods
+/// figures, so a product line arriving from there is a bug, not a sale.
+fn resolve_channel(
+    channel: Option<&str>,
+    items: &[TransactionItemInput],
+) -> Result<&'static str, AppError> {
+    match channel {
+        None | Some(CHANNEL_SALES) => Ok(CHANNEL_SALES),
+        Some(CHANNEL_PPOB) => {
+            if items.iter().all(|item| item.service_type.is_some()) {
+                Ok(CHANNEL_PPOB)
+            } else {
+                Err(AppError::Validation(
+                    "Transaksi di halaman PPOB hanya boleh berisi item PPOB".into(),
+                ))
+            }
+        }
+        Some(_) => Err(AppError::Validation("Channel transaksi tidak valid".into())),
+    }
 }
 async fn load_payment_breakdown<C: ConnectionTrait>(
     db: &C,

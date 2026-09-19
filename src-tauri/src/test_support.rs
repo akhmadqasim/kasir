@@ -134,12 +134,25 @@ pub async fn insert_product(
     .expect("product insert")
 }
 
+/// A sale rung up on the cashier's cart — the channel almost every test means.
 pub async fn insert_transaction(
     conn: &DatabaseConnection,
     user_id: i64,
     total_amount: f64,
     status: &str,
     created_at: &str,
+) -> transactions::Model {
+    insert_transaction_in_channel(conn, user_id, total_amount, status, created_at, "sales").await
+}
+
+/// Same row, with the screen that rang it up spelled out: `sales` or `ppob`.
+pub async fn insert_transaction_in_channel(
+    conn: &DatabaseConnection,
+    user_id: i64,
+    total_amount: f64,
+    status: &str,
+    created_at: &str,
+    channel: &str,
 ) -> transactions::Model {
     transactions::ActiveModel {
         id: NotSet,
@@ -152,6 +165,7 @@ pub async fn insert_transaction(
         payment_amount: Set(total_amount),
         change_amount: Set(Some(0.0)),
         status: Set(status.to_string()),
+        channel: Set(channel.to_string()),
         notes: Set(None),
         shift_id: Set(None),
         deleted_at: Set(None),

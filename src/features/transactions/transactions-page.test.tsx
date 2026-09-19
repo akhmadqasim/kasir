@@ -23,6 +23,7 @@ const PAGE: PaginatedTransactions = {
       payment_amount: 25000,
       change_amount: 0,
       status: "completed",
+      channel: "sales",
       item_count: 2,
       notes: null,
       created_at: "2026-09-05 03:00:00",
@@ -46,6 +47,7 @@ const PAGE: PaginatedTransactions = {
       payment_amount: 12000,
       change_amount: 0,
       status: "deleted",
+      channel: "sales",
       item_count: 1,
       notes: null,
       created_at: "2026-09-05 04:00:00",
@@ -83,6 +85,7 @@ const DETAIL: TransactionDetail = {
     payment_amount: 25000,
     change_amount: 0,
     status: "completed",
+    channel: "sales",
     notes: null,
     deleted_at: null,
     deleted_by: null,
@@ -176,5 +179,28 @@ describe("halaman riwayat transaksi", () => {
 
     await screen.findByText("TRX-20260905-0001")
     await vi.waitFor(() => expect(requestedPages()).toContain(2))
+  })
+
+  /**
+   * A bill paid on the PPOB page is a transaction too, but not a sale of goods:
+   * the history asks for `channel=sales` unless the cashier switches the view.
+   */
+  it("hanya meminta transaksi penjualan, dan bisa beralih ke PPOB", async () => {
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0001")
+    expect(api.lastCall("GET /transactions")?.query.get("channel")).toBe("sales")
+
+    fireEvent.click(screen.getByRole("radio", { name: "PPOB" }))
+
+    await vi.waitFor(() =>
+      expect(api.lastCall("GET /transactions")?.query.get("channel")).toBe("ppob"),
+    )
+
+    fireEvent.click(screen.getByRole("radio", { name: "Semua" }))
+
+    await vi.waitFor(() =>
+      expect(api.lastCall("GET /transactions")?.query.has("channel")).toBe(false),
+    )
   })
 })

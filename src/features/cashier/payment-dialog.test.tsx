@@ -53,6 +53,7 @@ const CHECKOUT_RESULT: TransactionResult = {
     payment_amount: 50000,
     change_amount: 44000,
     status: "completed",
+    channel: "sales",
     notes: null,
     deleted_at: null,
     deleted_by: null,
@@ -505,5 +506,64 @@ describe("PIN Mitra untuk transaksi PPOB", () => {
     // still mounted — and now empty, because clearing does not wait for the
     // parent to actually unmount the dialog.
     expect(screen.getByLabelText("PIN Mitra")).toHaveValue("")
+  })
+})
+
+/**
+ * The PPOB page rings its purchase up through this same dialog, but the line
+ * comes in by prop — the cashier's cart may hold a half-finished sale of its
+ * own at that moment, and nothing here may touch it.
+ */
+describe("penjualan langsung dari halaman PPOB", () => {
+  function renderDirectSale(onSuccess: (result: TransactionResult) => void = () => {}) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    return render(
+      <QueryClientProvider client={client}>
+        <PaymentDialog
+          open
+          onOpenChange={() => {}}
+          onSuccess={onSuccess}
+          sale={{ items: [PPOB_LINE], channel: "ppob", idempotencyKey: "ppob-key-1" }}
+        />
+      </QueryClientProvider>,
+    )
+  }
+
+  it("charges the sale it was handed, not the cart, in the ppob channel with its own key", async () => {
+    // A goods line is sitting in the cart; it must be neither charged nor cleared,
+    // and no cart key may be minted on its behalf.
+    useCartStore.setState({ items: [LINE], checkoutKey: null })
+    renderDirectSale()
+
+    const field = await screen.findByLabelText("Nominal Tunai")
+    expect(screen.getByText("Rp 12.000")).toBeInTheDocument()
+    expect(screen.queryByText("Rp 6.000")).not.toBeInTheDocument()
+
+    fireEvent.change(field, { target: { value: "20000" } })
+    const pinField = await screen.findByLabelText("PIN Mitra")
+    fireEvent.change(pinField, { target: { value: "123456" } })
+    fireEvent.keyDown(pinField, { key: "Enter" })
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    const checkout = api.lastCall("POST /transactions")
+    expect(checkout?.headers.get("Idempotency-Key")).toBe("ppob-key-1")
+    expect(checkout?.body).toMatchObject({
+      channel: "ppob",
+      payment_amount: 20000,
+      ppob_pin: "123456",
+      items: [
+        {
+          product_name: "Pulsa Telkomsel 10K",
+          product_price: 12000,
+          service_type: "pulsa",
+          service_ref: "08123456789",
+          ppob_product_code: "TS10",
+        },
+      ],
+    })
+    expect(useCartStore.getState().items).toEqual([LINE])
+    expect(useCartStore.getState().checkoutKey).toBeNull()
   })
 })

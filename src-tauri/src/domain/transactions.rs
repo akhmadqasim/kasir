@@ -41,6 +41,11 @@ pub struct CheckoutTransactionInput {
     /// it is read out of this struct once, on the way into a
     /// `PpobFulfillmentRequest`, and does not outlive the checkout call.
     pub ppob_pin: Option<String>,
+    /// Which screen rang the sale up: `sales` (the cashier's cart) or `ppob`
+    /// (a purchase completed on the PPOB page). Absent means `sales`, so an
+    /// older client keeps ringing up cart sales.
+    #[serde(default)]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -72,6 +77,9 @@ pub struct ListTransactionsInput {
     pub payment_method: Option<String>,
     pub status: Option<String>,
     pub search: Option<String>,
+    /// Restricts the page to one channel. `None` (or empty) means every
+    /// channel, which is what the admin views want.
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

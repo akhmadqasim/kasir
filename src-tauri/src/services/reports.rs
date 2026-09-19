@@ -54,7 +54,7 @@ const REPORT_ROW_LIMIT: i64 = 500;
 // stayed in the till after returns. Gross takings are counted on the day the
 // sale was rung up, and a return is subtracted on the day the money went back
 // over the counter. See [`refund_adjust_cte`] for why that date, and
-// [`SALE_STATUSES`] for why a fully refunded sale is still counted gross.
+// [`SALE_FILTER`] for why a fully refunded sale is still counted gross.
 
 /// Sales-side status filter, written for a `transactions` aliased as `t`.
 ///
@@ -64,7 +64,12 @@ const REPORT_ROW_LIMIT: i64 = 500;
 /// day it was rung up, and [`refund_adjust_cte`] takes it back out on the day of
 /// the return. Excluding the sale as well would subtract it twice, and would
 /// also rewrite a closed day's revenue the moment a late return landed.
-pub(crate) const SALE_STATUSES: &str = "t.status NOT IN ('pending_ppob', 'ppob_failed', 'deleted')";
+///
+/// The channel belongs here for the same reason: a `ppob`-channel sale is a bill
+/// paid on the PPOB page, not goods sold, so it is left out of every sales figure
+/// (the shift's drawer totals still include it).
+pub(crate) const SALE_FILTER: &str =
+    "t.status NOT IN ('pending_ppob', 'ppob_failed', 'deleted') AND t.channel = 'sales'";
 
 /// The `refund_adjust` CTE: how much of a period's takings went back out.
 ///
@@ -120,7 +125,7 @@ pub(crate) fn refund_adjust_cte(
                 JOIN transaction_items ti ON ti.id = ri.transaction_item_id
                 LEFT JOIN products p ON p.id = ti.product_id
                 WHERE r.created_at >= {start} AND r.created_at < {end}
-                AND {SALE_STATUSES}
+                AND {SALE_FILTER}
                 UNION ALL
                 SELECT {exchange_bucket} as bucket,
                        -ei.subtotal as revenue,
@@ -131,7 +136,7 @@ pub(crate) fn refund_adjust_cte(
                 JOIN exchange_items ei ON ei.refund_id = r.id
                 LEFT JOIN products p ON p.id = ei.product_id
                 WHERE r.created_at >= {start} AND r.created_at < {end}
-                AND {SALE_STATUSES}
+                AND {SALE_FILTER}
             )
             GROUP BY bucket
         )"
@@ -170,7 +175,7 @@ async fn query_sales_buckets(
                 {sale_bucket} as bucket,
                 t.total_amount as total_amount
             FROM transactions t
-            WHERE {SALE_STATUSES}
+            WHERE {SALE_FILTER}
             AND t.created_at >= $1 AND t.created_at < $2
         ),
         revenue AS (
@@ -394,7 +399,7 @@ async fn query_sales_receipts(
                 t.status as status,
                 t.created_at as created_at
             FROM transactions t
-            WHERE {SALE_STATUSES}
+            WHERE {SALE_FILTER}
             AND t.created_at >= $1 AND t.created_at < $2
             AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
         ),
@@ -486,7 +491,7 @@ pub async fn payment_methods(
                 tp.transaction_id as transaction_id
             FROM transaction_payments tp
             JOIN transactions t ON t.id = tp.transaction_id
-            WHERE {SALE_STATUSES}
+            WHERE {SALE_FILTER}
             AND t.created_at >= $1 AND t.created_at < $2
             UNION ALL
             SELECT
@@ -494,7 +499,7 @@ pub async fn payment_methods(
                 t.total_amount as amount,
                 t.id as transaction_id
             FROM transactions t
-            WHERE {SALE_STATUSES}
+            WHERE {SALE_FILTER}
             AND t.created_at >= $1 AND t.created_at < $2
             AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)
         ),
@@ -592,6 +597,7 @@ const PRODUCT_SOLD_CTE: &str = "sold AS (
     JOIN transactions t ON t.id = ti.transaction_id
     LEFT JOIN products p ON p.id = ti.product_id
     WHERE t.status NOT IN ('pending_ppob', 'ppob_failed', 'deleted')
+      AND t.channel = 'sales'
     AND t.created_at >= $1 AND t.created_at < $2
     AND ti.product_id IS NOT NULL
     GROUP BY ti.product_id
@@ -1285,7 +1291,7 @@ mod tests {
             .expect("query");
 
         // `refunded` belongs here now: the money really was taken that day, and
-        // the return is what takes it back out (see `SALE_STATUSES`). `deleted`
+        // the return is what takes it back out (see `SALE_FILTER`). `deleted`
         // and the two unfulfilled PPOB states never were money.
         let mut statuses: Vec<&str> = report.items.iter().map(|r| r.status.as_str()).collect();
         statuses.sort_unstable();
@@ -1297,6 +1303,30 @@ mod tests {
         let summary = query_sales_period(&conn, &day, &day).await.expect("query");
         assert_eq!(receipts_total, 200_000.0);
         assert_eq!(receipts_total, summary.total_revenue);
+    }
+
+    /// A bill paid on the PPOB page is money in the drawer, but it is not goods
+    /// sold, so the shop's sales figures leave it out.
+    #[tokio::test]
+    async fn a_ppob_page_sale_is_left_out_of_the_sales_summary() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        insert_transaction(&conn, 1, 50_000.0, "completed", &created_at).await;
+        crate::test_support::insert_transaction_in_channel(
+            &conn,
+            1,
+            40_000.0,
+            "completed",
+            &created_at,
+            "ppob",
+        )
+        .await;
+
+        let day = date_str(today());
+        let summary = query_sales_period(&conn, &day, &day).await.expect("query");
+
+        assert_eq!(summary.total_revenue, 50_000.0);
+        assert_eq!(summary.total_transactions, 1);
     }
 
     // --- Net revenue ---

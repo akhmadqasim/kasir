@@ -1,8 +1,8 @@
 // One sold line has a single declaration, in the feature that owns transaction
 // history. Re-exported here so checkout keeps its own import surface.
-import type { TransactionItem } from "@/features/transactions/types"
+import type { TransactionChannel, TransactionItem } from "@/features/transactions/types"
 
-export type { TransactionItem }
+export type { TransactionChannel, TransactionItem }
 
 export interface CartItem {
   cart_id: string
@@ -58,6 +58,8 @@ export interface CheckoutTransactionInput {
   notes?: string
   transaction_discount?: number
   shift_id?: number
+  /** Omitted = `sales`, the cart. The PPOB page sends `ppob`. */
+  channel?: TransactionChannel
   /**
    * The cashier's Mitra transaction PIN, typed at the moment of sale. Only
    * meaningful when the cart has a PPOB line — see `usePaymentForm` — and
@@ -83,6 +85,7 @@ export interface Transaction {
   payment_amount: number
   change_amount: number
   status: string
+  channel: TransactionChannel
   notes: string | null
   deleted_at: string | null
   deleted_by: number | null

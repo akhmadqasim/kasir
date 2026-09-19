@@ -13,6 +13,8 @@ interface ServiceFlowLayoutProps {
   /** Ringkasan yang siap ditambahkan; `null` sebelum ada yang bisa dikonfirmasi. */
   confirmItems: SummaryItem[] | null
   onConfirm: () => void
+  /** Tulisan tombol konfirmasi: "Tambah ke Keranjang" di panel kasir, "Bayar" di halaman PPOB. */
+  confirmLabel?: string
   /** Ikon kolom kanan yang masih kosong (layar lebar). */
   placeholderIcon: ReactNode
   /** Kalimat kolom kanan yang masih kosong (layar lebar). */
@@ -30,6 +32,7 @@ export function ServiceFlowLayout({
   wideLayout,
   confirmItems,
   onConfirm,
+  confirmLabel = "Tambah ke Keranjang",
   placeholderIcon,
   placeholderText,
   children,
@@ -40,7 +43,7 @@ export function ServiceFlowLayout({
       scrollIntoView
       footer={
         <Button fullWidth size="lg" onPress={onConfirm}>
-          Tambah ke Keranjang
+          {confirmLabel}
         </Button>
       }
       items={confirmItems}

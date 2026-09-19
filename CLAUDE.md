@@ -276,6 +276,12 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 - Cash: hitung kembalian otomatis
 - Stok otomatis berkurang setelah transaksi selesai
 - Receipt number auto-generate: TRX-YYYYMMDD-XXXX
+- Kolom `transactions.channel`: `sales` = keranjang kasir (boleh campur item PPOB),
+  `ppob` = pembelian yang dibayar langsung di halaman PPOB (`/ppob/*`). Keduanya
+  transaksi sungguhan (struk, shift, idempotency, fulfilment sama), tapi riwayat
+  penjualan, laporan, dan dashboard hanya menghitung `sales`; halaman Riwayat punya
+  filter Penjualan / PPOB / Semua. Halaman PPOB tidak pernah melempar kasir ke
+  halaman Penjualan.
 
 ### Refund
 - Maksimal 7 hari setelah pembelian

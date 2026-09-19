@@ -25,7 +25,12 @@ import type { AddToCartItem, ResolveSellPrice, ServiceType } from "./types"
 interface PpobQuickAccessProps {
   initialService?: ServiceType
   onBack?: () => void
-  onItemAdded?: () => void
+  /**
+   * Take the confirmed line to be paid here and now instead of dropping it
+   * into the cashier's cart. The PPOB page passes this; the cashier's own
+   * panel does not, because there the cart is exactly where the line goes.
+   */
+  onPay?: (item: AddToCartItem) => void
   showSaldoBar?: boolean
   wideLayout?: boolean
 }
@@ -33,7 +38,7 @@ interface PpobQuickAccessProps {
 export function PpobQuickAccess({
   initialService,
   onBack,
-  onItemAdded,
+  onPay,
   showSaldoBar = true,
   wideLayout = false,
 }: PpobQuickAccessProps = {}) {
@@ -53,11 +58,15 @@ export function PpobQuickAccess({
   const handleAddToCart = (item: AddToCartItem) => {
     const vendorCost = item.buy_price ?? item.price
     const sellPrice = Math.max(item.price, vendorCost)
+    const line = { ...item, price: sellPrice, buy_price: vendorCost }
+
+    if (onPay) {
+      onPay(line)
+      return
+    }
 
     addPpobItem({
-      ...item,
-      price: sellPrice,
-      buy_price: vendorCost,
+      ...line,
       sell_price: sellPrice,
       ppob_product_id: item.ppob_product_id,
       ppob_product_code: item.ppob_product_code,
@@ -66,10 +75,6 @@ export function PpobQuickAccess({
       ppob_flag_id: item.ppob_flag_id,
     })
     toast.success(`${item.name} ditambahkan ke keranjang`)
-    if (onItemAdded) {
-      onItemAdded()
-      return
-    }
     setSelectedService(initialService ?? null)
   }
 
@@ -82,7 +87,12 @@ export function PpobQuickAccess({
       }
       setSelectedService(null)
     }
-    const inputProps = { onAddToCart: handleAddToCart, resolveSellPrice, wideLayout }
+    const inputProps = {
+      onAddToCart: handleAddToCart,
+      resolveSellPrice,
+      wideLayout,
+      confirmLabel: onPay ? id.cashier.pay : undefined,
+    }
 
     return (
       <div className="flex flex-col gap-4">

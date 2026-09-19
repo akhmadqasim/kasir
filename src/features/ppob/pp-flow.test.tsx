@@ -14,6 +14,10 @@ vi.mock("@/lib/toast", () => ({
 
 import { apiFailure, installApiMock, type ApiRoutes } from "@/test-utils/api-mock"
 import { TestNavbar } from "@/test-utils/test-navbar"
+import type { User } from "@/features/auth/types"
+import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import type { Shift } from "@/features/shift/types"
+import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "@/stores/cart-store"
 import { PpFlow } from "./components/pp-flow"
 
@@ -61,12 +65,43 @@ const INTERNET_TV_SUB_MENU = [
   },
 ]
 
+const KASIR: User = {
+  id: 2,
+  username: "kasir",
+  full_name: "Kasir Toko",
+  role: "kasir",
+  is_active: true,
+  created_at: "2026-01-01 00:00:00",
+  updated_at: "2026-01-01 00:00:00",
+}
+
+const SHIFT: Shift = {
+  id: 7,
+  userId: 2,
+  userName: "Kasir Toko",
+  openingCash: 100_000,
+  closingCash: null,
+  openedAt: "2026-09-19 01:00:00",
+  closedAt: null,
+  notes: null,
+  status: "open",
+}
+
 /** Every route the flow needs before an inquiry is even attempted. */
 function basePpRoutes(overrides: ApiRoutes = {}): ApiRoutes {
   return {
     "GET /ppob/menu": GROUPS,
     "GET /ppob/catalog/payment-points/*/sub-menu": INTERNET_TV_SUB_MENU,
     "GET /settings/ppob/markup": {},
+    // The page pays on the spot, so it also needs the shift and the printer.
+    "GET /shifts/active": SHIFT,
+    "GET /printers/settings": {
+      printer_id: null,
+      paper_width: null,
+      auto_print: false,
+      footer_text: null,
+      print_mode: null,
+    },
     ...overrides,
   }
 }
@@ -90,6 +125,9 @@ function renderFlow(initialEntry: string | { pathname: string; state?: unknown }
 
 beforeEach(() => {
   toastError.mockClear()
+  // Paying needs a session and an open shift, like at the till.
+  useAuthStore.setState({ user: KASIR })
+  useShiftStore.setState({ activeShift: SHIFT })
   useCartStore.setState({
     items: [],
     heldCarts: [],
@@ -314,8 +352,8 @@ describe("payment point flow", () => {
     })
   })
 
-  it("adds a payment-point line to the cart, shaped like the other services, when confirmed", async () => {
-    installApiMock(
+  it("pays a payment-point line on the spot, in the ppob channel, shaped like the other services", async () => {
+    const api = installApiMock(
       basePpRoutes({
         "POST /ppob/inquiries/pp": {
           inquiryId: "INQ-1",
@@ -327,6 +365,44 @@ describe("payment point flow", () => {
           total: 302500,
           serviceType: "pp",
           rawData: {},
+        },
+        "POST /transactions": (call) => {
+          const body = call.body as { items: Record<string, unknown>[] }
+          return {
+            transaction: {
+              id: 1,
+              receipt_number: "TRX-20260919-0001",
+              user_id: 2,
+              total_amount: 302500,
+              subtotal_amount: 302500,
+              discount_amount: 0,
+              payment_method: "cash",
+              payment_amount: 302500,
+              change_amount: 0,
+              status: "completed",
+              channel: "ppob",
+              notes: null,
+              deleted_at: null,
+              deleted_by: null,
+              deleted_reason: null,
+              updated_at: null,
+              created_at: "2026-09-19 02:00:00",
+            },
+            items: body.items.map((item, index) => ({
+              ...item,
+              id: index + 1,
+              transaction_id: 1,
+              product_id: null,
+              subtotal: 302500,
+              item_discount: 0,
+              net_subtotal: 302500,
+              ppob_status: "pending",
+              ppob_message: null,
+              ppob_serial_number: null,
+              created_at: "2026-09-19 02:00:00",
+            })),
+            payment_breakdown: [{ payment_method: "cash", bank_name: null, amount: 302500 }],
+          }
         },
       }),
     )
@@ -340,20 +416,35 @@ describe("payment point flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cek Tagihan" }))
     await screen.findByText("BUDI SANTOSO")
 
-    fireEvent.click(screen.getByRole("button", { name: "Tambah ke Keranjang" }))
+    expect(screen.queryByRole("button", { name: "Tambah ke Keranjang" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Bayar" }))
 
-    await waitFor(() => expect(useCartStore.getState().items).toHaveLength(1))
-    const [item] = useCartStore.getState().items
-    expect(item).toMatchObject({
-      product_name: "Indihome - 1234567890",
-      is_ppob: true,
-      service_type: "pp",
-      service_ref: "1234567890",
-      buy_price: 302500,
-      sell_price: 302500,
-      ppob_product_code: "121900061",
-      ppob_inquiry_id: "INQ-1",
+    // The payment dialog opens right here, on the PPOB page.
+    await screen.findByRole("dialog", { name: "Pembayaran" })
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "302500" },
     })
+    const pinField = await screen.findByLabelText("PIN Mitra")
+    fireEvent.change(pinField, { target: { value: "123456" } })
+    fireEvent.keyDown(pinField, { key: "Enter" })
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    expect(api.lastCall("POST /transactions")?.body).toMatchObject({
+      channel: "ppob",
+      items: [
+        {
+          product_name: "Indihome - 1234567890",
+          product_price: 302500,
+          buy_price: 302500,
+          service_type: "pp",
+          service_ref: "1234567890",
+          ppob_product_code: "121900061",
+          ppob_inquiry_id: "INQ-1",
+        },
+      ],
+    })
+    // Nothing went through the cashier's cart.
+    expect(useCartStore.getState().items).toHaveLength(0)
   })
 
   it("shows a toast with the upstream message when the inquiry fails", async () => {
