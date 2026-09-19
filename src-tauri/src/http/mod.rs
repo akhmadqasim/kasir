@@ -232,6 +232,9 @@ pub fn router(state: AppState) -> Router {
         ))
         .layer(CompressionLayer::new())
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        // Outermost, so a refusal by any layer below — the CSRF guard
+        // included — is written down too.
+        .layer(axum::middleware::from_fn(middleware::log_failures))
         .with_state(state)
 }
 

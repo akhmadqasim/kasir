@@ -2,7 +2,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 
 use crate::domain::ppob::PpobSaldoResponse;
-use crate::utils::AppError;
+use crate::utils::{logging, AppError};
 
 const BASE_URL: &str = "https://v2.mitraindogrosir.co.id/api";
 
@@ -167,14 +167,14 @@ impl MitraRequestContext {
             .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Gagal koneksi ke Mitra: {}", e)))?;
+            .map_err(|e| transport_failure(path, "koneksi", &e))?;
 
-        let result: Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Gagal parsing response: {}", e)))?;
+        let status = resp.status();
+        let result: Value = resp.json().await.map_err(|e| {
+            transport_failure(path, &format!("parsing respons (HTTP {status})"), &e)
+        })?;
 
-        validate_mitra_response(result)
+        validate_mitra_response(path, result)
     }
 
     pub async fn get(&self, path: &str) -> Result<Value, AppError> {
@@ -185,23 +185,43 @@ impl MitraRequestContext {
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Gagal koneksi ke Mitra: {}", e)))?;
+            .map_err(|e| transport_failure(path, "koneksi", &e))?;
 
-        let result: Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Gagal parsing response: {}", e)))?;
+        let status = resp.status();
+        let result: Value = resp.json().await.map_err(|e| {
+            transport_failure(path, &format!("parsing respons (HTTP {status})"), &e)
+        })?;
 
-        validate_mitra_response(result)
+        validate_mitra_response(path, result)
     }
 }
 
-fn validate_mitra_response(result: Value) -> Result<Value, AppError> {
+/// A request that never got a usable answer: no connection, or a body that
+/// is not JSON (Mitra's maintenance page, a proxy's HTML). `Upstream`, so the
+/// cashier reads what actually happened instead of "kesalahan pada server",
+/// and logged with the endpoint because the toast does not name it.
+fn transport_failure(path: &str, stage: &str, err: &dyn std::fmt::Display) -> AppError {
+    logging::log_error(&format!("[mitra] {path}: gagal {stage}: {err}"));
+    AppError::Upstream(format!("Gagal {stage} ke Mitra ({path}): {err}"))
+}
+
+/// Every non-OK Mitra body goes to warning.log with its endpoint, code and
+/// message before it becomes an error — the toast the cashier sees is gone in
+/// seconds, the log is what gets read afterwards. Error bodies carry no
+/// customer data, so they are logged whole.
+fn validate_mitra_response(path: &str, result: Value) -> Result<Value, AppError> {
     if result["message"].as_str() != Some("OK") {
         let err_msg = result["errorMessage"]
             .as_str()
             .or_else(|| result["message"].as_str())
             .unwrap_or("Unknown error");
+
+        logging::log_warning(&format!(
+            "[mitra] {path} -> {} {}: {}",
+            result["errorCode"].as_str().unwrap_or("-"),
+            err_msg,
+            result
+        ));
 
         if err_msg.contains("Unauthenticated") || err_msg.contains("unauthenticated") {
             return Err(AppError::Upstream(
@@ -229,7 +249,10 @@ fn validate_mitra_response(result: Value) -> Result<Value, AppError> {
             err_msg.to_string()
         };
 
-        return Err(AppError::Internal(format!("Mitra API error: {}", detail)));
+        // `Upstream`, not `Internal`: this is Mitra's verdict on the request
+        // ("Inquiry Gagal", "Saldo tidak cukup"), and the cashier needs to
+        // read it. `Internal` would have hidden it behind a generic sentence.
+        return Err(AppError::Upstream(format!("Mitra: {}", detail)));
     }
 
     Ok(result)
@@ -251,7 +274,8 @@ mod tests {
             "errorMessage": "Unauthenticated."
         });
 
-        let err = validate_mitra_response(body).expect_err("Unauthenticated must fail");
+        let err =
+            validate_mitra_response("get-menu-saldo", body).expect_err("Unauthenticated must fail");
         assert!(
             matches!(err, AppError::Upstream(_)),
             "expected AppError::Upstream, got {err:?}"
@@ -267,29 +291,39 @@ mod tests {
             "errorMessage": "unauthenticated token"
         });
 
-        let err = validate_mitra_response(body).expect_err("unauthenticated must fail");
+        let err =
+            validate_mitra_response("get-menu-saldo", body).expect_err("unauthenticated must fail");
         assert!(matches!(err, AppError::Upstream(_)));
     }
 
     /// A validation-shaped failure from Mitra (not an auth problem at all)
-    /// still becomes `Internal` — this test pins today's behaviour so the
-    /// `Unauthenticated` branch above cannot silently start swallowing it.
+    /// is `Upstream` too, and carries Mitra's own words plus the field
+    /// detail — that is what the cashier reads in the toast.
     #[test]
-    fn a_non_auth_mitra_error_stays_internal() {
+    fn a_non_auth_mitra_error_is_upstream_with_its_message() {
         let body = json!({
             "message": "error",
             "errorMessage": "Nomor tidak valid",
             "errors": { "phone_number": ["Nomor tidak valid"] }
         });
 
-        let err = validate_mitra_response(body).expect_err("validation error must fail");
-        assert!(matches!(err, AppError::Internal(_)));
+        match validate_mitra_response("pulsa/v2/get-details", body)
+            .expect_err("validation error must fail")
+        {
+            AppError::Upstream(message) => {
+                assert_eq!(
+                    message,
+                    "Mitra: Nomor tidak valid (phone_number: Nomor tidak valid)"
+                )
+            }
+            other => panic!("expected Upstream, got {other:?}"),
+        }
     }
 
     #[test]
     fn an_ok_response_passes_through_unchanged() {
         let body = json!({ "message": "OK", "data": 1 });
-        let result = validate_mitra_response(body.clone()).expect("OK must pass");
+        let result = validate_mitra_response("pln/inquiry", body.clone()).expect("OK must pass");
         assert_eq!(result, body);
     }
 }

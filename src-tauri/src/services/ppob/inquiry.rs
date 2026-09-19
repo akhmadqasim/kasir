@@ -298,7 +298,7 @@ pub async fn bpjs(
         .await
     {
         Ok(result) => result,
-        Err(AppError::Internal(message))
+        Err(AppError::Upstream(message))
             if message.contains("Inquiry Gagal")
                 && !fallback_phone_number.is_empty()
                 && fallback_phone_number != primary_phone_number =>
