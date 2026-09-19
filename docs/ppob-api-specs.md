@@ -331,6 +331,11 @@ Riwayat top-up saldo.
 - Harga bisa berupa number atau string (e.g., `"5283.00"` atau `50600`)
 - `is_trouble` > 0 berarti produk sedang gangguan
 - `promo_id` != null berarti ada diskon (`nominal_cut_price` = potongan, `last_price` = harga final)
+- `inquiry_id` dicari di root, wrapper (`data`, `detail`, …), `inquiry`, dan
+  `data.inquiry` — `inquiry_id` di mana pun menang atas `id`. Respons OK tanpa
+  `inquiry_id` ditolak di inquiry (502, "Mitra tidak mengembalikan inquiry_id …"),
+  bukan diteruskan kosong ke keranjang, dan bentuk responsnya (kunci saja, tanpa
+  nilai) dicatat ke `logs/warning.log` untuk didiagnosis.
 
 ---
 

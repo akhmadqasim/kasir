@@ -35,19 +35,6 @@ pub fn get_num_field(obj: &serde_json::Map<String, Value>, keys: &[&str]) -> Opt
     keys.iter().find_map(|k| parse_number(obj.get(*k)))
 }
 
-/// Extract string from Value trying multiple keys (returns empty string if not found)
-pub fn extract_string(val: &Value, keys: &[&str]) -> String {
-    for key in keys {
-        if let Some(s) = val[*key].as_str() {
-            return s.to_string();
-        }
-        if let Some(n) = val[*key].as_i64() {
-            return n.to_string();
-        }
-    }
-    String::new()
-}
-
 /// Extract optional string from Value trying multiple keys
 pub fn extract_optional_string(val: &Value, keys: &[&str]) -> Option<String> {
     for key in keys {
