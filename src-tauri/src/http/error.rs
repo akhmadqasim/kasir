@@ -36,6 +36,17 @@ pub struct ApiError {
     retry_after_secs: Option<u64>,
 }
 
+/// What a failed response was about, left in the response's extensions for
+/// `middleware::log_failures` to read. The body is already serialised (and
+/// possibly compressed) by the time a middleware sees the response, so the
+/// facts travel beside it instead — the one place every failure, from a 422
+/// on a form to a 502 from Mitra, passes through.
+#[derive(Debug, Clone)]
+pub struct FailureInfo {
+    pub code: &'static str,
+    pub message: String,
+}
+
 impl ApiError {
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
@@ -153,6 +164,10 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let retry_after = self.retry_after_secs;
+        let info = FailureInfo {
+            code: self.code,
+            message: self.message.clone(),
+        };
         let mut response = (
             self.status,
             Json(ErrorBody {
@@ -161,6 +176,7 @@ impl IntoResponse for ApiError {
             }),
         )
             .into_response();
+        response.extensions_mut().insert(info);
 
         if let Some(secs) = retry_after {
             if let Ok(value) = secs.to_string().parse() {
@@ -251,5 +267,18 @@ mod tests {
 
         let err = ApiError::from(AppError::Internal(format!("C:\\Users\\kasir\\{leak}")));
         assert!(!err.message.contains("C:\\Users"));
+    }
+
+    /// The facts of a failure ride on the response for `log_failures` to
+    /// write down — the body itself is opaque to a middleware by then.
+    #[test]
+    fn a_failed_response_carries_its_code_and_message_as_an_extension() {
+        let response = ApiError::validation("Stok 'Beras' tidak cukup").into_response();
+        let info = response
+            .extensions()
+            .get::<FailureInfo>()
+            .expect("FailureInfo on the response");
+        assert_eq!(info.code, "validation");
+        assert_eq!(info.message, "Stok 'Beras' tidak cukup");
     }
 }
