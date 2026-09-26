@@ -1,15 +1,18 @@
 import { useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { Save } from "lucide-react"
 import { Card } from "@heroui/react"
 
-import { OptionSelect } from "@/components/option-select"
+import { CardHeading } from "@/components/card-heading"
+import { LoadError } from "@/components/load-error"
+import { OptionSelect, type SelectOption } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { SummaryList } from "@/components/summary-list"
+import { id } from "@/i18n/id"
 import { toast } from "@/lib/toast"
-import { useApiMutation, useApiQuery } from "@/hooks/use-api"
-import { getAppSettings, toUpdateAppSettingsInput, updateAppSettings } from "@/lib/api/settings"
+import { useApiQuery } from "@/hooks/use-api"
+import { getAppSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
+import { useSaveAppSettingsSection } from "../../hooks/use-save-app-settings-section"
 import type { AppSettings, BackupStatus } from "../../types"
 
 const INTERVAL_OPTIONS = [
@@ -28,6 +31,19 @@ const RETENTION_OPTIONS = [
   { key: "180", label: "180 hari" },
   { key: "365", label: "365 hari" },
 ]
+
+/**
+ * The server accepts any interval from 1 to 168 hours, so a value set before
+ * this list existed (or by hand) may not be one of its options. Without its own
+ * entry the field would render empty and look unset.
+ */
+function withCurrent(options: SelectOption[], value: number, unit: string): SelectOption[] {
+  const key = String(value)
+  if (options.some((option) => option.key === key)) return options
+  return [...options, { key, label: `${value} ${unit}` }].sort(
+    (a, b) => Number(a.key) - Number(b.key),
+  )
+}
 
 export interface AutoBackupCardProps {
   backupStatus: BackupStatus | undefined
@@ -48,7 +64,6 @@ export interface AutoBackupCardProps {
  * tidak ada perubahan yang terkirim menimpa nilai yang belum sempat terbaca.
  */
 export function AutoBackupCard({ backupStatus }: AutoBackupCardProps) {
-  const queryClient = useQueryClient()
   const [intervalHours, setIntervalHours] = useState(3)
   const [retentionDays, setRetentionDays] = useState(90)
   const [initialized, setInitialized] = useState(false)
@@ -61,54 +76,48 @@ export function AutoBackupCard({ backupStatus }: AutoBackupCardProps) {
     setInitialized(true)
   }
 
-  const saveMutation = useApiMutation<void, void>(
-    () => {
-      // Server menulis ulang keempat blok sekaligus, jadi tiga blok yang
-      // bukan urusan kartu ini harus dikirim balik apa adanya.
-      const current = settingsQuery.data
-      if (!current) {
-        return Promise.reject(new Error("Pengaturan belum dimuat, coba lagi sebentar"))
-      }
-      return updateAppSettings({
-        ...toUpdateAppSettingsInput(current),
-        backup: { interval_hours: intervalHours, retention_days: retentionDays },
-      })
-    },
-    {
-      onSuccess: () => {
-        toast.success("Pengaturan backup berhasil disimpan. Perubahan berlaku setelah restart.")
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.app })
-        queryClient.invalidateQueries({ queryKey: queryKeys.backups.status })
-      },
-      onError: (error) => toast.error(error.message),
-    },
-  )
+  const saveMutation = useSaveAppSettingsSection("backup", {
+    onSaved: () => toast.success(id.backup.scheduleSaved),
+  })
 
   const isReady = settingsQuery.isSuccess && initialized
+  const intervalOptions = withCurrent(INTERVAL_OPTIONS, intervalHours, "jam")
+  const retentionOptions = withCurrent(RETENTION_OPTIONS, retentionDays, "hari")
 
   return (
     <Card>
       <Card.Header>
-        <Card.Title>Backup Otomatis</Card.Title>
+        <CardHeading>Backup Otomatis</CardHeading>
         <Card.Description>
           Backup berjalan sendiri sesuai jadwal ini — ubah kalau toko butuh cadangan lebih sering
           atau perlu menyimpan riwayatnya lebih lama.
         </Card.Description>
       </Card.Header>
       <Card.Content className="gap-4">
+        {settingsQuery.isError && (
+          <LoadError
+            isRetrying={settingsQuery.isFetching}
+            title={id.loadFailed.backupSchedule}
+            onRetry={() => void settingsQuery.refetch()}
+          >
+            {settingsQuery.error.message}
+          </LoadError>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <OptionSelect
             fullWidth
+            isDisabled={!isReady}
             label="Interval backup otomatis"
-            options={INTERVAL_OPTIONS}
+            options={intervalOptions}
             value={String(intervalHours)}
             variant="secondary"
             onChange={(value) => value !== null && setIntervalHours(Number(value))}
           />
           <OptionSelect
             fullWidth
-            label="Retensi backup"
-            options={RETENTION_OPTIONS}
+            isDisabled={!isReady}
+            label="Simpan backup selama"
+            options={retentionOptions}
             value={String(retentionDays)}
             variant="secondary"
             onChange={(value) => value !== null && setRetentionDays(Number(value))}
@@ -129,10 +138,12 @@ export function AutoBackupCard({ backupStatus }: AutoBackupCardProps) {
           isDisabled={!isReady}
           isPending={saveMutation.isPending}
           variant="secondary"
-          onPress={() => saveMutation.mutate(undefined)}
+          onPress={() =>
+            saveMutation.mutate({ interval_hours: intervalHours, retention_days: retentionDays })
+          }
         >
           <Save />
-          Simpan
+          {id.common.save}
         </PendingButton>
       </Card.Footer>
     </Card>

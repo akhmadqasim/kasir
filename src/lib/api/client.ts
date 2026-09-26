@@ -1,3 +1,5 @@
+import { id } from "@/i18n/id"
+
 /**
  * The one place the frontend talks to the server.
  *
@@ -159,7 +161,7 @@ export interface RequestOptions {
   /** Serialised as a JSON body. `undefined` sends no body at all. */
   body?: unknown
   /**
-   * Required by `POST /transactions`, `/ppob/payments` and `/ppob/topups`.
+   * Required by `POST /transactions`.
    * One key per user attempt, reused by every retry of that attempt.
    */
   idempotencyKey?: string
@@ -300,7 +302,7 @@ async function send(
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error
     }
-    throw new ApiError("network", "Tidak dapat menghubungi server. Periksa koneksi jaringan.", 0)
+    throw new ApiError("network", id.common.networkError, 0)
   }
 
   if (response.status === 401 && options.handleUnauthorized !== false) {

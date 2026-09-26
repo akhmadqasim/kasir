@@ -89,7 +89,6 @@ export interface BackupStatus {
   total_backups: number
   total_size_bytes: number
   backup_dir: string
-  settings: BackupSettings
 }
 
 export interface AppSettings {
@@ -123,6 +122,16 @@ export interface StoreInfo {
   additional_info: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+/**
+ * `GET /store/public`: what the login screen may know about the shop before
+ * anyone signs in. `null` from the server before onboarding.
+ */
+export interface PublicStoreInfo {
+  name: string
+  /** Whether `GET /store/logo` has an image to serve. */
+  has_logo: boolean
 }
 
 export interface DatabaseInfo {

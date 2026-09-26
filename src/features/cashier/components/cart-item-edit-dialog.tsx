@@ -2,11 +2,18 @@ import { useEffect, useRef, useState } from "react"
 import type { FormEvent, KeyboardEvent } from "react"
 import { Button, Description, Form, Label, Modal, NumberField } from "@heroui/react"
 
+import { id } from "@/i18n/id"
 import { OptionSelect } from "@/components/option-select"
 import { RupiahField } from "@/components/rupiah-field"
 import { SummaryList } from "@/components/summary-list"
 import { isEmptyNumberFieldValue } from "@/lib/number-field"
+import { toast } from "@/lib/toast"
 import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
+import {
+  EMPTY_AMOUNT_ENTRY_TIMING,
+  isScannerBurstEntry,
+  trackAmountEntry,
+} from "../payment-behavior"
 import type { CartItem } from "../types"
 import { DISCOUNT_TYPES, formatRupiah, getQuantityWarning } from "../utils"
 
@@ -30,6 +37,8 @@ interface CartItemEditDialogProps {
 function submitOnEnter(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key === "Enter") e.currentTarget.form?.requestSubmit()
 }
+
+const EMPTY_QTY_ENTRY = { digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING }
 
 export function CartItemEditDialog({ open, onOpenChange, item }: CartItemEditDialogProps) {
   if (!item) return null
@@ -69,6 +78,7 @@ function CartItemEditBody({
   const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
   const [discValue, setDiscValue] = useState<number | null>(disc?.value ?? null)
   const qtyInputRef = useRef<HTMLInputElement>(null)
+  const qtyEntryRef = useRef(EMPTY_QTY_ENTRY)
 
   const lineTotal = item.product_price * qty
   const quantityWarning = getQuantityWarning(item, qty)
@@ -82,6 +92,31 @@ function CartItemEditBody({
   const handleQtyChange = (value: number | undefined) => {
     if (isEmptyNumberFieldValue(value)) return
     setQty(value)
+  }
+
+  // Barcode yang discan ke kolom jumlah (kasir memindai barang berikutnya
+  // sebelum dialog ini ditutup) akan dijepit ke MAX_CART_QUANTITY lalu
+  // tersimpan oleh Enter scanner — penjaga yang sama dengan dialog Pembayaran.
+  // Digitnya dicatat dari keydown sendiri: saat Enter sampai di sini,
+  // NumberField sudah meng-commit dan kolomnya sudah berisi "9,999".
+  const handleQtyKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") {
+      if (!/^\d$/.test(e.key)) return
+      const previous = qtyEntryRef.current
+      const timing = trackAmountEntry(previous, e.timeStamp)
+      const digits = timing.startedAt === previous.startedAt ? previous.digits + e.key : e.key
+      qtyEntryRef.current = { digits, ...timing }
+      return
+    }
+    const { digits, ...timing } = qtyEntryRef.current
+    qtyEntryRef.current = EMPTY_QTY_ENTRY
+    if (isScannerBurstEntry({ amount: digits, ...timing, submittedAt: e.timeStamp })) {
+      e.preventDefault()
+      setQty(item.quantity)
+      toast.warning(id.cashier.scanIgnoredInQuantity)
+      return
+    }
+    submitOnEnter(e)
   }
 
   const handleTypeChange = (newType: "fixed" | "percentage") => {
@@ -134,8 +169,8 @@ function CartItemEditBody({
       </Modal.Header>
 
       <Modal.Body>
-        <p>
-          Harga: {formatRupiah(item.product_price)} / {item.unit ?? "pcs"}
+        <p className="tabular-nums">
+          Harga {formatRupiah(item.product_price)} / {item.unit ?? "pcs"}
         </p>
 
         {!item.is_ppob && (
@@ -154,7 +189,7 @@ function CartItemEditBody({
               <NumberField.Input
                 ref={qtyInputRef}
                 className="text-center tabular-nums"
-                onKeyDown={submitOnEnter}
+                onKeyDown={handleQtyKeyDown}
               />
               <NumberField.IncrementButton aria-label="Tambah jumlah" />
             </NumberField.Group>
@@ -193,13 +228,13 @@ function CartItemEditBody({
             >
               <Label>Nilai diskon (%)</Label>
               <NumberField.Group>
-                <NumberField.DecrementButton />
+                <NumberField.DecrementButton aria-label="Kurangi persen diskon" />
                 <NumberField.Input
                   className="text-right tabular-nums"
                   placeholder="0"
                   onKeyDown={submitOnEnter}
                 />
-                <NumberField.IncrementButton />
+                <NumberField.IncrementButton aria-label="Tambah persen diskon" />
               </NumberField.Group>
             </NumberField>
           )}

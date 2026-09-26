@@ -54,15 +54,17 @@ export function ProductList({
   const products: Product[] = result.data?.pages.flatMap((page) => page.data) ?? [];
   const scrollProps = useHeaderlessScrollProps(true);
 
-  const placeholder = result.isPending ? (
-    <LoadingView />
-  ) : result.isError ? (
-    <View className="px-4">
-      <ErrorView error={result.error} onRetry={() => void result.refetch()} />
-    </View>
-  ) : (
-    <EmptyView message={emptyMessage} />
-  );
+  // A disabled search is pending but idle: nothing is coming, so show the prompt.
+  const placeholder =
+    result.isPending && result.fetchStatus !== "idle" ? (
+      <LoadingView />
+    ) : result.isError ? (
+      <View className="px-4">
+        <ErrorView error={result.error} onRetry={() => void result.refetch()} />
+      </View>
+    ) : (
+      <EmptyView message={emptyMessage} />
+    );
 
   return (
     <FlatList

@@ -12,11 +12,13 @@
 use chrono::{DateTime, Duration, Utc};
 use cookie::{Cookie, SameSite};
 use rand::RngCore;
+use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
 
 use crate::domain::Actor;
 use crate::entity::{sessions, users};
+use crate::utils::time::{format_ts, TIMESTAMP_FORMAT};
 use crate::utils::AppError;
 
 /// Name of the session cookie. Prefixed like the rest of the app so it cannot
@@ -42,12 +44,6 @@ const TOUCH_INTERVAL_SECS: i64 = 60;
 /// permanent by accident.
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 60 * 24 * 30;
-
-/// The shape every timestamp column in this schema uses: UTC, second precision,
-/// and lexicographically ordered the same way it is chronologically ordered.
-pub fn format_ts(at: DateTime<Utc>) -> String {
-    at.format("%Y-%m-%d %H:%M:%S").to_string()
-}
 
 /// A freshly minted session: the raw token for the cookie, and how long the
 /// cookie should live.
@@ -89,11 +85,8 @@ fn clamp_timeout(minutes: i64) -> i64 {
 /// behind it any more — a till is one machine in one shop, and an idle limit
 /// short enough to matter only sent the cashier back to the login screen
 /// after every quiet spell. The window still slides with each request, so
-/// what remains is a sweep of sessions nobody has used for a month. The
-/// `db` argument stays so the callers do not care where the number comes from.
-pub async fn timeout_minutes(_db: &DatabaseConnection) -> Result<i64, AppError> {
-    Ok(MAX_TIMEOUT_MINUTES)
-}
+/// what remains is a sweep of sessions nobody has used for a month.
+pub const TIMEOUT_MINUTES: i64 = MAX_TIMEOUT_MINUTES;
 
 /// Mint a session for `user_id` and return the raw token — the only moment it
 /// exists outside the client.
@@ -182,7 +175,7 @@ pub async fn resolve(
 /// Seconds between a stored timestamp and `now`. An unparsable timestamp counts
 /// as infinitely old, which forces a refresh and repairs the row.
 fn seconds_since(stored: &str, now: DateTime<Utc>) -> i64 {
-    match chrono::NaiveDateTime::parse_from_str(stored, "%Y-%m-%d %H:%M:%S") {
+    match chrono::NaiveDateTime::parse_from_str(stored, TIMESTAMP_FORMAT) {
         Ok(parsed) => (now.naive_utc() - parsed).num_seconds(),
         Err(_) => i64::MAX,
     }
@@ -196,17 +189,16 @@ pub async fn touch(
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
     let timeout_minutes = clamp_timeout(timeout_minutes);
-    let Some(session) = sessions::Entity::find_by_id(session_id.to_string())
-        .one(db)
-        .await?
-    else {
-        return Ok(());
-    };
-
-    let mut active: sessions::ActiveModel = session.into();
-    active.last_seen_at = Set(format_ts(now));
-    active.expires_at = Set(format_ts(now + Duration::minutes(timeout_minutes)));
-    active.update(db).await?;
+    // One UPDATE: a session revoked since it was resolved simply matches no row.
+    sessions::Entity::update_many()
+        .col_expr(sessions::Column::LastSeenAt, Expr::value(format_ts(now)))
+        .col_expr(
+            sessions::Column::ExpiresAt,
+            Expr::value(format_ts(now + Duration::minutes(timeout_minutes))),
+        )
+        .filter(sessions::Column::Id.eq(session_id))
+        .exec(db)
+        .await?;
     Ok(())
 }
 

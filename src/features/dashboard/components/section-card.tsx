@@ -1,6 +1,8 @@
 import type { ReactNode } from "react"
 import { Card } from "@heroui/react"
 
+import { CardHeading } from "@/components/card-heading"
+
 /**
  * Pembungkus setiap daftar di dashboard: judul, lalu isinya.
  *
@@ -12,7 +14,7 @@ export function SectionCard({ title, children }: { title: string; children: Reac
   return (
     <Card>
       <Card.Header>
-        <Card.Title>{title}</Card.Title>
+        <CardHeading>{title}</CardHeading>
       </Card.Header>
       <Card.Content>{children}</Card.Content>
     </Card>

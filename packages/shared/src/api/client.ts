@@ -35,6 +35,8 @@
  *   `KASIR_ALLOWED_ORIGINS`.
  */
 
+import { id } from "../i18n/id"
+
 /** The `code` field of an error body, plus the one failure the server cannot report. */
 export type ApiErrorCode =
   | "auth"
@@ -134,7 +136,7 @@ export interface RequestOptions {
   /** Serialised as a JSON body. `undefined` sends no body at all. */
   body?: unknown
   /**
-   * Required by `POST /transactions`, `/ppob/payments` and `/ppob/topups`.
+   * Required by `POST /transactions`.
    * One key per user attempt, reused by every retry of that attempt.
    */
   idempotencyKey?: string
@@ -275,7 +277,7 @@ function isAbortError(error: unknown): boolean {
   )
 }
 
-export const NETWORK_ERROR_MESSAGE = "Tidak dapat menghubungi server. Periksa koneksi jaringan."
+export const NETWORK_ERROR_MESSAGE = id.common.networkError
 
 /** A configured client. Build one with {@link createApiClient}. */
 export interface ApiClient {
@@ -289,8 +291,7 @@ export interface ApiClient {
 }
 
 export function createApiClient(config: ApiClientConfig): ApiClient {
-  const fetchImpl: FetchLike =
-    config.fetch ?? ((input, init) => globalThis.fetch(input, init))
+  const fetchImpl: FetchLike = config.fetch ?? ((input, init) => globalThis.fetch(input, init))
 
   async function send(
     method: HttpMethod,

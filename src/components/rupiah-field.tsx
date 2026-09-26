@@ -1,4 +1,4 @@
-import type { KeyboardEvent, Ref } from "react"
+import { useState, type KeyboardEvent, type Ref } from "react"
 import { FieldError, Input, Label, TextField } from "@heroui/react"
 
 import { formatNumber } from "@/lib/format"
@@ -13,6 +13,13 @@ interface RupiahFieldProps {
   /** Shown while the field is empty. */
   placeholder?: string
   isDisabled?: boolean
+  /**
+   * The amount must be filled in: the label gets its asterisk and the input
+   * `aria-required`, the same as every other required field — not a "*"
+   * typed into the label, which a screen reader reads out as "bintang".
+   * Validation stays with the form (`validationBehavior="aria"`).
+   */
+  isRequired?: boolean
   /** A validation message from the form, shown under the field when set. */
   errorMessage?: string
   className?: string
@@ -25,9 +32,12 @@ interface RupiahFieldProps {
   ref?: Ref<HTMLInputElement>
 }
 
-/** `-10.000` → -10000; digits only, one optional leading minus. */
+/**
+ * `-10.000` → -10000; digits only. A minus anywhere makes the amount negative,
+ * so one typed after the digits (where the caret sits) counts too.
+ */
 function parseTyped(text: string, allowNegative: boolean): number | null {
-  const negative = allowNegative && text.trimStart().startsWith("-")
+  const negative = allowNegative && text.includes("-")
   const digits = text.replace(/\D/g, "")
   if (digits === "") return null
   const magnitude = Number(digits)
@@ -61,6 +71,7 @@ export function RupiahField({
   allowNegative = false,
   placeholder,
   isDisabled,
+  isRequired,
   errorMessage,
   className,
   onKeyDown,
@@ -68,6 +79,10 @@ export function RupiahField({
   autoFocus,
   ref,
 }: RupiahFieldProps) {
+  // A lone "-" has no amount yet, so `value` stays null; without this the
+  // controlled field would wipe the minus before the first digit arrives.
+  const [pendingMinus, setPendingMinus] = useState(false)
+
   return (
     <TextField
       className={className}
@@ -75,9 +90,14 @@ export function RupiahField({
       inputMode="numeric"
       isDisabled={isDisabled}
       isInvalid={Boolean(errorMessage)}
-      value={formatTyped(value)}
+      isRequired={isRequired}
+      value={value == null && pendingMinus ? "-" : formatTyped(value)}
       variant="secondary"
-      onChange={(text) => onChange(parseTyped(text, allowNegative))}
+      onChange={(text) => {
+        const parsed = parseTyped(text, allowNegative)
+        setPendingMinus(allowNegative && parsed == null && text.includes("-"))
+        onChange(parsed)
+      }}
     >
       <Label>{label}</Label>
       <Input

@@ -34,10 +34,10 @@ export function useHistoryPrint(item: HistoryPaymentItem | null, onPrinted?: () 
 
   const print = useApiMutation(() => printPpobHistoryReceipt(trxId ?? "", sellPrice ?? 0), {
     onSuccess: () => {
-      toast.success(t.ppob.receiptPrinted)
+      toast.success(t.print.printed)
       onPrinted?.()
     },
-    onError: (error) => toast.error(`${t.ppob.receiptPrintFailed}: ${error.message}`),
+    onError: (error) => toast.error(t.print.failed(error.message)),
   })
 
   return { providerTotal, fee, setFee, sellPrice, print }

@@ -5,17 +5,5 @@ export interface PpobSaldoResponse {
   flagMember: string
 }
 
-export interface PpobMarkupConfig {
-  type: "fixed" | "percentage"
-  value: number
-}
-
-export interface PpobMarkup {
-  pulsa: PpobMarkupConfig
-  data: PpobMarkupConfig
-  pln: PpobMarkupConfig
-  pdam: PpobMarkupConfig
-  bpjs: PpobMarkupConfig
-  emoney: PpobMarkupConfig
-  custom_prices: Record<string, number>
-}
+// One definition, owned by the settings the markup is saved with.
+export type { PpobMarkup, PpobMarkupConfig } from "@/features/settings/types"

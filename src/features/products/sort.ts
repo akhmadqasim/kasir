@@ -25,7 +25,7 @@ const SORT_COLUMNS = [
 /** Kolom yang boleh dipakai `sort_by` — cermin allowlist `ProductSort` di server. */
 export type ProductSortColumn = (typeof SORT_COLUMNS)[number]
 
-export function isProductSortColumn(value: unknown): value is ProductSortColumn {
+function isProductSortColumn(value: unknown): value is ProductSortColumn {
   return typeof value === "string" && (SORT_COLUMNS as readonly string[]).includes(value)
 }
 

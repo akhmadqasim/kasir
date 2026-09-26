@@ -18,6 +18,7 @@ use tokio::task::JoinSet;
 use crate::domain::ppob::{PpSearchGroupRef, PpSearchResult};
 use crate::services::ppob::client::MitraClient;
 use crate::services::ppob::menu;
+use crate::services::ppob::session_cache::{SessionCache, Ticket};
 use crate::utils::AppError;
 
 /// How long the flattened index is trusted before the next search rebuilds
@@ -25,6 +26,11 @@ use crate::utils::AppError;
 /// see one added mid-morning; [`forget_index`] clears it sooner, on its own
 /// trigger (a Mitra logout or a fresh login).
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+
+/// How long an index missing a group that failed to answer is kept: long
+/// enough that a search per keystroke does not refetch every group, short
+/// enough that a passing hiccup does not hide those billers for the day.
+const PARTIAL_INDEX_TTL: Duration = Duration::from_secs(60);
 
 /// At most this many results, so a broad query like "bank" — which matches
 /// dozens of billers — does not turn the popover into a second scrollable
@@ -34,32 +40,38 @@ const MAX_RESULTS: usize = 20;
 /// The index behind an `Arc`: a search hits the cache far more often than it
 /// rebuilds it, and without this every one of those hits would deep-clone the
 /// whole catalogue just to read it. An `Arc` clone is a refcount bump.
+///
+/// Stored with the instant it expires, since not every index is trusted for
+/// the same [`SEARCH_CACHE_TTL`].
 type SearchCache = Option<(Instant, Arc<Vec<PpSearchResult>>)>;
 
-static SEARCH_CACHE: LazyLock<std::sync::Mutex<SearchCache>> =
-    LazyLock::new(|| std::sync::Mutex::new(None));
+static SEARCH_CACHE: LazyLock<SessionCache<SearchCache>> = LazyLock::new(SessionCache::new);
 
 fn cached_index() -> Option<Arc<Vec<PpSearchResult>>> {
-    let cache = SEARCH_CACHE.lock().ok()?;
-    cache
-        .as_ref()
-        .filter(|(fetched_at, _)| fetched_at.elapsed() < SEARCH_CACHE_TTL)
-        .map(|(_, index)| index.clone())
+    SEARCH_CACHE
+        .read(|cache| {
+            cache
+                .as_ref()
+                .filter(|(expires_at, _)| Instant::now() < *expires_at)
+                .map(|(_, index)| index.clone())
+        })
+        .flatten()
 }
 
-fn store_index(index: Arc<Vec<PpSearchResult>>) {
-    if let Ok(mut cache) = SEARCH_CACHE.lock() {
-        *cache = Some((Instant::now(), index));
-    }
+/// Keep `index` for `ttl`, unless the session was forgotten since `ticket`
+/// was taken: then the index is the previous account's, and is dropped.
+fn store_index(ticket: Ticket, index: Arc<Vec<PpSearchResult>>, ttl: Duration) {
+    SEARCH_CACHE.store(ticket, |cache| {
+        *cache = Some((Instant::now() + ttl, index));
+    });
 }
 
 /// Drop the cached index. Called when the Mitra session is cleared: a
 /// different account can see a different set of payment points, and the
-/// cache must not answer a search from the previous one's catalogue.
+/// cache must not answer a search from the previous one's catalogue — nor
+/// from a rebuild that was still in flight when the session ended.
 pub fn forget_index() {
-    if let Ok(mut cache) = SEARCH_CACHE.lock() {
-        *cache = None;
-    }
+    SEARCH_CACHE.forget();
 }
 
 /// Serialises rebuilding a cold cache: without this, two searches that both
@@ -88,27 +100,47 @@ async fn payment_point_index(
         return Ok(index);
     }
 
+    // Taken before the first upstream request: a forget from here on means
+    // what this rebuild fetches belongs to a session that has ended.
+    let ticket = SEARCH_CACHE.ticket();
     let groups = menu::menu(db, mitra).await?;
 
     let mut fetches = JoinSet::new();
-    for group in groups {
+    for (position, group) in groups.into_iter().enumerate() {
         let db = db.clone();
         let mitra = Arc::clone(mitra);
         fetches.spawn(async move {
-            // One group failing to answer must not fail the whole index — a
-            // biller under a broken group is simply absent from search, the
-            // same as if the cashier had opened that group by hand and seen
-            // nothing.
-            let sub_menu = menu::pp_sub_menu(&db, &mitra, group.id).await.ok()?;
-            Some((group, sub_menu))
+            let sub_menu = menu::pp_sub_menu(&db, &mitra, group.id).await;
+            (position, group, sub_menu)
         });
     }
 
-    let mut index = Vec::new();
+    // One group failing to answer must not fail the whole index — a biller
+    // under a broken group is simply absent from search, the same as if the
+    // cashier had opened that group by hand and seen nothing. Such an index is
+    // only kept for [`PARTIAL_INDEX_TTL`], and if no group answered at all the
+    // search fails instead of reporting that nothing matched.
+    let mut answered = Vec::new();
+    let mut failure = None;
     while let Some(joined) = fetches.join_next().await {
-        let Ok(Some((group, sub_menu))) = joined else {
-            continue;
-        };
+        match joined {
+            Ok((position, group, Ok(sub_menu))) => answered.push((position, group, sub_menu)),
+            Ok((_, _, Err(e))) => failure = Some(e),
+            Err(e) => failure = Some(AppError::Internal(format!("Gagal memuat sub-menu: {e}"))),
+        }
+    }
+    if answered.is_empty() {
+        if let Some(e) = failure {
+            return Err(e);
+        }
+    }
+
+    // Groups answer in whatever order they finish; put them back in the
+    // menu's own order so ties in [`rank_matches`] stay stable.
+    answered.sort_by_key(|(position, _, _)| *position);
+
+    let mut index = Vec::new();
+    for (_, group, sub_menu) in answered {
         let group_ref = PpSearchGroupRef {
             id: group.id,
             name: group.group,
@@ -127,7 +159,12 @@ async fn payment_point_index(
     }
 
     let index = Arc::new(index);
-    store_index(index.clone());
+    let ttl = if failure.is_some() {
+        PARTIAL_INDEX_TTL
+    } else {
+        SEARCH_CACHE_TTL
+    };
+    store_index(ticket, index.clone(), ttl);
     Ok(index)
 }
 
@@ -269,6 +306,16 @@ mod tests {
         let index = fixture();
         assert!(rank_matches(&index, "").is_empty());
         assert!(rank_matches(&index, "   ").is_empty());
+    }
+
+    /// A logout while the index is being rebuilt must win: the rebuild that
+    /// finishes afterwards holds the previous account's catalogue.
+    #[test]
+    fn an_index_rebuilt_across_a_forget_is_not_kept() {
+        let ticket = SEARCH_CACHE.ticket();
+        forget_index();
+        store_index(ticket, Arc::new(fixture()), SEARCH_CACHE_TTL);
+        assert!(cached_index().is_none());
     }
 
     #[test]

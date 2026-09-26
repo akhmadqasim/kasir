@@ -1,20 +1,19 @@
 //! Bill lookups. An inquiry asks the provider what a customer owes; paying it is
-//! [`crate::services::ppob::payment`]'s job.
+//! [`crate::services::ppob::executor`]'s job, inside a sales transaction.
 
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::DatabaseConnection;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::domain::ppob::{InquiryResult, PaymentResult};
-use crate::domain::settings::parse_app_settings;
-use crate::entity::store_info;
+use crate::domain::ppob::InquiryResult;
 use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::MitraClient;
-use crate::services::ppob::executor::{execute_fulfillment_request, PpobFulfillmentRequest};
 use crate::services::ppob::parsers::{
     extract_f64, extract_optional_string, get_str_field, response_objects,
 };
+use crate::services::settings::get_app_settings;
 use crate::utils::{logging, AppError};
 
 fn extract_bpjs_data_book_value(data_book: &str, label: &str) -> Option<String> {
@@ -232,7 +231,9 @@ pub async fn pdam(
     })
 }
 
-#[derive(Debug, Clone)]
+/// Also the JSON body of its `POST /ppob/inquiries/*` route.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BpjsInquiryInput {
     pub customer_id: String,
     pub phone_number: String,
@@ -256,11 +257,7 @@ pub async fn bpjs(
 
     let client = get_mitra_request_context(db, mitra).await?;
 
-    let fallback_phone_number = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .map(|store| parse_app_settings(&store.additional_info).ppob.phone_number)
-        .unwrap_or_default();
+    let fallback_phone_number = get_app_settings(db).await?.ppob.phone_number;
 
     let normalized_type = match bpjs_type.trim().to_uppercase().as_str() {
         "1" | "BPJSKES" | "KESEHATAN" => "BPJSKES".to_string(),
@@ -398,7 +395,9 @@ pub async fn payment_point(
     })
 }
 
-#[derive(Debug, Clone)]
+/// Also the JSON body of its `POST /ppob/inquiries/*` route.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransferInquiryInput {
     pub channel_id: String,
     pub nomor_rekening: String,
@@ -486,39 +485,6 @@ pub async fn emoney(
         service_type: "emoney".to_string(),
         raw_data: result,
     })
-}
-
-/// Airtime and data bundles are bought outright — there is nothing to inquire
-/// first, so this goes straight to fulfilment.
-///
-/// `pin` is validated by the caller (`crate::http::routes::ppob::topup`) via
-/// `crate::services::ppob::executor::validate_pin` before it reaches here.
-pub async fn pulsa_purchase(
-    db: &DatabaseConnection,
-    mitra: &Arc<Mutex<MitraClient>>,
-    phone_number: String,
-    product_code: String,
-    product_id: i64,
-    product_type: String,
-    pin: String,
-) -> Result<PaymentResult, AppError> {
-    execute_fulfillment_request(
-        db,
-        mitra,
-        &PpobFulfillmentRequest {
-            service_type: product_type,
-            customer_id: Some(phone_number),
-            inquiry_id: None,
-            product_id: Some(product_id),
-            product_code: Some(product_code),
-            payment_code: None,
-            flag_id: None,
-            phone_number: None,
-            amount: None,
-            pin,
-        },
-    )
-    .await
 }
 
 #[cfg(test)]

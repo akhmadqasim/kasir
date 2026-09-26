@@ -74,12 +74,32 @@ dihapus bersama paket `shadcn` itu sendiri. Yang tersisa di luar palet HeroUI ha
 kategori — `--chart-1..5` dan `--service-*` — dan keduanya dijelaskan di 3.2.
 
 Nilai yang ditulis di `index.css` hanya yang memang dipilih berbeda dari bawaan HeroUI:
-hue netralnya dan `--radius`. Selebihnya — skala radius, `--spacing`, seluruh warna
-`*-hover` dan `*-soft`, bayangan, lebar cincin fokus — dihitung HeroUI sendiri dari
-nilai-nilai itu. Jangan menuliskannya ulang; menyalin satu nilai turunan ke `index.css`
+hue netralnya dan penyesuaian kontras di 3.1.1. Selebihnya — skala radius, `--spacing`,
+seluruh warna `*-hover` dan `*-soft`, bayangan, lebar cincin fokus — dihitung HeroUI sendiri
+dari nilai-nilai itu. Jangan menuliskannya ulang; menyalin satu nilai turunan ke `index.css`
 memutus hubungannya dengan induknya tanpa ada yang menyadari.
 
 Mode gelap adalah kelas `dark` atau `data-theme="dark"` di `<html>`.
+
+### 3.1.1 Kontras: di mana kami menyimpang dari HeroUI
+
+Beberapa nilai bawaan HeroUI gagal WCAG AA di palet ini, jadi `index.css` menimpanya. Target:
+teks 4.5:1, batas komponen dan objek grafis 3:1 (WCAG 1.4.11). Angka rasionya ditulis di
+komentar `index.css` di samping setiap nilai; tabel ini hanya peta apa yang diubah dan kenapa.
+
+| Token                                    | Terang                            | Gelap                            | Alasan                                                                                                         |
+| ---------------------------------------- | --------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--muted`                                | 52% (bawaan 55%)                  | bawaan (70.5%)                   | teks sekunder di atas kanvas dan `--default` (chip, wadah tab) di bawah 4.5:1                                  |
+| `--accent`                               | 54% (bawaan 62%)                  | 56%                              | teks putih di tombol utama hanya 3.59:1                                                                        |
+| `--danger`                               | 57% (bawaan 65%)                  | 66%, `--danger-foreground` gelap | tombol merah dengan teks putih, dan teks galat kolom isian; di tema gelap satu merah tidak bisa lolos keduanya |
+| `text-success` / `text-warning`          | dialihkan ke `*-soft-foreground`  | sama                             | `--success`/`--warning` adalah warna latar; sebagai teks hanya 2:1                                             |
+| `--field-border`, `--field-border-width` | 63%, 1px (bawaan transparan, 0px) | 54%                              | kolom isian tanpa tepi hanya 1.1:1 terhadap kartu; lihat bagian 4                                              |
+| `--chart-2/4/5`                          | 60–64%                            | bawaan proyek (70–78%)           | garis dan batang grafik harus 3:1 terhadap kartu; lihat 3.3                                                    |
+| `--service-*`                            | ±60%                              | 60–75%                           | ikon layanan harus 3:1 terhadap latar redupnya; lihat 3.2                                                      |
+
+`text-danger` dan `text-accent` tidak perlu dialihkan seperti `text-success`: nilai tokennya
+sudah dipilih agar lolos sebagai teks juga. Jangan kembalikan salah satu nilai di atas ke
+bawaan HeroUI tanpa mengukur ulang rasionya.
 
 ### 3.2 Warna kategori
 
@@ -87,11 +107,14 @@ Dua kelompok warna berdiri di luar palet makna, dan keduanya ada karena warnanya
 membawa informasi: `--chart-1..5` untuk seri grafik, dan `--service-*` untuk sembilan
 layanan PPOB. Kasir mengenali "Listrik" dari warnanya sebelum sempat membaca labelnya.
 
-Keduanya ditulis pada pita lightness yang sama, 60–75%, sehingga satu nilai terbaca di atas
-`--background` terang maupun gelap. **Tidak ada `dark:` di komponen mana pun untuk warna
-kategori** — varian gelap yang ditulis tangan per warna adalah persis yang baru saja
-dibuang, dan pasangan seperti `bg-blue-100 dark:bg-blue-950` selalu berakhir dengan satu
-sisi yang lupa diperbarui.
+Nilainya ditulis per tema di `index.css`: di tema gelap pita 60–75% sudah lolos 3:1, tapi di
+tema terang warna yang terang (kuning PLN, teal PDAM, hijau PP, jingga transfer) hanya 2–2.9:1
+terhadap latar redupnya sendiri, jadi di sana semuanya diturunkan ke sekitar 60% dengan hue
+dan chroma tetap. Kuning PLN menjadi emas tua; tetap terpisah dari jingga transfer karena
+hue-nya berjarak 30 derajat. **Tidak ada `dark:` di komponen mana pun untuk warna
+kategori** — perbedaan tema diurus sekali di `index.css`. Varian gelap yang ditulis tangan
+per komponen adalah persis yang dulu dibuang, dan pasangan seperti
+`bg-blue-100 dark:bg-blue-950` selalu berakhir dengan satu sisi yang lupa diperbarui.
 
 Latar redupnya diturunkan dengan penanda opasitas Tailwind, bukan warna kedua:
 `bg-[var(--service-pulsa)]/15`. Itu cara HeroUI membuat varian `-soft`-nya sendiri.
@@ -102,8 +125,17 @@ Warna Tailwind mentah (`bg-blue-500`, `text-gray-400`) tidak boleh muncul di `sr
 
 `--chart-1..5` **bukan gradasi satu warna.** Grafik metode pembayaran menggambar sampai
 lima garis sekaligus dan lima tingkat biru yang berdekatan tidak terbedakan begitu
-garisnya bersinggungan. Seri pertama memakai aksen; sisanya memutari roda warna pada
-lightness yang setara sehingga tidak ada satu garis pun yang tampak lebih penting.
+garisnya bersinggungan. Seri pertama memakai aksen; sisanya memutari roda warna sehingga
+tidak ada satu garis pun yang tampak lebih penting.
+
+Setiap seri harus 3:1 terhadap kartu di kedua tema — garis 2px dan batang grafik adalah objek
+grafis (WCAG 1.4.11). Karena itu `--chart-2/4/5` punya nilai terang (60–64%) dan gelap
+(70–78%) yang berbeda; hue-nya sama, jadi "garis kuning itu e-wallet" tetap berlaku di kedua
+tema. `mixed` memakai `--muted`, yang sudah lolos sebagai teks.
+
+Tooltip grafik memakai `ChartTooltipContent` dari `components/ui/chart.tsx`. `formatter`-nya
+hanya mengganti **nilai** (atau pasangan `[nilai, nama]`, seperti di recharts); penanda warna
+dan nama seri tetap digambar olehnya. Jangan kembalikan baris utuh dari `formatter`.
 
 Pemetaan warna ke metode pembayaran **dipatok**, bukan dibagi menurut urutan kemunculan
 (`METHOD_COLORS` di `src/lib/labels.ts`, bersebelahan dengan labelnya, dibaca dashboard
@@ -207,6 +239,14 @@ menyatu dengan latar induknya; itu contoh "In Surface" di dokumentasi TextField.
 langsung di atas kanvas halaman (bar pencarian, filter) memakai varian bawaan. Aturan ini
 berlaku sekali di sini; jangan tulis ulang alasannya sebagai komentar di tiap berkas.
 
+**Setiap kolom isian punya tepi 1px yang terlihat** (`--field-border`, `--field-border-width`
+di `index.css`): 3.5:1 terhadap kartu dan dialog di kedua tema. Beda latar `variant="secondary"`
+saja hanya 1.1:1 — cukup untuk mata yang tajam, tidak cukup untuk WCAG 1.4.11. Warna tepi
+hover dan fokus diturunkan HeroUI dari nilai itu. Garis _di dalam_ kolom — pemisah
+`InputGroup.Prefix`/`Suffix` dan tombol +/- `NumberField` — sengaja tetap memakai `--border`
+yang tenang, karena bukan batas komponen. Jangan menambah `border-*` pada kolom isian
+per komponen.
+
 ### 4.1 Varian mengikuti makna, bukan rupa
 
 Ini prinsip nomor satu HeroUI v3: nama varian menyatakan **peran** sebuah aksi, bukan
@@ -271,7 +311,7 @@ implementasi karena migrasi HeroUI dikerjakan per fitur.
 | Berkas di `src/components/`                              | Tugas                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stat-card.tsx` — `StatCard`                             | satu kartu KPI; `delta` untuk tren, `note` lencana netral, `tone` warna angka (`success`/`danger`), `action` kontrol di kanan kepala, `children` baris di bawah angka, `footer` isi `Card.Footer`; `value` boleh `ReactNode` supaya kartu yang memuat menaruh `Skeleton` di baris angka |
-| `summary-list.tsx` — `SummaryList`, `SummaryItem`        | baris label–nilai semantik `<dl>`; `tone` per baris (`mono`/`strong`/`success`/`danger`), `layout` `row` (nilai rata kanan) atau `grid` (kolom label 120px)                                                                                                                             |
+| `summary-list.tsx` — `SummaryList`, `SummaryItem`        | baris label–nilai semantik `<dl>`; `value` teks atau `ReactNode` (untuk `Skeleton`), `tone` per baris (`mono`/`strong`/`success`/`danger`), `layout` `row` (nilai rata kanan) atau `grid` (kolom label 120px)                                                                           |
 | `no-data.tsx` — `NoData`                                 | keadaan kosong dan gagal di atas `EmptyState` HeroUI (yang dipakai dokumentasi Table/ComboBox untuk `renderEmptyState`); ikon `size-6` lalu satu kalimat, `tone="danger"` untuk pesan gagal                                                                                             |
 | `search-input.tsx` — `SearchInput`                       | bar pencarian di atas tabel: `SearchField` > `Group` > ikon + kolom + tombol hapus, ditulis sekali; `aria-label` wajib, varian bawaan karena berdiri di kanvas                                                                                                                          |
 | `option-select.tsx` — `OptionSelect`                     | `Select` untuk daftar `{ key, label }` statis (status, alasan, peran, satuan); `label` atau `aria-label`, `description`, `errorMessage`; `onChange` menerima `string \| null`                                                                                                           |
@@ -336,8 +376,9 @@ Panel yang tidak terpilih tidak dirender oleh React Aria. Ini menguntungkan (tid
 permintaan jaringan untuk panel yang tidak dilihat) tapi harus diingat saat menulis test:
 isinya baru ada setelah tabnya diklik.
 
-`Tabs.Panel` bawaan sudah `p-2` dan `mt-4` dari daftar tabnya; jangan tulis `pt-*`/`p-*`
-di panel.
+`Tabs.Panel` berjarak `mt-4` dari daftar tabnya dan tanpa padding (`p-2` bawaan HeroUI
+dinolkan di `index.css`, supaya tepi kartu di panel segaris dengan tepi daftar tab); jangan
+tulis `pt-*`/`p-*` di panel.
 
 ### 5.3 Kartu KPI
 
@@ -425,7 +466,7 @@ Acuannya contoh **Default** di dokumentasi Modal HeroUI, tidak lebih:
 Modal.CloseTrigger
 Modal.Header
   Modal.Icon  (bg-default text-foreground, ikon size-5)   — opsional
-  Modal.Heading                                           — bawaan text-base font-medium
+  Modal.Heading                                           — text-base, semibold lewat index.css
 Modal.Body                                                — bawaan text-sm text-muted
   satu kalimat, bila memang perlu
   kolom isian (TextField variant="secondary")
@@ -459,6 +500,12 @@ kotak ringkasan atau keadaan kosong ia menjanjikan interaksi yang tidak ada.
 **Tidak ada garis.** `border-b` di Header dan `border-t` di Footer adalah pemisah shadcn;
 HeroUI memisahkan bagian dengan ruang (`.modal__header + .modal__body { mt-2 }`,
 `+ .modal__footer { mt-5 }`), dan itu sudah otomatis.
+
+**Judul Modal, Drawer, dan AlertDialog semibold** lewat aturan global di `index.css`,
+bukan `font-medium` bawaan: pada 500 judul sebobot label kolom di bawahnya, dan di Windows
+teks terang di tema gelap tampil lebih tebal sehingga bobotnya terlihat berbeda antar tema.
+Jangan menulis `className` bobot di `Modal.Heading`. Drawer memberi jarak judul ke isi 16px
+(bukan 8px) karena isinya langsung dibuka kolom isian berlabel.
 
 **Lebar lewat `Modal.Container size`**, bukan `sm:max-w-*` di Dialog. `scroll="inside"`
 (bawaan) sudah membatasi tinggi dan menggulung Body. Lebar khusus di luar skala boleh
@@ -506,6 +553,11 @@ sekali pakai.
   bukan terjemahan morning/afternoon/evening yang batasnya berbeda.
 
 Tulis kalimat yang akan diucapkan orang. "Belum ada data", bukan "Data tidak tersedia".
+
+Satu frasa untuk satu konsep, diambil dari `id.ts`, bukan ditulis ulang: `common.retry`
+("Coba lagi"), `common.clearFilters` ("Hapus filter"), `loadFailed.*` ("Gagal memuat …"),
+`noMatch.*` ("Tidak ada … yang cocok"), pesan kolom di `validation.*`, umpan balik cetak
+di `print.*`. Subjek baru ditambahkan sebagai kunci di grup itu lewat pembangun frasanya.
 
 ## 7. Aksesibilitas
 
@@ -555,8 +607,9 @@ Aturannya:
    `features/ppob/components/quick-access/` lalu diekspor lewat `features/ppob/index.ts`.
    Berkas jembatan di `features/cashier/` sudah dihapus.
 
-   Satu pengecualian yang disengaja: **`app/router.tsx` boleh `lazy()`-import modul
-   halaman langsung** (`features/ppob/components/ppob-page`), bukan barrel-nya. Barrel
+   Satu pengecualian yang disengaja: **`app/pages.tsx` (daftar halaman `lazy()` milik
+   router) boleh mengimpor modul halaman langsung** (`features/ppob/components/ppob-page`),
+   bukan barrel-nya. Barrel
    sebuah fitur juga mengekspor komponen yang dimuat _eager_ oleh fitur lain
    (`PpobQuickAccess` oleh kasir); kalau router memuat halaman lewat barrel yang sama,
    seluruh pohon fitur ikut masuk chunk pemanggilnya dan batas `lazy()` jadi percuma.

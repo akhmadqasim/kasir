@@ -97,9 +97,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// State that owns its PPOB client and backup scheduler. This is what tests
-    /// build; the running app uses [`AppState::sharing`] so both transports see
-    /// one of each.
+    /// State that owns its own process-wide handles. This is what tests build;
+    /// the running app uses [`AppState::sharing`] so the server and the rest of
+    /// the process see one of each.
     pub fn new(db: DatabaseConnection, config: ServerConfig) -> Self {
         Self {
             db,
@@ -113,7 +113,8 @@ impl AppState {
         }
     }
 
-    /// Adopt the PPOB client and backup scheduler `run()` already created.
+    /// Adopt the PPOB client, backup scheduler, updater and window handles
+    /// `run()` already created.
     pub fn sharing(
         mut self,
         mitra: Arc<Mutex<MitraClient>>,

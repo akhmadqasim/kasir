@@ -20,11 +20,11 @@ use crate::utils::{logging, AppError};
 
 /// The body of every failed request.
 #[derive(Debug, Serialize)]
-pub struct ErrorBody {
+struct ErrorBody {
     /// Stable identifier for code to branch on. Never translated.
-    pub code: &'static str,
+    code: &'static str,
     /// Indonesian text meant for the user.
-    pub message: String,
+    message: String,
 }
 
 #[derive(Debug)]
@@ -115,15 +115,12 @@ impl ApiError {
         }
     }
 
-    // Read by the tests, and by any future caller that needs to inspect a
-    // failure before it becomes a response. Kept public rather than test-only
-    // so an error stays inspectable outside `#[cfg(test)]`.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn status(&self) -> StatusCode {
         self.status
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn code(&self) -> &'static str {
         self.code
     }
@@ -136,7 +133,9 @@ impl From<AppError> for ApiError {
             AppError::Forbidden(message) => ApiError::forbidden(message),
             AppError::NotFound(message) => ApiError::not_found(message),
             AppError::Validation(message) => ApiError::validation(message),
-            AppError::Upstream(message) => ApiError::upstream(message),
+            AppError::Upstream(message) | AppError::UpstreamUncertain(message) => {
+                ApiError::upstream(message)
+            }
             // The two that must not be echoed. `Display` on the sea-orm error
             // includes the failing SQL; `Internal` routinely carries a path.
             AppError::Database(err) => {

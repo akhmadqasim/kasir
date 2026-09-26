@@ -2,13 +2,18 @@ import { useState } from "react"
 import { Description, Input, Label, Skeleton, TextField, ToggleButton } from "@heroui/react"
 import { Smartphone } from "lucide-react"
 
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
+import { cn } from "@/lib/utils"
+import { id } from "@/i18n/id"
 import { usePulsaDetails } from "../../hooks"
 import type { PulsaDetailProduct } from "../../types"
+import { OptionGroup } from "./option-group"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
+import { PpobSetupAction } from "../ppob-setup-action"
 
 interface PulsaInputProps extends ServiceInputProps {
   productType: "pulsa" | "data"
@@ -24,7 +29,7 @@ export function PulsaInput({
   const [phoneNumber, setPhoneNumber] = useState("")
   const [selected, setSelected] = useState<PulsaDetailProduct | null>(null)
 
-  const { data, isLoading, error } = usePulsaDetails(phoneNumber)
+  const { data, isLoading, isFetching, error, refetch } = usePulsaDetails(phoneNumber)
 
   const filteredProducts =
     data?.products.filter((p) => {
@@ -67,14 +72,17 @@ export function PulsaInput({
 
   const confirmItems: SummaryItem[] | null = selected
     ? [
-        { label: "Layanan", value: productType === "pulsa" ? "Pulsa" : "Paket Data" },
-        { label: "Provider", value: data?.provider ?? "-" },
-        { label: "Nomor HP", value: phoneNumber, tone: "mono" },
-        { label: "Produk", value: selected.description.replace(/\n/g, " ") },
-        { label: "Modal", value: formatRupiah(selected.vendorPrice) },
-        { label: "Harga Jual", value: formatRupiah(selectedSellPrice), tone: "strong" },
         {
-          label: "Margin",
+          label: id.ppob.quickAccess.service,
+          value: productType === "pulsa" ? id.ppob.pulsa : id.ppob.dataPacket,
+        },
+        { label: id.ppob.provider, value: data?.provider ?? "-" },
+        { label: id.ppob.phoneNumber, value: phoneNumber, tone: "mono" },
+        { label: id.ppob.product, value: selected.description.replace(/\n/g, " ") },
+        { label: id.ppob.quickAccess.cost, value: formatRupiah(selected.vendorPrice) },
+        { label: id.ppob.price, value: formatRupiah(selectedSellPrice), tone: "strong" },
+        {
+          label: id.ppob.margin,
           value: `+${formatRupiah(selectedSellPrice - selected.vendorPrice)}`,
           tone: "success",
         },
@@ -88,7 +96,7 @@ export function PulsaInput({
       confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<Smartphone />}
-      placeholderText="Pilih produk untuk melihat detail"
+      placeholderText={id.ppob.quickAccess.pickProductHint}
       wideLayout={wideLayout}
       onConfirm={handleConfirm}
     >
@@ -102,8 +110,12 @@ export function PulsaInput({
           setSelected(null)
         }}
       >
-        <Label>Nomor HP</Label>
-        <Input className="tabular-nums" inputMode="tel" placeholder="08xxxxxxxxxx" />
+        <Label>{id.ppob.phoneNumber}</Label>
+        <Input
+          className="tabular-nums"
+          inputMode="tel"
+          placeholder={id.ppob.quickAccess.phonePlaceholder}
+        />
         {/* Provider yang terdeteksi jadi keterangan kolomnya. */}
         {data && (
           <Description className="flex items-center gap-1.5">
@@ -112,6 +124,16 @@ export function PulsaInput({
           </Description>
         )}
       </TextField>
+
+      {/* Before the number is long enough to look up, the panel under the field
+          would be blank — say what to type and what will appear there. */}
+      {phoneNumber.length < 10 && !data && (
+        <NoData icon={<Smartphone />} title={id.ppob.quickAccess.enterPhoneTitle}>
+          {productType === "pulsa"
+            ? id.ppob.quickAccess.enterPhonePulsaHint
+            : id.ppob.quickAccess.enterPhoneDataHint}
+        </NoData>
+      )}
 
       {/*
         Also covers the 300 ms debounce before the lookup starts: without it the
@@ -125,7 +147,16 @@ export function PulsaInput({
         </div>
       )}
 
-      {error && phoneNumber.length >= 10 && <NoData title={error.message} tone="danger" />}
+      {error && phoneNumber.length >= 10 && (
+        <LoadError
+          isRetrying={isFetching}
+          secondaryAction={<PpobSetupAction error={error} />}
+          title={id.loadFailed.ppobProducts}
+          onRetry={() => refetch()}
+        >
+          {error.message}
+        </LoadError>
+      )}
 
       {/*
         A lookup that comes back with nothing to sell — every product flagged as
@@ -134,16 +165,25 @@ export function PulsaInput({
       */}
       {data && !isLoading && filteredProducts.length === 0 && (
         <NoData
-          title={`Tidak ada produk ${productType === "pulsa" ? "pulsa" : "paket data"} untuk nomor ini`}
+          title={
+            productType === "pulsa"
+              ? id.ppob.quickAccess.noPulsaProducts
+              : id.ppob.quickAccess.noDataProducts
+          }
         >
           {data.provider
-            ? `Provider terdeteksi: ${data.provider}. Coba tab lain atau ulangi beberapa saat lagi.`
-            : "Periksa kembali nomornya, atau coba lagi beberapa saat lagi."}
+            ? id.ppob.quickAccess.providerDetected(data.provider)
+            : id.ppob.quickAccess.checkNumber}
         </NoData>
       )}
 
       {filteredProducts.length > 0 && (
-        <div className={productGridClass}>
+        <OptionGroup
+          className={productGridClass}
+          label={
+            productType === "pulsa" ? id.ppob.quickAccess.pickPulsa : id.ppob.quickAccess.pickData
+          }
+        >
           {filteredProducts.map((product) => {
             const isSelected = selected?.id === product.id
             const sellPrice = getSellPrice(product)
@@ -156,13 +196,16 @@ export function PulsaInput({
               >
                 <span>{product.description.replace(/\n/g, " ")}</span>
                 <span className="font-semibold tabular-nums">{formatRupiah(sellPrice)}</span>
-                <span className="text-xs tabular-nums text-muted">
-                  Modal: {formatRupiah(product.vendorPrice)}
+                {/* `text-muted` only on the neutral tile: on the selected
+                    accent-soft tile it drops below AA, so the line keeps the
+                    tile's own foreground there. */}
+                <span className={cn("text-xs tabular-nums", !isSelected && "text-muted")}>
+                  {id.ppob.quickAccess.costOf(formatRupiah(product.vendorPrice))}
                 </span>
               </ToggleButton>
             )
           })}
-        </div>
+        </OptionGroup>
       )}
     </ServiceFlowLayout>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Button, Kbd, Modal, Spinner } from "@heroui/react"
-import { Copy, Printer } from "lucide-react"
+import { CircleCheck, Copy, Printer, TriangleAlert } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
@@ -13,6 +13,11 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { getSaleReceiptLines } from "@/lib/api/transactions"
 import { flashPress } from "@/lib/flash-press"
 import { toast } from "@/lib/toast"
+import {
+  EMPTY_AMOUNT_ENTRY_TIMING,
+  isScannerBurstEntry,
+  trackAmountEntry,
+} from "../payment-behavior"
 import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
 
@@ -137,13 +142,13 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     setIsPrinting(true)
     try {
       await printReceipt(transaction.id)
-      toast.success("Struk berhasil dicetak!")
+      toast.success(id.print.printed)
     } catch (error) {
       const message = errorMessage(error)
       if (message.includes("belum dikonfigurasi")) {
-        toast.error("Printer belum diatur. Silakan atur di menu Pengaturan.")
+        toast.error(id.print.printerNotSet)
       } else {
-        toast.error(`Gagal mencetak struk: ${message}`)
+        toast.error(id.print.failed(message))
       }
     } finally {
       setIsPrinting(false)
@@ -162,15 +167,15 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   const handleCopy = async () => {
     const lines = receiptLines.data
     if (!lines) {
-      toast.error("Struk belum siap disalin. Coba sesaat lagi.")
+      toast.error(id.cashier.receiptNotReady)
       return
     }
     try {
       const png = await renderReceiptPng(lines, receiptColumns(paperWidth))
       await navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
-      toast.success("Struk disalin.")
+      toast.success(id.cashier.receiptCopied)
     } catch {
-      toast.error("Gagal menyalin struk.")
+      toast.error(id.cashier.receiptCopyFailed)
     }
   }
 
@@ -185,11 +190,33 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
   // Tombolnya sendiri, supaya pintasan memantulkan kedipan "ditekan" di sana.
   const printButtonRef = useRef<HTMLButtonElement>(null)
   const copyButtonRef = useRef<HTMLButtonElement>(null)
+  // Scanner adalah keyboard: memindai barang pelanggan berikutnya sebelum
+  // dialog ini ditutup mengetik digit lalu Enter. Digitnya dicatat supaya
+  // Enter penutup semburan itu tidak mencetak ulang struk yang barusan.
+  const scanRef = useRef({ digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING })
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return
       if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
         return
+      }
+      if (/^\d$/.test(event.key)) {
+        const previous = scanRef.current
+        const timing = trackAmountEntry(previous, event.timeStamp)
+        const digits =
+          timing.startedAt === previous.startedAt ? previous.digits + event.key : event.key
+        scanRef.current = { digits, ...timing }
+        return
+      }
+      if (event.key === "Enter") {
+        const { digits, ...timing } = scanRef.current
+        scanRef.current = { digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING }
+        if (isScannerBurstEntry({ amount: digits, ...timing, submittedAt: event.timeStamp })) {
+          event.preventDefault()
+          event.stopPropagation()
+          toast.warning(id.cashier.scanIgnoredAfterSale)
+          return
+        }
       }
       const action =
         event.key === "Enter"
@@ -211,6 +238,10 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     <>
       <Modal.CloseTrigger />
       <Modal.Header>
+        {/* Ikon berstatus: `bg-success-soft`, bukan netral — DESIGN.md §5.7. */}
+        <Modal.Icon className="bg-success-soft text-success-soft-foreground">
+          <CircleCheck className="size-5" />
+        </Modal.Icon>
         <Modal.Heading>Transaksi selesai</Modal.Heading>
       </Modal.Header>
 
@@ -248,19 +279,31 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
               </div>
             </InfoPanel>
 
-            {autoPrintState.status === "printing" && (
-              <p className="flex items-center gap-2">
-                <Spinner color="current" size="sm" />
-                Struk sedang dicetak otomatis…
-              </p>
-            )}
-            {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
-            {autoPrintState.status === "failed" && (
-              <p className="text-danger">
-                Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak
-                struk".
-              </p>
-            )}
+            {/* Satu wilayah `status` yang selalu ada, supaya pembaca layar
+                mengumumkan setiap perubahan nasib cetak otomatis. */}
+            <div aria-live="polite" role="status">
+              {autoPrintState.status === "printing" && (
+                <p className="flex items-center gap-2">
+                  <Spinner color="current" size="sm" />
+                  Struk sedang dicetak otomatis…
+                </p>
+              )}
+              {autoPrintState.status === "printed" && (
+                <p className="flex items-center gap-2">
+                  <Printer aria-hidden="true" className="size-4 shrink-0" />
+                  Struk otomatis dicetak.
+                </p>
+              )}
+              {autoPrintState.status === "failed" && (
+                <p className="flex items-start gap-2 text-danger">
+                  <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol
+                    &quot;Cetak struk&quot;.
+                  </span>
+                </p>
+              )}
+            </div>
 
             <div className="mt-auto flex flex-col gap-2">
               <Button ref={copyButtonRef} fullWidth variant="tertiary" onPress={handleCopy}>

@@ -1,161 +1,85 @@
-import { useState, useCallback } from "react"
-import { Plus, Check, X, Trash2 } from "lucide-react"
-import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
+import { useState } from "react"
+import { Plus } from "lucide-react"
+import { Button } from "@heroui/react"
 
-import { InfoPanel } from "@/components/info-panel"
 import { NavbarActions } from "@/components/layout/app-navbar"
-import { NoData } from "@/components/no-data"
+import { LoadError } from "@/components/load-error"
 import { OptionSelect } from "@/components/option-select"
-import { PendingButton } from "@/components/pending-button"
-import { StatusBadge, type StatusVariant } from "@/components/status-badge"
-import { SummaryList } from "@/components/summary-list"
 import { TablePagination } from "@/components/table-pagination"
+import { formatNumber } from "@/lib/format"
+import { useAuthStore } from "@/features/auth"
 import { id } from "@/i18n/id"
-import { formatDateTime, formatRupiah } from "@/lib/format"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import {
   useListWriteoffs,
   useApproveWriteoff,
   useRejectWriteoff,
   useDeleteWriteoff,
 } from "../hooks/use-stock-writeoffs"
+import { WRITEOFF_REASON_OPTIONS, WRITEOFF_STATUS_OPTIONS } from "../labels"
+import { WriteoffConfirmDialog, type WriteoffAction } from "./writeoff-confirm-dialog"
 import { WriteoffFormDialog } from "./writeoff-form-dialog"
-import type { StockWriteoff } from "../types"
+import { WriteoffTable } from "./writeoff-table"
 
 const ALL = "all"
 
-const STATUS_OPTIONS = [
-  { key: ALL, label: "Semua Status" },
-  { key: "pending", label: "Menunggu" },
-  { key: "approved", label: "Disetujui" },
-  { key: "rejected", label: "Ditolak" },
-] as const
+const STATUS_OPTIONS = [{ key: ALL, label: "Semua Status" }, ...WRITEOFF_STATUS_OPTIONS]
 
-const REASON_OPTIONS = [
-  { key: ALL, label: "Semua Alasan" },
-  { key: "damaged", label: "Rusak" },
-  { key: "expired", label: "Kadaluarsa" },
-  { key: "lost", label: "Hilang" },
-  { key: "other", label: "Lainnya" },
-] as const
-
-const REASON_LABELS: Record<string, string> = {
-  damaged: "Rusak",
-  expired: "Kadaluarsa",
-  lost: "Hilang",
-  other: "Lainnya",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Menunggu",
-  approved: "Disetujui",
-  rejected: "Ditolak",
-}
-
-const STATUS_VARIANTS: Record<string, StatusVariant> = {
-  pending: "warning",
-  approved: "success",
-  rejected: "error",
-}
-
-const COLUMN_COUNT = 9
-
-function WriteoffStatusBadge({ status }: { status: string }) {
-  return (
-    <StatusBadge status={STATUS_VARIANTS[status] ?? "neutral"}>
-      {STATUS_LABELS[status] ?? status}
-    </StatusBadge>
-  )
-}
-
-type ConfirmAction = {
-  type: "approve" | "reject" | "delete"
-  writeoff: StockWriteoff
-}
+const REASON_OPTIONS = [{ key: ALL, label: "Semua Alasan" }, ...WRITEOFF_REASON_OPTIONS]
 
 export function StockWriteoffPage() {
-  const user = useAuthStore((s) => s.user)
-  const isAdmin = user?.role === "admin"
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin")
 
   // Filters & pagination
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState(ALL)
   const [reasonFilter, setReasonFilter] = useState(ALL)
   const [formOpen, setFormOpen] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  // Aksi dan keadaan buka dipisah: aksinya tetap terisi selama animasi tutup,
+  // jadi judul dan ringkasan dialog tidak mengosong sesaat sebelum hilang.
+  const [confirmAction, setConfirmAction] = useState<WriteoffAction | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   // Data
-  const { data, isLoading } = useListWriteoffs({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useListWriteoffs({
     page,
     perPage: 50,
     status: statusFilter === ALL ? undefined : statusFilter,
     reason: reasonFilter === ALL ? undefined : reasonFilter,
   })
 
+  // Menyetujui atau menolak di bawah filter "Menunggu" bisa mengosongkan
+  // halaman terakhir. Tanpa ini halaman itu tampil kosong, dan kalau tinggal
+  // satu halaman navigasinya ikut hilang — tidak ada jalan kembali.
+  const lastPage = data && !isPlaceholderData ? Math.max(1, data.totalPages) : null
+  if (lastPage != null && page > lastPage) setPage(lastPage)
+
   // Mutations
   const approveWriteoff = useApproveWriteoff()
   const rejectWriteoff = useRejectWriteoff()
   const deleteWriteoff = useDeleteWriteoff()
-
-  const handleFilterChange = useCallback(
-    (setter: (v: string) => void) => (value: string) => {
-      setter(value)
-      setPage(1)
-    },
-    [],
-  )
-
-  const handleConfirm = () => {
-    if (!confirmAction || !user) return
-    const { type, writeoff } = confirmAction
-
-    const onSettled = () => setConfirmAction(null)
-
-    switch (type) {
-      case "approve":
-        approveWriteoff.mutate(writeoff.id, { onSettled })
-        break
-      case "reject":
-        rejectWriteoff.mutate(writeoff.id, { onSettled })
-        break
-      case "delete":
-        deleteWriteoff.mutate(writeoff.id, { onSettled })
-        break
-    }
-  }
-
-  const writeoffs = data?.items ?? []
-  const totalPages = data?.totalPages ?? 1
-
-  // Stock moves when a write-off is *created*, not when it is approved:
-  // `create_stock_writeoff` decrements it in the same transaction as the insert,
-  // `approve_stock_writeoff` only flips the status, and `reject`/`delete` put the
-  // stock back — except for refund-originated rows, which never deducted any.
-  const isFromRefund = confirmAction?.writeoff.refundId != null
-  const confirmMessages: Record<string, { title: string; description: string }> = {
-    approve: {
-      title: "Setujui Write-off",
-      description:
-        "Stok sudah dikurangi sejak write-off ini dibuat. Menyetujui hanya mengesahkan kerugiannya, stok tidak berubah lagi.",
-    },
-    reject: {
-      title: "Tolak Write-off",
-      description: isFromRefund
-        ? "Write-off ini berasal dari refund, jadi stoknya tidak pernah dikurangi dan tidak akan dikembalikan. Kerugiannya dibatalkan."
-        : "Stok yang dikurangi saat write-off ini dibuat akan dikembalikan.",
-    },
-    delete: {
-      title: "Hapus Write-off",
-      description:
-        "Data write-off dihapus permanen dan stok yang dikurangi saat pembuatan dikembalikan.",
-    },
-  }
-
   const isPending =
     approveWriteoff.isPending || rejectWriteoff.isPending || deleteWriteoff.isPending
 
+  const handleRequestAction = (action: WriteoffAction) => {
+    setConfirmAction(action)
+    setConfirmOpen(true)
+  }
+
+  const handleConfirm = () => {
+    if (!confirmAction || isPending) return
+    const { type, writeoff } = confirmAction
+    const mutation = { approve: approveWriteoff, reject: rejectWriteoff, delete: deleteWriteoff }[
+      type
+    ]
+    mutation.mutate(writeoff.id, { onSettled: () => setConfirmOpen(false) })
+  }
+
+  const hasFilters = statusFilter !== ALL || reasonFilter !== ALL
+
   return (
-    <div className="flex flex-col gap-6">
+    // `@container`: lebar kolom produk di tabel mengikuti lebar area isi
+    // (sidebar terbuka atau tertutup), bukan lebar jendela.
+    <div className="@container flex flex-col gap-6">
       <NavbarActions>
         <Button size="sm" onPress={() => setFormOpen(true)}>
           <Plus />
@@ -164,201 +88,67 @@ export function StockWriteoffPage() {
       </NavbarActions>
 
       {/* Filter Bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <OptionSelect
           aria-label="Filter status"
-          className="w-44"
+          className="w-full sm:w-44"
           options={STATUS_OPTIONS}
           value={statusFilter}
-          onChange={(value) => handleFilterChange(setStatusFilter)(value ?? ALL)}
+          onChange={(value) => {
+            setStatusFilter(value ?? ALL)
+            setPage(1)
+          }}
         />
 
         <OptionSelect
           aria-label="Filter alasan"
-          className="w-44"
+          className="w-full sm:w-44"
           options={REASON_OPTIONS}
           value={reasonFilter}
-          onChange={(value) => handleFilterChange(setReasonFilter)(value ?? ALL)}
+          onChange={(value) => {
+            setReasonFilter(value ?? ALL)
+            setPage(1)
+          }}
         />
+
+        {data && (
+          <p aria-live="polite" className="text-sm text-muted tabular-nums sm:ml-auto">
+            {formatNumber(data.total)} write-off
+          </p>
+        )}
       </div>
 
-      <div className="flex flex-col gap-4">
-        <Table variant="secondary">
-          <Table.ScrollContainer>
-            <Table.Content aria-label={id.nav.stock}>
-              <Table.Header>
-                <Table.Column isRowHeader>No. WO</Table.Column>
-                <Table.Column>Produk</Table.Column>
-                <Table.Column>Kasir</Table.Column>
-                <Table.Column className="text-right">Qty</Table.Column>
-                <Table.Column>Alasan</Table.Column>
-                <Table.Column className="text-right">Nilai Kerugian</Table.Column>
-                <Table.Column>Status</Table.Column>
-                <Table.Column>Tanggal</Table.Column>
-                <Table.Column className="text-right">Aksi</Table.Column>
-              </Table.Header>
-              <Table.Body renderEmptyState={() => <NoData title="Tidak ada data write-off" />}>
-                {isLoading
-                  ? Array.from({ length: 5 }).map((_, rowIndex) => (
-                      <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
-                        {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
-                          <Table.Cell key={cellIndex}>
-                            <Skeleton className="h-5 w-full" />
-                          </Table.Cell>
-                        ))}
-                      </Table.Row>
-                    ))
-                  : writeoffs.map((wo) => (
-                      <Table.Row key={wo.id} id={wo.id} textValue={wo.writeoffNumber}>
-                        <Table.Cell className="font-mono">{wo.writeoffNumber}</Table.Cell>
-                        <Table.Cell className="font-medium">{wo.productName}</Table.Cell>
-                        <Table.Cell className="text-muted">{wo.cashierName}</Table.Cell>
-                        <Table.Cell className="text-right tabular-nums">{wo.quantity}</Table.Cell>
-                        {/* Alasan adalah kategori, bukan status: teks polos
-                            (DESIGN.md §5.4). */}
-                        <Table.Cell>{REASON_LABELS[wo.reason] ?? wo.reason}</Table.Cell>
-                        <Table.Cell className="text-right font-medium tabular-nums text-danger">
-                          {formatRupiah(wo.lossValue)}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <WriteoffStatusBadge status={wo.status} />
-                        </Table.Cell>
-                        <Table.Cell className="text-muted">
-                          {formatDateTime(wo.createdAt)}
-                        </Table.Cell>
-                        <Table.Cell className="text-right">
-                          <WriteoffActions
-                            writeoff={wo}
-                            isAdmin={isAdmin}
-                            onAction={setConfirmAction}
-                          />
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-              </Table.Body>
-            </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
+      {error && !data ? (
+        <LoadError
+          isRetrying={isFetching}
+          title={id.loadFailed.writeoffs}
+          onRetry={() => refetch()}
+        >
+          {error.message}
+        </LoadError>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <WriteoffTable
+            hasFilters={hasFilters}
+            isAdmin={isAdmin}
+            isLoading={isLoading}
+            isRefreshing={isPlaceholderData}
+            writeoffs={data?.items ?? []}
+            onAction={handleRequestAction}
+          />
+          <TablePagination page={page} totalPages={data?.totalPages ?? 1} onPageChange={setPage} />
+        </div>
+      )}
 
-        <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
-      </div>
-
-      {/* Form Dialog */}
       <WriteoffFormDialog open={formOpen} onOpenChange={setFormOpen} />
 
-      {/* Confirmation Dialog */}
-      <AlertDialog.Backdrop
-        isKeyboardDismissDisabled={false}
-        isOpen={!!confirmAction}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
-      >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog
-            aria-label={confirmAction ? confirmMessages[confirmAction.type].title : "Konfirmasi"}
-          >
-            <AlertDialog.Header>
-              <AlertDialog.Icon status={confirmAction?.type === "approve" ? "warning" : "danger"} />
-              <AlertDialog.Heading>
-                {confirmAction ? confirmMessages[confirmAction.type].title : ""}
-              </AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p>{confirmAction ? confirmMessages[confirmAction.type].description : ""}</p>
-              {confirmAction && (
-                <InfoPanel>
-                  <SummaryList
-                    layout="grid"
-                    items={[
-                      {
-                        label: "No. WO",
-                        value: confirmAction.writeoff.writeoffNumber,
-                        tone: "mono",
-                      },
-                      { label: "Produk", value: confirmAction.writeoff.productName },
-                      { label: "Qty", value: String(confirmAction.writeoff.quantity) },
-                      {
-                        label: "Kerugian",
-                        value: formatRupiah(confirmAction.writeoff.lossValue),
-                        tone: "danger",
-                      },
-                    ]}
-                  />
-                </InfoPanel>
-              )}
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button isDisabled={isPending} slot="close" variant="tertiary">
-                {id.common.cancel}
-              </Button>
-              {/* Setujui memajukan pekerjaan (primary); tolak dan hapus membuang
-                  data, jadi mengikuti warna ikon di atasnya. */}
-              <PendingButton
-                isPending={isPending}
-                variant={confirmAction?.type === "approve" ? "primary" : "danger"}
-                onPress={handleConfirm}
-              >
-                {id.common.confirm}
-              </PendingButton>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-    </div>
-  )
-}
-
-function WriteoffActions({
-  writeoff,
-  isAdmin,
-  onAction,
-}: {
-  writeoff: StockWriteoff
-  isAdmin: boolean
-  onAction: (action: ConfirmAction) => void
-}) {
-  if (writeoff.status !== "pending") {
-    return <span className="text-muted">—</span>
-  }
-
-  // Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI: `tertiary` untuk
-  // aksi biasa, `danger-soft` untuk yang merusak. Setujui bukan `primary` —
-  // satu tombol primary per baris berarti sepuluh primary per layar, dan yang
-  // memajukan pekerjaan di halaman ini adalah "Buat Write-off" di navbar.
-  return (
-    <div className="flex items-center justify-end gap-1">
-      {isAdmin && (
-        <>
-          <Button
-            aria-label={`Setujui ${writeoff.writeoffNumber}`}
-            isIconOnly
-            size="sm"
-            variant="tertiary"
-            onPress={() => onAction({ type: "approve", writeoff })}
-          >
-            <Check />
-          </Button>
-          <Button
-            aria-label={`Tolak ${writeoff.writeoffNumber}`}
-            isIconOnly
-            size="sm"
-            variant="danger-soft"
-            onPress={() => onAction({ type: "reject", writeoff })}
-          >
-            <X />
-          </Button>
-        </>
-      )}
-      {isAdmin && !writeoff.refundId && (
-        <Button
-          aria-label={`Hapus ${writeoff.writeoffNumber}`}
-          isIconOnly
-          size="sm"
-          variant="danger-soft"
-          onPress={() => onAction({ type: "delete", writeoff })}
-        >
-          <Trash2 />
-        </Button>
-      )}
+      <WriteoffConfirmDialog
+        action={confirmAction}
+        isOpen={confirmOpen}
+        isPending={isPending}
+        onConfirm={handleConfirm}
+        onOpenChange={setConfirmOpen}
+      />
     </div>
   )
 }

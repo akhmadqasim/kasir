@@ -4,6 +4,7 @@ import { Button } from "@heroui/react"
 import type { SortDescriptor } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
+import { LoadError } from "@/components/load-error"
 import { id } from "@/i18n/id"
 import { useSearchProducts } from "../hooks/use-products"
 import { useCategories } from "../hooks/use-categories"
@@ -36,7 +37,14 @@ export function ProductsPage() {
     [sortDescriptor, quickFilter],
   )
 
-  const { data: productsData, isLoading } = useSearchProducts({
+  const {
+    data: productsData,
+    isLoading,
+    isPlaceholderData,
+    isFetching,
+    error,
+    refetch,
+  } = useSearchProducts({
     query: searchQuery || undefined,
     category_id: categoryId,
     quick_filter: quickFilter === "all" ? undefined : quickFilter,
@@ -45,12 +53,19 @@ export function ProductsPage() {
     ...toSearchSort(effectiveSort),
   })
 
+  // Menghapus produk terakhir di halaman terakhir mengosongkan halaman itu.
+  // Tanpa ini tabelnya tampil kosong, dan kalau tinggal satu halaman navigasinya
+  // ikut hilang — tidak ada jalan kembali.
+  const lastPage = productsData && !isPlaceholderData ? Math.max(1, productsData.total_pages) : null
+  if (lastPage != null && page > lastPage) setPage(lastPage)
+
   const { data: categories } = useCategories()
   // `?? []` membuat array baru tiap render, dan `ProductTable` di-`memo`:
   // kunci identitasnya di sini supaya membuka dialog tidak menggambar ulang
   // lima puluh baris.
   const products = useMemo(() => productsData?.data ?? [], [productsData])
   const categoryList = useMemo(() => categories ?? [], [categories])
+  const hasFilters = searchQuery !== "" || categoryId !== null || quickFilter !== "all"
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query)
@@ -78,6 +93,11 @@ export function ProductsPage() {
     setFormOpen(true)
   }, [])
 
+  const handleAdd = useCallback(() => {
+    setEditingProduct(null)
+    setFormOpen(true)
+  }, [])
+
   const handleFormOpenChange = (open: boolean) => {
     setFormOpen(open)
     if (!open) setEditingProduct(null)
@@ -87,38 +107,60 @@ export function ProductsPage() {
     // DESIGN.md §5.1: judul dari navbar, aksi lewat `NavbarActions`, satu `primary`.
     <div className="flex flex-col gap-6">
       <NavbarActions>
-        <Button size="sm" variant="tertiary" onPress={() => setImportOpen(true)}>
+        {/* Di layar sempit kedua aksi sekunder tinggal ikonnya saja supaya navbar
+            tidak meluap; `aria-label` menjaga namanya tetap terbaca. */}
+        <Button
+          aria-label="Import"
+          size="sm"
+          variant="tertiary"
+          onPress={() => setImportOpen(true)}
+        >
           <Upload />
-          Import
+          <span className="hidden sm:inline">Import</span>
         </Button>
-        <Button size="sm" variant="tertiary" onPress={() => setCategoryManagerOpen(true)}>
+        <Button
+          aria-label={id.products.manageCategories}
+          size="sm"
+          variant="tertiary"
+          onPress={() => setCategoryManagerOpen(true)}
+        >
           <Tags />
-          {id.products.manageCategories}
+          <span className="hidden sm:inline">{id.products.manageCategories}</span>
         </Button>
-        <Button size="sm" onPress={() => setFormOpen(true)}>
+        <Button size="sm" onPress={handleAdd}>
           <Plus />
           {id.products.add}
         </Button>
       </NavbarActions>
 
       <ProductSearch
+        total={productsData?.total}
         onSearchChange={handleSearchChange}
         onCategoryChange={handleCategoryChange}
         quickFilter={quickFilter}
         onQuickFilterChange={handleQuickFilterChange}
       />
 
-      <ProductTable
-        products={products}
-        categories={categoryList}
-        isLoading={isLoading}
-        page={productsData?.page ?? 1}
-        totalPages={productsData?.total_pages ?? 1}
-        onPageChange={setPage}
-        onEdit={handleEdit}
-        sortDescriptor={effectiveSort}
-        onSortChange={handleSortChange}
-      />
+      {error && !productsData ? (
+        <LoadError isRetrying={isFetching} title={id.loadFailed.products} onRetry={() => refetch()}>
+          {error.message}
+        </LoadError>
+      ) : (
+        <ProductTable
+          products={products}
+          categories={categoryList}
+          isLoading={isLoading}
+          isRefreshing={isPlaceholderData}
+          hasFilters={hasFilters}
+          page={productsData?.page ?? 1}
+          totalPages={productsData?.total_pages ?? 1}
+          onPageChange={setPage}
+          onAdd={handleAdd}
+          onEdit={handleEdit}
+          sortDescriptor={effectiveSort}
+          onSortChange={handleSortChange}
+        />
+      )}
 
       <ProductFormDialog
         open={formOpen}

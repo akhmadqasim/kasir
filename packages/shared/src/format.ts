@@ -22,16 +22,6 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value)
 }
 
-const compactRupiahFormatter = new Intl.NumberFormat("id-ID", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-})
-
-/** `1,2 jt`, `450 rb` — for axis labels, where "Rp" would only eat width. */
-export function formatCompactRupiah(value: number): string {
-  return compactRupiahFormatter.format(value)
-}
-
 /**
  * Parse a number written with Indonesian conventions (`.` groups thousands, `,` marks
  * decimals) as well as plain and English-formatted input. Returns `null` when the value
@@ -93,66 +83,4 @@ export function parseIndonesianNumber(value: unknown): number | null {
 export function parseIndonesianInteger(value: unknown): number | null {
   const parsed = parseIndonesianNumber(value)
   return parsed === null ? null : Math.trunc(parsed)
-}
-
-const BACKEND_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?$/
-const EXPLICIT_TIMEZONE = /([zZ]|[+-]\d{2}:?\d{2})$/
-
-/**
- * Turn a timestamp coming from the Rust backend into a `Date`.
- *
- * SQLite hands back UTC timestamps shaped `"YYYY-MM-DD HH:MM:SS"`, which is not
- * ISO-8601. `new Date(str)` therefore reads it as *local* time and every rendered date
- * drifts by the UTC offset — seven hours in WIB. Appending `Z` pins the string to UTC.
- */
-export function parseBackendDate(value: string | null | undefined): Date | null {
-  if (!value) return null
-  const trimmed = String(value).trim()
-  if (!trimmed) return null
-
-  const normalized =
-    BACKEND_TIMESTAMP.test(trimmed) && !EXPLICIT_TIMEZONE.test(trimmed)
-      ? `${trimmed.replace(" ", "T")}Z`
-      : trimmed
-
-  const date = new Date(normalized)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-const dateTimeFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-const dayDateFormatter = new Intl.DateTimeFormat("id-ID", {
-  weekday: "short",
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-})
-
-/** "05 Sep 2026 01.00" — backend timestamp with time of day, in the local timezone. */
-export function formatDateTime(value: string | null | undefined, fallback = "—"): string {
-  const date = parseBackendDate(value)
-  return date ? dateTimeFormatter.format(date) : fallback
-}
-
-/** "Sab, 6 Sep 2026" — backend timestamp as a calendar day, in the local timezone. */
-export function formatDayDate(value: string | null | undefined, fallback = "—"): string {
-  const date = parseBackendDate(value)
-  return date ? dayDateFormatter.format(date) : fallback
-}
-
-/**
- * "YYYY-MM-DD" for the *local* calendar day, the shape every date-range filter expects.
- * `toISOString().slice(0, 10)` would answer with the UTC day, which is yesterday for any
- * local time before 07:00 in WIB.
- */
-export function toLocalDateString(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${date.getFullYear()}-${month}-${day}`
 }

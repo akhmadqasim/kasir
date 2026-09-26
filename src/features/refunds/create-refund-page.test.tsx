@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { installApiMock } from "@/test-utils/api-mock"
 import { TestNavbar } from "@/test-utils/test-navbar"
 import type { PaginatedProducts, Product } from "@/features/products/types"
-import type { TransactionDetail, TransactionItem } from "@/features/transactions/types"
+import type { TransactionDetail, TransactionDetailItem } from "@/features/transactions/types"
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { CreateRefundPage } from "./components/create-refund-page"
@@ -30,7 +30,7 @@ function product(id: number, name: string): Product {
   }
 }
 
-const SOLD_ITEM: TransactionItem = {
+const SOLD_ITEM: TransactionDetailItem = {
   id: 11,
   transaction_id: 7,
   product_id: 3,
@@ -52,6 +52,7 @@ const SOLD_ITEM: TransactionItem = {
   ppob_message: null,
   ppob_serial_number: null,
   created_at: "2026-09-05 03:00:00",
+  refunded_quantity: 0,
 }
 
 const DETAIL: TransactionDetail = {
@@ -91,17 +92,20 @@ const SEARCH_RESULTS: PaginatedProducts = {
   total_pages: 1,
 }
 
-function renderPage() {
+/** `history` is what came before the refund page; empty = opened directly. */
+function renderPage(path = "/refund/7", history: string[] = []) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/refund/7"]}>
+      <MemoryRouter initialEntries={[...history, path]} initialIndex={history.length}>
         {/* Halaman memasang judul dan tombol kembali lewat portal ke navbar. */}
         <TestNavbar>
           <Routes>
             <Route path="/refund/:transactionId" element={<CreateRefundPage />} />
+            <Route path="/transactions" element={<p>Halaman riwayat transaksi</p>} />
+            <Route path="/refunds" element={<p>Halaman riwayat refund</p>} />
           </Routes>
         </TestNavbar>
       </MemoryRouter>
@@ -109,10 +113,10 @@ function renderPage() {
   )
 }
 
-/** Mengganti tipe aksi ke "Tukar Barang" lewat `Select` HeroUI. */
+/** Mengganti tipe aksi ke "Tukar Barang" lewat `ToggleButtonGroup` (radiogroup). */
 async function chooseExchange() {
-  fireEvent.click(await screen.findByRole("button", { name: /Tipe$/ }))
-  fireEvent.click(await screen.findByRole("option", { name: /Tukar Barang/ }))
+  const group = await screen.findByRole("radiogroup", { name: "Tipe" })
+  fireEvent.click(within(group).getByRole("radio", { name: /Tukar Barang/ }))
 }
 
 /** Membuka pencarian barang pengganti dan mengetik kueri. */
@@ -210,5 +214,100 @@ describe("halaman refund", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: /Minyak Goreng 1L/ }))
     expect(screen.getByRole("button", { name: "Proses Tukar Barang" })).toBeEnabled()
+  })
+})
+
+/**
+ * Detail transaksi sekarang membawa `refunded_quantity` per baris, jadi batas
+ * jumlah di formulir langsung memakai sisa yang benar — bukan jumlah beli yang
+ * baru dikoreksi setelah server menolak.
+ */
+describe("barang yang sudah pernah diretur", () => {
+  const PARTLY_REFUNDED: TransactionDetail = {
+    ...DETAIL,
+    transaction: { ...DETAIL.transaction, status: "partial_refund" },
+    items: [
+      { ...SOLD_ITEM, quantity: 3, subtotal: 45000, net_subtotal: 45000, refunded_quantity: 2 },
+      {
+        ...SOLD_ITEM,
+        id: 12,
+        product_id: 4,
+        product_name: "Gula Pasir 1kg",
+        quantity: 1,
+        subtotal: 15000,
+        net_subtotal: 15000,
+        refunded_quantity: 1,
+      },
+    ],
+  }
+
+  it("menampilkan jumlah yang sudah diretur dan membatasi qty ke sisanya", async () => {
+    installApiMock({
+      "GET /transactions/*": PARTLY_REFUNDED,
+      "GET /products": SEARCH_RESULTS,
+    })
+    renderPage()
+
+    expect(await screen.findByText("Sudah diretur 2, sisa 1")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Minyak Goreng 1L/ }))
+    expect(screen.getByText("Maks. 1")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: /Qty Refund/ })).toHaveValue("1")
+  })
+
+  it("mengunci baris yang sudah diretur seluruhnya", async () => {
+    installApiMock({
+      "GET /transactions/*": PARTLY_REFUNDED,
+      "GET /products": SEARCH_RESULTS,
+    })
+    renderPage()
+
+    expect(await screen.findByText("Sudah diretur seluruhnya")).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: /Gula Pasir 1kg/ })).toBeDisabled()
+    expect(screen.getByRole("checkbox", { name: /Minyak Goreng 1L/ })).toBeEnabled()
+  })
+})
+
+describe("alamat refund yang salah", () => {
+  // `/refund/abc` used to sit on skeletons forever; loading again cannot fix it.
+  it("memberi tahu nomornya tidak valid tanpa tombol coba lagi", async () => {
+    renderPage("/refund/abc")
+
+    expect(await screen.findByText("Nomor transaksi tidak valid.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Coba lagi" })).not.toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: /Kembali/ }).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * `navigate(-1)` on a page opened straight from its address stepped out of the
+ * app — in the desktop window, it did nothing and left the cashier stuck.
+ */
+describe("keluar dari halaman refund", () => {
+  it("kembali ke halaman sebelumnya kalau ada", async () => {
+    renderPage("/refund/7", ["/refunds"])
+
+    await screen.findByText("TRX-20260905-0007")
+    fireEvent.click(screen.getByRole("button", { name: "Batal" }))
+
+    expect(await screen.findByText("Halaman riwayat refund")).toBeInTheDocument()
+  })
+
+  it("jatuh ke riwayat transaksi kalau halaman dibuka langsung", async () => {
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0007")
+    fireEvent.click(screen.getByRole("button", { name: "Batal" }))
+
+    expect(await screen.findByText("Halaman riwayat transaksi")).toBeInTheDocument()
+  })
+
+  it("tombol kembali di navbar juga jatuh ke riwayat transaksi", async () => {
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0007")
+    fireEvent.click(screen.getByRole("button", { name: "Kembali" }))
+
+    expect(await screen.findByText("Halaman riwayat transaksi")).toBeInTheDocument()
   })
 })

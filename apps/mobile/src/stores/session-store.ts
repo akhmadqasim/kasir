@@ -58,8 +58,3 @@ export const useSessionStore = create<SessionState>()(
     }
   )
 );
-
-/** `http://host:port/api` for the current server, or `null`. */
-export function selectApiBaseUrl(state: SessionState): string | null {
-  return state.serverOrigin ? `${state.serverOrigin}/api` : null;
-}

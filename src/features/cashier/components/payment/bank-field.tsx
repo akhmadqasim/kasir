@@ -1,5 +1,6 @@
-import { ComboBox, EmptyState, FieldError, Input, ListBox } from "@heroui/react"
+import { ComboBox, EmptyState, Input, ListBox } from "@heroui/react"
 
+import { id } from "@/i18n/id"
 import { BANK_CHOICE_BY_METHOD, BANKS, bankMatchesQuery, type Bank } from "../../banks"
 import { BankLogo } from "./bank-logo"
 
@@ -10,7 +11,6 @@ interface BankFieldProps {
   value: string
   onChange: (value: string) => void
   onFocus?: () => void
-  errorMessage?: string
 }
 
 function filterBank(itemText: string, query: string): boolean {
@@ -36,20 +36,21 @@ function findBankByExactName(value: string): Bank | undefined {
  * tetap bisa diketik dan dipakai apa adanya — BPD kecil dan bank baru tidak
  * semuanya masuk daftar.
  */
-export function BankField({ method, value, onChange, onFocus, errorMessage }: BankFieldProps) {
+export function BankField({ method, value, onChange, onFocus }: BankFieldProps) {
   const matchedBank = findBankByExactName(value)
   const choice = BANK_CHOICE_BY_METHOD[method] ?? BANK_CHOICE_BY_METHOD.transfer!
 
   return (
     // Tanpa label terlihat: kolom ini menempel di bawah "Nominal <metode>"
-    // dan judul "Bank" sendiri terbaca seperti metode pembayaran lain.
+    // dan judul "Bank" sendiri terbaca seperti metode pembayaran lain. Nama
+    // aksesibelnya menyebut metodenya — pembayaran split menampilkan
+    // beberapa kolom ini sekaligus.
     <ComboBox
       allowsCustomValue
-      aria-label="Bank"
+      aria-label={choice.label}
       defaultFilter={filterBank}
       fullWidth
       inputValue={value}
-      isInvalid={Boolean(errorMessage)}
       variant="secondary"
       onFocus={onFocus}
       onInputChange={onChange}
@@ -59,16 +60,17 @@ export function BankField({ method, value, onChange, onFocus, errorMessage }: Ba
             `ComboBox.InputGroup` tidak punya slot Prefix seperti `InputGroup`
             biasa, jadi logonya melayang di atas kolom, dan `Input` diberi
             `ps-9` supaya teksnya tidak tertindih. */}
-        <BankLogo className="absolute start-1.5 top-1/2 -translate-y-1/2" name={matchedBank?.name} />
+        <BankLogo
+          className="absolute start-1.5 top-1/2 -translate-y-1/2"
+          name={matchedBank?.name}
+        />
         <Input className="ps-9" placeholder={choice.placeholder} />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>
       <ComboBox.Popover>
         <ListBox
-          aria-label="Bank"
-          renderEmptyState={() => (
-            <EmptyState>Tidak ada di daftar — nama yang diketik tetap dipakai</EmptyState>
-          )}
+          aria-label={choice.label}
+          renderEmptyState={() => <EmptyState>{id.cashier.bankNotListed}</EmptyState>}
         >
           {choice.options.map((bank) => (
             <ListBox.Item key={bank.name} id={bank.name} textValue={bank.name}>
@@ -79,7 +81,6 @@ export function BankField({ method, value, onChange, onFocus, errorMessage }: Ba
           ))}
         </ListBox>
       </ComboBox.Popover>
-      {errorMessage ? <FieldError>{errorMessage}</FieldError> : null}
     </ComboBox>
   )
 }

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Button, Card } from "@heroui/react"
 import { ArrowUpDown, Bell, Settings } from "lucide-react"
 
+import { CardHeading } from "@/components/card-heading"
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { SearchInput } from "@/components/search-input"
 import { useAuthStore } from "@/features/auth"
@@ -29,7 +30,7 @@ export function PpobHome() {
   const navigate = useNavigate()
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const [search, setSearch] = useState("")
-  const { data: billers } = usePaymentPointSearch(search)
+  const { data: billers, isError: billerSearchFailed } = usePaymentPointSearch(search)
 
   const handleSelectService = (service: PpobServiceDef) => navigate(service.path)
 
@@ -66,7 +67,7 @@ export function PpobHome() {
           <SaldoCard />
           <Card>
             <Card.Header>
-              <Card.Title>{id.ppob.selectService}</Card.Title>
+              <CardHeading>{id.ppob.selectService}</CardHeading>
             </Card.Header>
             <Card.Content className="gap-4">
               <SearchInput
@@ -77,7 +78,9 @@ export function PpobHome() {
               />
               {search.trim() ? (
                 <SearchResultsGrid
-                  billers={billers}
+                  // A failed biller search (Mitra not configured, vendor
+                  // down) still has to show the fixed tiles, not skeletons.
+                  billers={billers ?? (billerSearchFailed ? [] : undefined)}
                   query={search}
                   onSelectBiller={handleSelectBiller}
                   onSelectService={handleSelectService}

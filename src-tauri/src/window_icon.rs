@@ -52,7 +52,8 @@ impl WindowIcon {
         let apply = self.applier.get().ok_or_else(|| {
             AppError::Internal("window icon used before the window was attached".into())
         })?;
-        apply(png).map_err(|e| AppError::Validation(format!("Ikon jendela tidak bisa dipasang: {e}")))
+        apply(png)
+            .map_err(|e| AppError::Validation(format!("Ikon jendela tidak bisa dipasang: {e}")))
     }
 }
 
@@ -88,6 +89,9 @@ mod tests {
     fn a_window_that_rejects_the_image_is_a_validation_error() {
         let icon = WindowIcon::new();
         icon.attach(|_| Err(tauri::Error::InvalidIcon(std::io::Error::other("bad png"))));
-        assert!(matches!(icon.apply(Some(b"x")), Err(AppError::Validation(_))));
+        assert!(matches!(
+            icon.apply(Some(b"x")),
+            Err(AppError::Validation(_))
+        ));
     }
 }

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { DirectSale } from "@/features/cashier/components/payment/use-payment-form"
 import type { CartItem, TransactionResult } from "@/features/cashier/types"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
+import { useShiftStore } from "@/features/shift"
 import { createIdempotencyKey } from "@/lib/api/client"
 import type { AddToCartItem } from "../quick-access/types"
 
@@ -40,7 +40,7 @@ export interface PpobCheckoutState {
  * The confirmed line, in the shape the payment dialog charges. `key` keeps
  * the id unique without a counter: a page may start several purchases.
  */
-export function toCartItem(item: AddToCartItem, key: string): CartItem {
+function toCartItem(item: AddToCartItem, key: string): CartItem {
   const sellPrice = item.price
   return {
     cart_id: `ppob-direct-${key}`,
@@ -74,16 +74,25 @@ export function usePpobCheckout(): PpobCheckoutState {
     void fetchActiveShift()
   }, [fetchActiveShift])
 
+  // The key of the last line begun and not yet paid. Closing the payment
+  // dialog after a lost response and pressing Bayar again on the same confirm
+  // card must replay that sale, not buy a second top-up.
+  const pending = useRef<{ line: string; key: string } | null>(null)
+
   const begin = useCallback((item: AddToCartItem) => {
     // Minted once per purchase and reused by every retry of it, so a lost
     // response replays the same sale instead of buying a second token.
-    const key = createIdempotencyKey()
+    const line = JSON.stringify(item)
+    const last = pending.current
+    const key = last && last.line === line ? last.key : createIdempotencyKey()
+    pending.current = { line, key }
     setSale({ items: [toCartItem(item, key)], channel: "ppob", idempotencyKey: key })
   }, [])
 
   const cancel = useCallback(() => setSale(null), [])
 
   const onPaid = useCallback((paid: TransactionResult) => {
+    pending.current = null
     setSale(null)
     setResult(paid)
   }, [])

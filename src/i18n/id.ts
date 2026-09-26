@@ -1,3 +1,19 @@
+/**
+ * Phrase builders shared by the keyed copy below. Every load failure reads
+ * "Gagal memuat …", every filtered-empty list "Tidak ada … yang cocok", every
+ * list with nothing recorded yet "Belum ada …", and every failed action
+ * "Gagal <kata kerja> …: <alasan>", so the wording stays the same on every
+ * screen; the keys name the subject.
+ */
+const loadFailed = (subject: string) => `Gagal memuat ${subject}`
+const noMatch = (subject: string) => `Tidak ada ${subject} yang cocok`
+const noMatchQuery = (subject: string, query: string) =>
+  `Tidak ada ${subject} yang cocok dengan "${query}"`
+const noneYet = (subject: string) => `Belum ada ${subject}`
+const noneInPeriod = (subject: string) => `Belum ada ${subject} di periode ini`
+const notLoaded = (subject: string) => `${subject} belum dimuat, coba lagi sebentar`
+const failedWith = (action: string) => (reason: string) => `Gagal ${action}: ${reason}`
+
 export const id = {
   app: {
     name: "POS Toko Sembako",
@@ -10,7 +26,7 @@ export const id = {
     stock: "Stok Write-off",
     reports: "Laporan",
     settings: "Pengaturan",
-    users: "Manajemen User",
+    users: "Manajemen Pengguna",
     ppob: "Mitra Indogrosir",
   },
   auth: {
@@ -21,29 +37,115 @@ export const id = {
     loginButton: "Masuk",
     loginTitle: "Masuk ke POS",
     sessionExpired: "Sesi berakhir, silakan login kembali",
+    loginFailed: "Gagal masuk",
   },
   cashier: {
     title: "Penjualan",
-    scan: "Scan Barcode",
     cart: "Keranjang",
     total: "Total",
     pay: "Bayar",
     change: "Kembalian",
-    emptyCart: "Keranjang kosong",
     itemCount: "item",
-    scanPlaceholder: "Scan atau ketik barcode...",
     searchProduct: "Cari produk...",
-    productNotFound: "Produk tidak ditemukan",
-    insufficientStock: "Stok tidak cukup",
-    processPayment: "Proses Pembayaran",
-    paymentSuccess: "Transaksi Berhasil!",
+    /** Live-region status; the visible panel already says `products.searchFailed`. */
+    searchStatusFailed: "Pencarian gagal",
     receiptNumber: "No. Struk",
-    newTransaction: "Transaksi Baru",
     printReceipt: "Cetak Struk",
-    orderSummary: "Ringkasan Pesanan",
     paymentMethod: "Metode Pembayaran",
     paymentAmount: "Jumlah Bayar",
-    quickAmount: "Uang Pas",
+    // Search & scan
+    barcodeNotFound: (barcode: string) => `Barcode "${barcode}" tidak ditemukan`,
+    productNotFound: (query: string) => `Produk "${query}" tidak ditemukan`,
+    outOfStock: (name: string) => `Stok ${name} habis — pastikan stok sudah diperbarui`,
+    /** A scanner burst typed into a dialog field; the scan is dropped, not added. */
+    scanIgnoredInQuantity: "Barcode terbaca di kolom jumlah — scan diabaikan. Tutup dialog dulu.",
+    scanIgnoredInAmount:
+      "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
+    scanIgnoredAfterSale: "Barcode terbaca — scan diabaikan. Tekan Esc dulu untuk transaksi baru.",
+    // Held carts
+    cartHeld: (label: string) => `Transaksi disimpan sebagai "${label}"`,
+    heldCartDeleted: (label: string | null | undefined) =>
+      `${label ?? "Transaksi tersimpan"} dihapus`,
+    /** Recalled over a non-empty cart, which is parked as "Keranjang Aktif". */
+    cartRecalled: (label: string, parkedCurrent: boolean) =>
+      parkedCurrent
+        ? `${label} dilanjutkan. Keranjang sebelumnya disimpan sebagai "Keranjang Aktif".`
+        : `${label} dilanjutkan`,
+    heldCartFallbackLabel: "Transaksi",
+    heldCartsHint:
+      "Pilih untuk melanjutkan. Tekan 1–9 atau Enter untuk membuka, Delete untuk menghapus.",
+    // Discount & payment
+    discountHint: "Berlaku langsung ke keranjang. Enter untuk selesai.",
+    /** Why "Bayar" is disabled while no shift is open. */
+    payNeedsShift: "Buka kasir dulu untuk menerima pembayaran.",
+    choosePaymentMethod: "Pilih metode pembayaran dulu.",
+    bankNotListed: "Tidak ada di daftar — nama yang diketik tetap dipakai",
+    nonCashOverTotal: "Nominal non-tunai melebihi total transaksi.",
+    cashShort: (amount: string) => `Nominal tunai masih kurang ${amount}.`,
+    splitShort: (amount: string) => `Nominal gabungan masih kurang ${amount}.`,
+    splitOver: (amount: string) => `Nominal gabungan kelebihan ${amount}.`,
+    checkoutFailed: failedWith("memproses transaksi"),
+    // After the sale
+    receiptNotReady: "Struk belum siap disalin. Coba sesaat lagi.",
+    receiptCopied: "Struk disalin",
+    receiptCopyFailed: "Gagal menyalin struk",
+    addedToCart: (name: string) => `${name} ditambahkan ke keranjang`,
+  },
+  /** Opening and closing the till, and the cash booked in and out of it. */
+  shift: {
+    opened: "Shift berhasil dibuka",
+    alreadyOpen: (openedAt: string, openingCash: string) =>
+      `Shift sudah terbuka sejak ${openedAt}. Modal awal tetap ${openingCash}.`,
+    openFailed: failedWith("membuka shift"),
+    closed: "Shift berhasil ditutup",
+    closeFailed: failedWith("menutup shift"),
+    cashIn: "Uang masuk",
+    cashOut: "Uang keluar",
+    /** `label` is `cashIn` or `cashOut`, `amount` already formatted. */
+    cashFlowRecorded: (label: string, amount: string) => `${label} ${amount} tercatat`,
+    cashFlowFailed: failedWith("mencatat uang masuk/keluar"),
+    cashFlowNeedsShift: "Shift belum dibuka. Buka kasir dulu sebelum mencatat uang masuk/keluar.",
+    cashFlowDeleted: "Arus kas berhasil dihapus",
+    cashFlowDeleteFailed: failedWith("menghapus arus kas"),
+    /** Dialog "Buka Kasir". */
+    open: {
+      title: "Buka Kasir",
+      hint: "Uang tunai di laci saat mulai. Boleh kosong.",
+      openingCash: "Modal awal",
+      submit: "Mulai Shift",
+    },
+    /** Dialog "Uang Masuk / Keluar". */
+    cashFlow: {
+      title: "Uang Masuk / Keluar",
+      type: "Jenis",
+      in: "Uang Masuk",
+      out: "Uang Keluar",
+      amount: "Nominal",
+      note: "Keterangan (opsional)",
+      notePlaceholder: "Contoh: Bayar supplier",
+    },
+    /** Kartu "Tutup Shift" dan dua dialog konfirmasinya. */
+    close: {
+      title: "Tutup Shift",
+      description: "Hitung uang tunai di laci, isi saldo aktualnya, lalu tutup kasir.",
+      closingCash: "Saldo Aktual",
+      closingCashHint: "Opsional. Dibandingkan dengan saldo aplikasi.",
+      difference: "Selisih",
+      notes: "Catatan (opsional)",
+      notesPlaceholder: "Contoh: uang receh dititipkan",
+      submit: "Tutup Kasir",
+      reviewTitle: "Konfirmasi Tutup Kasir",
+      reviewBody: "Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.",
+      cashier: "Kasir",
+      totalTransactions: "Total transaksi",
+      expectedCash: "Saldo aplikasi",
+      actualCash: "Saldo aktual",
+      continue: "Lanjutkan",
+      finalTitle: "Verifikasi Terakhir",
+      finalBody:
+        "Shift ditutup sekarang dan laporannya dibuat. Pastikan tidak ada pelanggan yang masih dalam proses pembayaran.",
+      confirm: "Ya, Tutup Kasir",
+    },
   },
   products: {
     title: "Produk",
@@ -56,8 +158,9 @@ export const id = {
     unit: "Satuan",
     category: "Kategori",
     search: "Cari nama, barcode, SKU, atau harga...",
-    searchByBarcode: "Cari berdasarkan barcode",
     noProducts: "Belum ada produk",
+    notFound: "Produk tidak ditemukan",
+    searchFailed: "Gagal mencari produk",
     deleteConfirm: "Yakin ingin menghapus produk ini?",
     deleteSuccess: "Produk berhasil dihapus",
     createSuccess: "Produk berhasil ditambahkan",
@@ -70,7 +173,6 @@ export const id = {
     manageCategories: "Kelola Kategori",
     addCategory: "Tambah Kategori",
     categoryName: "Nama Kategori",
-    categoryDesc: "Deskripsi",
     deleteCategoryConfirm: "Yakin ingin menghapus kategori ini?",
     categoryHasProducts: "Tidak bisa menghapus kategori yang memiliki produk",
     categorySuccess: "Kategori berhasil disimpan",
@@ -80,25 +182,29 @@ export const id = {
     next: "Selanjutnya",
     allCategories: "Semua Kategori",
     importProducts: "Import Produk",
-    importFrom: "Import dari",
-    templateOurs: "Template Kami",
-    templateFoliopos: "Template FolioPOS",
-    uploadFile: "Upload File",
-    uploadHint: "Pilih file CSV atau Excel (.xlsx, .xls, .csv)",
-    preview: "Preview Data",
     columnMapping: "Mapping Kolom",
-    sourceColumn: "Kolom File",
-    targetField: "Field Produk",
-    skipColumn: "-- Lewati --",
-    importing: "Mengimport...",
     importSuccess: "Import berhasil",
-    importResult: "produk diimport, {updated} diupdate, {skipped} dilewati",
-    rowsFound: "baris ditemukan",
     startImport: "Mulai Import",
+    pinned: "Produk di-pin ke shortcut",
+    unpinned: "Pin shortcut dihapus",
+    pinFailed: "Gagal mengubah pin",
+    // Import
+    fileReadFailed: "Gagal membaca file",
+    importFailed: "Gagal mengimport produk",
+    importNothingValid: "Tidak ada produk valid untuk diimport",
+    importNothingImported: "Tidak ada produk yang diimport",
+    importDone: "Import Selesai",
+    /** Toast once the dialog was closed before the import answered. */
+    importFinished: (imported: string, updated: string) =>
+      `Import selesai: ${imported} ditambahkan, ${updated} diperbarui`,
+    templateDownloaded: "Template diunduh",
+    templateDownloadFailed: "Gagal mengunduh template",
+    sheetEmpty: "Sheet kosong",
+    fileEmptyOrInvalid: "File kosong atau format tidak sesuai",
+    noProductRows: "Tidak ada data produk ditemukan",
   },
   onboarding: {
     title: "Selamat Datang",
-    subtitle: "Atur toko Anda untuk mulai menggunakan POS",
     storeInfo: "Informasi Toko",
     steps: "Langkah penyiapan",
     stepAdmin: "Akun Admin",
@@ -111,7 +217,7 @@ export const id = {
     email: "Email",
     adminSetup: "Buat Akun Admin",
     fullName: "Nama Lengkap",
-    username: "Username",
+    username: "Nama Pengguna",
     pin: "PIN",
     pinHint: "4-6 digit angka",
     confirmPin: "Konfirmasi PIN",
@@ -119,8 +225,6 @@ export const id = {
     back: "Kembali",
     submit: "Daftarkan Toko",
     success: "Toko berhasil didaftarkan!",
-    pinMismatch: "PIN tidak cocok",
-    pinInvalid: "PIN harus 4-6 digit angka",
   },
   common: {
     save: "Simpan",
@@ -128,13 +232,168 @@ export const id = {
     delete: "Hapus",
     edit: "Ubah",
     search: "Cari...",
-    loading: "Memuat...",
     error: "Terjadi kesalahan",
     success: "Berhasil",
     confirm: "Konfirmasi",
     back: "Kembali",
     reload: "Muat ulang",
     close: "Tutup",
+    /** The one retry label: error states, failed updates, failed lists. */
+    retry: "Coba lagi",
+    /** Clears every active filter — filter bars and filtered-empty states. */
+    clearFilters: "Hapus filter",
+    /** "(Anda)" next to the signed-in account in a list of accounts. */
+    you: "(Anda)",
+    /** A request that never reached the server. */
+    networkError: "Tidak dapat menghubungi server. Periksa koneksi jaringan.",
+  },
+  /** Titles for a list, panel or form that failed to load (`NoData tone="danger"`, `Alert`). */
+  loadFailed: {
+    of: loadFailed,
+    // Cashier
+    favoriteProducts: loadFailed("produk favorit"),
+    // Dashboard
+    chart: loadFailed("grafik"),
+    todaySummary: loadFailed("ringkasan hari ini"),
+    // Products
+    products: loadFailed("produk"),
+    categories: loadFailed("kategori"),
+    // Transactions & refunds
+    transactions: loadFailed("riwayat transaksi"),
+    transactionDetail: loadFailed("detail transaksi"),
+    transaction: loadFailed("transaksi"),
+    refunds: loadFailed("riwayat refund"),
+    refundDetail: loadFailed("detail refund"),
+    receiptPreview: loadFailed("pratinjau struk"),
+    // Stock, reports, shift
+    writeoffs: loadFailed("write-off"),
+    report: loadFailed("laporan"),
+    shiftSummary: loadFailed("ringkasan shift"),
+    // Settings
+    storeInfo: loadFailed("informasi toko"),
+    salesSettings: loadFailed("pengaturan penjualan"),
+    printerSettings: loadFailed("pengaturan printer"),
+    printers: loadFailed("daftar printer"),
+    backupSchedule: loadFailed("jadwal backup"),
+    backups: loadFailed("daftar backup"),
+    databaseInfo: loadFailed("sebagian data database"),
+    updateStatus: loadFailed("status pembaruan"),
+    users: loadFailed("daftar pengguna"),
+    // PPOB
+    ppobSettings: loadFailed("pengaturan"),
+    ppobHistory: loadFailed("riwayat"),
+    ppobMutasi: loadFailed("mutasi"),
+    ppobNotifications: loadFailed("informasi"),
+    ppobGroups: loadFailed("kategori Payment Point"),
+    ppobMerchants: loadFailed("daftar biller"),
+    ppobBanks: loadFailed("daftar bank"),
+    ppobPdam: loadFailed("daftar PDAM"),
+    ppobNominal: loadFailed("nominal"),
+    ppobTokenNominal: loadFailed("nominal token"),
+    ppobProducts: loadFailed("produk"),
+    ppobVouchers: loadFailed("voucher"),
+    ppobMarkupKeepLast: `${loadFailed("markup PPOB")}, memakai markup terakhir`,
+    ppobMarkupNone: `${loadFailed("markup PPOB")}, harga jual sama dengan harga modal`,
+  },
+  /** Titles for a list that is empty only because of the search or filters. */
+  noMatch: {
+    of: noMatch,
+    /** The same, naming the search text: `Tidak ada produk yang cocok dengan "gula"`. */
+    query: noMatchQuery,
+    products: noMatch("produk"),
+    transactions: noMatch("transaksi"),
+    refunds: noMatch("refund"),
+    writeoffs: noMatch("write-off"),
+    users: noMatch("pengguna"),
+  },
+  /**
+   * Titles (and the hint under some) for a list with nothing recorded yet — not
+   * one emptied by a filter, which is `noMatch`.
+   */
+  empty: {
+    of: noneYet,
+    // Cashier & products
+    favoriteProducts: noneYet("produk favorit"),
+    favoriteProductsHint:
+      "Produk yang sering dicari dan yang di-pin di halaman Produk tampil di sini.",
+    categories: noneYet("kategori"),
+    categoriesHint: "Ketik nama kategori di atas lalu tekan Enter.",
+    /** A transaction or refund detail without lines. */
+    items: "Tidak ada item",
+    // Stock
+    writeoffs: noneYet("write-off"),
+    writeoffsHint: "Barang rusak, kadaluarsa, atau hilang dicatat lewat tombol Buat Write-off.",
+    // Dashboard
+    payments: noneYet("pembayaran"),
+    paymentsToday: `${noneYet("pembayaran")} hari ini`,
+    paymentsChartHint: "Grafik terisi begitu ada pembayaran di rentang ini.",
+    sales: noneYet("penjualan"),
+    salesChartHint: "Grafik terisi begitu ada transaksi di rentang ini.",
+    productsSold: noneYet("produk terjual"),
+    recentTransactionsHint: "Transaksi yang selesai di kasir muncul di sini.",
+    lowStock: "Semua stok aman",
+    lowStockHint: "Tidak ada produk di bawah batas minimum stoknya.",
+    // Shift
+    cashFlows: noneYet("uang masuk atau keluar"),
+    // Settings
+    backups: noneYet("backup"),
+    backupsHint: "Tekan Backup Sekarang di kartu Database untuk membuat yang pertama.",
+    // PPOB
+    ppobGroups: noneYet("kategori Payment Point"),
+    ppobHistoryHint: "Tidak ada transaksi PPOB pada rentang tanggal yang dipilih.",
+  },
+  /** Thrown when an action runs before the data it overwrites has loaded. */
+  notLoaded: {
+    of: notLoaded,
+    storeInfo: notLoaded("Informasi toko"),
+  },
+  /** `aria-label`s of the icon-only refresh buttons. */
+  reloadLabel: {
+    data: "Muat ulang data",
+    history: "Muat ulang riwayat",
+    saldo: "Muat ulang saldo",
+    printers: "Muat ulang daftar printer",
+    ppobNotifications: "Muat ulang dari Mitra",
+  },
+  /** Field validation messages, shown under the field (`FieldError`). */
+  validation: {
+    // Accounts & onboarding
+    storeNameRequired: "Nama toko wajib diisi",
+    fullNameRequired: "Nama lengkap wajib diisi",
+    usernameRequired: "Nama pengguna wajib diisi",
+    invalidEmail: "Format email tidak valid",
+    pinFormat: "PIN harus 4-6 digit angka",
+    pinMismatch: "PIN tidak cocok",
+    newPinMismatch: "PIN baru tidak cocok",
+    currentPinRequired: "PIN saat ini wajib diisi",
+    newUserPinRequired: "PIN wajib diisi untuk pengguna baru",
+    reasonRequired: "Alasan wajib diisi",
+    // Product form
+    productNameRequired: "Nama produk wajib diisi",
+    sellPricePositive: "Harga jual harus lebih dari 0",
+    buyPriceInvalid: "Harga modal tidak valid",
+    stockRequired: "Stok wajib diisi",
+    stockInteger: "Stok harus bilangan bulat",
+    stockNegative: "Stok tidak boleh negatif",
+    minStockInteger: "Minimal stok harus bilangan bulat, 0 atau lebih",
+    // Write-off form
+    productRequired: "Pilih produk terlebih dahulu",
+    quantityPositive: "Jumlah harus lebih dari 0",
+    quantityInteger: "Jumlah harus bilangan bulat",
+    quantityOverStock: (available: string) => `Maks. stok tersedia: ${available}`,
+    writeoffOutOfStock: "Stok produk ini sudah habis, tidak ada yang bisa di-write-off",
+    writeoffReasonRequired: "Pilih alasan write-off",
+    lostWriteoffAdminOnly: "Hanya admin yang dapat melakukan write-off barang hilang",
+  },
+  /** Receipt printing feedback, the same after checkout, in history and in PPOB. */
+  print: {
+    printed: "Struk dicetak",
+    failed: (reason: string) => `Gagal mencetak struk: ${reason}`,
+    printerNotSet: "Printer belum diatur. Silakan atur di menu Pengaturan.",
+    ppobPrinted: (count: number) =>
+      count > 1 ? `${count} struk PPOB dicetak` : "Struk PPOB dicetak",
+    ppobFailed: (reason: string) => `Gagal mencetak struk PPOB: ${reason}`,
+    ppobReceipt: "Cetak Struk PPOB",
   },
   errorPage: {
     notFoundTitle: "Halaman tidak ditemukan",
@@ -146,7 +405,6 @@ export const id = {
     crashTitle: "Terjadi kesalahan",
     crashDescription:
       "Halaman ini berhenti karena ada kesalahan di aplikasi. Coba lagi dulu; kalau masih terjadi, kirim detail teknis di bawah ke admin.",
-    retry: "Coba lagi",
     homeCashier: "Kembali ke kasir",
     homeDashboard: "Kembali ke dashboard",
     homeDefault: "Kembali ke halaman utama",
@@ -181,11 +439,9 @@ export const id = {
     changeAmount: "Kembalian",
     notes: "Catatan",
     itemList: "Daftar Item",
-    qty: "Qty",
     price: "Harga",
     subtotal: "Subtotal",
     filter: "Filter",
-    resetFilter: "Reset",
     page: "Halaman",
     of: "dari",
     prev: "Sebelumnya",
@@ -196,19 +452,71 @@ export const id = {
     deleteSuccess: "Transaksi berhasil dihapus",
     deleteReason: "Alasan penghapusan",
     deleteReasonPlaceholder: "Masukkan alasan penghapusan...",
-    cannotDeleteRefunded: "Tidak dapat menghapus transaksi yang sudah di-refund",
     editPaymentMethod: "Ubah Metode Bayar",
     editPaymentSuccess: "Metode pembayaran berhasil diubah",
     editPaymentReason: "Alasan perubahan",
     editPaymentReasonPlaceholder: "Masukkan alasan perubahan metode bayar...",
-    reasonRequired: "Alasan wajib diisi",
+  },
+  /**
+   * Settling a PPOB line after checkout: retrying a failed one with the Mitra
+   * PIN, or marking an uncertain one by hand once the Mitra history is checked.
+   * The same verbs ("coba ulang", "tandai berhasil/gagal") on every screen.
+   */
+  ppobFulfillment: {
+    statusTitle: "Status PPOB",
+    serialNumber: (serial: string) => `SN: ${serial}`,
+    inFlightHint:
+      "Masih diproses ke penyedia. Tunggu hasilnya — coba ulang baru bisa dilakukan kalau statusnya gagal.",
+    // Retry
+    retryTitle: "Coba Ulang PPOB",
+    retryPrompt: (count: number) =>
+      count > 1
+        ? `Masukkan PIN Mitra untuk mencoba ulang ${count} pembelian PPOB yang gagal.`
+        : "Masukkan PIN Mitra untuk mencoba ulang pembelian PPOB ini.",
+    pinLabel: "PIN Mitra",
+    pinPlaceholder: "PIN transaksi Mitra",
+    retryStarted: (count: number) =>
+      count > 1
+        ? `${count} PPOB sedang diproses ulang di latar belakang`
+        : "PPOB sedang diproses ulang di latar belakang",
+    retryFailed: failedWith("mencoba ulang PPOB"),
+    /** Some of several lines were refused; `details` names each one. */
+    retryPartlyFailed: (failed: number, attempted: number, details: string) =>
+      `${failed} dari ${attempted} PPOB gagal dicoba ulang — ${details}`,
+    // Resolve by hand
+    resolveLabel: "Tandai hasil PPOB",
+    markSuccess: "Tandai Berhasil",
+    markFailed: "Tandai Gagal",
+    resolveSuccessTitle: "Tandai PPOB Berhasil",
+    resolveFailedTitle: "Tandai PPOB Gagal",
+    resolveSuccessPrompt: (name: string | undefined) =>
+      `Pastikan ${name ?? "pembelian ini"} tercatat berhasil di riwayat Mitra.`,
+    resolveFailedPrompt: (name: string | undefined) =>
+      `Pastikan ${name ?? "pembelian ini"} tidak ada atau gagal di riwayat Mitra. Setelah ditandai gagal, PPOB bisa dicoba ulang atau uangnya dikembalikan.`,
+    serialLabel: "SN / Token (opsional)",
+    serialPlaceholder: "Salin dari riwayat Mitra",
+    markedSuccess: "PPOB ditandai berhasil",
+    markedFailed: "PPOB ditandai gagal",
+    markFailedError: failedWith("menandai PPOB"),
+    // Right after checkout (PPOB page result dialog)
+    rejectedTitle: "Transaksi ditolak provider",
+    rejectedFallback: "Provider menolak transaksinya.",
+    rejectedHint: "Coba ulang dari Riwayat.",
+    uncertainTitle: "Status belum pasti",
+    uncertainHint:
+      "Mitra tidak memberi jawaban yang jelas, jadi saldo mungkin sudah terpotong. Jangan coba ulang dulu: cek riwayat Mitra, lalu tandai berhasil atau gagal dari Riwayat.",
   },
   refund: {
     title: "Refund / Tukar Barang",
     refundItems: "Pilih Barang yang Diretur",
     productName: "Nama Barang",
-    purchasedQty: "Qty Beli",
     refundQty: "Qty Refund",
+    /** Satu baris penjualan yang sebagian sudah diretur lewat refund sebelumnya. */
+    alreadyRefunded: (refunded: number, remaining: number) =>
+      `Sudah diretur ${refunded}, sisa ${remaining}`,
+    fullyRefunded: "Sudah diretur seluruhnya",
+    earlierRefundNote:
+      "Sebagian transaksi ini sudah pernah diretur. Jumlah maksimum tiap barang sudah dikurangi barang yang diretur sebelumnya.",
     condition: "Kondisi",
     price: "Harga",
     subtotal: "Subtotal",
@@ -222,8 +530,6 @@ export const id = {
     refundSuccess: "Refund berhasil diproses",
     refundFailed: "Gagal memproses refund",
     noItemsSelected: "Pilih minimal 1 item untuk refund",
-    exceedsMaxDays: "Refund hanya bisa dilakukan maksimal 7 hari setelah pembelian",
-    alreadyRefunded: "Semua item sudah di-refund",
     stockRestoredNote: "Stok barang kondisi baik akan dikembalikan",
     stockWriteoffNote: "Barang rusak/kadaluarsa akan masuk write-off",
     cancel: "Batal",
@@ -254,6 +560,21 @@ export const id = {
     returnedItems: "Barang Diretur",
     replacementItems: "Barang Pengganti",
     noRefunds: "Belum ada riwayat refund",
+    // Hints and refusals on the create page
+    selectItemsFirst: "Centang barang yang diretur terlebih dahulu.",
+    addExchangeItemsFirst: "Tambahkan barang pengganti terlebih dahulu.",
+    noReturnableItems: "Tidak ada barang fisik yang bisa diretur pada transaksi ini.",
+    nonReturnablePpob: "Tidak bisa diretur (layanan PPOB)",
+    invalidTransactionId: "Nomor transaksi tidak valid.",
+    /** Why the refund button is disabled; `days` is the refund window. */
+    windowExpired: (days: number) =>
+      `Lewat batas ${days} hari setelah pembelian, refund tidak bisa diproses`,
+    windowUnknown: "Transaksi tanpa tanggal tidak bisa di-refund",
+    /** The server's remaining quantity for a line was lower than the form's. */
+    nothingLeftToReturn: (name: string) =>
+      `${name} sudah diretur seluruhnya, tidak ada sisa yang bisa dikembalikan.`,
+    remainingAdjusted: (name: string, remaining: number) =>
+      `Sisa ${name} yang bisa diretur tinggal ${remaining}. Jumlahnya sudah disesuaikan.`,
   },
   payment: {
     cash: "Tunai",
@@ -269,7 +590,6 @@ export const id = {
     tabStore: "Toko",
     tabSales: "Penjualan",
     tabPrinter: "Printer",
-    tabSecurity: "Keamanan",
     tabData: "Data",
     tabApp: "Aplikasi",
     // Store info
@@ -303,31 +623,63 @@ export const id = {
     testPrintSuccess: "Test print berhasil",
     testPrintFailed: "Test print gagal",
     printerSettingsSaved: "Pengaturan printer berhasil disimpan",
-    // Security
-    changePin: "Ganti PIN",
-    currentPin: "PIN Saat Ini",
-    newPin: "PIN Baru",
-    confirmNewPin: "Konfirmasi PIN Baru",
-    pinChanged: "PIN berhasil diganti",
-    pinChangeFailed: "Gagal mengganti PIN",
-    pinMismatch: "PIN baru tidak cocok",
-    pinInvalid: "PIN harus 4-6 digit angka",
-    currentPinWrong: "PIN saat ini salah",
-    minutes: "menit",
     // Data
     exportDatabase: "Export Database",
-    exportDatabaseDesc: "Simpan salinan database ke file untuk backup",
     exportSuccess: "Database berhasil diexport",
     importDatabase: "Import Database",
-    importDatabaseDesc: "Restore database dari file backup. Aplikasi akan restart setelah import.",
     importSuccess: "Database berhasil diimport. Silakan restart aplikasi.",
     importConfirm:
       "Yakin ingin menimpa database saat ini? Data yang ada akan diganti dengan backup.",
     databaseSize: "Ukuran Database",
     databasePath: "Lokasi Database",
-    // General
-    saved: "Pengaturan berhasil disimpan",
-    adminOnly: "Hanya admin yang dapat mengakses pengaturan ini",
+    // Printer hints
+    searchingPrinters: "Mencari printer...",
+    noPrintersAvailable: "Tidak ada printer tersedia",
+    printerNotDetected: (name: string) => `${name} (tidak terdeteksi)`,
+    testPrintNoPrinter: "Admin belum memilih printer struk.",
+    testPrintSaveFirst: "Pilih printer lalu simpan untuk mencoba Test Print.",
+    testPrintSaveNewFirst: "Simpan pilihan printer baru dulu, lalu coba Test Print.",
+  },
+  backup: {
+    created: (filename: string, size: string) => `Backup berhasil dibuat: ${filename} (${size})`,
+    deleted: "Backup berhasil dihapus",
+    scheduleSaved: "Pengaturan backup berhasil disimpan. Perubahan berlaku setelah restart.",
+    lastBackup: "Backup terakhir",
+    storedBackups: "Backup tersimpan",
+    storedSummary: (count: string, size: string) => `${count} berkas — ${size}`,
+  },
+  /** Write-off outcomes; the stock effect is spelled out because it differs per case. */
+  writeoff: {
+    createdPending: "Write-off dibuat dan stok sudah dikurangi. Menunggu persetujuan admin.",
+    createdApproved: "Write-off dibuat dan disetujui, stok sudah dikurangi",
+    createFailed: "Gagal membuat write-off",
+    approved: "Write-off disetujui, stok tidak berubah lagi",
+    approveFailed: "Gagal menyetujui write-off",
+    rejected: "Write-off ditolak, stok dikembalikan",
+    rejectedFromRefund: "Write-off ditolak. Stok tidak dikembalikan karena berasal dari refund",
+    rejectFailed: "Gagal menolak write-off",
+    deleted: "Write-off dihapus, stok dikembalikan",
+    deleteFailed: "Gagal menghapus write-off",
+    /** Dialog konfirmasi setujui / tolak / hapus; kalimatnya menyebut akibatnya ke stok. */
+    confirm: {
+      approveTitle: "Setujui Write-off",
+      approveAction: "Setujui",
+      approveBody:
+        "Stok sudah dikurangi sejak write-off ini dibuat. Menyetujui hanya mengesahkan kerugiannya, stok tidak berubah lagi.",
+      rejectTitle: "Tolak Write-off",
+      rejectAction: "Tolak",
+      rejectBody: "Stok yang dikurangi saat write-off ini dibuat akan dikembalikan.",
+      rejectFromRefundBody:
+        "Write-off ini berasal dari refund, jadi stoknya tidak pernah dikurangi dan tidak akan dikembalikan. Kerugiannya dibatalkan.",
+      deleteTitle: "Hapus Write-off",
+      deleteBody:
+        "Data write-off dihapus permanen dan stok yang dikurangi saat pembuatan dikembalikan.",
+      number: "No. WO",
+      product: "Produk",
+      quantity: "Qty",
+      reason: "Alasan",
+      loss: "Kerugian",
+    },
   },
   updater: {
     installedVersion: "Versi terpasang",
@@ -348,7 +700,6 @@ export const id = {
     installing: (version: string) => `Memasang versi ${version}`,
     installingHint: "Aplikasi akan tertutup dan dibuka kembali secara otomatis.",
     failedTitle: "Pembaruan gagal",
-    retry: "Coba lagi",
     confirmTitle: "Pasang pembaruan sekarang?",
     confirmBody: (version: string) =>
       `Aplikasi kasir akan ditutup, versi ${version} dipasang, lalu aplikasi dibuka kembali. Pastikan tidak ada transaksi yang sedang berjalan.`,
@@ -357,12 +708,12 @@ export const id = {
     notes: "Catatan rilis",
   },
   users: {
-    title: "Manajemen User",
-    addUser: "Tambah User",
-    editUser: "Edit User",
-    username: "Username",
+    title: "Manajemen Pengguna",
+    addUser: "Tambah Pengguna",
+    editUser: "Ubah Pengguna",
+    username: "Nama Pengguna",
     fullName: "Nama Lengkap",
-    role: "Role",
+    role: "Peran",
     status: "Status",
     actions: "Aksi",
     active: "Aktif",
@@ -371,26 +722,20 @@ export const id = {
     kasir: "Kasir",
     pin: "PIN",
     confirmPin: "Konfirmasi PIN",
-    newPin: "PIN Baru",
     resetPin: "Reset PIN",
     resetPinDesc: "Kosongkan jika tidak ingin mengubah PIN",
-    searchPlaceholder: "Cari user...",
-    createSuccess: "User berhasil ditambahkan",
-    updateSuccess: "User berhasil diperbarui",
-    deactivateSuccess: "User berhasil dinonaktifkan",
-    activateSuccess: "User berhasil diaktifkan",
-    deactivateConfirm: "Yakin ingin menonaktifkan user ini?",
-    cannotDeactivateSelf: "Tidak dapat menonaktifkan akun sendiri",
-    pinMismatch: "PIN tidak cocok",
-    pinRequired: "PIN wajib diisi untuk user baru",
-    usernameRequired: "Username wajib diisi",
-    fullNameRequired: "Nama lengkap wajib diisi",
-    noUsers: "Belum ada user",
+    searchPlaceholder: "Cari pengguna...",
+    noMatchHint: "Coba cari dengan nama pengguna, nama lengkap, atau peran lain.",
+    createSuccess: "Pengguna berhasil ditambahkan",
+    updateSuccess: "Pengguna berhasil diperbarui",
+    deactivateSuccess: "Pengguna berhasil dinonaktifkan",
+    activateSuccess: "Pengguna berhasil diaktifkan",
+    deactivateConfirm: "Yakin ingin menonaktifkan pengguna ini?",
+    deactivateNote: "Pengguna nonaktif tidak bisa masuk sampai diaktifkan kembali.",
+    selfRoleLocked: "Peran akun sendiri tidak bisa diubah",
+    noUsers: "Belum ada pengguna",
     deactivate: "Nonaktifkan",
     activate: "Aktifkan",
-    edit: "Edit",
-    save: "Simpan",
-    cancel: "Batal",
   },
   profile: {
     title: "Profil Saya",
@@ -399,21 +744,12 @@ export const id = {
     newPin: "PIN Baru",
     confirmNewPin: "Konfirmasi PIN Baru",
     pinChanged: "PIN berhasil diganti",
-    pinMismatch: "PIN baru tidak cocok",
-    pinInvalid: "PIN harus 4-6 digit angka",
-    currentPinWrong: "PIN saat ini salah",
   },
   dashboard: {
     title: "Dashboard",
     todayRevenue: "Penjualan Hari Ini",
     todayTransactions: "Transaksi Hari Ini",
-    todayRefunds: "Refund Hari Ini",
-    lowStockItems: "Stok Rendah",
-    vsYesterday: "dari kemarin",
-    trendUp: "Naik",
-    trendDown: "Turun",
     revenueChart: "Grafik Penjualan",
-    revenueChartDescription: "Menampilkan pendapatan harian",
     last1Week: "1 Minggu",
     last1Month: "1 Bulan",
     last3Months: "3 Bulan",
@@ -433,23 +769,140 @@ export const id = {
     receipt: "No. Struk",
     amount: "Jumlah",
     cashier: "Kasir",
-    time: "Waktu",
     paymentMethods: "Metode Pembayaran",
-    todayBreakdown: "Distribusi hari ini",
-    dominates: "mendominasi",
-    completedTransactions: "transaksi selesai",
-    perTransaction: "rata-rata per transaksi",
     noData: "Belum ada data",
     unit: "unit",
     grossProfit: "Laba Kotor",
     avgPerTransaction: "Rata-rata/Transaksi",
-    weeklyStats: "Statistik 7 Hari Terakhir",
-    totalRevenue7d: "Total Penjualan",
-    grossProfit7d: "Laba Kotor",
-    totalTransactions7d: "Total Transaksi",
-    avgItemsPerTx: "Rata-rata Produk/Transaksi",
-    avgValuePerTx: "Rata-rata Nilai/Transaksi",
     items: "item",
+  },
+  reports: {
+    /** Sidebar groups; each report sits under one. */
+    group: {
+      sales: "Penjualan",
+      cash: "Kas",
+      products: "Produk",
+      stock: "Stok",
+    },
+    /** Short sidebar names — the group already says "Penjualan". */
+    nav: {
+      salesDaily: "Per Hari",
+      salesMonthly: "Per Bulan",
+      salesPeriod: "Per Periode",
+      salesReceipt: "Per Struk",
+    },
+    /** Page titles, also the tables' `aria-label`. */
+    title: {
+      salesDaily: "Penjualan per Hari",
+      salesMonthly: "Penjualan per Bulan",
+      salesPeriod: "Penjualan per Periode",
+      salesReceipt: "Penjualan per Struk",
+      paymentMethods: "Jenis Pembayaran",
+      cashFlows: "Uang Masuk / Keluar",
+      productSales: "Penjualan Produk",
+      popularProducts: "Produk Populer",
+      returns: "Retur Produk",
+      currentStock: "Stok Saat Ini",
+      losses: "Laporan Kerugian",
+    },
+    stat: {
+      totalTransactions: "Total Transaksi",
+      totalRevenue: "Total Pendapatan",
+      totalCost: "Total Modal",
+      grossProfit: "Laba Kotor",
+      avgPerTransaction: "Rata-rata / Transaksi",
+      totalIn: "Total Uang Masuk",
+      totalOut: "Total Uang Keluar",
+      netBalance: "Saldo Bersih",
+      totalProducts: "Total Produk",
+      lowStockProducts: "Produk Stok Menipis",
+      totalStockValue: "Total Nilai Stok",
+      totalWriteoffs: "Total Write-off",
+      totalQuantity: "Total Qty",
+      totalLoss: "Total Kerugian",
+      totalReturns: "Total Retur",
+      totalReturnValue: "Total Nilai Retur",
+    },
+    column: {
+      date: "Tanggal",
+      month: "Bulan",
+      cashier: "Kasir",
+      product: "Produk",
+      barcode: "Barcode",
+      category: "Kategori",
+      unit: "Satuan",
+      stock: "Stok",
+      minStock: "Min. Stok",
+      buyPrice: "Harga Beli",
+      sellPrice: "Harga Jual",
+      stockValue: "Nilai Stok",
+      transactions: "Transaksi",
+      transactionCount: "Jumlah Transaksi",
+      revenue: "Pendapatan",
+      totalRevenue: "Total Pendapatan",
+      cost: "Modal",
+      profit: "Laba",
+      grossProfit: "Laba Kotor",
+      qtySold: "Qty Terjual",
+      qty: "Qty",
+      rank: "Peringkat",
+      paymentMethod: "Metode Pembayaran",
+      paymentMethodShort: "Metode Bayar",
+      share: "Persentase",
+      total: "Total",
+      kind: "Jenis",
+      description: "Keterangan",
+      amount: "Nominal",
+      receiptNumber: "No. Struk",
+      originalReceipt: "No. Struk Asli",
+      refundNumber: "No. Refund",
+      writeoffNumber: "No. WO",
+      type: "Tipe",
+      returnAmount: "Jumlah",
+      reason: "Alasan",
+      lossValue: "Nilai Kerugian",
+      notes: "Catatan",
+      status: "Status",
+      items: "Item",
+      returned: "Retur",
+      net: "Bersih",
+    },
+    // Filters
+    searchProduct: "Cari produk...",
+    searchReceipt: "Cari no. struk...",
+    stockFilterLabel: "Saring stok",
+    stockFilterAll: "Semua Produk",
+    stockFilterLow: "Stok Menipis",
+    topLimitLabel: "Jumlah produk teratas",
+    topLimit: (count: number) => `Top ${count}`,
+    yearLabel: "Tahun laporan",
+    // Row values
+    cashIn: "Uang Masuk",
+    cashOut: "Uang Keluar",
+    returnTypeRefund: "Refund",
+    returnTypeExchange: "Tukar",
+    paymentShare: (method: string) => `Porsi ${method}`,
+    stockOutSr: ", habis",
+    stockLowSr: ", menipis",
+    // Empty states
+    empty: {
+      sales: noneInPeriod("penjualan"),
+      salesInYear: (year: number) => `${noneYet("penjualan")} di tahun ${year}`,
+      receipts: noneInPeriod("struk"),
+      payments: noneInPeriod("pembayaran"),
+      cashFlows: noneInPeriod("uang masuk atau keluar"),
+      productsSold: noneInPeriod("produk terjual"),
+      returns: noneInPeriod("retur"),
+      writeoffs: noneInPeriod("write-off"),
+      products: noneYet("produk"),
+      lowStock: "Tidak ada produk yang stoknya menipis",
+    },
+    // Truncated lists
+    truncated: (shown: string, total: string, noun: string) =>
+      `Menampilkan ${shown} dari ${total} ${noun}`,
+    truncatedStockHint:
+      "Kartu stok menipis dan nilai stok dihitung dari baris yang tampil saja. Persempit pencarian untuk angka yang utuh.",
+    truncatedReceiptsHint: "Persempit rentang tanggal atau pencarian untuk melihat sisanya.",
   },
   ppob: {
     title: "Mitra Indogrosir",
@@ -479,33 +932,22 @@ export const id = {
     markAllRead: "Tandai Sudah Dibaca",
     noNotifications: "Belum ada informasi",
     phoneNumber: "Nomor HP",
-    phoneNumberPlaceholder: "Masukkan nomor HP...",
-    customerId: "ID Pelanggan",
-    customerIdPlaceholder: "Masukkan ID pelanggan...",
     nominal: "Nominal",
-    selectNominal: "Pilih nominal",
     provider: "Provider",
-    selectProvider: "Pilih provider",
     price: "Harga Jual",
     basePrice: "Harga Modal",
     margin: "Margin",
     // Ringkasan Transaksi — cetak struk dari riwayat dengan biaya layanan sendiri
-    summaryTitle: "Ringkasan Transaksi",
-    summaryHint:
-      "Biaya layanan ditambahkan ke harga modal dan dicetak di struk sebagai Grand Total.",
     serviceFee: "Biaya Layanan",
     grandTotal: "Grand Total",
-    receiptPreview: "Pratinjau struk",
-    receiptPreviewFailed: "Gagal memuat pratinjau struk",
-    receiptPrinted: "Struk dicetak",
-    receiptPrintFailed: "Gagal cetak struk",
     confirm: "Konfirmasi Pembelian",
     success: "Transaksi berhasil",
-    failed: "Transaksi gagal",
     notAvailable: "Belum tersedia",
     trouble: "Gangguan",
     merchantNotFound: "Merchant tidak ditemukan",
     bankNotFound: "Bank tidak ditemukan",
+    billCheckFailed: (reason: string) => `Cek tagihan gagal: ${reason}`,
+    customerCheckFailed: (reason: string) => `Cek pelanggan gagal: ${reason}`,
     notConfigured: "Mitra Indogrosir belum dikonfigurasi",
     configureInSettings: "Admin dapat mengaturnya lewat tombol Pengaturan di kanan atas",
     // Settings (sub-halaman /ppob/settings)
@@ -525,15 +967,6 @@ export const id = {
     testConnectionSuccess: "Koneksi berhasil",
     testConnectionFailed: "Koneksi gagal",
     connectionInfo: "Terhubung sebagai",
-    // Categories
-    ecommerce: "E-Commerce",
-    education: "Pendidikan",
-    insurance: "Asuransi",
-    membership: "Keanggotaan",
-    multifinance: "Multi Finance",
-    publicUtility: "Utilitas Publik",
-    transportation: "Transportasi",
-    internetTv: "Internet & TV",
     selectMerchant: "Pilih Merchant",
     searchMerchant: "Cari merchant...",
     // Transfer
@@ -549,14 +982,8 @@ export const id = {
     senderPhonePlaceholder: "Masukkan no. HP pengirim",
     amountPlaceholder: "Masukkan jumlah transfer",
     descriptionPlaceholder: "Keterangan (opsional)",
-    // PDAM
-    selectPdam: "Pilih PDAM",
-    searchPdam: "Cari PDAM...",
     // BPJS
-    bpjsNumber: "Nomor BPJS",
-    bpjsNumberPlaceholder: "Masukkan nomor BPJS...",
     period: "Periode",
-    periodMonths: "bulan",
     // Payment Point
     selectGroup: "Pilih Kategori",
     paymentCode: "Kode Pembayaran",
@@ -564,32 +991,78 @@ export const id = {
     // Transfer
     fee: "Biaya Admin",
     totalPayment: "Total Pembayaran",
-    // E-Money
-    emoneyNumber: "Nomor E-Money",
-    emoneyNumberPlaceholder: "Masukkan nomor kartu...",
-    selectDenom: "Pilih Nominal",
     // Voucher
-    voucherProducts: "Produk Voucher",
     noProducts: "Belum ada produk tersedia",
     // Purchase flow
-    inquiryLoading: "Mengecek transaksi...",
-    inquirySuccess: "Transaksi siap diproses",
-    confirmPayment: "Konfirmasi & Bayar",
-    paymentLoading: "Memproses pembayaran...",
-    paymentSuccess: "Pembayaran Berhasil!",
-    paymentFailed: "Pembayaran Gagal",
     serialNumber: "Serial Number",
     product: "Produk",
-    referenceNumber: "No. Referensi",
-    transactionId: "ID Transaksi",
-    closeAndReset: "Tutup",
-    purchaseAnother: "Transaksi Lagi",
-    cancelInquiry: "Batalkan",
-    // Error handling
-    retry: "Coba Lagi",
-    connectionError: "Gagal terhubung ke server Mitra",
-    sessionExpired: "Sesi Mitra habis, silakan refresh",
-    insufficientBalance: "Saldo Mitra tidak cukup",
-    serviceUnavailable: "Layanan sedang tidak tersedia",
+    markReadFailed: failedWith("menandai informasi"),
+    /** Isian layanan quick-access (Pulsa, Token PLN, PDAM, BPJS, E-Money) dan ringkasannya. */
+    quickAccess: {
+      addToCart: "Tambah ke Keranjang",
+      service: "Layanan",
+      number: "Nomor",
+      name: "Nama",
+      bill: "Tagihan",
+      adminFee: "Admin",
+      totalPay: "Total Bayar",
+      markup: "Markup",
+      cost: "Modal",
+      costOf: (price: string) => `Modal: ${price}`,
+      checkBill: "Cek Tagihan",
+      checkCustomer: "Cek Info Pelanggan",
+      checkBillHint: "Cek tagihan untuk melihat detail",
+      checkCustomerHint: "Cek info pelanggan untuk melihat detail",
+      pickProductHint: "Pilih produk untuk melihat detail",
+      customerId: "ID Pelanggan",
+      customerIdPlaceholder: "Masukkan ID pelanggan",
+      // Saldo
+      saldoUnavailable: "Saldo tidak tersedia",
+      saldoUnavailableReason: "Alasan saldo tidak tersedia",
+      historyLabel: "Riwayat transaksi PPOB",
+      // Pulsa & paket data
+      phonePlaceholder: "08xxxxxxxxxx",
+      pickPulsa: "Pilih nominal pulsa",
+      pickData: "Pilih paket data",
+      noPulsaProducts: "Tidak ada produk pulsa untuk nomor ini",
+      noDataProducts: "Tidak ada produk paket data untuk nomor ini",
+      providerDetected: (provider: string) =>
+        `Provider terdeteksi: ${provider}. Coba tab lain atau ulangi beberapa saat lagi.`,
+      checkNumber: "Periksa kembali nomornya, atau coba lagi beberapa saat lagi.",
+      enterPhoneTitle: "Masukkan nomor HP pelanggan",
+      enterPhonePulsaHint:
+        "Minimal 10 digit. Provider terdeteksi otomatis, lalu pilihan nominal pulsa muncul di sini.",
+      enterPhoneDataHint:
+        "Minimal 10 digit. Provider terdeteksi otomatis, lalu pilihan paket data muncul di sini.",
+      // Token PLN
+      plnMode: "Jenis layanan PLN",
+      plnToken: "Token (Prepaid)",
+      plnPostpaid: "Bayar (Pascabayar)",
+      plnTokenService: "PLN Token",
+      plnPostpaidService: "PLN Pascabayar",
+      plnMeter: "No. Meter / IDPEL",
+      plnMeterPlaceholder: "Masukkan no. meter atau IDPEL",
+      plnMeterHint: "Bisa pakai No. Meter (11 digit) atau IDPEL (12 digit) dari struk PLN.",
+      plnIdpelPlaceholder: "Masukkan ID pelanggan (12 digit)",
+      plnIdpelHint: "Gunakan ID Pelanggan 12 digit dari tagihan listrik.",
+      plnTariff: "Tarif/Daya",
+      plnTokenPrice: "Harga Token",
+      // PDAM
+      pdamPlaceholder: "Pilih PDAM",
+      // BPJS
+      bpjsType: "Jenis BPJS",
+      bpjsVa: "Nomor VA",
+      bpjsCard: "Nomor Kartu",
+      bpjsVaPlaceholder: "Masukkan nomor VA BPJS",
+      bpjsCardPlaceholder: "Masukkan nomor kartu BPJS",
+      bpjsMainName: "Nama Utama",
+      bpjsParticipantCount: "Jumlah Peserta",
+      bpjsParticipant: (position: number) => `Peserta ${position}`,
+      /** Akhiran nama item keranjang saat satu VA menanggung beberapa peserta. */
+      bpjsMoreParticipants: (count: number) => `+${count} peserta`,
+      // E-Money
+      emoneyId: "Nomor HP / ID",
+      emoneyIdPlaceholder: "Masukkan nomor",
+    },
   },
 } as const

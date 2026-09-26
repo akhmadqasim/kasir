@@ -2,15 +2,18 @@
 //! fixing the payment method it was recorded under.
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
-    PaginatorTrait, QueryFilter, Set, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, PaginatorTrait,
+    QueryFilter, Statement, TransactionTrait,
 };
 
-use super::VALID_PAYMENT_METHODS;
+use super::{
+    validate_payment_method, PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING, PPOB_STATUS_UNCERTAIN,
+};
 use crate::domain::transactions::{DeleteTransactionInput, UpdatePaymentMethodInput};
 use crate::domain::Actor;
-use crate::entity::{transaction_items, transactions};
+use crate::entity::{refunds, transaction_items, transactions};
 use crate::services::guard;
+use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
 /// Void a completed sale: restore the stock, zero the total and record who did
@@ -40,8 +43,6 @@ pub async fn void(
         ));
     }
 
-    // Check for linked refunds
-    use crate::entity::refunds;
     let refund_count = refunds::Entity::find()
         .filter(refunds::Column::TransactionId.eq(input.transaction_id))
         .count(db)
@@ -53,14 +54,34 @@ pub async fn void(
         ));
     }
 
+    if let Some(refusal) = unsettled_ppob_refusal(db, input.transaction_id).await? {
+        return Err(refusal);
+    }
+
     let items = transaction_items::Entity::find()
         .filter(transaction_items::Column::TransactionId.eq(input.transaction_id))
         .all(db)
         .await?;
 
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_ts();
 
     let txn = db.begin().await?;
+
+    // Soft delete first, with the checks above repeated inside the write.
+    let voided =
+        soft_delete_if_voidable(&txn, actor, input.transaction_id, input.reason.trim(), &now)
+            .await?;
+
+    if !voided {
+        // Name the PPOB line if that is what stopped it; otherwise another
+        // void or a refund got there first.
+        if let Some(refusal) = unsettled_ppob_refusal(&txn, input.transaction_id).await? {
+            return Err(refusal);
+        }
+        return Err(AppError::Validation(
+            "Transaksi baru saja dihapus atau di-refund. Muat ulang lalu coba lagi.".into(),
+        ));
+    }
 
     // Restore stock for regular items (not PPOB)
     for item in &items {
@@ -76,29 +97,98 @@ pub async fn void(
         }
     }
 
-    // Soft delete the transaction
-    txn.execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "UPDATE transactions
-         SET status = 'deleted',
-             total_amount = 0,
-             deleted_at = $1,
-             deleted_by = $2,
-             deleted_reason = $3,
-             updated_at = $1
-         WHERE id = $4",
-        vec![
-            now.into(),
-            actor.user_id.into(),
-            input.reason.trim().to_string().into(),
-            input.transaction_id.into(),
-        ],
-    ))
-    .await?;
-
     txn.commit().await?;
 
     Ok(())
+}
+
+/// Mark the sale voided, but only while it is still live, unrefunded and has
+/// no PPOB line whose outcome is still open. `false` when it matched no row.
+///
+/// The checks in [`void`] run outside its transaction, so two voids (a double
+/// click, or two admins) could both pass them; without this guard each restored
+/// the stock, giving the goods back twice. Whichever loses the race matches no
+/// row here and rolls back before touching stock. The same goes for a PPOB
+/// retry claimed in between: the line is `processing` again and the void must
+/// not land.
+async fn soft_delete_if_voidable<C: ConnectionTrait>(
+    db: &C,
+    actor: &Actor,
+    transaction_id: i64,
+    reason: &str,
+    now: &str,
+) -> Result<bool, AppError> {
+    let voided = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transactions
+             SET status = 'deleted',
+                 total_amount = 0,
+                 deleted_at = $1,
+                 deleted_by = $2,
+                 deleted_reason = $3,
+                 updated_at = $1
+             WHERE id = $4
+               AND deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM refunds WHERE transaction_id = $4)
+               AND NOT EXISTS (
+                   SELECT 1 FROM transaction_items
+                   WHERE transaction_id = $4 AND ppob_status IN ($5, $6, $7)
+               )",
+            vec![
+                now.into(),
+                actor.user_id.into(),
+                reason.into(),
+                transaction_id.into(),
+                PPOB_STATUS_PENDING.into(),
+                PPOB_STATUS_PROCESSING.into(),
+                PPOB_STATUS_UNCERTAIN.into(),
+            ],
+        ))
+        .await?;
+    Ok(voided.rows_affected() == 1)
+}
+
+/// Why a sale cannot be voided yet because of its PPOB lines, if it cannot.
+///
+/// `pending` and `processing` mean a provider call is in flight: the provider
+/// may still pay, and voiding would hand the customer's money back for a
+/// purchase that then goes through. `uncertain` means the call's answer never
+/// arrived and the money may already be spent; a person has to settle it
+/// against the Mitra history first.
+async fn unsettled_ppob_refusal<C: ConnectionTrait>(
+    db: &C,
+    transaction_id: i64,
+) -> Result<Option<AppError>, AppError> {
+    let statuses = transaction_items::Entity::find()
+        .filter(transaction_items::Column::TransactionId.eq(transaction_id))
+        .filter(transaction_items::Column::PpobStatus.is_in([
+            PPOB_STATUS_PENDING,
+            PPOB_STATUS_PROCESSING,
+            PPOB_STATUS_UNCERTAIN,
+        ]))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|item| item.ppob_status)
+        .collect::<Vec<_>>();
+
+    if statuses
+        .iter()
+        .any(|s| s == PPOB_STATUS_PENDING || s == PPOB_STATUS_PROCESSING)
+    {
+        return Ok(Some(AppError::Validation(
+            "PPOB di transaksi ini masih diproses. Tunggu hasil PPOB selesai dulu, baru hapus transaksinya."
+                .into(),
+        )));
+    }
+    if !statuses.is_empty() {
+        return Ok(Some(AppError::Validation(
+            "Hasil PPOB di transaksi ini belum pasti. Cek riwayat Mitra dan tandai berhasil atau gagal dulu, baru hapus transaksinya."
+                .into(),
+        )));
+    }
+    Ok(None)
 }
 
 /// Correct the payment method a sale was recorded under, rewriting the payment
@@ -111,32 +201,49 @@ pub async fn update_payment_method(
     // Same reasoning as `void`: correcting a completed sale is an admin action.
     guard::require_admin(actor)?;
 
-    if !VALID_PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
-        return Err(AppError::Validation(format!(
-            "Metode pembayaran tidak valid: {}",
-            input.payment_method
-        )));
-    }
+    validate_payment_method(&input.payment_method)?;
 
     if input.reason.trim().is_empty() {
         return Err(AppError::Validation("Alasan perubahan wajib diisi".into()));
     }
 
-    let transaction = transactions::Entity::find_by_id(input.transaction_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
-
-    if transaction.deleted_at.is_some() {
-        return Err(AppError::Validation(
-            "Tidak dapat mengubah transaksi yang sudah dihapus".into(),
-        ));
-    }
-
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-    let payment_amount = transaction.total_amount;
+    let now = now_ts();
     let txn = db.begin().await?;
+
+    // The sale is changed first, and only while it is still live. Checking
+    // `deleted_at` on a read made before this transaction let a void land in
+    // between: the method change then went through on a voided sale and wrote
+    // a payment row for its old total next to a zeroed `total_amount`. The
+    // amount is taken from the row inside the same statement for the same
+    // reason. A void that loses the race sees the new method, which is fine.
+    let changed = txn
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transactions
+             SET payment_method = $1,
+                 payment_amount = total_amount,
+                 change_amount = 0,
+                 updated_at = $2
+             WHERE id = $3 AND deleted_at IS NULL",
+            vec![
+                input.payment_method.clone().into(),
+                now.clone().into(),
+                input.transaction_id.into(),
+            ],
+        ))
+        .await?;
+
+    if changed.rows_affected() != 1 {
+        let exists = transactions::Entity::find_by_id(input.transaction_id)
+            .one(&txn)
+            .await?
+            .is_some();
+        return Err(if exists {
+            AppError::Validation("Tidak dapat mengubah transaksi yang sudah dihapus".into())
+        } else {
+            AppError::NotFound("Transaksi tidak ditemukan".into())
+        });
+    }
 
     // Changing payment method should also rewrite the payment breakdown
     // so shift closing and reports read the same source of truth.
@@ -150,22 +257,19 @@ pub async fn update_payment_method(
     txn.execute(Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "INSERT INTO transaction_payments (transaction_id, payment_method, bank_name, amount, created_at)
-         VALUES ($1, $2, NULL, $3, $4)",
+         SELECT id, $2, NULL, total_amount, $3 FROM transactions WHERE id = $1",
         vec![
             input.transaction_id.into(),
-            input.payment_method.clone().into(),
-            transaction.total_amount.into(),
-            now.clone().into(),
+            input.payment_method.into(),
+            now.into(),
         ],
     ))
     .await?;
 
-    let mut active_txn: transactions::ActiveModel = transaction.into();
-    active_txn.payment_method = Set(input.payment_method);
-    active_txn.payment_amount = Set(payment_amount);
-    active_txn.change_amount = Set(Some(0.0));
-    active_txn.updated_at = Set(Some(now));
-    let updated = active_txn.update(&txn).await?;
+    let updated = transactions::Entity::find_by_id(input.transaction_id)
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Transaksi tidak ditemukan".into()))?;
 
     txn.commit().await?;
 
@@ -175,50 +279,23 @@ pub async fn update_payment_method(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::transactions::{
-        CheckoutTransactionInput, TransactionItemInput, TransactionResult,
-    };
+    use crate::domain::transactions::TransactionResult;
+    use crate::entity::{products, transaction_payments};
     use crate::services::transactions::checkout::checkout_with_executor;
-    use crate::services::transactions::fixtures::{insert_product, setup_test_db};
+    use crate::services::transactions::fixtures::{
+        admin as actor, cash_checkout, insert_product, no_provider, product_line, seed_ppob_sale,
+        setup_test_db,
+    };
     use crate::services::transactions::STATUS_COMPLETED;
     use crate::test_support::insert_user;
-
-    /// The seeded admin (id 1).
-    fn actor() -> Actor {
-        Actor::new(1, "admin")
-    }
 
     async fn seed_sale(conn: &DatabaseConnection) -> TransactionResult {
         let product = insert_product(conn, "Kopi Sachet", 2_000.0, 10).await;
         checkout_with_executor(
             conn,
             &actor(),
-            CheckoutTransactionInput {
-                items: vec![TransactionItemInput {
-                    product_id: Some(product.id),
-                    quantity: 1,
-                    product_name: None,
-                    product_price: None,
-                    buy_price: None,
-                    service_type: None,
-                    service_ref: None,
-                    ppob_product_id: None,
-                    ppob_product_code: None,
-                    ppob_inquiry_id: None,
-                    ppob_payment_code: None,
-                    ppob_flag_id: None,
-                    item_discount: None,
-                }],
-                payment_method: "cash".to_string(),
-                payment_amount: 2_000.0,
-                notes: None,
-                transaction_discount: None,
-                shift_id: None,
-                payment_breakdown: None,
-                ppob_pin: None,
-                channel: None,
-            },
-            |_request| async { Err(AppError::Internal("should not execute".into())) },
+            cash_checkout(vec![product_line(product.id, 1)], 2_000.0),
+            no_provider,
         )
         .await
         .expect("checkout success")
@@ -302,5 +379,233 @@ mod tests {
             .expect("query")
             .expect("transaction exists");
         assert_eq!(reloaded.status, "deleted");
+    }
+
+    /// The goods go back on the shelf once, however many times the void is
+    /// sent.
+    #[tokio::test]
+    async fn a_second_void_restores_no_more_stock() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+        let product_id = sale.items[0].product_id.expect("goods line");
+        let void_input = || DeleteTransactionInput {
+            transaction_id: sale.transaction.id,
+            reason: "Salah input".to_string(),
+        };
+
+        void(&conn, &actor(), void_input())
+            .await
+            .expect("first void");
+        assert!(void(&conn, &actor(), void_input()).await.is_err());
+
+        let product = products::Entity::find_by_id(product_id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("product exists");
+        assert_eq!(product.stock, 10);
+    }
+
+    fn void_of(item: &transaction_items::Model) -> DeleteTransactionInput {
+        DeleteTransactionInput {
+            transaction_id: item.transaction_id,
+            reason: "Salah input".to_string(),
+        }
+    }
+
+    async fn is_voided(conn: &DatabaseConnection, transaction_id: i64) -> bool {
+        transactions::Entity::find_by_id(transaction_id)
+            .one(conn)
+            .await
+            .expect("query")
+            .expect("transaction exists")
+            .deleted_at
+            .is_some()
+    }
+
+    /// A PPOB call still in flight may yet pay the provider. Voiding the sale
+    /// then handed the customer's money back for a purchase that went through.
+    #[tokio::test]
+    async fn a_sale_whose_ppob_line_is_in_flight_cannot_be_voided() {
+        for status in [PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING] {
+            let conn = setup_test_db().await;
+            let item = seed_ppob_sale(&conn, status).await;
+
+            match void(&conn, &actor(), void_of(&item)).await {
+                Err(AppError::Validation(msg)) => assert!(
+                    msg.contains("Tunggu hasil PPOB selesai dulu"),
+                    "{status}: message should say to wait, got: {msg}"
+                ),
+                other => panic!("{status}: expected Validation, got {:?}", other),
+            }
+            assert!(!is_voided(&conn, item.transaction_id).await, "{status}");
+        }
+    }
+
+    /// An `uncertain` line may already have spent the money; it has to be
+    /// settled against the Mitra history before the sale can go.
+    #[tokio::test]
+    async fn a_sale_whose_ppob_line_is_uncertain_cannot_be_voided() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_UNCERTAIN).await;
+
+        match void(&conn, &actor(), void_of(&item)).await {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("belum pasti"),
+                "message should say the outcome is open, got: {msg}"
+            ),
+            other => panic!("expected Validation, got {:?}", other),
+        }
+        assert!(!is_voided(&conn, item.transaction_id).await);
+    }
+
+    /// The guard inside the write holds on its own. A PPOB retry claimed after
+    /// `void`'s pre-check turns the line back to `processing`; the soft delete
+    /// must then match nothing, or the customer is paid back for a purchase
+    /// the provider may still make.
+    #[tokio::test]
+    async fn the_void_write_itself_refuses_an_unsettled_ppob_line() {
+        for status in [
+            PPOB_STATUS_PENDING,
+            PPOB_STATUS_PROCESSING,
+            PPOB_STATUS_UNCERTAIN,
+        ] {
+            let conn = setup_test_db().await;
+            let item = seed_ppob_sale(&conn, status).await;
+
+            let voided = soft_delete_if_voidable(
+                &conn,
+                &actor(),
+                item.transaction_id,
+                "Salah input",
+                &now_ts(),
+            )
+            .await
+            .expect("query");
+            assert!(!voided, "{status}: the write must not land");
+            assert!(!is_voided(&conn, item.transaction_id).await, "{status}");
+        }
+
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, "success").await;
+        let voided = soft_delete_if_voidable(
+            &conn,
+            &actor(),
+            item.transaction_id,
+            "Salah input",
+            &now_ts(),
+        )
+        .await
+        .expect("query");
+        assert!(voided, "a settled line does not block the write");
+    }
+
+    /// Once the PPOB outcome is settled, the sale can be voided as before.
+    #[tokio::test]
+    async fn a_sale_whose_ppob_line_failed_can_be_voided() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, "failed").await;
+
+        void(&conn, &actor(), void_of(&item))
+            .await
+            .expect("a settled line does not block the void");
+        assert!(is_voided(&conn, item.transaction_id).await);
+    }
+
+    /// The live-sale check sits inside the write: a sale voided after the admin
+    /// opened the dialog keeps its method and its payment rows. The old code
+    /// checked `deleted_at` on a read taken before the transaction, so a void
+    /// landing in between let the change through on a voided sale.
+    #[tokio::test]
+    async fn the_payment_method_of_a_voided_sale_cannot_change() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+        void(
+            &conn,
+            &actor(),
+            DeleteTransactionInput {
+                transaction_id: sale.transaction.id,
+                reason: "Salah input".to_string(),
+            },
+        )
+        .await
+        .expect("void");
+
+        let result = update_payment_method(
+            &conn,
+            &actor(),
+            UpdatePaymentMethodInput {
+                transaction_id: sale.transaction.id,
+                payment_method: "qris".to_string(),
+                reason: "Salah pilih".to_string(),
+            },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Validation(_))),
+            "got {:?}",
+            result
+        );
+
+        let reloaded = transactions::Entity::find_by_id(sale.transaction.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("transaction exists");
+        assert_eq!(reloaded.payment_method, "cash");
+        let methods: Vec<String> = transaction_payments::Entity::find()
+            .filter(transaction_payments::Column::TransactionId.eq(sale.transaction.id))
+            .all(&conn)
+            .await
+            .expect("query")
+            .into_iter()
+            .map(|p| p.payment_method)
+            .collect();
+        assert!(
+            methods.iter().all(|m| m == "cash"),
+            "payment rows untouched, got {methods:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_admin_can_change_the_payment_method_of_a_live_sale() {
+        let conn = setup_test_db().await;
+        let sale = seed_sale(&conn).await;
+
+        let updated = update_payment_method(
+            &conn,
+            &actor(),
+            UpdatePaymentMethodInput {
+                transaction_id: sale.transaction.id,
+                payment_method: "qris".to_string(),
+                reason: "Salah pilih".to_string(),
+            },
+        )
+        .await
+        .expect("an admin may correct the method");
+
+        assert_eq!(updated.payment_method, "qris");
+        assert_eq!(updated.payment_amount, sale.transaction.total_amount);
+        assert_eq!(updated.change_amount, Some(0.0));
+        let payments = transaction_payments::Entity::find()
+            .filter(transaction_payments::Column::TransactionId.eq(sale.transaction.id))
+            .all(&conn)
+            .await
+            .expect("query");
+        assert_eq!(payments.len(), 1);
+        assert_eq!(payments[0].payment_method, "qris");
+        assert_eq!(payments[0].amount, sale.transaction.total_amount);
+
+        let missing = update_payment_method(
+            &conn,
+            &actor(),
+            UpdatePaymentMethodInput {
+                transaction_id: 9_999,
+                payment_method: "qris".to_string(),
+                reason: "Salah pilih".to_string(),
+            },
+        )
+        .await;
+        assert!(matches!(missing, Err(AppError::NotFound(_))));
     }
 }

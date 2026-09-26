@@ -2,6 +2,8 @@ import type { ReactNode } from "react"
 import { Card } from "@heroui/react"
 import { RefreshCw } from "lucide-react"
 
+import { CardHeading } from "@/components/card-heading"
+import { LoadError } from "@/components/load-error"
 import { PendingButton } from "@/components/pending-button"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { useAuthStore } from "@/features/auth"
@@ -23,12 +25,15 @@ import { UpdateProgress } from "./update-progress"
  */
 export function AppUpdateCard() {
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
-  const { data: status } = useUpdateStatus()
+  const statusQuery = useUpdateStatus()
+  const { data: status } = statusQuery
   const { check, download, install } = useUpdateActions()
   const confirmation = useInstallConfirmation(install)
 
   const statusText = status ? describeStatus(status) : "—"
-  const statusTone: SummaryItem["tone"] = isVisibleFailure(status) ? "danger" : "default"
+  // Unlike the banner, this card is where a person asks, so a failed check is
+  // shown here too — as red text that still says what went wrong in words.
+  const statusTone: SummaryItem["tone"] = status?.phase === "failed" ? "danger" : "default"
 
   const items: SummaryItem[] = [
     { label: t.updater.installedVersion, value: status?.current_version ?? "—", tone: "mono" },
@@ -45,7 +50,7 @@ export function AppUpdateCard() {
     if (status.phase === "available" || isVisibleFailure(status)) {
       primary = (
         <PendingButton isPending={download.isPending} onPress={() => download.mutate()}>
-          {status.phase === "available" ? t.updater.updateNow : t.updater.retry}
+          {status.phase === "available" ? t.updater.updateNow : t.common.retry}
         </PendingButton>
       )
     } else if (status.phase === "ready") {
@@ -63,15 +68,28 @@ export function AppUpdateCard() {
   return (
     <Card>
       <Card.Header>
-        <Card.Title>{t.settings.tabApp}</Card.Title>
+        <CardHeading>{t.settings.tabApp}</CardHeading>
+        <Card.Description>
+          Database toko disimpan terpisah, jadi memasang versi baru tidak menghapus data.
+        </Card.Description>
       </Card.Header>
       <Card.Content className="gap-4">
-        <SummaryList items={items} layout="grid" />
+        {statusQuery.isError && !status ? (
+          <LoadError
+            isRetrying={statusQuery.isFetching}
+            title={t.loadFailed.updateStatus}
+            onRetry={() => void statusQuery.refetch()}
+          >
+            {statusQuery.error.message}
+          </LoadError>
+        ) : (
+          <SummaryList items={items} layout="grid" />
+        )}
 
         {status?.phase === "available" && status.notes && (
-          <div className="text-sm">
+          <div className="flex flex-col gap-1 text-sm">
             <p className="text-muted">{t.updater.notes}</p>
-            <p className="whitespace-pre-line">{status.notes}</p>
+            <p className="whitespace-pre-line text-foreground">{status.notes}</p>
           </div>
         )}
         {status?.phase === "available" && !isAdmin && (
@@ -85,18 +103,19 @@ export function AppUpdateCard() {
           />
         )}
       </Card.Content>
-      <Card.Footer className="gap-2">
+      <Card.Footer className="flex-wrap gap-2">
         {primary}
+        {/* The label stays put (PendingButton, DESIGN.md §5.6): the spinner and
+            the status row already say "Memeriksa…", and a label that grew
+            longer shifted the primary button beside it. */}
         <PendingButton
           isDisabled={isBusyPhase(status?.phase)}
-          isPending={check.isPending}
+          isPending={check.isPending || status?.phase === "checking"}
           variant="secondary"
           onPress={() => check.mutate()}
         >
           <RefreshCw />
-          {status?.phase === "checking" || check.isPending
-            ? t.updater.checking
-            : t.updater.checkNow}
+          {t.updater.checkNow}
         </PendingButton>
       </Card.Footer>
 

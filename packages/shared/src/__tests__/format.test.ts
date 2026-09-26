@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest"
 import {
   formatNumber,
   formatRupiah,
-  parseBackendDate,
   parseIndonesianInteger,
   parseIndonesianNumber,
-  toLocalDateString,
 } from "../format"
 
 describe("formatRupiah", () => {
@@ -42,28 +40,5 @@ describe("parseIndonesianNumber", () => {
   it("truncates to an integer for stock fields", () => {
     expect(parseIndonesianInteger("12,9")).toBe(12)
     expect(parseIndonesianInteger("-3")).toBe(-3)
-  })
-})
-
-describe("parseBackendDate", () => {
-  it("pins a bare SQLite timestamp to UTC", () => {
-    expect(parseBackendDate("2026-09-05 01:00:00")?.toISOString()).toBe("2026-09-05T01:00:00.000Z")
-  })
-
-  it("leaves an explicit timezone alone", () => {
-    expect(parseBackendDate("2026-09-05T01:00:00+07:00")?.toISOString()).toBe(
-      "2026-09-04T18:00:00.000Z",
-    )
-  })
-
-  it("returns null for nothing", () => {
-    expect(parseBackendDate(null)).toBeNull()
-    expect(parseBackendDate("nonsense")).toBeNull()
-  })
-})
-
-describe("toLocalDateString", () => {
-  it("uses the local calendar day", () => {
-    expect(toLocalDateString(new Date(2026, 8, 6, 3, 0, 0))).toBe("2026-09-06")
   })
 })

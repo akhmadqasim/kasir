@@ -2,9 +2,12 @@
 //!
 //! `/store` is the shop's name and address — every till needs it to draw a
 //! receipt header, so a cashier may read it and only an admin may change it.
-//! `/store/logo` is the shop's logo file on the same terms: any session may
-//! fetch it for the sidebar, only an admin may upload (`POST
-//! /settings/store/logo`) or remove it. The upload reads the bytes and nothing
+//! `/store/public` is the part of that row the login screen shows before anyone
+//! has signed in — the name and whether there is a logo, nothing else — so it
+//! sits in the `public` group. `/store/logo` is the shop's logo file: public for
+//! the same reason (it is on every printed receipt, and the login screen draws
+//! it), while only an admin may upload (`POST /settings/store/logo`) or remove
+//! it. The upload reads the bytes and nothing
 //! else — the part's `filename` and `Content-Type` are never consulted;
 //! `services::store_logo` decides the format from the content and writes to a
 //! path it owns.
@@ -12,14 +15,15 @@
 //! `/settings/ppob/markup` is the one slice of the settings blob a cashier may
 //! read directly: the PPOB markup table, needed by `PpobQuickAccess` to price
 //! a top-up. It carries none of the fields `/settings` withholds, so it is
-//! safe in the `session` group rather than `admin`.
+//! safe in the `session` group rather than `admin`. `/settings/sales` is the
+//! same kind of slice: the sales block (default payment method, negative-stock
+//! policy), which the till's payment dialog needs.
 //!
 //! `/settings` is the whole configuration blob, and it is admin-only on both
 //! sides for one specific reason: it used to contain the PPOB password in the
-//! clear. `get_app_settings` deobfuscates it and checks no role, so the Tauri
-//! command that wraps it hands a shop's payment-gateway credential to anyone
-//! who can invoke it — which, on a LAN, is anyone who can reach the port. The
-//! read here answers with [`PublicAppSettings`], which reports
+//! clear. `get_app_settings` deobfuscates it and checks no role, so serving it
+//! as-is would hand a shop's payment-gateway credential to anyone who can reach
+//! the port. The read here answers with [`PublicAppSettings`], which reports
 //! `has_credentials` and nothing else, and the write cannot carry it either.
 //! Setting it is a separate request to `/settings/ppob/credentials`, so the
 //! secret travels in exactly one direction. The PPOB transaction PIN is not
@@ -37,8 +41,8 @@ use axum::Extension;
 use axum::Router;
 
 use crate::domain::settings::{
-    DatabaseInfo, PpobMarkup, PublicAppSettings, UpdateAppSettingsInput,
-    UpdatePpobCredentialsInput, UpdateStoreInfoInput,
+    DatabaseInfo, PpobMarkup, PublicAppSettings, PublicStoreInfo, SalesSettings,
+    UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput,
 };
 use crate::domain::store_logo::MAX_LOGO_BYTES;
 use crate::domain::Actor;
@@ -48,11 +52,17 @@ use crate::http::extract::{Json, UploadedFile};
 use crate::http::AppState;
 use crate::services;
 
+pub fn public() -> Router<AppState> {
+    Router::new()
+        .route("/store/public", get(get_public_store))
+        .route("/store/logo", get(get_store_logo))
+}
+
 pub fn session() -> Router<AppState> {
     Router::new()
         .route("/store", get(get_store))
-        .route("/store/logo", get(get_store_logo))
         .route("/settings/ppob/markup", get(get_ppob_markup))
+        .route("/settings/sales", get(get_sales_settings))
 }
 
 pub fn admin() -> Router<AppState> {
@@ -71,6 +81,15 @@ pub fn admin() -> Router<AppState> {
         .route("/settings", get(get_settings).put(update_settings))
         .route("/settings/ppob/credentials", put(update_ppob_credentials))
         .route("/settings/database", get(database_info))
+}
+
+/// `null` before onboarding; the login screen then simply shows no name.
+async fn get_public_store(
+    State(state): State<AppState>,
+) -> ApiResult<axum::Json<Option<PublicStoreInfo>>> {
+    Ok(axum::Json(
+        services::settings::public_store_info(&state.db).await?,
+    ))
 }
 
 async fn get_store(
@@ -154,6 +173,12 @@ async fn get_settings(
 async fn get_ppob_markup(State(state): State<AppState>) -> ApiResult<axum::Json<PpobMarkup>> {
     Ok(axum::Json(
         services::settings::ppob_markup(&state.db).await?,
+    ))
+}
+
+async fn get_sales_settings(State(state): State<AppState>) -> ApiResult<axum::Json<SalesSettings>> {
+    Ok(axum::Json(
+        services::settings::sales_settings(&state.db).await?,
     ))
 }
 

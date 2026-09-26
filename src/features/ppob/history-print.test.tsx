@@ -96,7 +96,7 @@ describe("Cetak struk dari detail riwayat PPOB", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cetak Struk" }))
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Gagal cetak struk: Printer belum dikonfigurasi"),
+      expect(toastError).toHaveBeenCalledWith("Gagal mencetak struk: Printer belum dikonfigurasi"),
     )
   })
 

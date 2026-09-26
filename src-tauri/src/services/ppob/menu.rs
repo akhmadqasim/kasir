@@ -66,19 +66,7 @@ pub async fn menu(
 ) -> Result<Vec<PpobMenuGroup>, AppError> {
     let result = fetch_menu_saldo_payload(db, mitra).await?;
 
-    let menu_groups: Vec<PpobMenuGroup> = result["menu"]
-        .as_array()
-        .and_then(|menus| menus.first())
-        .and_then(|m| m["list_menu"].as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(menu_groups)
+    Ok(collect_list(&result["menu"][0], "list_menu"))
 }
 
 pub async fn providers(

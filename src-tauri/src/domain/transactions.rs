@@ -34,7 +34,6 @@ pub struct CheckoutTransactionInput {
     pub payment_breakdown: Option<Vec<PaymentSplitInput>>,
     pub notes: Option<String>,
     pub transaction_discount: Option<f64>,
-    pub shift_id: Option<i64>,
     /// The cashier's Mitra transaction PIN, typed at the moment of sale.
     /// Required only when `items` has a PPOB line — see
     /// `crate::services::ppob::executor::validate_pin` — and never persisted:
@@ -96,6 +95,9 @@ pub struct TransactionListItem {
     pub payment_amount: f64,
     pub change_amount: f64,
     pub status: String,
+    /// `sales` or `ppob` — which screen rang the sale up. The history page
+    /// offers a refund only for `sales`.
+    pub channel: String,
     pub item_count: i64,
     pub notes: Option<String>,
     pub created_at: Option<String>,
@@ -117,14 +119,21 @@ pub struct PaginatedTransactions {
     pub total_pages: u64,
 }
 
-/// Page size to actually use, clamped to `1..=100`.
-///
-/// `per_page = 0` slipped past the old `.min(100)` and then divided the row
-/// count by zero, so `total_pages` came back as `u64::MAX` and the pager
+/// A sold line as the detail view returns it: the row itself, flattened, plus
+/// how much of it earlier refunds already took back. The refund form caps each
+/// line at `quantity - refunded_quantity`, the same remainder `create_refund`
+/// enforces.
+#[derive(Debug, Serialize)]
+pub struct TransactionDetailItem {
+    #[serde(flatten)]
+    pub item: transaction_items::Model,
+    pub refunded_quantity: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TransactionDetail {
     pub transaction: transactions::Model,
-    pub items: Vec<transaction_items::Model>,
+    pub items: Vec<TransactionDetailItem>,
     pub cashier_name: String,
     pub has_ppob: bool,
     pub ppob_status: Option<String>,

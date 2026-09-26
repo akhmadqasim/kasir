@@ -1,7 +1,6 @@
 import { PaymentDialog } from "@/features/cashier/components/payment/payment-dialog"
 import type { PrinterSettings } from "@/features/settings/types"
-import { OpenShiftDialog } from "@/features/shift/components/open-shift-dialog"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
+import { OpenShiftDialog, useShiftStore } from "@/features/shift"
 import { useApiQuery } from "@/hooks/use-api"
 import { getPrinterSettings } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"

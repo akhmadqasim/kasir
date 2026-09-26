@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { apiFailure, installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { TestNavbar } from "@/test-utils/test-navbar"
 import type { User } from "@/features/auth/types"
 import type { Category, PaginatedProducts, Product } from "./types"
@@ -78,10 +78,10 @@ async function openFilledForm() {
   fireEvent.click(screen.getByRole("button", { name: "Tambah Produk" }))
   const dialog = within(await screen.findByRole("dialog"))
 
-  fireEvent.change(dialog.getByLabelText("Nama Produk *"), { target: { value: "Kopi Sachet" } })
-  fireEvent.change(dialog.getByLabelText("Stok *"), { target: { value: "10" } })
-  fireEvent.change(dialog.getByLabelText("Harga Modal *"), { target: { value: "1000" } })
-  fireEvent.change(dialog.getByLabelText("Harga Jual *"), { target: { value: "1500" } })
+  fireEvent.change(dialog.getByLabelText("Nama Produk"), { target: { value: "Kopi Sachet" } })
+  fireEvent.change(dialog.getByLabelText("Stok"), { target: { value: "10" } })
+  fireEvent.change(dialog.getByLabelText("Harga Modal"), { target: { value: "1000" } })
+  fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "1500" } })
 
   return dialog
 }
@@ -112,6 +112,7 @@ beforeEach(() => {
     "GET /categories": CATEGORIES,
     "POST /products": PRODUCTS.data[0],
     "DELETE /products/*": null,
+    "PUT /products/*": PRODUCTS.data[0],
     "POST /categories": CATEGORIES[0],
     "PUT /categories/*": CATEGORIES[0],
     "DELETE /categories/*": null,
@@ -184,6 +185,131 @@ describe("halaman produk", () => {
     await vi.waitFor(() => {
       expect(api.lastCall("DELETE /products/*")?.path).toBe("/products/1")
     })
+  })
+
+  // Menghapus produk terakhir di halaman terakhir dulu meninggalkan halaman
+  // kosong tanpa navigasi — dengan satu halaman tersisa, pagination-nya hilang.
+  it("kembali ke halaman terakhir yang masih ada setelah halamannya habis", async () => {
+    let totalPages = 2
+    api.route("GET /products", (call) => ({
+      ...PRODUCTS,
+      page: Number(call.query.get("page") ?? 1),
+      total_pages: totalPages,
+    }))
+    renderPage()
+    await screen.findByText("Indomie Goreng")
+
+    fireEvent.click(screen.getByRole("button", { name: /Selanjutnya/ }))
+    await vi.waitFor(() => expect(api.lastCall("GET /products")?.query.get("page")).toBe("2"))
+
+    totalPages = 1
+    fireEvent.click(await screen.findByRole("button", { name: "Hapus Indomie Goreng" }))
+    const confirm = await screen.findByRole("alertdialog")
+    fireEvent.click(within(confirm).getByRole("button", { name: "Hapus" }))
+
+    await vi.waitFor(() => expect(api.lastCall("GET /products")?.query.get("page")).toBe("1"))
+  })
+
+  // Tanda wajib datang dari `isRequired`, bukan " *" di teks label — pembaca
+  // layar dulu mengucapkan "bintang".
+  it("menandai kolom wajib lewat isRequired, bukan bintang di label", async () => {
+    const dialog = await openFilledForm()
+
+    expect(dialog.getByLabelText("Nama Produk")).toBeRequired()
+    expect(dialog.getByLabelText("Stok")).toBeRequired()
+    expect(dialog.getByLabelText("Harga Modal")).toBeRequired()
+    expect(dialog.getByLabelText("Harga Jual")).toBeRequired()
+    expect(dialog.getByLabelText(id.products.minStock)).not.toBeRequired()
+  })
+
+  /**
+   * The edit form used to send back the stock it loaded, so a price edit made
+   * while sales kept landing silently reverted them. Untouched stock is now
+   * left out; an edited one goes with the loaded value so the server can apply
+   * the difference.
+   */
+  describe("mengubah produk", () => {
+    async function openEditForm() {
+      renderPage()
+      await screen.findByText("Indomie Goreng")
+      fireEvent.click(screen.getByRole("button", { name: `${id.common.edit} Indomie Goreng` }))
+      return within(await screen.findByRole("dialog"))
+    }
+
+    function updatedProductInput() {
+      return api.lastCall("PUT /products/*")?.body as Record<string, unknown> | undefined
+    }
+
+    it("tidak mengirim stok bila stoknya tidak diubah", async () => {
+      const dialog = await openEditForm()
+
+      fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "3500" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      await vi.waitFor(() => expect(updatedProductInput()).toBeDefined())
+      expect(api.lastCall("PUT /products/*")?.path).toBe("/products/1")
+      expect(updatedProductInput()).not.toHaveProperty("stock")
+      expect(updatedProductInput()).not.toHaveProperty("expected_stock")
+    })
+
+    it("mengirim stok baru bersama stok awal bila stoknya diubah", async () => {
+      const dialog = await openEditForm()
+
+      fireEvent.change(dialog.getByLabelText("Stok"), { target: { value: "20" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      await vi.waitFor(() => expect(updatedProductInput()).toBeDefined())
+      expect(updatedProductInput()).toMatchObject({ stock: 20, expected_stock: 12 })
+    })
+
+    // A product sold into the minus used to be un-editable: the form rejected
+    // its own untouched stock as "negative" and no price fix could be saved.
+    it("tetap bisa menyimpan produk yang stoknya sudah minus", async () => {
+      api.route("GET /products", {
+        ...PRODUCTS,
+        data: [{ ...PRODUCTS.data[0], stock: -3 }, PRODUCTS.data[1]],
+      })
+      const dialog = await openEditForm()
+
+      fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "3500" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      await vi.waitFor(() => expect(updatedProductInput()).toBeDefined())
+      expect(updatedProductInput()).not.toHaveProperty("stock")
+    })
+
+    it("menolak stok pecahan", async () => {
+      const dialog = await openEditForm()
+
+      fireEvent.change(dialog.getByLabelText("Stok"), { target: { value: "1.5" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      expect(await dialog.findByText("Stok harus bilangan bulat")).toBeInTheDocument()
+      expect(api.callsFor("PUT /products/*")).toHaveLength(0)
+    })
+  })
+
+  it("menampilkan pesan gagal dengan tombol coba lagi saat daftar produk gagal dimuat", async () => {
+    api.route("GET /products", apiFailure(503, "unavailable", "Server tidak menjawab"))
+    renderPage()
+
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("Gagal memuat produk")).toBeInTheDocument()
+    expect(within(alert).getByText("Server tidak menjawab")).toBeInTheDocument()
+
+    api.route("GET /products", PRODUCTS)
+    fireEvent.click(within(alert).getByRole("button", { name: "Coba lagi" }))
+    expect(await screen.findByText("Indomie Goreng")).toBeInTheDocument()
+  })
+
+  it("membedakan hasil pencarian kosong dari katalog yang masih kosong", async () => {
+    api.route("GET /products", { ...PRODUCTS, data: [], total: 0 })
+    renderPage()
+
+    expect(await screen.findByText(id.products.noProducts)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Stok Minus" }))
+    expect(await screen.findByText("Tidak ada produk yang cocok")).toBeInTheDocument()
   })
 
   /**
@@ -393,5 +519,72 @@ describe("halaman produk", () => {
     expect(preview.getByRole("columnheader", { name: "Harga Jual" })).toBeInTheDocument()
     expect(preview.getByRole("rowheader", { name: "Kopi Sachet" })).toBeInTheDocument()
     expect(within(dialog).getByRole("button", { name: id.products.startImport })).toBeEnabled()
+  })
+  // Hasil import yang datang setelah wizard mundur dulu melompatkan sesi baru
+  // langsung ke langkah hasil. Selama permintaannya berjalan, "Kembali" mati.
+  it("mematikan tombol Kembali selama import berjalan", async () => {
+    api.route("POST /products/bulk", () => new Promise(() => {}))
+    renderPage()
+
+    await screen.findByText("Indomie Goreng")
+    fireEvent.click(screen.getByRole("button", { name: "Import" }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Import Produk" })
+    const fileInput = dialog.querySelector('input[type="file"]') as HTMLInputElement
+    const csv = "Nama Produk,Harga Jual,Stok\nKopi Sachet,1500,10\n"
+    fireEvent.change(fileInput, {
+      target: { files: [new File([csv], "produk.csv", { type: "text/csv" })] },
+    })
+
+    const startImport = await within(dialog).findByRole("button", {
+      name: id.products.startImport,
+    })
+    expect(within(dialog).getByRole("button", { name: id.common.back })).toBeEnabled()
+    fireEvent.click(startImport)
+
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: id.common.back })).toBeDisabled(),
+    )
+    expect(api.lastCall("POST /products/bulk")?.body).toEqual([
+      expect.objectContaining({ name: "Kopi Sachet", sell_price: 1500, stock: 10 }),
+    ])
+  })
+
+  // Menutup dialog selagi import berjalan meninggalkan `isPending` mutasi lama:
+  // sesi berikutnya dibuka dengan "Mulai Import" berputar dan "Kembali" mati
+  // sampai permintaan lama menjawab.
+  it("memulai sesi baru tanpa sisa import yang masih berjalan", async () => {
+    api.route("POST /products/bulk", () => new Promise(() => {}))
+    renderPage()
+
+    await screen.findByText("Indomie Goreng")
+    const csv = "Nama Produk,Harga Jual,Stok\nKopi Sachet,1500,10\n"
+    const uploadCsv = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Import" }))
+      const dialog = await screen.findByRole("dialog", { name: "Import Produk" })
+      const fileInput = dialog.querySelector('input[type="file"]') as HTMLInputElement
+      fireEvent.change(fileInput, {
+        target: { files: [new File([csv], "produk.csv", { type: "text/csv" })] },
+      })
+      await within(dialog).findByRole("button", { name: id.products.startImport })
+      return within(dialog)
+    }
+
+    const first = await uploadCsv()
+    fireEvent.click(first.getByRole("button", { name: id.products.startImport }))
+    await vi.waitFor(() =>
+      expect(first.getByRole("button", { name: id.common.back })).toBeDisabled(),
+    )
+
+    fireEvent.keyDown(first.getByRole("button", { name: id.common.back }), { key: "Escape" })
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Import Produk" })).not.toBeInTheDocument(),
+    )
+
+    const second = await uploadCsv()
+    expect(second.getByRole("button", { name: id.common.back })).toBeEnabled()
+    const startImport = second.getByRole("button", { name: id.products.startImport })
+    expect(startImport).toBeEnabled()
+    expect(startImport).not.toHaveAttribute("data-pending")
   })
 })

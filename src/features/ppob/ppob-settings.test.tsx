@@ -145,6 +145,37 @@ describe("pengaturan Mitra Indogrosir", () => {
     expect(screen.queryByLabelText("PIN Mitra")).not.toBeInTheDocument()
   })
 
+  /**
+   * The failure this guards against: the save sent back the other three
+   * blocks from the copy the form loaded with, undoing whatever another
+   * settings card had saved while this screen stayed open.
+   */
+  it("mengirim blok lain dari pengaturan terbaru, bukan salinan saat form dimuat", async () => {
+    const savedElsewhere = {
+      ...SETTINGS,
+      sales: { ...SETTINGS.sales, allow_negative_stock: true },
+      backup: { ...SETTINGS.backup, interval_hours: 12 },
+    }
+    let settingsReads = 0
+    api = installApiMock({
+      "GET /settings": () => (settingsReads++ === 0 ? SETTINGS : savedElsewhere),
+      "PUT /settings": null,
+    })
+    renderSettings()
+
+    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
+    fireEvent.click(saveButtons()[0])
+
+    await vi.waitFor(() => {
+      expect(api.lastCall("PUT /settings")?.body).toEqual({
+        sales: savedElsewhere.sales,
+        security: SETTINGS.security,
+        backup: savedElsewhere.backup,
+        ppob: WRITABLE_PPOB,
+      })
+    })
+  })
+
   /** The markup card's Simpan writes the whole form, connection fields included. */
   it("menyimpan markup yang diubah lewat tombol simpan kartu Markup", async () => {
     api = installApiMock({ "GET /settings": SETTINGS, "PUT /settings": null })

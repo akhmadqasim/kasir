@@ -5,11 +5,15 @@ import { Minus, Plus } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AppNavbar } from "@/components/layout/app-navbar"
-import { SidebarInset, SidebarProvider } from "@/components/layout/sidebar"
+import { SidebarInset } from "@/components/layout/sidebar"
+import { SidebarProvider } from "@/components/layout/sidebar-provider"
 import { UpdateBanner } from "@/features/updater"
 import { storeResumeRoute } from "./resume-route"
 import { useWindowIcon } from "./use-window-icon"
 import { ZOOM_MAX, ZOOM_MIN, useWindowZoom } from "./use-window-zoom"
+
+/** Target of the skip link: the scrolling page body, not the navbar above it. */
+const MAIN_CONTENT_ID = "main-content"
 
 export function AppLayout() {
   const location = useLocation()
@@ -58,6 +62,17 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
+      {/* Lewati navigasi: tombol pertama di urutan Tab, hanya terlihat saat
+          difokus. Sidebar berisi belasan tautan, dan kasir yang bekerja dengan
+          papan ketik tidak perlu melewati semuanya setiap kali. Tombol, bukan
+          `<a href="#…">`, supaya hash di URL tidak ikut berubah di bawah router. */}
+      <Button
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-3 focus-visible:left-3 focus-visible:z-50"
+        size="sm"
+        onPress={() => document.getElementById(MAIN_CONTENT_ID)?.focus()}
+      >
+        Lewati ke konten
+      </Button>
       <AppSidebar />
       <SidebarInset>
         <AppNavbar>
@@ -67,7 +82,11 @@ export function AppLayout() {
           {/* `print:overflow-visible`: pembungkus ini yang menggulung isi layar,
               jadi saat mencetak ia juga yang memotong halaman jadi satu viewport.
               Padding samping 24px menyamakan tepi isi dengan tepi judul di navbar. */}
-          <div className="flex flex-1 flex-col gap-4 overflow-auto px-6 pt-2 pb-16 lg:pb-6 print:overflow-visible">
+          <div
+            id={MAIN_CONTENT_ID}
+            className="flex flex-1 flex-col gap-4 overflow-auto px-6 pt-2 pb-16 outline-none lg:pb-6 print:overflow-visible"
+            tabIndex={-1}
+          >
             <UpdateBanner />
             <Outlet />
           </div>
@@ -103,6 +122,7 @@ function ZoomToolbar({ zoom, zoomIn, zoomOut, zoomReset }: ZoomToolbarProps) {
           <Minus />
         </Button>
         <Button
+          aria-label={`Kembalikan ukuran tampilan, sekarang ${Math.round(zoom * 100)}%`}
           className="min-w-12 text-xs font-medium tabular-nums"
           size="sm"
           variant="tertiary"

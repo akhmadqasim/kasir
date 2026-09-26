@@ -10,14 +10,6 @@ export interface DashboardSummary {
   todayAvgPerTransaction: number
 }
 
-export interface WeeklyStats {
-  totalRevenue: number
-  grossProfit: number
-  totalTransactions: number
-  avgItemsPerTransaction: number
-  avgValuePerTransaction: number
-}
-
 export interface DailyRevenue {
   date: string
   revenue: number

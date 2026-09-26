@@ -3,10 +3,12 @@ import type { FormEvent } from "react"
 import { Form, Input, Label, Modal, TextField } from "@heroui/react"
 import { Banknote } from "lucide-react"
 
+import { id } from "@/i18n/id"
 import { PendingButton } from "@/components/pending-button"
+import { errorMessage } from "@/lib/api/client"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useAuthStore } from "@/features/auth"
 import { useShiftStore } from "../hooks/use-shift-store"
 import { groupDigits, toDigits } from "../utils"
 
@@ -16,30 +18,47 @@ interface OpenShiftDialogProps {
 }
 
 export function OpenShiftDialog({ open, onOpenChange }: OpenShiftDialogProps) {
+  // Held here, not in the form, so the backdrop can refuse to close while the
+  // shift is being opened — the same guard as `CashFlowDialog`.
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   return (
-    <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+    <Modal.Backdrop
+      isOpen={open}
+      onOpenChange={(next) => (next || !isSubmitting) && onOpenChange(next)}
+    >
       <Modal.Container size="sm">
-        <Modal.Dialog aria-label="Buka Kasir">
+        <Modal.Dialog aria-label={id.shift.open.title}>
           {/* React Aria unmounts the dialog as it closes, so the state inside the
               body is rebuilt on every open. The effect that used to clear the
               amount field on `open` is no longer needed. */}
-          <OpenShiftForm onOpenChange={onOpenChange} />
+          <OpenShiftForm
+            isSubmitting={isSubmitting}
+            onClose={() => onOpenChange(false)}
+            onSubmittingChange={setIsSubmitting}
+          />
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
   )
 }
 
-function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+interface OpenShiftFormProps {
+  isSubmitting: boolean
+  onSubmittingChange: (isSubmitting: boolean) => void
+  /** Closes the dialog after the shift opens, bypassing the in-flight guard. */
+  onClose: () => void
+}
+
+function OpenShiftForm({ isSubmitting, onSubmittingChange, onClose }: OpenShiftFormProps) {
   const [openingCash, setOpeningCash] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const openShift = useShiftStore((s) => s.openShift)
   const user = useAuthStore((s) => s.user)
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!user || isSubmitting) return
-    setIsSubmitting(true)
+    onSubmittingChange(true)
     try {
       const cash = openingCash ? Number(openingCash) : undefined
       const { shift, alreadyOpen } = await openShift(cash)
@@ -47,16 +66,16 @@ function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void
         // The backend hands back the running shift instead of opening a new one,
         // and the modal awal typed in here is never stored. Say so.
         toast.warning(
-          `Shift sudah terbuka sejak ${formatDateTime(shift.openedAt)}. Modal awal tetap ${formatRupiah(shift.openingCash)}.`,
+          id.shift.alreadyOpen(formatDateTime(shift.openedAt), formatRupiah(shift.openingCash)),
         )
       } else {
-        toast.success("Shift dibuka")
+        toast.success(id.shift.opened)
       }
-      onOpenChange(false)
+      onClose()
     } catch (err) {
-      toast.error(`Gagal membuka shift: ${err}`)
+      toast.error(id.shift.openFailed(errorMessage(err)))
     } finally {
-      setIsSubmitting(false)
+      onSubmittingChange(false)
     }
   }
 
@@ -69,32 +88,35 @@ function OpenShiftForm({ onOpenChange }: { onOpenChange: (open: boolean) => void
     // ada di Body (yang bawaannya sudah `text-sm text-muted`), bukan di
     // Description kolom, supaya tidak ada dua keterangan untuk satu field.
     <Form validationBehavior="aria" onSubmit={handleSubmit}>
-      <Modal.CloseTrigger />
+      <Modal.CloseTrigger isDisabled={isSubmitting} />
       <Modal.Header>
         <Modal.Icon className="bg-default text-foreground">
           <Banknote className="size-5" />
         </Modal.Icon>
-        <Modal.Heading>Buka Kasir</Modal.Heading>
+        <Modal.Heading>{id.shift.open.title}</Modal.Heading>
       </Modal.Header>
 
       <Modal.Body>
-        <p>Uang tunai di laci saat mulai. Boleh kosong.</p>
+        <p>{id.shift.open.hint}</p>
         <TextField
           autoFocus
           fullWidth
-          isDisabled={isSubmitting}
+          // Read-only, not disabled, while the request runs: a disabled field
+          // drops focus to <body>, and a failed open would leave the cashier
+          // without a caret to correct the amount.
+          isReadOnly={isSubmitting}
           value={groupDigits(openingCash)}
           variant="secondary"
           onChange={(value) => setOpeningCash(toDigits(value))}
         >
-          <Label>Modal awal</Label>
+          <Label>{id.shift.open.openingCash}</Label>
           <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
         </TextField>
       </Modal.Body>
 
       <Modal.Footer>
         <PendingButton fullWidth isPending={isSubmitting} type="submit">
-          Mulai Shift
+          {id.shift.open.submit}
         </PendingButton>
       </Modal.Footer>
     </Form>

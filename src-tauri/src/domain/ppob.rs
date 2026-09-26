@@ -1,38 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- Internal API response types ---
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-pub struct MitraLoginResponse {
-    pub message: String,
-    pub access_token: Option<String>,
-    pub refresh_token: Option<String>,
-    pub flag_member: Option<String>,
-    pub detail_member: Option<MitraDetailMember>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct MitraDetailMember {
-    pub username: String,
-    pub is_omi: i32,
-    pub store_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct MitraErrorResponse {
-    pub message: String,
-    #[serde(default)]
-    pub error_code: Option<String>,
-    #[serde(default)]
-    pub error_message: Option<String>,
-}
-
 // --- Public response types ---
 
 #[derive(Debug, Serialize, Clone)]

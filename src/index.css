@@ -90,7 +90,10 @@
   /* Kanvas */
   --background: oklch(97.02% 0.0015 253.83);
   --foreground: oklch(21.03% 0.0015 253.83);
-  --muted: oklch(55.17% 0.003 253.83);
+  /* 52%, bukan 55.17% bawaan: pada 55% teks sekunder hanya 4.42:1 di atas
+     kanvas dan 4.04:1 di atas `--default` (chip diam, wadah tab). 52% memberi
+     5.05:1 di kanvas, 5.50:1 di kartu, 4.62:1 di `--default`. */
+  --muted: oklch(52% 0.003 253.83);
   --border: oklch(90% 0.0015 253.83);
   --separator: oklch(92% 0.0015 253.83);
   --scrollbar: oklch(87.1% 0.0015 253.83);
@@ -111,22 +114,41 @@
   --segment: oklch(100% 0.0015 253.83);
   --segment-foreground: oklch(21.03% 0.0015 253.83);
 
-  /* Warna makna */
-  --accent: oklch(62.04% 0.195 253.83);
+  /* Warna makna.
+     Aksen dan merah digelapkan dari bawaan HeroUI (62.04% / 65.32%) karena
+     keduanya gagal WCAG AA untuk teks putih di tombol: 3.59:1 dan 3.49:1.
+     Pada 54% / 57% teks putih di atasnya 4.95:1 / 4.82:1, dan dipakai sebagai
+     warna teks di atas kanvas pun tetap lolos (4.66:1 / 4.54:1) — merah itu
+     juga dipakai HeroUI untuk pesan galat kolom isian dan tanda wajib. */
+  --accent: oklch(54% 0.19 253.83);
   --accent-foreground: oklch(99.11% 0 0);
   --success: oklch(73.29% 0.1941 150.81);
   --success-foreground: oklch(21.03% 0.0059 150.81);
   --warning: oklch(78.19% 0.159 72.33);
   --warning-foreground: oklch(21.03% 0.0059 72.33);
-  --danger: oklch(65.32% 0.2335 25.74);
+  --danger: oklch(57% 0.204 25.74);
   --danger-foreground: oklch(99.11% 0 0);
   --focus: var(--accent);
 
-  /* Kolom isian */
+  /* Teks chip/alert hijau. Bawaan HeroUI mencampur `--success` 80% dengan
+     `--foreground` 60% (#2a7744): di atas latar `--success-soft`-nya sendiri
+     hanya 4.46:1 — chip "Selesai" di riwayat dan laporan gagal AA tipis-tipis.
+     Campuran 1:1 memberi ±5.2:1 di chip dan ±6.3:1 sebagai `text-success` di
+     kartu putih (lihat blok `@layer utilities` di bawah). Tema gelap tidak
+     disentuh: bawaannya sudah 8.3:1. */
+  --success-soft-foreground: color-mix(in oklab, var(--success) 50%, var(--foreground) 50%);
+
+  /* Kolom isian.
+     Bawaan HeroUI tidak memberi tepi (`--field-border: transparent`, lebar
+     0px), jadi kolom dikenali hanya dari latarnya: `--default` di atas kartu
+     putih cuma 1.1:1, gagal WCAG 1.4.11 (batas komponen minimal 3:1). Tepi 1px
+     pada 63% memberi 3.50:1 di atas kartu/dialog dan 3.21:1 di atas kanvas.
+     Warna tepi hover dan fokus tetap diturunkan HeroUI dari nilai ini. */
   --field-background: oklch(100% 0.0008 253.83);
   --field-foreground: oklch(21.03% 0.0015 253.83);
-  --field-placeholder: oklch(55.17% 0.003 253.83);
-  --field-border: transparent;
+  --field-placeholder: oklch(52% 0.003 253.83);
+  --field-border: oklch(63% 0.003 253.83);
+  --field-border-width: 1px;
 
   /* `--radius` sengaja TIDAK ditulis. HeroUI menurunkan seluruh skala dari
      satu angka itu — `--radius-3xl: calc(var(--radius) * 3)` — dan kartunya
@@ -161,20 +183,31 @@
   --segment: oklch(39.64% 0.0015 253.83);
   --segment-foreground: oklch(99.11% 0.0015 253.83);
 
-  --accent: oklch(62.04% 0.195 253.83);
+  /* Aksen 56%: teks putih di tombol utama 4.57:1 (bawaan 62.04% hanya
+     3.59:1). Cincin fokus dari aksen yang sama tetap 4.33:1 di atas kanvas.
+     Merah justru dinaikkan ke 66% dan teks tombolnya dibalik jadi gelap,
+     seperti `--success`/`--warning`: di tema gelap satu merah tidak bisa
+     sekaligus menjadi latar teks putih (butuh gelap) dan warna teks galat di
+     atas kartu gelap (butuh terang). Bawaan 59.4% gagal di keduanya — 4.35:1
+     dan 3.97:1. Sekarang teks galat 5.19:1 di kartu dan teks tombol 5.20:1. */
+  --accent: oklch(56% 0.19 253.83);
   --accent-foreground: oklch(99.11% 0 0);
   --success: oklch(73.29% 0.1941 150.81);
   --success-foreground: oklch(21.03% 0.0059 150.81);
   --warning: oklch(82.03% 0.1392 76.34);
   --warning-foreground: oklch(21.03% 0.0059 76.34);
-  --danger: oklch(59.4% 0.1973 24.63);
-  --danger-foreground: oklch(99.11% 0 0);
+  --danger: oklch(66% 0.1973 24.63);
+  --danger-foreground: oklch(21.03% 0.0059 24.63);
   --focus: var(--accent);
+  /* Bawaan HeroUI untuk tema gelap, ditulis ulang karena blok terang di atas
+     tidak berlapis dan akan menang atas deklarasi `.dark` milik HeroUI. */
+  --success-soft-foreground: color-mix(in oklab, var(--success) 92%, var(--foreground) 8%);
 
   --field-background: oklch(21.03% 0.003 253.83);
   --field-foreground: oklch(99.11% 0.0015 253.83);
   --field-placeholder: oklch(70.5% 0.003 253.83);
-  --field-border: transparent;
+  /* 54%: 3.50:1 di atas kartu/dialog gelap (21%), 4.01:1 di atas kanvas. */
+  --field-border: oklch(54% 0.003 253.83);
 }
 
 /* Warna grafik, satu-satunya token di luar palet HeroUI yang masih dibutuhkan.
@@ -186,16 +219,37 @@
  * Bukan gradasi satu warna: grafik metode pembayaran menggambar sampai lima
  * garis sekaligus, dan lima tingkat biru yang berdekatan tidak terbedakan
  * begitu garisnya bersinggungan. Seri pertama memakai aksen dan sisanya
- * memutari roda warna pada lightness yang setara, supaya tidak ada satu garis
- * pun yang tampak lebih penting dari yang lain. Dua terakhir dipinjam dari
- * `--warning` dan `--success` agar paletnya tetap satu bahasa.
+ * memutari roda warna, supaya tidak ada satu garis pun yang tampak lebih
+ * penting dari yang lain.
+ *
+ * Nilainya per tema karena garis 2px dan batang grafik adalah objek grafis
+ * yang harus 3:1 terhadap kartu (WCAG 1.4.11). Teal, kuning, dan hijau yang
+ * terang (70-78%) terbaca jelas di kartu gelap (7-8.7:1) tapi hanya 2.0-2.5:1
+ * di kartu putih, jadi di tema terang ketiganya digelapkan dengan hue yang
+ * sama: 3.46-3.64:1 di kartu, di atas 3.1:1 di kanvas. `--chart-1` mengikuti
+ * `--accent` (5.08:1 terang, 3.78:1 gelap) dan `--chart-3` lolos di keduanya
+ * tanpa diubah (3.93:1 / 4.50:1).
+ *
+ * `--chart-5` (transfer) dulu hijau 150°, hanya 45° dari teal QRIS di
+ * `--chart-2`: di legenda dan di titik tabel metode pembayaran keduanya terbaca
+ * sebagai warna yang sama. Sekarang magenta 350°, jauh dari biru, teal, dan
+ * jingga yang tampil bersamanya; tetap di atas 3:1 di kartu kedua tema.
  */
-:root {
+:root,
+.light,
+[data-theme="light"] {
   --chart-1: var(--accent);
-  --chart-2: oklch(70% 0.14 195);
+  --chart-2: oklch(60% 0.12 195);
   --chart-3: oklch(62% 0.19 295);
+  --chart-4: oklch(64% 0.15 70);
+  --chart-5: oklch(58% 0.2 350);
+}
+
+.dark,
+[data-theme="dark"] {
+  --chart-2: oklch(70% 0.14 195);
   --chart-4: oklch(78.19% 0.159 72.33);
-  --chart-5: oklch(73.29% 0.1941 150.81);
+  --chart-5: oklch(70% 0.18 350);
 }
 
 /* Warna pengenal layanan PPOB.
@@ -204,24 +258,41 @@
  * dari warna sebelum sempat membaca labelnya — jadi warnanya memang informasi,
  * bukan hiasan, dan tidak bisa diseragamkan jadi satu aksen.
  *
- * Sebelumnya ini palet Tailwind mentah (`bg-blue-500`, `bg-blue-100
- * dark:bg-blue-950`) dengan varian gelap ditulis tangan satu per satu. Di sini
- * lightness-nya dipilih pada pita yang sama, 60-75%, sehingga satu nilai
- * terbaca di atas `--background` terang maupun gelap dan tidak ada lagi
- * `dark:` yang bisa lupa diperbarui. Latar redupnya cukup ditulis
- * `bg-[var(--service-pulsa)]/15` di komponen, mengikuti cara HeroUI membuat
- * varian `-soft`-nya sendiri.
+ * Latar redupnya cukup ditulis `bg-[var(--service-pulsa)]/15` di komponen,
+ * mengikuti cara HeroUI membuat varian `-soft`-nya sendiri, dan tidak ada
+ * `dark:` di komponen mana pun: perbedaan tema diurus di sini.
+ *
+ * Ikonnya digambar dengan warna yang sama di atas latar redup itu, dan harus
+ * 3:1 terhadapnya (WCAG 1.4.11). Di tema gelap semua nilai asli sudah lolos
+ * (3.6-7.4:1). Di tema terang lima di antaranya — PLN, PDAM, PP, transfer,
+ * e-money — hanya 2.0-2.9:1, jadi di sana setiap warna diturunkan ke kira-kira
+ * 60% dengan hue dan chroma tetap: 3.30-3.47:1 di atas kartu, di atas 3.05:1
+ * di atas kanvas. Kuning PLN menjadi emas tua; masih terpisah jelas dari
+ * jingga transfer karena hue-nya berjarak 30 derajat.
  */
-:root {
-  --service-pulsa: oklch(62% 0.19 254);
+:root,
+.light,
+[data-theme="light"] {
+  --service-pulsa: oklch(60% 0.19 254);
   --service-data: oklch(62% 0.19 300);
+  --service-pln: oklch(60% 0.16 85);
+  --service-pdam: oklch(57.5% 0.13 210);
+  --service-bpjs: oklch(61.5% 0.21 25);
+  --service-pp: oklch(57.5% 0.17 150);
+  --service-transfer: oklch(61% 0.16 55);
+  --service-emoney: oklch(62% 0.2 350);
+  --service-voucher: oklch(60% 0.19 275);
+}
+
+.dark,
+[data-theme="dark"] {
+  --service-pulsa: oklch(62% 0.19 254);
   --service-pln: oklch(75% 0.16 85);
   --service-pdam: oklch(70% 0.13 210);
   --service-bpjs: oklch(62% 0.21 25);
   --service-pp: oklch(68% 0.17 150);
   --service-transfer: oklch(70% 0.16 55);
   --service-emoney: oklch(66% 0.2 350);
-  --service-voucher: oklch(60% 0.19 275);
 }
 
 /* Satu-satunya nama yang masih perlu dijembatani ke utilitas Tailwind. Skala
@@ -268,6 +339,15 @@
     border-radius: var(--radius-2xl);
   }
 
+  /* Panel tab: tanpa `p-2` bawaan. Padding itu tidak menampung apa-apa (panel
+     tidak menggambar cincin fokus, `outline-none`), jadi hanya mendorong kartu
+     di dalamnya 8px ke dalam dari tepi daftar tab dan judul halaman di atasnya —
+     tepi kiri kartu Dashboard dan Pengaturan tidak segaris dengan tab-nya. Jarak
+     ke daftar tab tetap `mt-4` bawaan, sama dengan `gap-4` antar kartu. */
+  .tabs__panel {
+    padding: 0;
+  }
+
   /* Body dialog: isinya hampir selalu lebih dari satu anak (kalimat penjelas
      lalu kolom isian, atau beberapa kolom isian), dan tiap dialog menulis
      jaraknya sendiri — 13 memakai `flex flex-col gap-4`, 2 `gap-3`, 3
@@ -283,11 +363,94 @@
     gap: calc(var(--spacing) * 4);
   }
 
+  /* Judul dialog, drawer, dan dialog konfirmasi: semibold, bukan `font-medium`
+     bawaan. Pada 500 judulnya sebobot label kolom di bawahnya ("Kelola
+     Kategori" di atas "Tambah Kategori" terbaca sebagai dua label), dan di
+     Windows teks terang di latar gelap tampil lebih tebal daripada teks gelap
+     di latar terang — judul yang sama terlihat biasa di tema terang dan tebal
+     di tema gelap. Pada 600 keduanya jelas sebuah judul, sejajar dengan judul
+     halaman (`text-xl font-semibold`). */
+  .modal__heading,
+  .drawer__heading,
+  .alert-dialog__heading {
+    @apply font-semibold;
+  }
+
+  /* Drawer: jarak judul ke isi 16px, bukan `mt-2` bawaan. Isi drawer langsung
+     dibuka oleh kolom isian berlabel, tanpa kalimat pengantar seperti di
+     Modal, jadi 8px membuat judul dan label pertama menempel. 16px sama dengan
+     jarak antar isi Body (`gap-4` di atas). */
+  .drawer__header + .drawer__body {
+    margin-top: calc(var(--spacing) * 4);
+  }
+
+  /* NumberField: tinggi mengikuti isinya, sama seperti Input/Select. Bawaan
+     grupnya dikunci `h-9` (36px, termasuk tepi), sementara inputnya sendiri
+     `py-2` + baris 20px = 36px — isinya terpotong 2px dan kotaknya 2px lebih
+     pendek dari TextField/Select (38px) di baris yang sama ("Markup (%)" di
+     form produk, "Jumlah" di write-off). `min-h-9` menjaga batas bawahnya
+     seperti `.input-group`. */
+  .number-field__group {
+    height: auto;
+    min-height: calc(var(--spacing) * 9);
+  }
+
   /* NumberField tanpa tombol +/-: grid bawaannya tetap tiga kolom
      (40px 1fr 40px), jadi input yang sendirian jatuh ke kolom 40px pertama —
      hanya selebar angkanya, dan klik di sisa kotak tidak memfokuskan apa-apa.
      Tanpa stepper, kotaknya satu kolom penuh. */
   .number-field__group:not(:has([slot="decrement"], [slot="increment"])) {
     grid-template-columns: 1fr;
+  }
+
+  /* Tepi kolom isian (lihat `--field-border` di atas) juga dipakai HeroUI
+     untuk garis di dalam kolom: pemisah `InputGroup.Prefix`/`Suffix` dan
+     tombol +/- `NumberField`. Keduanya bukan batas komponen, jadi tetap
+     memakai garis tepi biasa yang tenang, bukan tepi 3:1 milik kolomnya.
+     Tombol +/- juga mewarisi lebar tepi di keempat sisinya; tanpa baris
+     `border-width: 0` ia menggambar garis kedua di dalam tepi kolom. */
+  .input-group__prefix {
+    border-inline-end-color: var(--border);
+  }
+  .input-group__suffix {
+    border-inline-start-color: var(--border);
+  }
+  .number-field__increment-button,
+  .number-field__decrement-button {
+    border-width: 0;
+    border-color: var(--border);
+  }
+  .number-field__increment-button {
+    border-inline-start-width: var(--field-border-width);
+  }
+  .number-field__decrement-button {
+    border-inline-end-width: var(--field-border-width);
+  }
+}
+
+/* Teks berwarna status, dibuat lolos WCAG AA di kedua tema.
+ *
+ * `--success` dan `--warning` adalah warna LATAR: hijau dan kuning terang yang
+ * di atasnya HeroUI menaruh teks gelap (8:1). Dipakai sebagai warna TEKS di
+ * atas kartu putih, keduanya jatuh ke 2.19:1 dan 2.04:1 — "Rp 150.000" hijau
+ * di kartu saldo nyaris tak terbaca dari seberang meja. HeroUI sendiri tidak
+ * pernah memakai keduanya sebagai teks: `Alert` dan `Chip` memakai
+ * `*-soft-foreground`, campuran warna itu dengan `--foreground` yang memang
+ * dibuat untuk teks. Di sini `text-success` / `text-warning` diarahkan ke
+ * token yang sama, supaya setiap `className="text-success"` di fitur mana pun
+ * ikut lolos tanpa disapu satu per satu: ±6.3:1 / 5.71:1 di kartu terang,
+ * 8.3:1 / 9.2:1 di kartu gelap.
+ *
+ * `text-danger` dan `text-accent` tidak perlu dialihkan — nilai tokennya di
+ * atas sudah dipilih agar lolos sebagai teks. Blok ini sengaja ditulis setelah
+ * `@import "tailwindcss"` di lapisan `utilities` yang sama, jadi ia menang atas
+ * utilitas hasil generate dengan spesifisitas setara.
+ */
+@layer utilities {
+  .text-success {
+    color: var(--success-soft-foreground);
+  }
+  .text-warning {
+    color: var(--warning-soft-foreground);
   }
 }

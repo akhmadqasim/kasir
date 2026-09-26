@@ -1,10 +1,13 @@
 import { useState, useEffect, type ElementType } from "react"
-import { AlertTriangle, Barcode, Search } from "lucide-react"
+import { Barcode, CircleMinus, ClipboardList, LayoutList, TrendingDown } from "lucide-react"
 import { ToggleButton } from "@heroui/react"
 
 import { OptionSelect } from "@/components/option-select"
+import { useDebounce } from "@/hooks/use-debounce"
 import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
+import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
+import { formatNumber } from "@/lib/format"
 import { useCategories } from "../hooks/use-categories"
 import type { ProductQuickFilter } from "../types"
 
@@ -12,25 +15,32 @@ import type { ProductQuickFilter } from "../types"
 const ALL = "all"
 
 interface ProductSearchProps {
+  /** Jumlah produk yang cocok dengan filter; `undefined` selama belum dimuat. */
+  total?: number
   onSearchChange: (query: string) => void
   onCategoryChange: (categoryId: number | null) => void
   quickFilter: ProductQuickFilter
   onQuickFilterChange: (filter: ProductQuickFilter) => void
 }
 
+/*
+ * Satu ikon per filter: tiga filter pernah berbagi segitiga peringatan yang
+ * sama, jadi ikonnya tidak membantu membedakan apa pun.
+ */
 const QUICK_FILTERS: Array<{
   value: ProductQuickFilter
   label: string
   icon: ElementType
 }> = [
-  { value: "all", label: "Semua", icon: Search },
-  { value: "low_stock", label: "Stok Rendah", icon: AlertTriangle },
-  { value: "negative_stock", label: "Stok Minus", icon: AlertTriangle },
+  { value: "all", label: "Semua", icon: LayoutList },
+  { value: "low_stock", label: "Stok Rendah", icon: TrendingDown },
+  { value: "negative_stock", label: "Stok Minus", icon: CircleMinus },
   { value: "no_barcode", label: "Tanpa Barcode", icon: Barcode },
-  { value: "needs_review", label: "Perlu Review", icon: AlertTriangle },
+  { value: "needs_review", label: "Perlu Review", icon: ClipboardList },
 ]
 
 export function ProductSearch({
+  total,
   onSearchChange,
   onCategoryChange,
   quickFilter,
@@ -40,12 +50,11 @@ export function ProductSearch({
   const [categoryKey, setCategoryKey] = useState<string>(ALL)
   const { data: categories } = useCategories()
 
+  const debouncedSearch = useDebounce(searchInput, SEARCH_DEBOUNCE_MS)
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onSearchChange(searchInput)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchInput, onSearchChange])
+    onSearchChange(debouncedSearch)
+  }, [debouncedSearch, onSearchChange])
 
   const categoryOptions = [
     { key: ALL, label: id.products.allCategories },
@@ -54,18 +63,18 @@ export function ProductSearch({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput
           aria-label={id.products.search}
-          className="max-w-sm flex-1"
+          className="w-full sm:max-w-sm sm:flex-1"
           placeholder={id.products.search}
           value={searchInput}
           onChange={setSearchInput}
         />
 
         <OptionSelect
-          aria-label={id.products.allCategories}
-          className="w-full lg:w-[200px]"
+          aria-label="Filter kategori"
+          className="w-full sm:w-[200px]"
           options={categoryOptions}
           value={categoryKey}
           onChange={(value) => {
@@ -74,13 +83,23 @@ export function ProductSearch({
             onCategoryChange(key === ALL ? null : Number(key))
           }}
         />
+
+        {/* Jumlah hasil: satu-satunya tempat kasir tahu berapa produk yang
+            cocok tanpa menghitung halaman. `aria-live` supaya pembaca layar
+            mendengar hasilnya berubah saat mengetik. */}
+        {total != null && (
+          <p aria-live="polite" className="text-sm text-muted tabular-nums sm:ml-auto">
+            {formatNumber(total)} produk
+          </p>
+        )}
       </div>
 
       {/* Filter cepat. `ToggleButton` dipakai satu per satu, bukan lewat
           `ToggleButtonGroup`: grup menggabungkan kelimanya jadi satu titik Tab
           dengan navigasi panah, sedangkan di sini tiap tombol tetap punya titik
-          Tab-nya sendiri seperti sebelumnya. Yang bertambah cuma `aria-pressed`. */}
-      <div className="flex flex-wrap gap-2">
+          Tab-nya sendiri seperti sebelumnya. Yang bertambah cuma `aria-pressed`;
+          `role="group"` memberi kelimanya satu nama bersama. */}
+      <div aria-label="Filter cepat" className="flex flex-wrap gap-2" role="group">
         {QUICK_FILTERS.map((filter) => {
           const Icon = filter.icon
 

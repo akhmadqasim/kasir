@@ -1,8 +1,15 @@
+import type { ReactNode } from "react"
+
 import { cn } from "@/lib/utils"
 
 export interface SummaryItem {
   label: string
-  value: string
+  /**
+   * Biasanya teks yang sudah diformat. Boleh `ReactNode` supaya baris yang
+   * masih menunggu data menaruh `Skeleton` di tempat nilainya — `<dd>` menerima
+   * konten blok, jadi `Skeleton` (sebuah `div`) sah di dalamnya.
+   */
+  value: ReactNode
   /**
    * Satu peran per baris, bukan tiga boolean yang bisa dinyalakan bersamaan.
    * `mono` untuk nomor identitas (HP, IDPEL, rekening) yang dibaca digit per
@@ -48,11 +55,19 @@ export function SummaryList({ items, layout = "row" }: SummaryListProps) {
   const isGrid = layout === "grid"
   return (
     <dl className="flex flex-col gap-2 text-sm">
-      {items.map((item) => (
+      {items.map((item, index) => (
         <div
-          key={item.label}
+          // Label biasanya unik, tapi rincian dari vendor PPOB bisa mengulang
+          // satu label ("Keterangan") — indeks mencegah baris tertukar.
+          key={`${item.label}-${index}`}
+          // `items-baseline`, bukan `items-start`: nilai yang berupa `StatusBadge`
+          // (Selisih di konfirmasi tutup kasir) lebih tinggi dari barisnya, dan
+          // rata atas membuat labelnya duduk 2px di atas teks lencana. Rata garis
+          // dasar menyejajarkan baris pertama label dengan teks nilai, apa pun
+          // wadahnya — juga saat label panjang membungkus ke baris kedua.
           className={cn(
-            isGrid ? "grid grid-cols-[120px_1fr] gap-2" : "flex items-start justify-between gap-4",
+            "items-baseline",
+            isGrid ? "grid grid-cols-[120px_1fr] gap-2" : "flex justify-between gap-4",
           )}
         >
           <dt className={cn("text-muted", !isGrid && "min-w-0")}>{item.label}</dt>

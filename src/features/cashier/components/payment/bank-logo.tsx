@@ -35,8 +35,11 @@ export function BankLogo({ name, className }: BankLogoProps) {
       // yang menganggap latarnya kertas putih (banyak wordmark gelap
       // tanpa latar sendiri), sama seperti alasan `bg-white` di
       // `receipt-preview.tsx` untuk kertas termal.
+      // Only a real logo sits on white; the fallback icon uses the theme's
+      // neutral fill, because `text-muted` on white in dark mode is ~1.5:1.
       className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-border",
+        "flex size-6 shrink-0 items-center justify-center rounded-md ring-1 ring-border",
+        src ? "bg-white" : "bg-default",
         className,
       )}
     >

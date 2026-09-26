@@ -5,6 +5,7 @@ use sea_orm::DatabaseConnection;
 use serde_json::json;
 use tokio::sync::Mutex;
 
+use crate::domain::auth::pin_has_valid_format;
 use crate::domain::ppob::PaymentResult;
 use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::{MitraClient, MitraRequestContext};
@@ -52,16 +53,9 @@ impl fmt::Debug for PpobFulfillmentRequest {
     }
 }
 
-/// A PIN typed at the moment of a PPOB purchase must satisfy this shape — the
-/// same 4-6 ASCII digits a login PIN is checked against
-/// (`services::settings::change_pin`).
-fn pin_has_valid_format(pin: &str) -> bool {
-    (4..=6).contains(&pin.len()) && pin.chars().all(|c| c.is_ascii_digit())
-}
-
 /// The one gate every code path that can spend PPOB money passes a PIN
-/// through before a [`PpobFulfillmentRequest`] is built: checkout, a checkout
-/// retry, and the two standalone `/ppob/payments` and `/ppob/topups` routes.
+/// through before a [`PpobFulfillmentRequest`] is built: checkout and a
+/// checkout retry.
 ///
 /// `required` is `false` only for a checkout cart with no PPOB line, where the
 /// field is simply ignored — every other caller passes `true`. Never stores
@@ -75,6 +69,7 @@ pub fn validate_pin(pin: Option<String>, required: bool) -> Result<String, AppEr
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::Validation("PIN Mitra wajib diisi untuk transaksi PPOB".into()))?;
 
+    // The same 4-6 ASCII digits a login PIN is held to.
     if !pin_has_valid_format(&pin) {
         return Err(AppError::Validation(
             "PIN Mitra harus terdiri dari 4-6 digit angka".into(),
@@ -89,23 +84,50 @@ pub async fn execute_fulfillment_request(
     mitra: &Arc<Mutex<MitraClient>>,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
-    let client = get_mitra_request_context(db, mitra).await?;
+    let client = get_mitra_request_context(db, mitra)
+        .await
+        .map_err(nothing_spent_yet)?;
 
-    match request.service_type.as_str() {
-        "pulsa" | "data" => execute_direct_topup(&client, &request.pin, request).await,
-        "pln" | "pdam" | "bpjs" | "pp" | "transfer" | "emoney" => {
-            execute_confirm_payment(&client, &request.pin, request).await
-        }
-        other => Err(AppError::Validation(format!(
+    let service_type = request.service_type.as_str();
+    if matches!(service_type, "pulsa" | "data") {
+        return execute_direct_topup(&client, request).await;
+    }
+    match confirm_endpoint(service_type) {
+        Some(endpoint) => execute_confirm_payment(&client, endpoint, request).await,
+        None => Err(AppError::Validation(format!(
             "Service type tidak valid: {}",
-            other
+            service_type
         ))),
     }
 }
 
+/// An error from before the purchase request was sent. The session lookup may
+/// POST `get-menu-saldo`, and a timeout there comes back as
+/// [`AppError::UpstreamUncertain`] — but that request only reads the balance,
+/// so no money can have moved. Passed on as uncertain it would leave the line
+/// waiting to be settled by hand instead of simply retryable.
+fn nothing_spent_yet(error: AppError) -> AppError {
+    match error {
+        AppError::UpstreamUncertain(message) => AppError::Upstream(message),
+        other => other,
+    }
+}
+
+/// The payment endpoint for a service paid against an earlier inquiry.
+fn confirm_endpoint(service_type: &str) -> Option<&'static str> {
+    Some(match service_type {
+        "pln" => "pln/payment",
+        "pdam" => "pdam/payment",
+        "bpjs" => "bpjs/payment",
+        "pp" => "pp/payment",
+        "transfer" => "transfer-uang/payment",
+        "emoney" => "emoney/payment",
+        _ => return None,
+    })
+}
+
 async fn execute_direct_topup(
     client: &MitraRequestContext,
-    pin: &str,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
     let customer_id = request
@@ -126,8 +148,8 @@ async fn execute_direct_topup(
         "product_id": product_id,
         "type": request.service_type,
     });
-    if !pin.is_empty() {
-        body["pin"] = json!(pin);
+    if !request.pin.is_empty() {
+        body["pin"] = json!(request.pin);
     }
 
     let result = client.post("pulsa/v2/topup", body).await?;
@@ -149,7 +171,7 @@ async fn execute_direct_topup(
 
 async fn execute_confirm_payment(
     client: &MitraRequestContext,
-    pin: &str,
+    endpoint: &str,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
     let inquiry_id = request
@@ -157,24 +179,9 @@ async fn execute_confirm_payment(
         .clone()
         .ok_or_else(|| AppError::Validation("Inquiry ID PPOB harus diisi".into()))?;
 
-    let endpoint = match request.service_type.as_str() {
-        "pln" => "pln/payment",
-        "pdam" => "pdam/payment",
-        "bpjs" => "bpjs/payment",
-        "pp" => "pp/payment",
-        "transfer" => "transfer-uang/payment",
-        "emoney" => "emoney/payment",
-        _ => {
-            return Err(AppError::Validation(format!(
-                "Service type tidak valid: {}",
-                request.service_type
-            )))
-        }
-    };
-
     let mut body = json!({ "inquiry_id": inquiry_id });
-    if !pin.is_empty() {
-        body["pin"] = json!(pin);
+    if !request.pin.is_empty() {
+        body["pin"] = json!(request.pin);
     }
     if let Some(customer_id) = &request.customer_id {
         body["customer_id"] = json!(customer_id);
@@ -219,6 +226,20 @@ async fn execute_confirm_payment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A session lookup that timed out on `get-menu-saldo` bought nothing, so
+    /// it must fail the line outright (retryable), not leave it uncertain.
+    #[test]
+    fn a_session_lookup_timeout_is_a_definite_failure() {
+        match nothing_spent_yet(AppError::UpstreamUncertain("timeout".into())) {
+            AppError::Upstream(message) => assert_eq!(message, "timeout"),
+            other => panic!("expected Upstream, got {other:?}"),
+        }
+        assert!(matches!(
+            nothing_spent_yet(AppError::Validation("x".into())),
+            AppError::Validation(_)
+        ));
+    }
 
     #[test]
     fn validate_pin_is_a_no_op_when_not_required() {

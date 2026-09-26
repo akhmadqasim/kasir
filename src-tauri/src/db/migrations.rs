@@ -104,6 +104,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "025_transaction_channel",
         include_str!("../../migrations/025_transaction_channel.sql"),
     ),
+    (
+        "026_one_open_shift_per_user",
+        include_str!("../../migrations/026_one_open_shift_per_user.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

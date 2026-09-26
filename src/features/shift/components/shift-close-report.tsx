@@ -1,18 +1,29 @@
 import { Button, Card, ScrollShadow, Separator } from "@heroui/react"
 import { ArrowLeft, LogOut, Printer } from "lucide-react"
 
+import { id } from "@/i18n/id"
+import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
-import { formatDateTime, formatRupiah } from "@/lib/format"
-import { paymentMethodLabel } from "@/lib/labels"
-import { cashDifferenceStatus, signedRupiah } from "../utils"
+import { formatDateTime, formatNumber, formatRupiah } from "@/lib/format"
+import {
+  cashDifferenceStatus,
+  cashDifferenceText,
+  netCashFlowItem,
+  paymentBreakdownItems,
+  signedCashFlowAmount,
+  signedRupiah,
+} from "../utils"
 import type { ShiftSummary } from "../types"
+import { CardHeading } from "./card-heading"
 
 interface ShiftCloseReportProps {
   summary: ShiftSummary
   storeName: string
   onBack: () => void
   onLogout: () => void
+  /** `true` selama permintaan keluar berjalan: tombolnya menunggu, tidak bisa ditekan dua kali. */
+  isLoggingOut?: boolean
 }
 
 /**
@@ -24,22 +35,25 @@ interface ShiftCloseReportProps {
  * neither is scoped to screen media, so both would clip and fade the paper.
  * The `print:` classes on the root undo them for the duration of the print.
  */
-export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: ShiftCloseReportProps) {
+export function ShiftCloseReport({
+  summary,
+  storeName,
+  onBack,
+  onLogout,
+  isLoggingOut = false,
+}: ShiftCloseReportProps) {
   const {
     shift,
     totalSales,
     totalTransactions,
     paymentBreakdown,
     cashFlows,
-    cashIn,
-    cashOut,
     cashRefunds,
     expectedCash,
   } = summary
   const closingCash = shift.closingCash ?? 0
   const hasClosingCash = shift.closingCash !== null
   const cashDifference = hasClosingCash ? closingCash - expectedCash : null
-  const netCashFlow = cashIn - cashOut
 
   const handlePrint = () => {
     window.print()
@@ -57,7 +71,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Shift Info */}
         <Card>
           <Card.Header>
-            <Card.Title>Ringkasan</Card.Title>
+            <CardHeading>Ringkasan</CardHeading>
           </Card.Header>
           <Card.Content>
             <SummaryList
@@ -75,12 +89,12 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Sales Summary */}
         <Card>
           <Card.Header>
-            <Card.Title>Penjualan</Card.Title>
+            <CardHeading>Penjualan</CardHeading>
           </Card.Header>
           <Card.Content>
             <SummaryList
               items={[
-                { label: "Jumlah Transaksi", value: String(totalTransactions) },
+                { label: "Jumlah Transaksi", value: formatNumber(totalTransactions) },
                 { label: "Total Penjualan", value: formatRupiah(totalSales), tone: "strong" },
               ]}
             />
@@ -91,18 +105,13 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
             bukan lencana: DESIGN.md §5.4. */}
         <Card>
           <Card.Header>
-            <Card.Title>Jenis Pembayaran</Card.Title>
+            <CardHeading>Jenis Pembayaran</CardHeading>
           </Card.Header>
           <Card.Content>
             {paymentBreakdown.length > 0 ? (
-              <SummaryList
-                items={paymentBreakdown.map((pb) => ({
-                  label: `${paymentMethodLabel(pb.method)} (${pb.count}×)`,
-                  value: formatRupiah(pb.total),
-                }))}
-              />
+              <SummaryList items={paymentBreakdownItems(paymentBreakdown)} />
             ) : (
-              <p className="text-sm text-muted">Tidak ada transaksi</p>
+              <p className="text-sm text-muted">{id.transactions.noTransactions}</p>
             )}
           </Card.Content>
         </Card>
@@ -111,26 +120,18 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {cashFlows.length > 0 && (
           <Card>
             <Card.Header>
-              <Card.Title>Uang Masuk / Keluar</Card.Title>
+              <CardHeading>Uang Masuk / Keluar</CardHeading>
             </Card.Header>
             <Card.Content>
               <SummaryList
                 items={cashFlows.map((cf) => ({
                   label: cf.description,
-                  value: signedRupiah(cf.flowType === "in" ? cf.amount : -cf.amount),
+                  value: signedRupiah(signedCashFlowAmount(cf)),
                   tone: cf.flowType === "in" ? "success" : "danger",
                 }))}
               />
               <Separator />
-              <SummaryList
-                items={[
-                  {
-                    label: "Total",
-                    value: signedRupiah(netCashFlow),
-                    tone: netCashFlow >= 0 ? "success" : "danger",
-                  },
-                ]}
-              />
+              <SummaryList items={[netCashFlowItem(summary)]} />
             </Card.Content>
           </Card>
         )}
@@ -138,13 +139,13 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {/* Cash Reconciliation */}
         <Card>
           <Card.Header>
-            <Card.Title>Setoran Uang Tunai</Card.Title>
+            <CardHeading>Setoran Uang Tunai</CardHeading>
           </Card.Header>
           <Card.Content>
             <SummaryList
               items={[
                 ...(hasClosingCash
-                  ? [{ label: "Inputan Kasir", value: formatRupiah(closingCash) }]
+                  ? [{ label: "Saldo Aktual", value: formatRupiah(closingCash) }]
                   : []),
                 // Retur tunai sudah dipotong dari `expectedCash`. Ditulis sendiri
                 // supaya saldo aplikasi yang lebih kecil dari penjualan punya
@@ -158,7 +159,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                       },
                     ]
                   : []),
-                { label: "Dari Aplikasi", value: formatRupiah(expectedCash) },
+                { label: "Saldo Aplikasi", value: formatRupiah(expectedCash) },
               ]}
             />
             {cashDifference !== null && (
@@ -170,7 +171,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
                     className="tabular-nums"
                     status={cashDifferenceStatus(cashDifference)}
                   >
-                    {signedRupiah(cashDifference)}
+                    {cashDifferenceText(cashDifference)}
                   </StatusBadge>
                 </div>
               </>
@@ -186,7 +187,7 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
         {shift.notes && (
           <Card>
             <Card.Header>
-              <Card.Title>Catatan</Card.Title>
+              <CardHeading>Catatan</CardHeading>
             </Card.Header>
             <Card.Content>
               <p className="text-sm text-muted">{shift.notes}</p>
@@ -196,14 +197,17 @@ export function ShiftCloseReport({ summary, storeName, onBack, onLogout }: Shift
 
         {/* Satu aksi utama (cetak); keluar hanya mengakhiri sesi, bukan merusak. */}
         <div className="flex flex-wrap justify-end gap-2 print:hidden">
-          <Button variant="tertiary" onPress={onBack}>
+          {/* Nonaktif selagi keluar: begitu permintaannya selesai layar tetap
+              pindah ke halaman masuk, jadi "Kembali" di tengahnya hanya
+              memperlihatkan halaman kasir sekejap. */}
+          <Button isDisabled={isLoggingOut} variant="tertiary" onPress={onBack}>
             <ArrowLeft />
             Kembali
           </Button>
-          <Button variant="secondary" onPress={onLogout}>
-            <LogOut />
+          <PendingButton isPending={isLoggingOut} variant="secondary" onPress={onLogout}>
+            {isLoggingOut ? null : <LogOut />}
             Keluar
-          </Button>
+          </PendingButton>
           <Button onPress={handlePrint}>
             <Printer />
             Cetak Laporan

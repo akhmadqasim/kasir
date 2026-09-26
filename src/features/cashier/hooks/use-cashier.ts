@@ -3,8 +3,6 @@ import { checkoutTransaction } from "@/lib/api/transactions"
 import type { CheckoutTransactionInput, TransactionResult } from "../types"
 import { useCartStore } from "@/stores/cart-store"
 
-export { getProductByBarcode } from "@/lib/api/products"
-
 /**
  * Ring up a sale.
  *

@@ -1,6 +1,6 @@
 import { isRouteErrorResponse } from "react-router-dom"
 
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useAuthStore } from "@/features/auth"
 import type { User } from "@/features/auth/types"
 import { id as t } from "@/i18n/id"
 import { isApiError } from "@/lib/api/client"

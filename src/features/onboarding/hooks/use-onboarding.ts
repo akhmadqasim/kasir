@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import { completeOnboarding, getOnboardingStatus } from "@/lib/api/onboarding"
 import { queryKeys } from "@/lib/api/query-keys"
-import type { CompleteOnboardingInput, StoreInfo } from "../types"
+import type { StoreInfo } from "@/features/settings/types"
+import type { CompleteOnboardingInput } from "../types"
 
 export function useCheckOnboarding() {
   const { data, isLoading } = useApiQuery<boolean>(
@@ -30,6 +31,8 @@ export function useCompleteOnboarding() {
       // mounts.
       queryClient.setQueryData(queryKeys.onboarding.status, false)
       queryClient.invalidateQueries({ queryKey: queryKeys.onboarding.all })
+      // The login screen may have cached `null` for the public store slice.
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.store })
     },
   })
 }

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
-import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { apiFailure, installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { stubLoadedImages } from "@/test-utils/loaded-image"
 import { LoginPage } from "./components/login-page"
 
 function renderLoginPage() {
@@ -22,6 +23,8 @@ let api: ApiMock
 
 beforeEach(() => {
   api = installApiMock({
+    // Sebelum onboarding server menjawab `null`; kasus dengan nama toko ada di bawah.
+    "GET /store/public": null,
     "POST /auth/login": {
       id: 1,
       username: "kasir1",
@@ -100,6 +103,25 @@ describe("login page", () => {
     expect(api.lastCall("POST /auth/login")?.body).toEqual({ username: "kasir1", pin: "1234" })
   })
 
+  it("shows a failed login inline, clears the PIN and puts the caret back in it", async () => {
+    api.route("POST /auth/login", apiFailure(401, "auth", "Username atau PIN salah"))
+    renderLoginPage()
+
+    fireEvent.change(screen.getByLabelText("Nama Pengguna"), { target: { value: "kasir1" } })
+    const pin = screen.getByLabelText("PIN")
+    fireEvent.change(pin, { target: { value: "9999" } })
+    fireEvent.keyDown(pin, { key: "Enter" })
+
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Username atau PIN salah")
+    expect(pin).toHaveValue("")
+    await vi.waitFor(() => expect(pin).toHaveFocus())
+
+    // Typing again dismisses the old message.
+    fireEvent.change(pin, { target: { value: "1" } })
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
   it("does nothing on Enter while the PIN is still empty", () => {
     renderLoginPage()
 
@@ -107,5 +129,72 @@ describe("login page", () => {
     fireEvent.keyDown(screen.getByLabelText("PIN"), { key: "Enter" })
 
     expect(api.callsFor("POST /auth/login")).toHaveLength(0)
+  })
+})
+
+/**
+ * Nama toko di atas formulir datang dari `GET /store/public` — rute publik yang
+ * hanya membawa nama dan penanda logo, bukan baris toko lengkap.
+ */
+describe("login page store header", () => {
+  it("shows the store name above the form", async () => {
+    api.route("GET /store/public", { name: "Toko Berkah Jaya", has_logo: false })
+    renderLoginPage()
+
+    expect(await screen.findByRole("heading", { name: "Toko Berkah Jaya" })).toBeInTheDocument()
+    expect(screen.getByText("Masuk ke POS")).toBeInTheDocument()
+    expect(api.callsFor("GET /store/public")).toHaveLength(1)
+  })
+
+  it("falls back to the plain title before the store is set up", async () => {
+    renderLoginPage()
+
+    await vi.waitFor(() => expect(api.callsFor("GET /store/public")).toHaveLength(1))
+    expect(screen.getByRole("heading", { name: "Masuk ke POS" })).toBeInTheDocument()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("draws the logo from the public logo route when the store has one", async () => {
+    // jsdom never loads an image; HeroUI's Avatar only mounts `<img>` once it has.
+    stubLoadedImages()
+    api.route("GET /store/public", { name: "Toko Berkah Jaya", has_logo: true })
+    const { container } = renderLoginPage()
+
+    await screen.findByRole("heading", { name: "Toko Berkah Jaya" })
+    await vi.waitFor(() =>
+      expect(container.querySelector("img")?.getAttribute("src")).toMatch(
+        /\/api\/store\/logo\?v=\d+$/,
+      ),
+    )
+  })
+
+  // The public slice has no `updated_at`, and `/store/logo` is cached for an
+  // hour: without a changing query string a logo replaced in Pengaturan kept
+  // showing the old picture on the login screen.
+  it("busts the logo cache with when the store slice was fetched", async () => {
+    stubLoadedImages()
+    api.route("GET /store/public", { name: "Toko Berkah Jaya", has_logo: true })
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000)
+
+    const first = renderLoginPage()
+    await vi.waitFor(() =>
+      expect(first.container.querySelector("img")?.getAttribute("src")).toBe(
+        "/api/store/logo?v=1000",
+      ),
+    )
+    first.unmount()
+
+    // The next visit to the login screen (after a logout, which empties the cache).
+    now.mockReturnValue(2_000)
+    const second = renderLoginPage()
+    await vi.waitFor(() =>
+      expect(second.container.querySelector("img")?.getAttribute("src")).toBe(
+        "/api/store/logo?v=2000",
+      ),
+    )
+    now.mockRestore()
   })
 })

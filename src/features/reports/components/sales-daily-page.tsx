@@ -1,28 +1,17 @@
-import { Table } from "@heroui/react"
+import { id } from "@/i18n/id"
 
 import { DateRangePicker } from "@/components/date-range-picker"
-import { StatCard } from "@/components/stat-card"
-import { formatDayDate, formatNumber, formatRupiah } from "@/lib/format"
+import { formatCalendarDay } from "../calendar-day"
 import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useSalesDaily } from "../hooks/use-reports"
-import { ReportPage, ReportTable } from "./report-shell"
-
-const TITLE = "Penjualan per Hari"
-const COLUMN_COUNT = 5
+import { sumSalesRows } from "../sales-totals"
+import { ReportPage } from "./report-shell"
+import { SalesSummaryCards } from "./sales-summary-cards"
+import { SalesTable } from "./sales-table"
 
 export function SalesDailyPage() {
   const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
-  const { data, isLoading, error } = useSalesDaily(startDate, endDate)
-
-  const totals = data?.reduce(
-    (acc, row) => ({
-      transactions: acc.transactions + row.transactionCount,
-      revenue: acc.revenue + row.totalRevenue,
-      cost: acc.cost + row.totalCost,
-      profit: acc.profit + row.grossProfit,
-    }),
-    { transactions: 0, revenue: 0, cost: 0, profit: 0 },
-  )
+  const { data, isLoading, isFetching, error, refetch } = useSalesDaily(startDate, endDate)
 
   return (
     <ReportPage
@@ -32,46 +21,23 @@ export function SalesDailyPage() {
         </div>
       }
     >
-      {totals && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Transaksi" value={formatNumber(totals.transactions)} />
-          <StatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
-          <StatCard label="Total Modal" value={formatRupiah(totals.cost)} />
-          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
-        </div>
-      )}
+      <SalesSummaryCards isLoading={isLoading} totals={data && sumSalesRows(data)} />
 
-      <ReportTable
-        label={TITLE}
-        columnCount={COLUMN_COUNT}
+      <SalesTable
+        title={id.reports.title.salesDaily}
+        periodHeader={id.reports.column.date}
+        periodClassName="whitespace-nowrap"
+        rows={(data ?? []).map((row) => ({
+          ...row,
+          id: row.date,
+          label: formatCalendarDay(row.date),
+        }))}
         isLoading={isLoading}
         error={error}
-        columns={
-          <>
-            <Table.Column isRowHeader>Tanggal</Table.Column>
-            <Table.Column className="text-right">Transaksi</Table.Column>
-            <Table.Column className="text-right">Pendapatan</Table.Column>
-            <Table.Column className="text-right">Modal</Table.Column>
-            <Table.Column className="text-right">Laba Kotor</Table.Column>
-          </>
-        }
-      >
-        {(data ?? []).map((row) => (
-          <Table.Row key={row.date} id={row.date} textValue={formatDayDate(row.date)}>
-            <Table.Cell className="font-medium">{formatDayDate(row.date)}</Table.Cell>
-            <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
-            <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
-            <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
-            {/* Angkanya bersih dari retur, jadi laba sehari bisa negatif; hijau
-                hanya untuk yang memang laba (lihat juga Penjualan Produk). */}
-            <Table.Cell
-              className={`text-right font-medium ${row.grossProfit < 0 ? "text-danger" : "text-success"}`}
-            >
-              {formatRupiah(row.grossProfit)}
-            </Table.Cell>
-          </Table.Row>
-        ))}
-      </ReportTable>
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+        emptyMessage={id.reports.empty.sales}
+      />
     </ReportPage>
   )
 }

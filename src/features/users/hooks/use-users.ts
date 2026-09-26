@@ -5,6 +5,7 @@ import { createUser, listUsers, setUserActive, updateUser } from "@/lib/api/user
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
+import { useAuthStore } from "@/features/auth"
 import type { User } from "@/features/auth/types"
 import type { CreateUserInput, ToggleUserActiveInput, UpdateUserInput } from "../types"
 
@@ -31,8 +32,14 @@ export function useUpdateUser() {
   const queryClient = useQueryClient()
 
   return useApiMutation<User, UpdateUserInput>(updateUser, {
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+      // `auth.me` never refetches on its own, so an admin editing their own
+      // account would keep the old name in the sidebar until the next login.
+      if (updated.id === useAuthStore.getState().user?.id) {
+        useAuthStore.getState().setUser(updated)
+        queryClient.setQueryData(queryKeys.auth.me, updated)
+      }
       toast.success(id.users.updateSuccess)
     },
     onError: (error) => {
@@ -57,5 +64,3 @@ export function useToggleUserActive() {
     },
   )
 }
-
-export { useChangeOwnPin as useChangePin } from "@/features/auth/hooks/use-auth"

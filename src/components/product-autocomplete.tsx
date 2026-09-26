@@ -7,6 +7,7 @@ import {
   Label,
   ListBox,
   SearchField,
+  Spinner,
 } from "@heroui/react"
 
 import { selectedText } from "@/components/selected-text"
@@ -16,6 +17,7 @@ import { searchProducts } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product, SearchProductsParams } from "@/features/products/types"
+import { id } from "@/i18n/id"
 
 /** Di bawah ini backend dipanggil untuk hampir seluruh katalog, jadi jangan. */
 const MIN_QUERY_LENGTH = 2
@@ -38,6 +40,11 @@ interface ProductAutocompleteProps {
   renderDetail: (product: Product) => ReactNode
   perPage?: number
   isDisabled?: boolean
+  /**
+   * A product must be picked: the label gets its asterisk and the field
+   * `aria-required`. Validation stays with the form (`validationBehavior="aria"`).
+   */
+  isRequired?: boolean
   errorMessage?: string
 }
 
@@ -64,6 +71,7 @@ export function ProductAutocomplete({
   renderDetail,
   perPage = 10,
   isDisabled,
+  isRequired,
   errorMessage,
 }: ProductAutocompleteProps) {
   const [query, setQuery] = useState("")
@@ -81,7 +89,7 @@ export function ProductAutocomplete({
     [debouncedQuery, perPage],
   )
 
-  const { data } = useApiQuery<PaginatedProducts>(
+  const { data, isFetching, isError } = useApiQuery<PaginatedProducts>(
     queryKeys.products.search(searchParams),
     () => searchProducts(searchParams),
     { enabled: isSearching },
@@ -98,6 +106,18 @@ export function ProductAutocomplete({
     return [value, ...results.filter((product) => product.id !== value.id)]
   }, [data, isSearching, value])
 
+  // While the debounce is still running, or the request is in flight, "Produk
+  // tidak ditemukan" would be a lie told for 300 ms on every keystroke.
+  const isWaiting =
+    (query.trim().length >= MIN_QUERY_LENGTH && query !== debouncedQuery) ||
+    (isSearching && isFetching && !data)
+
+  const emptyText = isError
+    ? `${id.products.searchFailed}. ${id.common.retry}.`
+    : isSearching
+      ? id.products.notFound
+      : searchPlaceholder
+
   const handleChange = (key: unknown) => {
     const picked =
       key == null ? null : (items.find((product) => String(product.id) === String(key)) ?? null)
@@ -111,6 +131,7 @@ export function ProductAutocomplete({
       fullWidth
       isDisabled={isDisabled}
       isInvalid={Boolean(errorMessage)}
+      isRequired={isRequired}
       placeholder={placeholder}
       value={value ? String(value.id) : null}
       onChange={handleChange}
@@ -122,7 +143,7 @@ export function ProductAutocomplete({
       <Label>{label}</Label>
       <Autocomplete.Trigger>
         <Autocomplete.Value>{selectedText}</Autocomplete.Value>
-        <Autocomplete.ClearButton />
+        <Autocomplete.ClearButton aria-label="Hapus pilihan" />
         <Autocomplete.Indicator />
       </Autocomplete.Trigger>
       <Autocomplete.Popover>
@@ -138,9 +159,16 @@ export function ProductAutocomplete({
               berketerangan. */}
           <ListBox
             aria-label={label}
-            renderEmptyState={() => (
-              <EmptyState>{isSearching ? "Produk tidak ditemukan" : searchPlaceholder}</EmptyState>
-            )}
+            renderEmptyState={() =>
+              isWaiting ? (
+                <EmptyState className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" />
+                  Mencari produk…
+                </EmptyState>
+              ) : (
+                <EmptyState className={isError ? "text-danger" : undefined}>{emptyText}</EmptyState>
+              )
+            }
           >
             {items.map((product) => (
               <ListBox.Item key={product.id} id={String(product.id)} textValue={product.name}>

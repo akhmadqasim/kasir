@@ -3,6 +3,7 @@ import {
   createAuthApi,
   createProductsApi,
   createStockApi,
+  createStoreApi,
   NETWORK_ERROR_MESSAGE,
   ApiError,
 } from "@kasir/shared";
@@ -47,3 +48,4 @@ export const apiClient = createApiClient({
 export const authApi = createAuthApi(apiClient);
 export const productsApi = createProductsApi(apiClient);
 export const stockApi = createStockApi(apiClient);
+export const storeApi = createStoreApi(apiClient);

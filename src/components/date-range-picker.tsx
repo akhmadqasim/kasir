@@ -5,6 +5,7 @@ import {
   RangeCalendar,
 } from "@heroui/react"
 
+import { useIsMobile } from "@/hooks/use-mobile"
 import {
   fromCalendarDateRange,
   resolveRangeSelection,
@@ -39,11 +40,11 @@ interface DateRangePickerProps {
  * Bersama `@/lib/date-range` ini satu-satunya kode yang menyentuh tipe tanggal
  * React Aria; dua belas layar pemanggilnya tetap bicara dalam `Date` biasa.
  *
- * `I18nProvider` dipasang di sini, bukan di root aplikasi: `index.html` menyatakan
- * `lang="en"` dan React Aria jatuh ke `navigator.language`, jadi tanpa ini urutan
- * segmennya jadi bulan-hari-tahun dan nama bulannya bahasa Inggris — bacaan yang
- * salah untuk kasir Indonesia. Satu-satunya bagian aplikasi yang memformat tanggal
- * lewat React Aria adalah komponen ini, jadi cakupannya cukup di sini.
+ * Root aplikasi (`AppProviders`) sudah memasang `I18nProvider locale="id-ID"`.
+ * Provider di sini tetap dipasang supaya komponen ini benar juga saat dirender
+ * tanpa root, misalnya di test: `index.html` menyatakan `lang="en"` dan React Aria
+ * jatuh ke `navigator.language`, jadi tanpa locale urutan segmennya jadi
+ * bulan-hari-tahun dan nama bulannya bahasa Inggris.
  */
 export function DateRangePicker({
   value,
@@ -51,7 +52,11 @@ export function DateRangePicker({
   align = "end",
   numberOfMonths = 2,
 }: DateRangePickerProps) {
-  const months = Array.from({ length: Math.max(1, numberOfMonths) }, (_, index) => index)
+  // Two 256px months side by side are 544px wide; on a phone the popover ran
+  // off the screen and the second month could not be reached.
+  const isMobile = useIsMobile()
+  const monthCount = isMobile ? 1 : Math.max(1, numberOfMonths)
+  const months = Array.from({ length: monthCount }, (_, index) => index)
 
   return (
     <I18nProvider locale="id-ID">

@@ -210,4 +210,10 @@ describe("toLocalDateString", () => {
   it("pads month and day to two digits", () => {
     expect(toLocalDateString(new Date(2026, 2, 9))).toBe("2026-03-09")
   })
+
+  it("pads the year to four digits, the only shape the list filters accept", () => {
+    const earlyYear = new Date(2026, 2, 9)
+    earlyYear.setFullYear(987)
+    expect(toLocalDateString(earlyYear)).toBe("0987-03-09")
+  })
 })

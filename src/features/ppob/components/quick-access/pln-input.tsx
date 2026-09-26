@@ -10,15 +10,19 @@ import {
 } from "@heroui/react"
 import { Zap } from "lucide-react"
 
+import { LoadError } from "@/components/load-error"
 import { PendingButton } from "@/components/pending-button"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
 import { usePlnDenom, usePlnInquiry } from "../../hooks"
-import type { InquiryResult } from "../../types"
 import { markupItem } from "./markup-item"
+import { OptionGroup } from "./option-group"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
+import { useInquiryResult } from "./use-inquiry-result"
+import { PpobSetupAction } from "../ppob-setup-action"
 
 export function PlnInput({
   onAddToCart,
@@ -29,20 +33,28 @@ export function PlnInput({
   const [mode, setMode] = useState<"token" | "postpaid">("token")
   const [customerId, setCustomerId] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<number | null>(null)
-  const { data: denoms, isLoading: denomsLoading } = usePlnDenom()
+  const {
+    data: denoms,
+    isLoading: denomsLoading,
+    error: denomsError,
+    refetch: refetchDenoms,
+    isFetching: denomsFetching,
+  } = usePlnDenom()
   const plnInquiry = usePlnInquiry()
-  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const { result: inquiryResult, reset: resetInquiry, accept: acceptInquiry } = useInquiryResult()
 
   const handleModeChange = (newMode: string) => {
     setMode(newMode as "token" | "postpaid")
     setCustomerId("")
     setSelectedDenom(null)
-    setInquiryResult(null)
+    resetInquiry()
   }
 
+  const canInquiry =
+    mode === "token" ? customerId.length >= 8 && selectedDenom !== null : customerId.length >= 8
+
   const handleInquiry = () => {
-    if (!customerId) return
-    if (mode === "token" && selectedDenom === null) return
+    if (!canInquiry || plnInquiry.isPending) return
     const denom = mode === "token" ? denoms?.find((d) => d.id === selectedDenom) : null
     plnInquiry.mutate(
       {
@@ -52,8 +64,13 @@ export function PlnInput({
         amount: denom ? parseFloat(denom.denom) : 0,
       },
       {
-        onSuccess: (result) => setInquiryResult(result),
-        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+        onSuccess: acceptInquiry(),
+        onError: (err) =>
+          toast.error(
+            mode === "token"
+              ? id.ppob.customerCheckFailed(err.message)
+              : id.ppob.billCheckFailed(err.message),
+          ),
       },
     )
   }
@@ -87,27 +104,33 @@ export function PlnInput({
     })
   }
 
-  const canInquiry =
-    mode === "token" ? customerId.length >= 8 && selectedDenom !== null : customerId.length >= 8
-
   const plnInquiryData = inquiryResult?.rawData?.inquiry as Record<string, string> | undefined
   const confirmItems: SummaryItem[] | null = inquiryResult
     ? [
-        { label: "Layanan", value: mode === "token" ? "PLN Token" : "PLN Pascabayar" },
-        { label: "No. Meter/IDPEL", value: customerId, tone: "mono" },
-        { label: "Nama", value: inquiryResult.customerName ?? "-" },
+        {
+          label: id.ppob.quickAccess.service,
+          value:
+            mode === "token"
+              ? id.ppob.quickAccess.plnTokenService
+              : id.ppob.quickAccess.plnPostpaidService,
+        },
+        { label: id.ppob.quickAccess.plnMeter, value: customerId, tone: "mono" },
+        { label: id.ppob.quickAccess.name, value: inquiryResult.customerName ?? "-" },
         ...(plnInquiryData?.Golongan
           ? [
               {
-                label: "Tarif/Daya",
+                label: id.ppob.quickAccess.plnTariff,
                 value: `${plnInquiryData.Golongan}/${plnInquiryData.Kategori ?? ""}`,
               },
             ]
           : []),
-        { label: "Harga Token", value: formatRupiah(inquiryResult.amount) },
-        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        {
+          label: mode === "token" ? id.ppob.quickAccess.plnTokenPrice : id.ppob.quickAccess.bill,
+          value: formatRupiah(inquiryResult.amount),
+        },
+        { label: id.ppob.quickAccess.adminFee, value: formatRupiah(inquiryResult.adminFee) },
         ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
-        { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
+        { label: id.ppob.quickAccess.totalPay, value: formatRupiah(sellPrice), tone: "strong" },
       ]
     : null
 
@@ -118,14 +141,16 @@ export function PlnInput({
       confirmItems={confirmItems}
       confirmLabel={confirmLabel}
       placeholderIcon={<Zap />}
-      placeholderText="Cek tagihan untuk melihat detail"
+      placeholderText={
+        mode === "token" ? id.ppob.quickAccess.checkCustomerHint : id.ppob.quickAccess.checkBillHint
+      }
       wideLayout={wideLayout}
       onConfirm={handleConfirm}
     >
       {/* Dua mode PLN, bukan dua panel: `ToggleButtonGroup` memberi `aria-pressed`
           tanpa menuntut `Tabs.Panel` yang isinya tidak ada. */}
       <ToggleButtonGroup
-        aria-label="Jenis layanan PLN"
+        aria-label={id.ppob.quickAccess.plnMode}
         fullWidth
         disallowEmptySelection
         selectedKeys={[mode]}
@@ -135,10 +160,10 @@ export function PlnInput({
           if (next) handleModeChange(String(next))
         }}
       >
-        <ToggleButton id="token">Token (Prepaid)</ToggleButton>
+        <ToggleButton id="token">{id.ppob.quickAccess.plnToken}</ToggleButton>
         <ToggleButton id="postpaid">
           <ToggleButtonGroup.Separator />
-          Bayar (Pascabayar)
+          {id.ppob.quickAccess.plnPostpaid}
         </ToggleButton>
       </ToggleButtonGroup>
 
@@ -149,21 +174,27 @@ export function PlnInput({
         variant="secondary"
         onChange={(value) => {
           setCustomerId(value.replace(/\D/g, ""))
-          setInquiryResult(null)
+          resetInquiry()
         }}
       >
-        <Label>{mode === "token" ? "No. Meter / IDPEL" : "ID Pelanggan"}</Label>
+        <Label>
+          {mode === "token" ? id.ppob.quickAccess.plnMeter : id.ppob.quickAccess.customerId}
+        </Label>
+        {/* Enter mengecek, seperti pemindai yang menekan Enter setelah angkanya. */}
         <Input
           className="tabular-nums"
           inputMode="numeric"
           placeholder={
-            mode === "token" ? "Masukkan no. meter atau IDPEL" : "Masukkan ID pelanggan (12 digit)"
+            mode === "token"
+              ? id.ppob.quickAccess.plnMeterPlaceholder
+              : id.ppob.quickAccess.plnIdpelPlaceholder
           }
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !inquiryResult) handleInquiry()
+          }}
         />
         <Description>
-          {mode === "token"
-            ? "Bisa pakai No. Meter (11 digit) atau IDPEL (12 digit) dari struk PLN."
-            : "Gunakan ID Pelanggan 12 digit dari tagihan listrik."}
+          {mode === "token" ? id.ppob.quickAccess.plnMeterHint : id.ppob.quickAccess.plnIdpelHint}
         </Description>
       </TextField>
 
@@ -175,31 +206,39 @@ export function PlnInput({
         </div>
       )}
 
+      {mode === "token" && denomsError && (
+        <LoadError
+          isRetrying={denomsFetching}
+          secondaryAction={<PpobSetupAction error={denomsError} />}
+          title={id.loadFailed.ppobTokenNominal}
+          onRetry={() => refetchDenoms()}
+        >
+          {denomsError.message}
+        </LoadError>
+      )}
+
       {mode === "token" && denoms && denoms.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Nominal</p>
-          <div className={denomGridClass}>
-            {denoms.map((d) => (
-              <ToggleButton
-                key={d.id}
-                className="tabular-nums"
-                isSelected={selectedDenom === d.id}
-                size="lg"
-                onChange={() => {
-                  setSelectedDenom(d.id)
-                  setInquiryResult(null)
-                }}
-              >
-                {formatRupiah(parseFloat(d.denom))}
-              </ToggleButton>
-            ))}
-          </div>
-        </div>
+        <OptionGroup className={denomGridClass} label={id.ppob.nominal}>
+          {denoms.map((d) => (
+            <ToggleButton
+              key={d.id}
+              className="tabular-nums"
+              isSelected={selectedDenom === d.id}
+              size="lg"
+              onChange={() => {
+                setSelectedDenom(d.id)
+                resetInquiry()
+              }}
+            >
+              {formatRupiah(parseFloat(d.denom))}
+            </ToggleButton>
+          ))}
+        </OptionGroup>
       )}
 
       {canInquiry && !inquiryResult && (
         <PendingButton fullWidth isPending={plnInquiry.isPending} onPress={handleInquiry}>
-          {mode === "token" ? "Cek Info Pelanggan" : "Cek Tagihan"}
+          {mode === "token" ? id.ppob.quickAccess.checkCustomer : id.ppob.quickAccess.checkBill}
         </PendingButton>
       )}
     </ServiceFlowLayout>

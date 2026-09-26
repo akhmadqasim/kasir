@@ -1,8 +1,45 @@
 import { describe, expect, it } from "vitest"
-import { parseRemainingQuantityError, remainingQuantityMessage } from "./refund-limits"
+import {
+  hasRefundedLines,
+  parseRemainingQuantityError,
+  remainingQuantityMessage,
+  remainingRefundableQuantity,
+} from "./refund-limits"
+
+describe("remainingRefundableQuantity", () => {
+  it("offers the whole line when nothing came back yet", () => {
+    expect(remainingRefundableQuantity({ quantity: 3, refunded_quantity: 0 })).toBe(3)
+  })
+
+  it("takes earlier refunds off the purchased quantity", () => {
+    expect(remainingRefundableQuantity({ quantity: 3, refunded_quantity: 2 })).toBe(1)
+  })
+
+  it("is zero for a line returned in full", () => {
+    expect(remainingRefundableQuantity({ quantity: 2, refunded_quantity: 2 })).toBe(0)
+  })
+
+  it("never goes negative on inconsistent data", () => {
+    expect(remainingRefundableQuantity({ quantity: 1, refunded_quantity: 4 })).toBe(0)
+    expect(remainingRefundableQuantity({ quantity: 2, refunded_quantity: -1 })).toBe(2)
+  })
+})
+
+describe("hasRefundedLines", () => {
+  it("is true once any line has come back", () => {
+    expect(
+      hasRefundedLines([
+        { quantity: 2, refunded_quantity: 0 },
+        { quantity: 1, refunded_quantity: 1 },
+      ]),
+    ).toBe(true)
+    expect(hasRefundedLines([{ quantity: 2, refunded_quantity: 0 }])).toBe(false)
+    expect(hasRefundedLines([])).toBe(false)
+  })
+})
 
 describe("parseRemainingQuantityError", () => {
-  // Exact wording of `create_refund_internal` in commands/refunds.rs.
+  // Exact wording of the refund service (`services/refunds/`).
   it("reads the remainder out of the backend's rejection", () => {
     expect(
       parseRemainingQuantityError(

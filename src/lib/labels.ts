@@ -1,4 +1,5 @@
 import type { StatusVariant } from "@/components/status-badge"
+import type { User } from "@/features/auth/types"
 import { id } from "@/i18n/id"
 
 /**
@@ -100,7 +101,7 @@ export function transactionStatusLabel(status: string): string {
  * Status yang tidak dikenal jatuh ke `neutral` — sama seperti label-nya yang
  * ditampilkan apa adanya, bukan disembunyikan.
  */
-export const TRANSACTION_STATUS_VARIANT: Record<string, StatusVariant> = {
+const TRANSACTION_STATUS_VARIANT: Record<string, StatusVariant> = {
   completed: "success",
   pending_ppob: "warning",
   ppob_failed: "error",
@@ -111,4 +112,12 @@ export const TRANSACTION_STATUS_VARIANT: Record<string, StatusVariant> = {
 
 export function transactionStatusVariant(status: string): StatusVariant {
   return TRANSACTION_STATUS_VARIANT[status] ?? "neutral"
+}
+
+/**
+ * Nama peran untuk ditampilkan — sidebar, profil, daftar pengguna. Peran adalah
+ * kategori, bukan status: teks biasa, tidak pernah lencana (DESIGN.md §5.4).
+ */
+export function roleLabel(role: User["role"]): string {
+  return role === "admin" ? id.users.admin : id.users.kasir
 }

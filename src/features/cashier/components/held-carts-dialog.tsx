@@ -1,7 +1,8 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react"
-import { Trash2 } from "lucide-react"
+import { PlayCircle, Trash2 } from "lucide-react"
 import { Button, Description, Label, ListBox, Modal } from "@heroui/react"
 
+import { id } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
 import type { HeldCart } from "@/stores/cart-store"
 import { formatRupiah } from "../utils"
@@ -14,7 +15,7 @@ interface HeldCartsDialogProps {
   onRemove: (holdId: string) => void
 }
 
-/** Berapa nama barang yang dimuat kolom barang; lebihnya jadi "5+". */
+/** Berapa nama barang yang dimuat kolom barang; sisanya jadi "+N lainnya". */
 const NAMES_SHOWN = 2
 
 /** Kapan disimpan; jumlah barang sudah terbaca dari kolom barang di sebelahnya. */
@@ -22,10 +23,10 @@ function describeHeldCart(held: HeldCart): string {
   return formatDateTime(new Date(held.heldAt).toISOString())
 }
 
-/** Kolom barang: dua nama, satu per baris, lalu "3+" kalau ada lebih. */
+/** Kolom barang: dua nama, satu per baris, lalu "+N lainnya" kalau ada lebih. */
 function HeldCartItems({ held }: { held: HeldCart }) {
   const names = held.items.slice(0, NAMES_SHOWN).map((item) => item.product_name)
-  const more = held.items.length > NAMES_SHOWN
+  const more = held.items.length - NAMES_SHOWN
   return (
     <ul className="flex min-w-0 flex-col text-xs text-muted">
       {names.map((name, index) => (
@@ -33,7 +34,7 @@ function HeldCartItems({ held }: { held: HeldCart }) {
           {name}
         </li>
       ))}
-      {more && <li className="font-medium text-foreground">{NAMES_SHOWN + 1}+</li>}
+      {more > 0 && <li className="font-medium text-foreground tabular-nums">+{more} lainnya</li>}
     </ul>
   )
 }
@@ -64,7 +65,7 @@ export function HeldCartsDialog({
 }: HeldCartsDialogProps) {
   return (
     <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
-      {/* Lebar: tiap baris memuat label, total, empat nama barang, dan dua
+      {/* Lebar: tiap baris memuat label, total, dua nama barang, dan dua
           tombol — di "md" nama barang terpotong, di "xl" terlalu lapang. */}
       <Modal.Container size="lg">
         {/* Lima kolom per baris butuh ~44rem; pada `max-w-lg` bawaan kolom
@@ -73,6 +74,9 @@ export function HeldCartsDialog({
         <Modal.Dialog aria-label="Transaksi Tersimpan" className="max-w-[44rem]">
           <Modal.CloseTrigger />
           <Modal.Header>
+            <Modal.Icon className="bg-default text-foreground">
+              <PlayCircle className="size-5" />
+            </Modal.Icon>
             <Modal.Heading>Transaksi Tersimpan</Modal.Heading>
           </Modal.Header>
           {/* Isi dialog dilepas saat tertutup, jadi sorotan kembali ke baris
@@ -145,6 +149,8 @@ function HeldCartsList({
   return (
     <>
       <Modal.Body>
+        {/* Pintasan listbox ini tidak terlihat di mana pun selain di sini. */}
+        <p>{id.cashier.heldCartsHint}</p>
         <div onClickCapture={handleClickCapture} onKeyDownCapture={handleKeyDownCapture}>
           <ListBox
             aria-label="Daftar transaksi tersimpan"
@@ -187,9 +193,12 @@ function HeldCartsList({
                     punya Enter/Delete. React Aria menghentikan perambatan tekanan
                     dari tombol bersarang, jadi Hapus tidak ikut memicu onAction. */}
                 <div className="flex shrink-0 gap-2 self-center">
+                  {/* `secondary`, bukan primary: satu primary per baris berarti
+                      sepuluh per layar — DESIGN.md §5.4. */}
                   <Button
                     aria-label={`Buka ${held.label}`}
                     size="sm"
+                    variant="secondary"
                     onPress={() => onRecall(held.id)}
                   >
                     Buka
@@ -198,7 +207,7 @@ function HeldCartsList({
                     aria-label={`Hapus ${held.label}`}
                     isIconOnly
                     size="sm"
-                    variant="danger"
+                    variant="danger-soft"
                     onPress={() => onRemove(held.id)}
                   >
                     <Trash2 />

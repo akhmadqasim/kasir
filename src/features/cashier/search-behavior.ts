@@ -1,3 +1,5 @@
+import { isScannerBurstEntry } from "./payment-behavior"
+
 export type ProductSearchEnterAction =
   | "ignore"
   | "select-active-result"
@@ -25,9 +27,6 @@ interface SearchableProduct {
   name: string
 }
 
-const SCANNER_MAX_INPUT_DURATION_MS = 250
-const SCANNER_MAX_ENTER_DELAY_MS = 120
-
 export function isBarcodeScannerCandidate(query: string): boolean {
   return /^\d{6,}$/.test(query.trim())
 }
@@ -54,20 +53,12 @@ export function isWholeBarcodeQuery(query: string): boolean {
   return /^\d+$/.test(trimmed) && WHOLE_BARCODE_LENGTHS.has(trimmed.length)
 }
 
-export function isLikelyBarcodeScannerInput({
-  query,
-  startedAt,
-  lastInputAt,
-  submittedAt,
-}: BarcodeInputTiming): boolean {
+export function isLikelyBarcodeScannerInput({ query, ...timing }: BarcodeInputTiming): boolean {
   const trimmedQuery = query.trim()
 
-  if (!isBarcodeScannerCandidate(trimmedQuery)) return false
-  if (startedAt <= 0 || lastInputAt <= 0) return false
-
   return (
-    lastInputAt - startedAt <= SCANNER_MAX_INPUT_DURATION_MS &&
-    submittedAt - lastInputAt <= SCANNER_MAX_ENTER_DELAY_MS
+    isBarcodeScannerCandidate(trimmedQuery) &&
+    isScannerBurstEntry({ amount: trimmedQuery, ...timing })
   )
 }
 
@@ -134,4 +125,9 @@ export function rankProductsForSearch<T extends SearchableProduct>(
 
     return a.name.localeCompare(b.name, "id")
   })
+}
+
+/** The DOM id of a search result row, for the scan field's `aria-activedescendant`. */
+export function searchOptionId(listboxId: string, productId: number): string {
+  return `${listboxId}-option-${productId}`
 }

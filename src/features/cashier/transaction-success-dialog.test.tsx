@@ -1,6 +1,6 @@
 import { StrictMode, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 vi.mock("@/lib/toast", () => ({
@@ -13,6 +13,7 @@ vi.mock("@/features/receipt/utils/receipt-png", async (importOriginal) => ({
 }))
 
 import { renderReceiptPng } from "@/features/receipt/utils/receipt-png"
+import { toast } from "@/lib/toast"
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { pressKey } from "@/test-utils/keyboard"
 import { TransactionSuccessDialog } from "./components/transaction-success-dialog"
@@ -201,6 +202,29 @@ describe("transaction success dialog", () => {
     pressKey("Enter")
 
     await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
+    expect(onNewTransaction).not.toHaveBeenCalled()
+  })
+
+  it("does not reprint when Enter ends a barcode scan", async () => {
+    const onNewTransaction = vi.fn()
+    renderDialog({ onNewTransaction })
+    const newSale = await screen.findByRole("button", { name: /Transaksi baru/ })
+    await waitFor(() => expect(newSale).toHaveFocus())
+
+    // Scanner: seluruh digit dalam satu semburan, lalu Enter.
+    const barcode = "8991234567890"
+    const fireAt = (key: string, timeStamp: number) => {
+      const event = createEvent.keyDown(newSale, { key })
+      Object.defineProperty(event, "timeStamp", { value: timeStamp })
+      fireEvent(newSale, event)
+    }
+    for (let index = 0; index < barcode.length; index++) {
+      fireAt(barcode[index], 1000 + index * 10)
+    }
+    fireAt("Enter", 1000 + barcode.length * 10 + 20)
+
+    expect(toast.warning).toHaveBeenCalled()
+    expect(api.callsFor("POST /transactions/1/print")).toHaveLength(0)
     expect(onNewTransaction).not.toHaveBeenCalled()
   })
 

@@ -5,32 +5,39 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::domain::auth::pin_has_valid_format;
 use crate::domain::settings::{
     clamp_ui_zoom, obfuscate, parse_app_settings, parse_ui_zoom, AppSettings, ChangePinInput,
-    DatabaseInfo, PpobMarkup, PpobSettings, PublicAppSettings, UpdateAppSettingsInput,
-    UpdatePpobCredentialsInput, UpdateStoreInfoInput, UI_ZOOM_DEFAULT,
+    DatabaseInfo, PpobMarkup, PpobSettings, PublicAppSettings, PublicStoreInfo, SalesSettings,
+    UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput, UI_ZOOM_DEFAULT,
 };
 use crate::domain::Actor;
 use crate::entity::{store_info, users};
 use crate::services::backup;
-use crate::services::guard;
-use crate::services::ppob::auth::clear_tokens;
+use crate::services::ppob::auth::end_session;
 use crate::services::ppob::client::MitraClient;
+use crate::services::{auth, guard};
+use crate::utils::paths::{get_backup_dir, get_db_path};
+use crate::utils::time::now_ts;
 use crate::utils::AppError;
-
-fn get_db_path() -> std::path::PathBuf {
-    crate::utils::paths::get_db_path()
-}
-
-pub(crate) fn now_ts() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
 
 pub async fn get_store_info(
     db: &DatabaseConnection,
 ) -> Result<Option<store_info::Model>, AppError> {
     let info = store_info::Entity::find_by_id(1_i64).one(db).await?;
     Ok(info)
+}
+
+/// The shop's name and whether it has a logo, for the login screen; `None`
+/// before onboarding has created the store row. Built field by field from the
+/// row so a column added to `store_info` later is not exposed by accident.
+pub async fn public_store_info(
+    db: &DatabaseConnection,
+) -> Result<Option<PublicStoreInfo>, AppError> {
+    Ok(get_store_info(db).await?.map(|store| PublicStoreInfo {
+        name: store.name,
+        has_logo: store.logo_path.is_some(),
+    }))
 }
 
 /// The singleton store row, or `NotFound` before onboarding has created it.
@@ -64,9 +71,8 @@ pub async fn update_store_info(
 }
 
 pub async fn get_app_settings(db: &DatabaseConnection) -> Result<AppSettings, AppError> {
-    let store = store_info::Entity::find_by_id(1_i64).one(db).await?;
-
-    let settings = store
+    let settings = get_store_info(db)
+        .await?
         .map(|s| parse_app_settings(&s.additional_info))
         .unwrap_or_default();
 
@@ -98,6 +104,16 @@ pub async fn public_app_settings(
 /// credential field by accident.
 pub async fn ppob_markup(db: &DatabaseConnection) -> Result<PpobMarkup, AppError> {
     Ok(get_app_settings(db).await?.ppob.markup)
+}
+
+/// Just the sales block, open to any logged-in session.
+///
+/// The till needs `default_payment_method` to open its payment dialog on the
+/// method the shop chose, and a kasir cannot read `GET /api/settings`. Like
+/// [`ppob_markup`], this returns one slice of [`get_app_settings`] and nothing
+/// else — neither field in it is a secret.
+pub async fn sales_settings(db: &DatabaseConnection) -> Result<SalesSettings, AppError> {
+    Ok(get_app_settings(db).await?.sales)
 }
 
 /// Save the settings a client is allowed to send, keeping the stored PPOB
@@ -148,7 +164,7 @@ pub async fn update_ppob_credentials(
 
 /// Save the settings blob, then drop the cached Mitra session if anything the
 /// session depends on changed.
-pub async fn update_app_settings(
+async fn update_app_settings(
     db: &DatabaseConnection,
     actor: &Actor,
     mitra: &Arc<Mutex<MitraClient>>,
@@ -184,9 +200,7 @@ pub async fn update_app_settings(
     .await?;
 
     if should_reset_ppob_session {
-        clear_tokens(db).await?;
-        let mut client = mitra.lock().await;
-        client.clear_auth();
+        end_session(db, mitra).await?;
     }
 
     Ok(())
@@ -195,8 +209,8 @@ pub async fn update_app_settings(
 /// The webview zoom the till window should open at. The default when the shop
 /// has not been set up yet or nothing was ever saved.
 pub async fn ui_zoom(db: &DatabaseConnection) -> Result<f64, AppError> {
-    let store = store_info::Entity::find_by_id(1_i64).one(db).await?;
-    Ok(store
+    Ok(get_store_info(db)
+        .await?
         .map(|s| parse_ui_zoom(&s.additional_info))
         .unwrap_or(UI_ZOOM_DEFAULT))
 }
@@ -232,14 +246,18 @@ pub async fn save_ui_zoom(db: &DatabaseConnection, factor: f64) -> Result<f64, A
 ///
 /// `mutate` runs on the parsed blob (an empty object when the column is null
 /// or unreadable) and its return value is handed back.
+///
+/// Writers are serialised: each one writes the whole blob back, so a zoom save
+/// overlapping a settings save from another device would otherwise silently
+/// drop whichever change was read first.
 pub(crate) async fn merge_additional_info<T>(
     db: &DatabaseConnection,
     mutate: impl FnOnce(&mut serde_json::Value) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
+    static MERGE_LOCK: Mutex<()> = Mutex::const_new(());
+    let _merging = MERGE_LOCK.lock().await;
+
+    let store = require_store_info(db).await?;
 
     // Valid JSON that is not an object (`[]`, `5`) would make `info["key"] = …`
     // panic, so it is treated like unreadable JSON: replaced by an empty one.
@@ -274,14 +292,10 @@ pub async fn change_pin(
     actor: &Actor,
     input: ChangePinInput,
 ) -> Result<(), AppError> {
-    let user = users::Entity::find_by_id(actor.user_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+    let user = auth::require_user(db, actor.user_id).await?;
 
     // Verify current PIN
-    let pin_valid = bcrypt::verify(&input.current_pin, &user.pin_hash)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let pin_valid = auth::verify_pin(&input.current_pin, &user.pin_hash).await?;
 
     if !pin_valid {
         // A wrong current PIN is a rejected input, not a dead session — it
@@ -290,19 +304,15 @@ pub async fn change_pin(
         return Err(AppError::Validation("PIN saat ini tidak sesuai".into()));
     }
 
-    // Validate new PIN: 4-6 digits
-    if input.new_pin.len() < 4
-        || input.new_pin.len() > 6
-        || !input.new_pin.chars().all(|c| c.is_ascii_digit())
-    {
+    // Worded for this form, which asks for the current PIN and the new one.
+    if !pin_has_valid_format(&input.new_pin) {
         return Err(AppError::Validation(
             "PIN baru harus terdiri dari 4-6 digit angka".into(),
         ));
     }
 
     // Hash and save
-    let new_hash = bcrypt::hash(&input.new_pin, bcrypt::DEFAULT_COST)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let new_hash = auth::hash_pin(&input.new_pin).await?;
 
     let mut active: users::ActiveModel = user.into();
     active.pin_hash = Set(new_hash);
@@ -312,27 +322,28 @@ pub async fn change_pin(
     Ok(())
 }
 
-/// The live database, ready to be sent to a browser.
+/// A snapshot of the live database, ready to be sent to a browser.
 pub struct DatabaseExport {
-    /// Where to read the bytes from. Always the server's own database path —
-    /// nothing a client sends contributes to it.
-    pub path: std::path::PathBuf,
+    /// The snapshot, open for reading. The file has already been unlinked, so
+    /// dropping this handle (download done, client gone, or an error) is all the
+    /// cleanup there is. Nothing a client sends contributes to where it lives.
+    pub file: std::fs::File,
     /// What to put in `Content-Disposition`. Generated here, from the clock.
     pub filename: String,
 }
 
 /// Prepare a download of the live database.
 ///
-/// [`export_database`] takes a destination path from its caller and copies the
-/// file there. That is fine for a Tauri file dialog, whose path the user chose
-/// through the OS, and it is a path-traversal hole the moment the caller is a
-/// request body — an admin session could write a copy of the database anywhere
-/// the process can reach, under any name.
+/// There is no destination here at all: a path taken from a request body would
+/// let an admin session write a copy of the database anywhere the process can
+/// reach. The server snapshots its own file and streams it; the filename in the
+/// header is generated from the clock, so it is not a path either.
 ///
-/// There is no destination here at all. The server opens its own file and
-/// streams it; the only thing the client influences is whether it saves what
-/// arrives. The filename in the header is generated from the clock, so it is not
-/// a path either.
+/// The bytes come from `VACUUM INTO` — the same snapshot the scheduled backup
+/// takes — not from `kasir.db` itself. WAL is on, so the day's sales can still
+/// sit in `kasir.db-wal` behind the pool's open connections, and a checkpoint
+/// can rewrite pages of the main file mid-read; a plain copy either drops those
+/// sales or tears. The snapshot is built in one read transaction instead.
 pub fn prepare_export(actor: &Actor) -> Result<DatabaseExport, AppError> {
     guard::require_admin(actor)?;
 
@@ -341,29 +352,26 @@ pub fn prepare_export(actor: &Actor) -> Result<DatabaseExport, AppError> {
         return Err(AppError::NotFound("File database tidak ditemukan".into()));
     }
 
-    // WAL is on, so everything committed since the last checkpoint lives in
-    // `kasir.db-wal`. Sending `kasir.db` without checkpointing first silently
-    // drops the day's sales from the export.
-    backup::checkpoint_database_wal(&db_path);
+    let file = backup::export_snapshot(&db_path, &get_backup_dir())?;
 
     Ok(DatabaseExport {
         filename: format!(
             "kasir-export-{}.db",
             chrono::Local::now().format("%Y-%m-%d_%H%M%S")
         ),
-        path: db_path,
+        file,
     })
 }
 
 /// Install an uploaded database image, from bytes rather than from a path.
 ///
-/// The counterpart to [`prepare_export`]: [`import_database`] is handed a path
-/// and reads whatever is there, which over HTTP would let a request name any
-/// file on the till as the new database. Here the bytes *are* the request. They
-/// are checked for the SQLite header and staged next to the live file, to be
-/// swapped in at the next launch — the same staging `restore` uses, and for the
-/// same reason: the connection pool holds `kasir.db` open, so it cannot be
-/// replaced while the app is running.
+/// The counterpart to [`prepare_export`]. The old `import_database` command was
+/// handed a path and read whatever was there, which over HTTP would let a
+/// request name any file on the till as the new database. Here the bytes *are*
+/// the request. They are checked for the SQLite header and staged next to the
+/// live file, to be swapped in at the next launch — the same staging `restore`
+/// uses, and for the same reason: the connection pool holds `kasir.db` open, so
+/// it cannot be replaced while the app is running.
 pub fn import_database_bytes(actor: &Actor, data: &[u8]) -> Result<String, AppError> {
     guard::require_admin(actor)?;
 

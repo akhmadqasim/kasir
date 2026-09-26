@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { render, screen } from "@testing-library/react"
-import { MemoryRouter } from "react-router-dom"
+import { fireEvent, render, screen } from "@testing-library/react"
+import { MemoryRouter, useNavigate } from "react-router-dom"
 import { Building2Icon, ShoppingCartIcon } from "lucide-react"
 
 import { NavMain } from "./nav-main"
-import { Sidebar, SidebarProvider } from "@/components/layout/sidebar"
+import { Sidebar } from "@/components/layout/sidebar"
+import { SidebarProvider } from "@/components/layout/sidebar-provider"
+import { SIDEBAR_OPEN_STORAGE_KEY } from "@/components/layout/sidebar-context"
 
 const items = [
   { title: "Kasir", url: "/cashier", icon: <ShoppingCartIcon /> },
@@ -71,5 +73,61 @@ describe("nav-main active state", () => {
     renderNav("/cashier")
 
     expect(screen.queryByRole("link", { name: "Per Hari" })).not.toBeInTheDocument()
+  })
+})
+
+/** Navigates from outside the menu, the way a dashboard link or a redirect does. */
+function GoTo({ to }: { to: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      Pergi
+    </button>
+  )
+}
+
+describe("nav-main group on the collapsed rail", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    })
+  })
+
+  it("marks the section trigger active and pins the sidebar open when pressed", () => {
+    localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false")
+    renderNav("/reports/sales-daily")
+
+    const trigger = screen.getByRole("button", { name: "Laporan" })
+    expect(trigger).toHaveAttribute("data-active", "true")
+
+    fireEvent.click(trigger)
+
+    expect(screen.getByRole("navigation", { name: "Menu utama" })).toHaveAttribute(
+      "data-state",
+      "expanded",
+    )
+    expect(trigger).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("link", { name: "Per Hari" })).toBeInTheDocument()
+  })
+
+  it("opens the section when navigation lands inside it from elsewhere", () => {
+    render(
+      <MemoryRouter initialEntries={["/cashier"]}>
+        <SidebarProvider>
+          <Sidebar label="Menu utama">
+            <NavMain items={items} />
+          </Sidebar>
+          <GoTo to="/reports/sales-monthly" />
+        </SidebarProvider>
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole("link", { name: "Per Bulan" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Pergi" }))
+
+    expect(screen.getByRole("link", { name: "Per Bulan" })).toHaveAttribute("data-active", "true")
   })
 })

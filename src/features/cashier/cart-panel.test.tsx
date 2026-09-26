@@ -123,6 +123,15 @@ describe("cart panel", () => {
     }
   })
 
+  it("says why Bayar is off when it is blocked", () => {
+    resetStore({ items: [cartItem()] })
+    renderPanel({ payBlockedReason: "Buka kasir dulu untuk menerima pembayaran." })
+
+    const pay = screen.getByRole("button", { name: "Bayar F4" })
+    expect(pay).toBeDisabled()
+    expect(pay).toHaveAccessibleDescription("Buka kasir dulu untuk menerima pembayaran.")
+  })
+
   it("opens the discount dialog on F2", async () => {
     resetStore({ items: [cartItem()] })
     renderPanel()
@@ -130,6 +139,26 @@ describe("cart panel", () => {
     pressFunctionKey("F2")
 
     expect(await screen.findByRole("dialog")).toHaveAccessibleName("Diskon Total Transaksi")
+  })
+
+  it("shows the clamped percentage, with a hint only once it was clamped", async () => {
+    resetStore({ items: [cartItem()] })
+    renderPanel()
+
+    pressFunctionKey("F2")
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: /Jenis diskon/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Persen/ }))
+    const field = within(dialog).getByRole("textbox", { name: "Nilai diskon (%)" })
+
+    fireEvent.change(field, { target: { value: "50" } })
+    expect(field).toHaveValue("50")
+    expect(within(dialog).queryByText("Maksimal 100%")).not.toBeInTheDocument()
+
+    fireEvent.change(field, { target: { value: "150" } })
+    expect(field).toHaveValue("100")
+    expect(within(dialog).getByText("Maksimal 100%")).toBeInTheDocument()
+    expect(useCartStore.getState().transactionDiscount).toEqual({ type: "percentage", value: 100 })
   })
 
   it("ignores F2 while a page dialog covers the panel", () => {
@@ -259,6 +288,25 @@ describe("cart panel", () => {
     const next = await screen.findByRole("option", { name: /Pelanggan 3/ })
     await waitFor(() => expect(next).toHaveAttribute("aria-selected", "true"))
     expect(screen.queryByRole("option", { name: /Pelanggan 2/ })).not.toBeInTheDocument()
+  })
+
+  it("holds the cart under the automatic name when the name is left empty", async () => {
+    resetStore({ items: [cartItem()] })
+    renderPanel()
+
+    pressFunctionKey("F3")
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveAccessibleName("Simpan Transaksi")
+    expect(within(dialog).getByRole("textbox", { name: "Nama pelanggan" })).toHaveAttribute(
+      "placeholder",
+      "Pelanggan 1",
+    )
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan Transaksi" }))
+
+    await waitFor(() => expect(useCartStore.getState().heldCarts).toHaveLength(1))
+    expect(useCartStore.getState().heldCarts[0].label).toBe("Pelanggan 1")
+    expect(useCartStore.getState().items).toHaveLength(0)
   })
 
   it("opens the line editor on F10 and closes it on the second press", async () => {

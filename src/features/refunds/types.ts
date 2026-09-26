@@ -1,3 +1,6 @@
+/** State of a returned good: `good` goes back on the shelf, the rest is written off. */
+export type RefundCondition = "good" | "damaged" | "expired"
+
 /**
  * One returned line. The product is deliberately absent: the backend derives it
  * from `transaction_item_id`, which it checks against the lines of the
@@ -8,7 +11,7 @@
 export interface RefundItemInput {
   transaction_item_id: number
   quantity: number
-  condition: "good" | "damaged" | "expired"
+  condition: RefundCondition
 }
 
 export interface ExchangeItemInput {

@@ -29,10 +29,6 @@ export function listWriteoffs(params: ListWriteoffsParams): Promise<ListWriteoff
   return apiGet<ListWriteoffsResult>("/stock/writeoffs", listQuery(params))
 }
 
-export function getWriteoffDetail(writeoffId: number): Promise<StockWriteoff> {
-  return apiGet<StockWriteoff>(`/stock/writeoffs/${writeoffId}`)
-}
-
 /**
  * Record a write-off. Reason `lost` is admin-only, and a cashier's write-off
  * lands `pending` rather than `approved` — the server decides which, so the

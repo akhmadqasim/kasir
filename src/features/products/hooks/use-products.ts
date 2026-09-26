@@ -1,10 +1,18 @@
 import { useQueryClient, keepPreviousData } from "@tanstack/react-query"
 import { toast } from "@/lib/toast"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
-import { createProduct, deleteProduct, searchProducts, updateProduct } from "@/lib/api/products"
+import {
+  bulkCreateProducts,
+  createProduct,
+  deleteProduct,
+  searchProducts,
+  updateProduct,
+} from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import type {
+  BulkImportResult,
+  BulkProductInput,
   PaginatedProducts,
   Product,
   CreateProductInput,
@@ -68,6 +76,22 @@ export function useDeleteProduct() {
     },
     onError: (error) => {
       toast.error(error.message || id.common.error)
+    },
+  })
+}
+
+/**
+ * The import dialog reports failures itself, next to the step it is on, so
+ * only the cache work lives here.
+ */
+export function useBulkImportProducts() {
+  const queryClient = useQueryClient()
+
+  return useApiMutation<BulkImportResult, BulkProductInput[]>(bulkCreateProducts, {
+    onSuccess: () => {
+      invalidateProducts(queryClient)
+      // A bulk import creates categories as well as products.
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories.all })
     },
   })
 }

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest"
+import { PPOB_SERVICE_COLORS } from "../../constants"
 import type { HistoryPaymentItem } from "../../types"
 import {
+  detectServiceType,
+  getDefaultDateRangeDates,
   getProviderTotal,
   isWithinLocalDateRange,
+  matchesProductFilter,
   normalizeStatus,
   parseMutasiDate,
+  PRODUCT_FILTER_OPTIONS,
 } from "./history-utils"
 
 describe("parseMutasiDate", () => {
@@ -122,5 +127,42 @@ describe("getProviderTotal", () => {
     expect(getProviderTotal(row({ basePrice: 20000, adminFee: 3500 }))).toBe(23500)
     expect(getProviderTotal(row({ basePrice: 20000 }))).toBe(20000)
     expect(getProviderTotal(row({}))).toBeNull()
+  })
+})
+
+describe("matchesProductFilter", () => {
+  const data = row({ serviceType: "data", description: "Paket data 10 GB" })
+
+  // A data packet is its own service, so it needs its own filter option.
+  it("finds a data packet under Paket Data, not under Pulsa", () => {
+    expect(PRODUCT_FILTER_OPTIONS.some((o) => o.key === "data")).toBe(true)
+    expect(matchesProductFilter(data, "data")).toBe(true)
+    expect(matchesProductFilter(data, "pulsa")).toBe(false)
+    expect(matchesProductFilter(data, "all")).toBe(true)
+  })
+})
+
+describe("getDefaultDateRangeDates", () => {
+  it("spans seven calendar days, today included", () => {
+    const { from, to } = getDefaultDateRangeDates()
+    const days = Math.round(
+      (new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime() -
+        new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime()) /
+        86_400_000,
+    )
+    expect(days + 1).toBe(7)
+  })
+})
+
+describe("detectServiceType colours", () => {
+  // A solid `--service-*` background under a `--service-*` glyph made the
+  // detail dialog's icon invisible; the disc must be the tint.
+  it("puts the icon on its service's tint, never on the solid colour", () => {
+    const service = detectServiceType(row({ description: "Token PLN 20.000" }))
+
+    expect(service.key).toBe("pln")
+    expect(service.tint).toBe(PPOB_SERVICE_COLORS.pln.bgMuted)
+    expect(service.tint).not.toBe(PPOB_SERVICE_COLORS.pln.bg)
+    expect(service.text).toBe(PPOB_SERVICE_COLORS.pln.text)
   })
 })

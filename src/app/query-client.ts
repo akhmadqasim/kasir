@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query"
 
-import { handleSessionExpired } from "@/features/auth/hooks/use-auth-store"
+import { handleSessionExpired } from "@/features/auth"
 import { isApiError, setUnauthorizedHandler } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
 

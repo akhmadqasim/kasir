@@ -32,9 +32,11 @@ export function ServiceGrid<S extends PpobServiceDef>({
           compact={compact}
           icon={
             <service.icon
+              aria-hidden="true"
               className={cn(compact ? "size-5" : "size-6", PPOB_SERVICE_COLORS[service.key].text)}
             />
           }
+          iconTint={PPOB_SERVICE_COLORS[service.key].bgMuted}
           label={service.label}
           onPress={() => onSelect(service)}
         />

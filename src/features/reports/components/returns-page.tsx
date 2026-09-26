@@ -1,30 +1,24 @@
 import { Table } from "@heroui/react"
 
+import { id } from "@/i18n/id"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { StatCard } from "@/components/stat-card"
-import { StatusBadge, type StatusVariant } from "@/components/status-badge"
 import { formatDayDate, formatNumber, formatRupiah } from "@/lib/format"
 import { useReportDateRange } from "../hooks/use-report-date-range"
 import { useReturns } from "../hooks/use-reports"
-import { ReportPage, ReportTable } from "./report-shell"
+import { ReportPage, ReportTable, StatSkeleton } from "./report-shell"
 
-const TITLE = "Retur Produk"
+const TITLE = id.reports.title.returns
 const COLUMN_COUNT = 7
 
 const TYPE_LABELS: Record<string, string> = {
-  refund: "Refund",
-  exchange: "Tukar",
-}
-
-/** Refund menguras kas, tukar barang tidak — karena itu hanya refund yang merah. */
-const TYPE_VARIANTS: Record<string, StatusVariant> = {
-  refund: "error",
-  exchange: "neutral",
+  refund: id.reports.returnTypeRefund,
+  exchange: id.reports.returnTypeExchange,
 }
 
 export function ReturnsPage() {
   const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
-  const { data, isLoading, error } = useReturns(startDate, endDate)
+  const { data, isLoading, isFetching, error, refetch } = useReturns(startDate, endDate)
 
   const totals = data?.reduce(
     (acc, r) => ({ count: acc.count + 1, amount: acc.amount + r.totalRefundAmount }),
@@ -39,10 +33,17 @@ export function ReturnsPage() {
         </div>
       }
     >
-      {totals && (
+      {(isLoading || totals) && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <StatCard label="Total Retur" value={formatNumber(totals.count)} />
-          <StatCard label="Total Nilai Retur" tone="danger" value={formatRupiah(totals.amount)} />
+          <StatCard
+            label={id.reports.stat.totalReturns}
+            value={totals ? formatNumber(totals.count) : <StatSkeleton />}
+          />
+          <StatCard
+            label={id.reports.stat.totalReturnValue}
+            tone="danger"
+            value={totals ? formatRupiah(totals.amount) : <StatSkeleton />}
+          />
         </div>
       )}
 
@@ -51,35 +52,44 @@ export function ReturnsPage() {
         columnCount={COLUMN_COUNT}
         isLoading={isLoading}
         error={error}
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+        emptyMessage={id.reports.empty.returns}
         columns={
           <>
-            <Table.Column isRowHeader>No. Refund</Table.Column>
-            <Table.Column>No. Struk Asli</Table.Column>
-            <Table.Column>Kasir</Table.Column>
-            <Table.Column>Tipe</Table.Column>
-            <Table.Column className="text-right">Jumlah</Table.Column>
-            <Table.Column>Alasan</Table.Column>
-            <Table.Column>Tanggal</Table.Column>
+            <Table.Column isRowHeader>{id.reports.column.refundNumber}</Table.Column>
+            <Table.Column>{id.reports.column.originalReceipt}</Table.Column>
+            <Table.Column>{id.reports.column.cashier}</Table.Column>
+            <Table.Column>{id.reports.column.type}</Table.Column>
+            <Table.Column className="text-right">{id.reports.column.returnAmount}</Table.Column>
+            <Table.Column>{id.reports.column.reason}</Table.Column>
+            <Table.Column>{id.reports.column.date}</Table.Column>
           </>
         }
       >
         {(data ?? []).map((row) => (
           <Table.Row key={row.id} id={row.id} textValue={row.refundNumber}>
-            <Table.Cell className="font-mono">{row.refundNumber}</Table.Cell>
-            <Table.Cell className="font-mono">{row.transactionReceipt}</Table.Cell>
-            <Table.Cell>{row.cashierName}</Table.Cell>
-            <Table.Cell>
-              <StatusBadge status={TYPE_VARIANTS[row.type] ?? "neutral"}>
-                {TYPE_LABELS[row.type] ?? row.type}
-              </StatusBadge>
+            {/* Nomor dokumen tidak boleh pecah di tanda hubungnya. */}
+            <Table.Cell className="font-mono whitespace-nowrap">{row.refundNumber}</Table.Cell>
+            <Table.Cell className="font-mono whitespace-nowrap">
+              {row.transactionReceipt}
             </Table.Cell>
+            <Table.Cell className="whitespace-nowrap">{row.cashierName}</Table.Cell>
+            {/* Teks, bukan lencana: tipe adalah kategori yang ada di setiap baris,
+                bukan status (DESIGN.md §5.4). */}
+            <Table.Cell>{TYPE_LABELS[row.type] ?? row.type}</Table.Cell>
             <Table.Cell className="text-right font-medium text-danger">
               {formatRupiah(row.totalRefundAmount)}
             </Table.Cell>
-            <Table.Cell className="max-w-[200px] truncate text-muted">
-              {row.reason ?? "-"}
+            {/* `title`: alasan yang terpotong tetap bisa dibaca utuh saat disorot. */}
+            <Table.Cell className="max-w-[160px] text-muted">
+              <span className="block truncate" title={row.reason ?? undefined}>
+                {row.reason ?? "-"}
+              </span>
             </Table.Cell>
-            <Table.Cell className="text-muted">{formatDayDate(row.createdAt)}</Table.Cell>
+            <Table.Cell className="whitespace-nowrap text-muted">
+              {formatDayDate(row.createdAt)}
+            </Table.Cell>
           </Table.Row>
         ))}
       </ReportTable>

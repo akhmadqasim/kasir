@@ -1,21 +1,31 @@
+//! The Mitra session: restoring it from `mitra_tokens` across restarts,
+//! refreshing it, and logging in again when neither works.
+
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::settings::parse_app_settings;
-use crate::entity::store_info;
-use crate::services::ppob::client::{MitraClient, MitraRequestContext};
+use crate::services::ppob::client::{is_transport_failure, MitraClient, MitraRequestContext};
+use crate::services::settings::require_store_info;
 use crate::utils::AppError;
-use sea_orm::EntityTrait;
 
 pub struct MitraSessionContext {
     pub request: MitraRequestContext,
     pub menu_saldo_payload: Option<Value>,
 }
 
+/// The session saved by the last login or refresh, and who it belongs to.
+struct StoredTokens {
+    phone_number: String,
+    access_token: String,
+    refresh_token: Option<String>,
+    device_id: String,
+}
+
 /// Save current tokens to database for persistence across restarts
-pub async fn save_tokens(
+async fn save_tokens(
     client: &MitraClient,
     db: &DatabaseConnection,
     phone: &str,
@@ -43,9 +53,7 @@ pub async fn save_tokens(
 }
 
 /// Load tokens from database
-pub async fn load_tokens(
-    db: &DatabaseConnection,
-) -> Result<Option<(String, String, Option<String>, String)>, AppError> {
+async fn load_tokens(db: &DatabaseConnection) -> Result<Option<StoredTokens>, AppError> {
     let result = db
         .query_one(Statement::from_string(
             DbBackend::Sqlite,
@@ -69,7 +77,12 @@ pub async fn load_tokens(
         let device_id: String = row
             .try_get_by_index(3)
             .map_err(|e| AppError::Internal(format!("Gagal parse device_id: {}", e)))?;
-        Ok(Some((phone_number, token, refresh, device_id)))
+        Ok(Some(StoredTokens {
+            phone_number,
+            access_token: token,
+            refresh_token: refresh,
+            device_id,
+        }))
     } else {
         Ok(None)
     }
@@ -77,19 +90,48 @@ pub async fn load_tokens(
 
 /// Forget the upstream session — and with it everything remembered from
 /// it, so a struk from the previous account cannot be printed from the cache,
-/// and a search cannot answer from the previous account's payment points,
-/// after the shop switches accounts.
+/// a search cannot answer from the previous account's payment points, and
+/// the inbox cannot list its messages, after the shop switches accounts.
+///
+/// The caches are forgotten once the row is gone, whether or not deleting it
+/// worked: a rebuild that starts before that point may still read the old
+/// session, and forgetting last turns it away too.
 pub async fn clear_tokens(db: &DatabaseConnection) -> Result<(), AppError> {
+    let deleted = db
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "DELETE FROM mitra_tokens WHERE id = 1".to_string(),
+        ))
+        .await;
     super::history::forget_details();
     super::search::forget_index();
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "DELETE FROM mitra_tokens WHERE id = 1".to_string(),
-    ))
-    .await
-    .map_err(|e| AppError::Internal(format!("Gagal menghapus token Mitra: {}", e)))?;
+    super::notifications::forget_cache();
+    deleted.map_err(|e| AppError::Internal(format!("Gagal menghapus token Mitra: {}", e)))?;
 
     Ok(())
+}
+
+/// End the Mitra session for good, because the credentials it was opened
+/// with no longer apply: the in-memory token, the saved row, and every cache
+/// read from it.
+///
+/// The order matters. The token goes first and the caches last, all under the
+/// client lock. A cache rebuild takes its [`Ticket`] before it asks for a
+/// session and needs this lock to get one, so a rebuild that took its ticket
+/// before the forget is turned away when it stores, and one that took it
+/// after finds neither a token nor a saved row and logs in with the new
+/// credentials. Forgetting the caches first left a window in which a rebuild
+/// took a fresh ticket, was handed the previous account's still-installed
+/// token, and stored that account's data for the next one.
+///
+/// [`Ticket`]: super::session_cache::Ticket
+pub async fn end_session(
+    db: &DatabaseConnection,
+    client: &Arc<Mutex<MitraClient>>,
+) -> Result<(), AppError> {
+    let mut mitra = client.lock().await;
+    mitra.clear_auth();
+    clear_tokens(db).await
 }
 
 pub async fn get_mitra_request_context(
@@ -104,8 +146,13 @@ pub async fn get_mitra_session_context(
     client: &Arc<Mutex<MitraClient>>,
 ) -> Result<MitraSessionContext, AppError> {
     {
-        let mitra = client.lock().await;
-        if mitra.is_authenticated() {
+        let mut mitra = client.lock().await;
+        if mitra.token_was_rejected() {
+            // Mitra turned this token away mid-session. Drop it, so the path
+            // below refreshes it or logs in again instead of handing it out
+            // until the app restarts.
+            mitra.clear_auth();
+        } else if mitra.is_authenticated() {
             return Ok(MitraSessionContext {
                 request: mitra.request_context()?,
                 menu_saldo_payload: None,
@@ -113,12 +160,7 @@ pub async fn get_mitra_session_context(
         }
     }
 
-    let store = store_info::Entity::find_by_id(1_i64)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Informasi toko belum diatur".into()))?;
-
-    let settings = parse_app_settings(&store.additional_info);
+    let settings = parse_app_settings(&require_store_info(db).await?.additional_info);
 
     if !settings.ppob.enabled || settings.ppob.phone_number.is_empty() {
         return Err(AppError::Validation(
@@ -127,20 +169,22 @@ pub async fn get_mitra_session_context(
         ));
     }
 
-    if let Some((phone_number, token, refresh, device_id)) = load_tokens(db).await? {
-        if phone_number == settings.ppob.phone_number && device_id == settings.ppob.device_id {
+    if let Some(stored) = load_tokens(db).await? {
+        if stored.phone_number == settings.ppob.phone_number
+            && stored.device_id == settings.ppob.device_id
+        {
             let request = {
                 let mut mitra = client.lock().await;
-                if mitra.is_authenticated() {
+                if mitra.is_authenticated() && !mitra.token_was_rejected() {
                     return Ok(MitraSessionContext {
                         request: mitra.request_context()?,
                         menu_saldo_payload: None,
                     });
                 }
 
-                mitra.token = Some(token);
-                mitra.refresh_token = refresh;
-                mitra.device_id = device_id;
+                mitra.token = Some(stored.access_token);
+                mitra.refresh_token = stored.refresh_token;
+                mitra.device_id = stored.device_id;
                 mitra.request_context()?
             };
 
@@ -151,15 +195,29 @@ pub async fn get_mitra_session_context(
                         menu_saldo_payload: Some(payload),
                     });
                 }
+                // No answer from Mitra says nothing about the token. Keep the
+                // saved tokens and let the caller retry once the network is
+                // back, instead of refreshing (which would fail the same way)
+                // and then deleting a session that may be perfectly good.
+                Err(e) if is_transport_failure(&e) => return Err(e),
                 Err(_) => {
                     let refreshed_request = {
                         let mut mitra = client.lock().await;
-                        if mitra.try_refresh().await? {
-                            save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
-                            Some(mitra.request_context()?)
-                        } else {
-                            mitra.clear_auth();
-                            None
+                        match mitra.try_refresh().await {
+                            Ok(true) => {
+                                save_tokens(&mitra, db, &settings.ppob.phone_number).await?;
+                                Some(mitra.request_context()?)
+                            }
+                            Ok(false) => {
+                                mitra.clear_auth();
+                                None
+                            }
+                            Err(e) => {
+                                // The restored token already failed; it must
+                                // not stay installed for the next caller.
+                                mitra.clear_auth();
+                                return Err(e);
+                            }
                         }
                     };
 
@@ -196,4 +254,48 @@ pub async fn get_mitra_session_context(
         request,
         menu_saldo_payload: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::setup_test_db;
+
+    /// Resetting the session for new credentials must take the client lock
+    /// before it forgets anything: a cache rebuild needs that lock to get a
+    /// session, so none can be handed the previous account's token between
+    /// the forget and the token being dropped.
+    #[tokio::test]
+    async fn ending_the_session_drops_the_token_before_forgetting_the_caches() {
+        let db = setup_test_db().await;
+        let client = Arc::new(Mutex::new(MitraClient::new()));
+        {
+            let mut mitra = client.lock().await;
+            mitra.token = Some("token-akun-lama".into());
+            mitra.device_id = "device-lama".into();
+            save_tokens(&mitra, &db, "081200000001")
+                .await
+                .expect("save");
+        }
+        let in_flight = super::super::history::details_ticket();
+
+        // A rebuild holds the lock while it is being handed a session.
+        let rebuild = client.lock().await;
+        let reset = tokio::spawn({
+            let db = db.clone();
+            let client = Arc::clone(&client);
+            async move { end_session(&db, &client).await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            load_tokens(&db).await.expect("load").is_some(),
+            "nothing may be deleted or forgotten before the token is dropped"
+        );
+        drop(rebuild);
+
+        reset.await.expect("join").expect("end session");
+        assert!(!client.lock().await.is_authenticated());
+        assert!(load_tokens(&db).await.expect("load").is_none());
+        assert_ne!(super::super::history::details_ticket(), in_flight);
+    }
 }

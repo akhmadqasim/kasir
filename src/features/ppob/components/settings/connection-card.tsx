@@ -10,6 +10,7 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { CardHeading } from "@/components/card-heading"
 import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
 import type { PpobSettingsForm } from "./use-ppob-settings-form"
@@ -24,13 +25,19 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
   return (
     <Card>
       <Card.Header>
-        <Card.Title>{id.ppob.connectionTitle}</Card.Title>
+        <CardHeading>{id.ppob.connectionTitle}</CardHeading>
         <Card.Description>{id.ppob.connectionDesc}</Card.Description>
       </Card.Header>
       <Card.Content className="gap-6">
         {/* Susunan "With Description" dari dokumentasi Switch: kontrol di kiri,
             label di kanannya, keterangan di bawah. */}
-        <Switch isSelected={enabled} onChange={(value) => updateConnection({ enabled: value })}>
+        {/* Mati sampai pengaturan dimuat: sakelar yang ditekan lebih dulu
+            ditimpa diam-diam oleh nilai dari server begitu datang. */}
+        <Switch
+          isDisabled={!form.isReady}
+          isSelected={enabled}
+          onChange={(value) => updateConnection({ enabled: value })}
+        >
           <Switch.Content>
             <Switch.Control>
               <Switch.Thumb />
@@ -50,7 +57,12 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
             onChange={(value) => updateConnection({ phoneNumber: value })}
           >
             <Label>{id.ppob.mitraPhone}</Label>
-            <Input placeholder={id.ppob.mitraPhonePlaceholder} />
+            <Input
+              autoComplete="off"
+              className="tabular-nums"
+              inputMode="tel"
+              placeholder={id.ppob.mitraPhonePlaceholder}
+            />
           </TextField>
 
           <TextField
@@ -63,10 +75,18 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
           >
             <Label>{id.ppob.mitraPassword}</Label>
             <Input
+              autoComplete="new-password"
               placeholder={
                 hasStoredCredentials ? STORED_PLACEHOLDER : id.ppob.mitraPasswordPlaceholder
               }
             />
+            {/* Keterangan kolom, bukan paragraf lepas di bawah formulir: pembaca
+                layar membacakannya saat kolom password difokuskan. */}
+            <Description>
+              {hasStoredCredentials
+                ? "Password sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan untuk mempertahankannya, atau isi untuk menggantinya."
+                : "Password belum tersimpan. Isi untuk mengaktifkan layanan PPOB."}
+            </Description>
           </TextField>
 
           {/* Tombol generate di dalam kolomnya, contoh "Copy Button Suffix"
@@ -84,7 +104,7 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
               <InputGroup.Input placeholder={id.ppob.mitraDeviceIdPlaceholder} />
               <InputGroup.Suffix className="pe-0">
                 <Button
-                  aria-label="Generate Device ID"
+                  aria-label="Buat Device ID baru"
                   isDisabled={!enabled}
                   isIconOnly
                   size="sm"
@@ -97,20 +117,14 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
               </InputGroup.Suffix>
             </InputGroup>
             <Description>
-              Masukkan device ID dari HP atau klik tombol generate untuk membuat ID baru
+              Masukkan device ID dari HP, atau tekan tombol di kanan kolom untuk membuat ID baru.
             </Description>
           </TextField>
-
-          <p className="text-sm text-muted">
-            {hasStoredCredentials
-              ? "Password sudah tersimpan dan tidak pernah dikirim kembali ke layar ini. Kosongkan untuk mempertahankannya, atau isi untuk menggantinya."
-              : "Password belum tersimpan. Isi untuk mengaktifkan layanan PPOB."}
-          </p>
         </div>
       </Card.Content>
       {/* Dua tombol Simpan (di sini dan di kartu Markup) memanggil mutasi yang
           sama; test menghitung keduanya. Menyatukannya adalah keputusan pemilik. */}
-      <Card.Footer className="gap-2">
+      <Card.Footer className="flex-wrap items-center gap-2">
         <PendingButton isDisabled={!form.isReady} isPending={form.isSaving} onPress={form.save}>
           <Save />
           {id.common.save}
@@ -123,6 +137,9 @@ export function ConnectionCard({ form }: { form: PpobSettingsForm }) {
         >
           {id.ppob.testConnection}
         </PendingButton>
+        {/* Tes memakai kredensial yang sudah tersimpan di server, bukan isian
+            yang belum disimpan — tanpa kalimat ini hasilnya menyesatkan. */}
+        <p className="text-xs text-muted">Tes memakai pengaturan yang sudah disimpan.</p>
       </Card.Footer>
     </Card>
   )

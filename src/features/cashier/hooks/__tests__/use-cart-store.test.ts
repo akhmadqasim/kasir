@@ -465,7 +465,7 @@ describe("clearDiscounts", () => {
 describe("getCartTotals", () => {
   it("returns zeros for empty cart", () => {
     const totals = store().getCartTotals()
-    expect(totals).toEqual({ subtotal: 0, totalDiscount: 0, total: 0 })
+    expect(totals).toMatchObject({ subtotal: 0, totalDiscount: 0, total: 0 })
   })
 
   it("calculates subtotal for single item", () => {
@@ -981,6 +981,33 @@ describe("persisted cart migration", () => {
     expect(migrated.itemDiscounts).toEqual({
       "product-1": { type: "fixed", value: 1000 },
     })
+  })
+
+  it("drops PPOB rows on a real rehydrate of a cart saved by this version", async () => {
+    // zustand skips `migrate` when the stored version matches, so this goes
+    // through the actual hydrate path rather than calling `migrateCartState`.
+    localStorage.setItem(
+      "kasir-cart",
+      JSON.stringify({
+        state: {
+          items: [
+            { cart_id: "product-1", product_name: "Beras", quantity: 1 },
+            { cart_id: "ppob-1", product_name: "Token PLN", quantity: 1, is_ppob: true },
+          ],
+          ppobCounter: 1,
+          heldCarts: [],
+          itemDiscounts: {},
+          transactionDiscount: null,
+          checkoutKey: null,
+        },
+        version: 1,
+      }),
+    )
+
+    await useCartStore.persist.rehydrate()
+
+    expect(store().items.map((i) => i.cart_id)).toEqual(["product-1"])
+    localStorage.removeItem("kasir-cart")
   })
 
   it("tolerates a completely empty persisted payload", () => {

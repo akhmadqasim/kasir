@@ -39,7 +39,8 @@ export default function ScanTab(): JSX.Element {
   const [notFound, setNotFound] = useState<string | null>(null);
 
   const query = useDebouncedValue(search.trim(), 300);
-  const result = useProductSearch({ query });
+  // An empty field would list the whole catalogue, which is the Produk tab's job.
+  const result = useProductSearch({ query }, { enabled: query.length > 0 });
 
   // Coming back to the tab should not land on the last scan's error.
   useFocusEffect(

@@ -33,6 +33,11 @@ describe("resume-route", () => {
     expect(resolveResumeRoute("admin", "/users")).toBe("/users")
     expect(resolveResumeRoute("kasir", "/transactions")).toBe("/transactions")
   })
+
+  it("resumes onto the close-shift page, which loads the active shift itself", () => {
+    expect(resolveResumeRoute("kasir", "/close-shift")).toBe("/close-shift")
+    expect(resolveResumeRoute("admin", "/close-shift")).toBe("/close-shift")
+  })
 })
 
 describe("isAdminOnlyRoute", () => {

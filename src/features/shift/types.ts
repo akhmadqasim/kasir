@@ -53,12 +53,6 @@ export interface OpenShiftInput {
   openingCash?: number
 }
 
-export interface CloseShiftInput {
-  shiftId: number
-  closingCash?: number
-  notes?: string
-}
-
 /** The author is the session, so there is no `userId` to send. */
 export interface CreateCashFlowInput {
   shiftId: number

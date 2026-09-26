@@ -1,13 +1,6 @@
-// --- Report Types ---
-
-export interface DateRangeFilter {
-  startDate: string // YYYY-MM-DD
-  endDate: string // YYYY-MM-DD
-}
-
 // Penjualan per Hari
 export interface DailySalesRow {
-  date: string
+  date: string // YYYY-MM-DD, hari lokal
   transactionCount: number
   totalRevenue: number
   totalCost: number
@@ -69,6 +62,13 @@ export interface PaymentMethodRow {
   transactionCount: number
   totalAmount: number
   percentage: number
+}
+
+/** `totalTransactions` = jumlah penjualan berbeda dalam periode. Bukan jumlah
+ *  `transactionCount` per baris: penjualan split tercatat di tiap metodenya. */
+export interface PaymentMethodReport {
+  rows: PaymentMethodRow[]
+  totalTransactions: number
 }
 
 // Penjualan Produk

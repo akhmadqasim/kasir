@@ -7,19 +7,18 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::domain::auth::{CreateUserInput, LoginInput, ToggleUserActiveInput, UpdateUserInput};
+use crate::domain::auth::{
+    pin_has_valid_format, CreateUserInput, LoginInput, ToggleUserActiveInput, UpdateUserInput,
+};
 use crate::domain::Actor;
 use crate::entity::users;
 use crate::services::guard;
+use crate::utils::time::now_ts;
 use crate::utils::AppError;
-
-fn now_timestamp() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
 
 /// A PIN is 4 to 6 digits, nothing else.
 pub fn validate_pin(pin: &str) -> Result<(), AppError> {
-    if pin.len() < 4 || pin.len() > 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
+    if !pin_has_valid_format(pin) {
         return Err(AppError::Validation(
             "PIN harus terdiri dari 4-6 digit angka".into(),
         ));
@@ -34,6 +33,30 @@ fn validate_role(role: &str) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+/// Hash a PIN at the cost every stored PIN uses.
+///
+/// bcrypt at the default cost takes about a quarter of a second of CPU, so it
+/// runs on the blocking pool: on a 2-4 core till a handful of concurrent logins
+/// or PIN changes would otherwise occupy every runtime worker and stall
+/// unrelated requests such as checkout.
+pub(crate) async fn hash_pin(pin: &str) -> Result<String, AppError> {
+    let pin = pin.to_owned();
+    tokio::task::spawn_blocking(move || bcrypt::hash(pin, bcrypt::DEFAULT_COST))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(|e| AppError::Internal(format!("Gagal hash PIN: {e}")))
+}
+
+/// Check a PIN against a stored hash, on the blocking pool for the same reason
+/// as [`hash_pin`].
+pub(crate) async fn verify_pin(pin: &str, hash: &str) -> Result<bool, AppError> {
+    let (pin, hash) = (pin.to_owned(), hash.to_owned());
+    tokio::task::spawn_blocking(move || bcrypt::verify(pin, &hash))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 /// A bcrypt hash of a value nobody can guess, at the same cost as every stored
@@ -83,18 +106,31 @@ pub async fn login(db: &DatabaseConnection, input: LoginInput) -> Result<users::
     // A malformed stored hash is a wrong PIN as far as the caller is concerned.
     // Surfacing it as an error would both leak that the account exists and skip
     // the work that makes the two paths indistinguishable.
-    let pin_valid = bcrypt::verify(&input.pin, stored_hash).unwrap_or_else(|e| {
-        crate::utils::logging::log_error(&format!(
-            "PIN hash for '{}' could not be verified: {e}",
-            input.username
-        ));
-        false
-    });
+    let pin_valid = verify_pin(&input.pin, stored_hash)
+        .await
+        .unwrap_or_else(|e| {
+            crate::utils::logging::log_error(&format!(
+                "PIN hash for '{}' could not be verified: {e}",
+                input.username
+            ));
+            false
+        });
 
     match user {
         Some(user) if pin_valid => Ok(user),
         _ => Err(AppError::Auth("Username atau PIN tidak sesuai".to_string())),
     }
+}
+
+/// The account with this id, active or not, or `NotFound`.
+pub(crate) async fn require_user(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<users::Model, AppError> {
+    users::Entity::find_by_id(user_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))
 }
 
 /// The account behind the actor, provided it is still active.
@@ -153,10 +189,9 @@ pub async fn create_user(
         return Err(AppError::Validation("Username sudah digunakan".into()));
     }
 
-    let pin_hash = bcrypt::hash(&input.pin, bcrypt::DEFAULT_COST)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let pin_hash = hash_pin(&input.pin).await?;
 
-    let now = now_timestamp();
+    let now = now_ts();
     let new_user = users::ActiveModel {
         id: sea_orm::NotSet,
         username: Set(username),
@@ -179,10 +214,7 @@ pub async fn update_user(
 ) -> Result<users::Model, AppError> {
     guard::require_admin(actor)?;
 
-    let user = users::Entity::find_by_id(input.user_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+    let user = require_user(db, input.user_id).await?;
 
     let mut active: users::ActiveModel = user.into();
 
@@ -215,17 +247,23 @@ pub async fn update_user(
 
     if let Some(role) = &input.role {
         validate_role(role)?;
+        // The same lock-out `toggle_user_active` refuses: an admin who demotes
+        // themselves loses every admin screen on the next request, and when
+        // they were the only admin nothing in the app can undo it.
+        if input.user_id == actor.user_id && role != "admin" {
+            return Err(AppError::Validation(
+                "Tidak dapat mengubah role akun sendiri".into(),
+            ));
+        }
         active.role = Set(role.clone());
     }
 
     if let Some(new_pin) = &input.new_pin {
         validate_pin(new_pin)?;
-        let pin_hash = bcrypt::hash(new_pin, bcrypt::DEFAULT_COST)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        active.pin_hash = Set(pin_hash);
+        active.pin_hash = Set(hash_pin(new_pin).await?);
     }
 
-    active.updated_at = Set(Some(now_timestamp()));
+    active.updated_at = Set(Some(now_ts()));
     let updated = active.update(db).await?;
     Ok(updated)
 }
@@ -244,14 +282,11 @@ pub async fn toggle_user_active(
         ));
     }
 
-    let user = users::Entity::find_by_id(input.user_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))?;
+    let user = require_user(db, input.user_id).await?;
 
     let mut active: users::ActiveModel = user.into();
     active.is_active = Set(input.is_active);
-    active.updated_at = Set(Some(now_timestamp()));
+    active.updated_at = Set(Some(now_ts()));
 
     let updated = active.update(db).await?;
     Ok(updated)
@@ -266,7 +301,7 @@ mod tests {
     /// Insert a user whose PIN really is hashed, which the shared fixture does
     /// not do — it stores the literal string `"hash"`.
     async fn insert_user_with_pin(db: &DatabaseConnection, username: &str, pin: &str) {
-        let now = now_timestamp();
+        let now = now_ts();
         users::ActiveModel {
             id: sea_orm::NotSet,
             username: Set(username.to_string()),
@@ -369,6 +404,32 @@ mod tests {
             decoy * 4 >= real,
             "unknown username returned far too fast ({decoy:?} vs {real:?}) — the username list leaks through timing"
         );
+    }
+
+    /// Saving one's own account as `kasir` would take every admin screen away
+    /// from the only person who could give it back. Keeping `admin` still saves.
+    #[tokio::test]
+    async fn an_admin_cannot_demote_themselves() {
+        let db = setup_test_db().await;
+        let admin = crate::test_support::insert_user(&db, "bos", "Bos", "admin").await;
+        let actor = Actor::new(admin.id, "admin");
+        let edit = |role: &str| UpdateUserInput {
+            user_id: admin.id,
+            username: None,
+            full_name: None,
+            role: Some(role.into()),
+            new_pin: None,
+        };
+
+        let err = update_user(&db, &actor, edit("kasir"))
+            .await
+            .expect_err("self-demotion is refused");
+        assert!(matches!(err, AppError::Validation(_)));
+
+        let saved = update_user(&db, &actor, edit("admin"))
+            .await
+            .expect("keeping the admin role is fine");
+        assert_eq!(saved.role, "admin");
     }
 
     /// A deactivated account is not a login, and must not be a distinguishable

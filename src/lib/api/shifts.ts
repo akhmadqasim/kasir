@@ -36,10 +36,6 @@ export function getShiftSummary(shiftId: number): Promise<ShiftSummary> {
   return apiGet<ShiftSummary>(`/shifts/${shiftId}/summary`)
 }
 
-export function listCashFlows(shiftId: number): Promise<CashFlow[]> {
-  return apiGet<CashFlow[]>(`/shifts/${shiftId}/cash-flows`)
-}
-
 export function createCashFlow(input: CreateCashFlowInput): Promise<CashFlow> {
   const { shiftId, ...body } = input
   return apiPost<CashFlow>(`/shifts/${shiftId}/cash-flows`, body)

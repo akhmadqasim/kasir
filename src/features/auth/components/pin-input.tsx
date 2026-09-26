@@ -26,7 +26,23 @@ interface PinInputProps {
   /** Pesan validasi; kolom otomatis ditandai invalid saat pesan ini terisi. */
   errorMessage?: string
   isDisabled?: boolean
+  /**
+   * Menandai kolom wajib: `Label` HeroUI menggambar tanda bintangnya. Pakai
+   * bersama `validationBehavior="aria"` di `Form`, seperti kolom lain di formulir
+   * yang sama, supaya browser tidak ikut memblokir pengiriman.
+   */
+  isRequired?: boolean
+  /**
+   * Terkunci tanpa menjadi nonaktif — dipakai selagi login berjalan, supaya
+   * fokus tetap di kolom ini dan kembali bisa diketik begitu PIN-nya ditolak.
+   */
+  isReadOnly?: boolean
   autoFocus?: boolean
+  /**
+   * `current-password` di layar login, `new-password` saat membuat PIN, supaya
+   * pengelola sandi browser tidak mengisi PIN lama ke kolom PIN baru.
+   */
+  autoComplete?: "current-password" | "new-password" | "off"
   /** Untuk memindahkan fokus ke kolom ini dari kolom sebelumnya. */
   inputRef?: Ref<HTMLInputElement>
   /**
@@ -46,7 +62,10 @@ export function PinInput({
   description,
   errorMessage,
   isDisabled,
+  isRequired,
+  isReadOnly,
   autoFocus,
+  autoComplete,
   inputRef,
   onEnter,
 }: PinInputProps) {
@@ -55,6 +74,8 @@ export function PinInput({
       autoFocus={autoFocus}
       fullWidth
       isDisabled={isDisabled}
+      isReadOnly={isReadOnly}
+      isRequired={isRequired}
       isInvalid={Boolean(errorMessage)}
       maxLength={6}
       minLength={4}
@@ -67,6 +88,7 @@ export function PinInput({
       <Input
         ref={inputRef}
         aria-label={label ? undefined : "PIN"}
+        autoComplete={autoComplete}
         inputMode="numeric"
         placeholder={placeholder}
         onKeyDown={(event) => {

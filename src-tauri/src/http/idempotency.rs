@@ -1,4 +1,4 @@
-//! At-most-once execution for the three requests that move money.
+//! At-most-once execution for the request that moves money: checkout.
 //!
 //! IPC had two outcomes: the call returned, or the process died. HTTP has a
 //! third — the work committed and the answer was lost — and on shop wifi that
@@ -31,6 +31,11 @@
 //! **The request digest is checked.** A key reused with a different body is a
 //! client bug, and replaying the first response would swallow a real second
 //! sale. It is refused instead — loudly, with a 422.
+//!
+//! Routes go through [`run`], which also keeps a dropped connection from
+//! cancelling the work halfway and leaving the key stuck `in_progress`.
+
+use std::future::Future;
 
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -41,15 +46,15 @@ use sha2::{Digest, Sha256};
 
 use crate::entity::idempotency_keys;
 use crate::http::error::{ApiError, ApiResult};
-use crate::http::session::format_ts;
+use crate::utils::time::format_ts;
 use crate::utils::AppError;
 
 /// The header the client stamps its attempt with.
-pub const HEADER: &str = "idempotency-key";
+const HEADER: &str = "idempotency-key";
 
 /// Set on a response that came out of the table rather than out of the work.
 /// Purely informational — a client that ignores it still behaves correctly.
-pub const REPLAY_HEADER: &str = "idempotency-replayed";
+const REPLAY_HEADER: &str = "idempotency-replayed";
 
 /// How long a key is remembered. A retry that matters happens in seconds; a day
 /// covers a till that was carried out of wifi range and back.
@@ -63,19 +68,18 @@ const MAX_KEY_LEN: usize = 200;
 /// Scope names. Distinct so one key can be reused across endpoints without one
 /// being mistaken for another.
 pub const SCOPE_CHECKOUT: &str = "checkout";
-pub const SCOPE_PPOB_PAYMENT: &str = "ppob_payment";
-pub const SCOPE_PPOB_TOPUP: &str = "ppob_topup";
 
 /// A claimed key. Must be resolved with [`Guard::complete`] or
 /// [`Guard::release`]; dropping it without either leaves the key held until it
-/// expires, which is why every call site does both arms explicitly.
+/// expires, which is why [`run`] resolves it on a task a disconnect cannot
+/// cancel.
 #[derive(Debug)]
-pub struct Guard {
+struct Guard {
     id: String,
 }
 
 #[derive(Debug)]
-pub enum Claim {
+enum Claim {
     /// Nobody has used this key: do the work.
     Fresh(Guard),
     /// This key already produced an answer. Send it again.
@@ -137,8 +141,50 @@ fn row_id(scope: &str, user_id: i64, key: &str) -> String {
     ])
 }
 
+/// Claim `key`, do `work` at most once, and answer with its result.
+///
+/// The work and the resolution of the key run on their own task. hyper drops a
+/// handler's future when the client's connection dies, and on shop wifi that is
+/// routine: dropped mid-checkout, the sale would roll back but the key would
+/// stay `in_progress`, and every retry would get a 409 for a day. Dropped
+/// between the commit and [`Guard::complete`], the sale would exist with no
+/// stored answer to replay. Spawned, the work finishes regardless and the retry
+/// gets its replay.
+///
+/// A failure releases the key, so the corrected retry can reuse it.
+pub async fn run<T, F>(
+    db: &DatabaseConnection,
+    scope: &'static str,
+    user_id: i64,
+    key: &str,
+    body: &[u8],
+    work: F,
+) -> ApiResult<Response>
+where
+    T: Serialize + Send + Sync + 'static,
+    F: Future<Output = Result<T, AppError>> + Send + 'static,
+{
+    let guard = match claim(db, scope, user_id, key, body, Utc::now()).await? {
+        Claim::Replay(response) => return Ok(response),
+        Claim::Fresh(guard) => guard,
+    };
+
+    let db = db.clone();
+    tokio::spawn(async move {
+        match work.await {
+            Ok(value) => Ok(guard.complete(&db, &value).await),
+            Err(e) => {
+                guard.release(&db).await;
+                Err(ApiError::from(e))
+            }
+        }
+    })
+    .await
+    .map_err(|e| ApiError::from(AppError::Internal(format!("tugas transaksi gagal: {e}"))))?
+}
+
 /// Take the key, or hand back what it produced last time.
-pub async fn claim(
+async fn claim(
     db: &DatabaseConnection,
     scope: &'static str,
     user_id: i64,
@@ -228,14 +274,20 @@ fn decide(row: idempotency_keys::Model, request_hash: &str) -> ApiResult<Claim> 
 /// The stored JSON, byte for byte, so a replay is indistinguishable from the
 /// original except for the marker header.
 fn replayed(body: String) -> Response {
+    let mut response = created_json(body);
+    response
+        .headers_mut()
+        .insert(REPLAY_HEADER, HeaderValue::from_static("true"));
+    response
+}
+
+/// A 201 carrying an already-serialised JSON body.
+fn created_json(body: String) -> Response {
     let mut response = (StatusCode::CREATED, body).into_response();
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    response
-        .headers_mut()
-        .insert(REPLAY_HEADER, HeaderValue::from_static("true"));
     response
 }
 
@@ -245,7 +297,7 @@ impl Guard {
     /// If storing it fails, the response is still returned: the sale committed,
     /// and refusing to tell the client about a transaction that exists is worse
     /// than losing the protection against one more retry.
-    pub async fn complete<T: Serialize>(self, db: &DatabaseConnection, value: &T) -> Response {
+    async fn complete<T: Serialize>(self, db: &DatabaseConnection, value: &T) -> Response {
         let body = match serde_json::to_string(value) {
             Ok(body) => body,
             Err(e) => {
@@ -276,17 +328,12 @@ impl Guard {
             ));
         }
 
-        let mut response = (StatusCode::CREATED, body).into_response();
-        response.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        response
+        created_json(body)
     }
 
     /// Give the key back. The work did not happen, so the same key must be able
     /// to try again.
-    pub async fn release(self, db: &DatabaseConnection) {
+    async fn release(self, db: &DatabaseConnection) {
         if let Err(e) = idempotency_keys::Entity::delete_by_id(self.id.clone())
             .exec(db)
             .await
@@ -348,7 +395,7 @@ mod tests {
         let key = "0198f3c1-6f2c-7a1b-9d40-2f9e0c1b7a55";
         assert_ne!(
             row_id(SCOPE_CHECKOUT, 1, key),
-            row_id(SCOPE_PPOB_PAYMENT, 1, key)
+            row_id("other_scope", 1, key)
         );
         assert_ne!(
             row_id(SCOPE_CHECKOUT, 1, key),
@@ -446,6 +493,36 @@ mod tests {
                 .expect("sweep"),
             1
         );
+    }
+
+    /// A client that disconnects mid-sale drops the handler's future. The work
+    /// must still finish and resolve the key, so the retry replays instead of
+    /// getting a 409 for a day.
+    #[tokio::test]
+    async fn dropping_the_caller_mid_work_does_not_strand_the_key() {
+        let db = setup_test_db().await;
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let request = run(&db, SCOPE_CHECKOUT, 1, "key-satu-dua", b"{}", async move {
+            let _ = started_tx.send(());
+            let _ = finish_rx.await;
+            Ok::<_, AppError>(serde_json::json!({ "id": 3 }))
+        });
+        tokio::select! {
+            _ = request => panic!("the work cannot finish before it is released"),
+            _ = started_rx => {}
+        }
+        finish_tx.send(()).expect("the work is still running");
+
+        for _ in 0..100 {
+            match claim(&db, SCOPE_CHECKOUT, 1, "key-satu-dua", b"{}", Utc::now()).await {
+                Ok(Claim::Replay(_)) => return,
+                Ok(Claim::Fresh(_)) => panic!("the key was dropped instead of completed"),
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        }
+        panic!("the key never left in_progress");
     }
 
     #[tokio::test]

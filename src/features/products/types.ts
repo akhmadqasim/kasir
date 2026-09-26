@@ -45,8 +45,16 @@ export interface CreateProductInput {
   min_stock?: number
 }
 
-export interface UpdateProductInput extends CreateProductInput {
+/**
+ * `stock` is optional: absent means "leave stock as it is", because sales keep
+ * moving it while the edit form is open. When it is sent together with
+ * `expected_stock` (the value the form loaded), the server applies the
+ * difference on top of the current stock instead of overwriting it.
+ */
+export interface UpdateProductInput extends Omit<CreateProductInput, "stock"> {
   id: number
+  stock?: number
+  expected_stock?: number
 }
 
 export type ProductQuickFilter =

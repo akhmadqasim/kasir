@@ -114,7 +114,7 @@ const CHECKOUT_RESULT: TransactionResult = {
 /** What the detail says once the background fulfilment has reported back. */
 const FULFILLED_DETAIL: TransactionDetail = {
   transaction: TRANSACTION,
-  items: [plnLine("success", "1234-5678-9012-3456-7890")],
+  items: [{ ...plnLine("success", "1234-5678-9012-3456-7890"), refunded_quantity: 0 }],
   cashier_name: KASIR.full_name,
   has_ppob: true,
   ppob_status: "success",
@@ -225,7 +225,6 @@ describe("ppob service page", () => {
       channel: "ppob",
       payment_method: "cash",
       payment_amount: 60_000,
-      shift_id: SHIFT.id,
       ppob_pin: "123456",
       items: [
         {

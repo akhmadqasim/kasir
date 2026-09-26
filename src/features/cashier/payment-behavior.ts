@@ -2,6 +2,9 @@
  * Guards against a barcode scanner committing a sale. The scanner is a keyboard:
  * while the payment dialog traps focus in the cash amount input, a scan types the
  * barcode digits into that field and ends with Enter.
+ *
+ * The burst test is shared: the product search, the cart item dialog and the
+ * success dialog use it to tell a scan from typing too.
  */
 
 /** Rp 100 juta — well above any single sembako sale, well below a scanned EAN-13 */

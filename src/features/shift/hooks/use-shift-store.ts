@@ -22,15 +22,13 @@ import type { Shift } from "../types"
  * was opened" — and the opening cash that was typed in is silently dropped. The
  * flag lets the dialog say which of the two actually happened.
  */
-export interface OpenShiftOutcome {
+interface OpenShiftOutcome {
   shift: Shift
   alreadyOpen: boolean
 }
 
 interface ShiftState {
   activeShift: Shift | null
-  isLoading: boolean
-  setActiveShift: (shift: Shift | null) => void
   fetchActiveShift: () => Promise<Shift | null>
   openShift: (openingCash?: number) => Promise<OpenShiftOutcome>
   clearShift: () => void
@@ -38,20 +36,19 @@ interface ShiftState {
 
 export const useShiftStore = create<ShiftState>()((set) => ({
   activeShift: null,
-  isLoading: false,
-
-  setActiveShift: (shift) => set({ activeShift: shift }),
 
   fetchActiveShift: async () => {
-    set({ isLoading: true })
     try {
-      const shift = await shiftsApi.getActiveShift()
-      set({ activeShift: shift, isLoading: false })
+      // `?? null`: an empty body reads as `undefined`, which every
+      // `activeShift === null` check downstream would take for a shift.
+      const shift = (await shiftsApi.getActiveShift()) ?? null
+      set({ activeShift: shift })
       return shift
     } catch {
-      // Keeping the last known shift here would send checkout the id of a shift
-      // that may already be closed, and the sale would miss every shift report.
-      set({ activeShift: null, isLoading: false })
+      // Keeping the last known shift here would show the cashier a shift that
+      // may already be closed. (Checkout no longer sends a shift id: the server
+      // books the sale to the cashier's own open shift.)
+      set({ activeShift: null })
       return null
     }
   },

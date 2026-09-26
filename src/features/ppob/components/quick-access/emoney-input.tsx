@@ -2,15 +2,19 @@ import { useState } from "react"
 import { Input, Label, Skeleton, TextField, ToggleButton } from "@heroui/react"
 import { Wallet } from "lucide-react"
 
+import { LoadError } from "@/components/load-error"
 import { PendingButton } from "@/components/pending-button"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
 import { useEmoneyDenom, useEmoneyInquiry } from "../../hooks"
-import type { InquiryResult } from "../../types"
 import { markupItem } from "./markup-item"
+import { OptionGroup } from "./option-group"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
+import { useInquiryResult } from "./use-inquiry-result"
+import { PpobSetupAction } from "../ppob-setup-action"
 
 export function EmoneyInput({
   onAddToCart,
@@ -20,17 +24,24 @@ export function EmoneyInput({
 }: ServiceInputProps) {
   const [phoneNumber, setPhoneNumber] = useState("")
   const [selectedDenom, setSelectedDenom] = useState<{ id: number; denom: string } | null>(null)
-  const { data: denoms, isLoading } = useEmoneyDenom(1)
+  const {
+    data: denoms,
+    isLoading,
+    error: denomsError,
+    refetch: refetchDenoms,
+    isFetching: denomsFetching,
+  } = useEmoneyDenom(1)
   const emoneyInquiry = useEmoneyInquiry()
-  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const { result: inquiryResult, reset: resetInquiry, accept: acceptInquiry } = useInquiryResult()
+  const canInquiry = phoneNumber.length >= 8 && !!selectedDenom
 
   const handleInquiry = () => {
-    if (!phoneNumber || !selectedDenom) return
+    if (!canInquiry || !selectedDenom || emoneyInquiry.isPending) return
     emoneyInquiry.mutate(
       { customerId: phoneNumber, productCode: selectedDenom.denom },
       {
-        onSuccess: (result) => setInquiryResult(result),
-        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+        onSuccess: acceptInquiry(),
+        onError: (err) => toast.error(id.ppob.customerCheckFailed(err.message)),
       },
     )
   }
@@ -57,17 +68,17 @@ export function EmoneyInput({
 
   const confirmItems: SummaryItem[] | null = inquiryResult
     ? [
-        { label: "Layanan", value: "E-Money" },
-        { label: "Nomor", value: phoneNumber, tone: "mono" },
+        { label: id.ppob.quickAccess.service, value: id.ppob.emoney },
+        { label: id.ppob.quickAccess.number, value: phoneNumber, tone: "mono" },
         {
-          label: "Nominal",
+          label: id.ppob.nominal,
           value: selectedDenom?.denom ? formatRupiah(parseFloat(selectedDenom.denom)) : "-",
         },
         ...(inquiryResult.adminFee > 0
-          ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
+          ? [{ label: id.ppob.quickAccess.adminFee, value: formatRupiah(inquiryResult.adminFee) }]
           : []),
         ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
-        { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
+        { label: id.ppob.quickAccess.totalPay, value: formatRupiah(sellPrice), tone: "strong" },
       ]
     : null
 
@@ -76,7 +87,7 @@ export function EmoneyInput({
       confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<Wallet />}
-      placeholderText="Cek nominal untuk melihat detail"
+      placeholderText={id.ppob.quickAccess.checkCustomerHint}
       wideLayout={wideLayout}
       onConfirm={handleConfirm}
     >
@@ -87,12 +98,18 @@ export function EmoneyInput({
         variant="secondary"
         onChange={(value) => {
           setPhoneNumber(value.replace(/\D/g, ""))
-          setSelectedDenom(null)
-          setInquiryResult(null)
+          resetInquiry()
         }}
       >
-        <Label>Nomor HP / ID</Label>
-        <Input className="tabular-nums" inputMode="numeric" placeholder="Masukkan nomor" />
+        <Label>{id.ppob.quickAccess.emoneyId}</Label>
+        <Input
+          className="tabular-nums"
+          inputMode="numeric"
+          placeholder={id.ppob.quickAccess.emoneyIdPlaceholder}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !inquiryResult) handleInquiry()
+          }}
+        />
       </TextField>
 
       {isLoading && (
@@ -103,36 +120,44 @@ export function EmoneyInput({
         </div>
       )}
 
+      {denomsError && (
+        <LoadError
+          isRetrying={denomsFetching}
+          secondaryAction={<PpobSetupAction error={denomsError} />}
+          title={id.loadFailed.ppobNominal}
+          onRetry={() => refetchDenoms()}
+        >
+          {denomsError.message}
+        </LoadError>
+      )}
+
       {denoms && denoms.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Nominal</p>
-          <div className="grid grid-cols-3 gap-2">
-            {denoms.map((d) => (
-              <ToggleButton
-                key={d.id}
-                className="tabular-nums"
-                isSelected={selectedDenom?.id === d.id}
-                size="lg"
-                onChange={() => {
-                  setSelectedDenom(d)
-                  setInquiryResult(null)
-                }}
-              >
-                {formatRupiah(parseFloat(d.denom))}
-              </ToggleButton>
-            ))}
-          </div>
-        </div>
+        <OptionGroup className="grid grid-cols-3 gap-2" label={id.ppob.nominal}>
+          {denoms.map((d) => (
+            <ToggleButton
+              key={d.id}
+              className="tabular-nums"
+              isSelected={selectedDenom?.id === d.id}
+              size="lg"
+              onChange={() => {
+                setSelectedDenom(d)
+                resetInquiry()
+              }}
+            >
+              {formatRupiah(parseFloat(d.denom))}
+            </ToggleButton>
+          ))}
+        </OptionGroup>
       )}
 
       {phoneNumber && selectedDenom && !inquiryResult && (
         <PendingButton
           fullWidth
-          isDisabled={phoneNumber.length < 8}
+          isDisabled={!canInquiry}
           isPending={emoneyInquiry.isPending}
           onPress={handleInquiry}
         >
-          Cek & Proses
+          {id.ppob.quickAccess.checkCustomer}
         </PendingButton>
       )}
     </ServiceFlowLayout>

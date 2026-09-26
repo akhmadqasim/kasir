@@ -15,7 +15,8 @@ interface TablePaginationProps {
  * Ketiga layar sebelumnya menyalin blok yang sama — `justify-end`, teks
  * "Halaman X dari Y", dan dua tombol outline yang tahu kapan harus mati.
  * Bentuknya dipertahankan; yang berubah hanya fondasinya: HeroUI `Pagination`
- * membungkusnya dalam `<nav aria-label="pagination">` dan menjalankan tombolnya
+ * membungkusnya dalam `<nav>` (labelnya ditimpa ke "Navigasi halaman" — bawaannya
+ * "pagination" dalam bahasa Inggris) dan menjalankan tombolnya
  * lewat React Aria, jadi status nonaktifnya ikut terbaca screen reader.
  *
  * `justify-end` menimpa `justify-between` bawaan HeroUI supaya ringkasan tetap
@@ -25,8 +26,8 @@ export function TablePagination({ page, totalPages, onPageChange }: TablePaginat
   if (totalPages <= 1) return null
 
   return (
-    <Pagination className="justify-end gap-2" size="sm">
-      <Pagination.Summary>
+    <Pagination aria-label="Navigasi halaman" className="justify-end gap-2" size="sm">
+      <Pagination.Summary className="tabular-nums">
         {id.transactions.page} {page} {id.transactions.of} {totalPages}
       </Pagination.Summary>
       <Pagination.Content>

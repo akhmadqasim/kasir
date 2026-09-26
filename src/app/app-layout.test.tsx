@@ -74,7 +74,9 @@ describe("AppLayout zoom", () => {
     installZoomServer({ factor: 1.2, available: true })
     renderLayout()
 
-    expect(await screen.findByRole("button", { name: "120%" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 120%" }),
+    ).toBeInTheDocument()
 
     // Hold the first answer back: the label has to move before it arrives.
     let release: (value: WindowZoom) => void = () => {}
@@ -100,7 +102,7 @@ describe("AppLayout zoom", () => {
   it("jawaban PUT yang terlambat tidak menimpa tekanan tombol yang lebih baru", async () => {
     installZoomServer({ factor: 1, available: true })
     renderLayout()
-    await screen.findByRole("button", { name: "100%" })
+    await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 100%" })
 
     // First press: the answer is held back. Second press: answered at once.
     let releaseFirst: (value: WindowZoom) => void = () => {}
@@ -125,7 +127,7 @@ describe("AppLayout zoom", () => {
   it("Ctrl+/−/0 menggerakkan zoom dan tidak lolos ke webview", async () => {
     installZoomServer({ factor: 1, available: true })
     renderLayout()
-    await screen.findByRole("button", { name: "100%" })
+    await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 100%" })
 
     const plus = new KeyboardEvent("keydown", { key: "+", ctrlKey: true, cancelable: true })
     fireEvent(window, plus)
@@ -147,7 +149,9 @@ describe("AppLayout zoom", () => {
     installZoomServer({ factor: 2, available: true })
     renderLayout()
 
-    expect(await screen.findByRole("button", { name: "200%" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 200%" }),
+    ).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Perbesar tampilan" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Perkecil tampilan" })).toBeEnabled()
 
@@ -177,7 +181,9 @@ describe("AppLayout zoom", () => {
     renderLayout()
 
     await vi.waitFor(() => expect(api.lastCall("PUT /window/zoom")?.body).toEqual({ factor: 1.5 }))
-    expect(await screen.findByRole("button", { name: "150%" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 150%" }),
+    ).toBeInTheDocument()
     expect(localStorage.getItem(LEGACY_ZOOM_KEY)).toBeNull()
   })
 
@@ -185,7 +191,7 @@ describe("AppLayout zoom", () => {
     localStorage.setItem(LEGACY_ZOOM_KEY, "1.5")
     installZoomServer({ factor: 1.5, available: true })
     renderLayout()
-    await screen.findByRole("button", { name: "150%" })
+    await screen.findByRole("button", { name: "Kembalikan ukuran tampilan, sekarang 150%" })
     expect(api.callsFor("PUT /window/zoom")).toHaveLength(0)
     expect(localStorage.getItem(LEGACY_ZOOM_KEY)).toBeNull()
 

@@ -45,7 +45,6 @@ describe("setUser", () => {
     store().setUser(user)
 
     expect(store().user).toEqual(user)
-    expect(store().isAuthenticated()).toBe(true)
   })
 
   it("menandai sesi sudah terjawab meskipun jawabannya kosong", () => {
@@ -55,7 +54,6 @@ describe("setUser", () => {
 
     expect(store().user).toBeNull()
     expect(store().isResolved).toBe(true)
-    expect(store().isAuthenticated()).toBe(false)
   })
 
   it("mengganti pengguna sebelumnya saat kasir lain login di terminal yang sama", () => {
@@ -74,7 +72,6 @@ describe("clearUser", () => {
     store().clearUser()
 
     expect(store().user).toBeNull()
-    expect(store().isAuthenticated()).toBe(false)
     expect(store().isResolved).toBe(true)
   })
 })

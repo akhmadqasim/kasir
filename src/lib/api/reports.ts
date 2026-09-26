@@ -4,7 +4,7 @@ import type {
   DailySalesRow,
   LossSummary,
   MonthlySalesRow,
-  PaymentMethodRow,
+  PaymentMethodReport,
   PeriodSalesSummary,
   PopularProductRow,
   ProductSalesRow,
@@ -12,6 +12,7 @@ import type {
   ReturnRow,
 } from "@/features/reports/types"
 import { apiGet } from "./client"
+import type { ReportRange } from "./query-keys"
 
 /**
  * The eleven reports.
@@ -27,16 +28,11 @@ import { apiGet } from "./client"
  * broken rows — they are the shape of the answer.
  */
 
-interface DateRange {
-  startDate: string
-  endDate: string
-}
-
-function rangeQuery({ startDate, endDate }: DateRange) {
+function rangeQuery({ startDate, endDate }: ReportRange) {
   return { start_date: startDate, end_date: endDate }
 }
 
-export function reportSalesDaily(range: DateRange): Promise<DailySalesRow[]> {
+export function reportSalesDaily(range: ReportRange): Promise<DailySalesRow[]> {
   return apiGet<DailySalesRow[]>("/reports/sales/daily", rangeQuery(range))
 }
 
@@ -44,7 +40,7 @@ export function reportSalesMonthly(year: number): Promise<MonthlySalesRow[]> {
   return apiGet<MonthlySalesRow[]>("/reports/sales/monthly", { year })
 }
 
-export function reportSalesPeriod(range: DateRange): Promise<PeriodSalesSummary> {
+export function reportSalesPeriod(range: ReportRange): Promise<PeriodSalesSummary> {
   return apiGet<PeriodSalesSummary>("/reports/sales/period", rangeQuery(range))
 }
 
@@ -53,23 +49,23 @@ export function reportSalesPeriod(range: DateRange): Promise<PeriodSalesSummary>
  * that totals a column has to total `netAmount`, not `totalAmount`, or the
  * returned money is counted as if it were still in the till.
  */
-export function reportSalesReceipts(range: DateRange, search: string): Promise<ReceiptReport> {
+export function reportSalesReceipts(range: ReportRange, search: string): Promise<ReceiptReport> {
   return apiGet<ReceiptReport>("/reports/sales/receipts", {
     ...rangeQuery(range),
     search,
   })
 }
 
-export function reportPaymentMethods(range: DateRange): Promise<PaymentMethodRow[]> {
-  return apiGet<PaymentMethodRow[]>("/reports/payment-methods", rangeQuery(range))
+export function reportPaymentMethods(range: ReportRange): Promise<PaymentMethodReport> {
+  return apiGet<PaymentMethodReport>("/reports/payment-methods", rangeQuery(range))
 }
 
-export function reportProductSales(range: DateRange): Promise<ProductSalesRow[]> {
+export function reportProductSales(range: ReportRange): Promise<ProductSalesRow[]> {
   return apiGet<ProductSalesRow[]>("/reports/products/sales", rangeQuery(range))
 }
 
 export function reportPopularProducts(
-  range: DateRange,
+  range: ReportRange,
   limit: number,
 ): Promise<PopularProductRow[]> {
   return apiGet<PopularProductRow[]>("/reports/products/popular", {
@@ -78,7 +74,7 @@ export function reportPopularProducts(
   })
 }
 
-export function reportReturns(range: DateRange): Promise<ReturnRow[]> {
+export function reportReturns(range: ReportRange): Promise<ReturnRow[]> {
   return apiGet<ReturnRow[]>("/reports/returns", rangeQuery(range))
 }
 
@@ -86,10 +82,10 @@ export function reportCurrentStock(search: string, filter: string): Promise<Curr
   return apiGet<CurrentStockReport>("/reports/stock/current", { search, filter })
 }
 
-export function reportLosses(range: DateRange): Promise<LossSummary> {
+export function reportLosses(range: ReportRange): Promise<LossSummary> {
   return apiGet<LossSummary>("/reports/losses", rangeQuery(range))
 }
 
-export function reportCashFlows(range: DateRange): Promise<CashFlowReportSummary> {
+export function reportCashFlows(range: ReportRange): Promise<CashFlowReportSummary> {
   return apiGet<CashFlowReportSummary>("/reports/cash-flows", rangeQuery(range))
 }

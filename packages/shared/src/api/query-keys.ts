@@ -23,13 +23,21 @@ export const queryKeys = {
     all: ["products"] as const,
     searchAll: ["products", "search"] as const,
     search: (params: SearchProductsParams) => ["products", "search", params] as const,
-    byBarcode: (barcode: string) => ["products", "barcode", barcode] as const,
     detail: (productId: number) => ["products", "detail", productId] as const,
   },
 
   categories: {
     all: ["categories"] as const,
     list: ["categories", "list"] as const,
+  },
+
+  store: {
+    all: ["store"] as const,
+    /**
+     * Per server: the login screen of a phone that just switched desktops must
+     * not show the previous shop's name while the new one loads.
+     */
+    public: (origin: string) => ["store", "public", origin] as const,
   },
 
   stock: {

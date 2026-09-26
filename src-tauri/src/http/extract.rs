@@ -56,14 +56,27 @@ where
 
 /// A body that is syntactically broken is a 400; one that parses but does not
 /// fit the type is a 422, matching how [`crate::utils::AppError::Validation`] is
-/// mapped.
+/// mapped. One past the body limit is a 413, same as an oversized upload.
 fn to_api_error(rejection: JsonRejection) -> ApiError {
+    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        return too_large();
+    }
     match rejection {
         JsonRejection::JsonDataError(err) => {
             ApiError::validation(format!("Data tidak sesuai: {err}"))
         }
         other => ApiError::bad_request(format!("Format data tidak valid: {other}")),
     }
+}
+
+/// A body past the route's `DefaultBodyLimit`. Reported as such, because "invalid
+/// format" would send the admin looking for a corrupt file instead of a smaller one.
+fn too_large() -> ApiError {
+    ApiError::new(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "validation",
+        "Berkas terlalu besar untuk diunggah.",
+    )
 }
 
 /// Deserialise a body the handler already holds, failing exactly as [`Json`]
@@ -103,11 +116,7 @@ where
         // looking for a corrupt file instead of a smaller one.
         let unreadable = |e: MultipartError| {
             if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                ApiError::new(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "validation",
-                    "Berkas terlalu besar untuk diunggah.",
-                )
+                too_large()
             } else {
                 ApiError::bad_request(format!("Unggahan tidak dapat dibaca: {}", e.body_text()))
             }

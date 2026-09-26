@@ -5,12 +5,16 @@ use sea_orm::{
     Statement,
 };
 
-use super::{clamp_per_page, refund_amount_for};
+use super::refund_amount_for;
 use crate::domain::refunds::{
     ExchangeDetailItem, ListRefundsInput, ListRefundsResult, RefundDetailItem, RefundDetailResult,
     RefundListItem,
 };
 use crate::entity::{exchange_items, refund_items, refunds, transaction_items, transactions};
+use crate::services::pagination::clamp_per_page;
+use crate::utils::time::{
+    invalid_date, local_date_last_second_to_utc, local_date_start_to_utc, parse_date_filter,
+};
 use crate::utils::AppError;
 
 pub async fn detail(
@@ -106,9 +110,8 @@ pub async fn list(
 ) -> Result<ListRefundsResult, AppError> {
     let page = input.page.unwrap_or(1).max(1);
     let per_page = clamp_per_page(input.per_page);
-    let offset = (page - 1) * per_page;
-
-    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+    // `page` comes straight off the query string; a huge one must not overflow.
+    let offset = (page - 1).saturating_mul(per_page);
 
     let mut conditions = String::from("WHERE 1=1");
     let mut params: Vec<sea_orm::Value> = Vec::new();
@@ -120,22 +123,22 @@ pub async fn list(
         }
     }
 
-    if let Some(ref date_from) = input.date_from {
-        let local_start = format!("{} 00:00:00", date_from);
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
-            let utc_start = ndt - chrono::Duration::seconds(offset_secs);
-            conditions.push_str(" AND r.created_at >= ?");
-            params.push(utc_start.format("%Y-%m-%d %H:%M:%S").to_string().into());
-        }
+    if let Some(date_from) = parse_date_filter(input.date_from.as_deref())? {
+        conditions.push_str(" AND r.created_at >= ?");
+        params.push(
+            local_date_start_to_utc(date_from)
+                .ok_or_else(invalid_date)?
+                .into(),
+        );
     }
 
-    if let Some(ref date_to) = input.date_to {
-        let local_end = format!("{} 23:59:59", date_to);
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
-            let utc_end = ndt - chrono::Duration::seconds(offset_secs);
-            conditions.push_str(" AND r.created_at <= ?");
-            params.push(utc_end.format("%Y-%m-%d %H:%M:%S").to_string().into());
-        }
+    if let Some(date_to) = parse_date_filter(input.date_to.as_deref())? {
+        conditions.push_str(" AND r.created_at <= ?");
+        params.push(
+            local_date_last_second_to_utc(date_to)
+                .ok_or_else(invalid_date)?
+                .into(),
+        );
     }
 
     // Count query
@@ -226,10 +229,62 @@ mod tests {
 
     #[test]
     fn clamp_per_page_bounds_the_requested_page_size() {
-        assert_eq!(clamp_per_page(None), 50);
-        assert_eq!(clamp_per_page(Some(25)), 25);
-        assert_eq!(clamp_per_page(Some(0)), 1);
-        assert_eq!(clamp_per_page(Some(-10)), 1);
-        assert_eq!(clamp_per_page(Some(5_000)), 100);
+        assert_eq!(clamp_per_page::<i64>(None), 50);
+        assert_eq!(clamp_per_page(Some(25_i64)), 25);
+        assert_eq!(clamp_per_page(Some(0_i64)), 1);
+        assert_eq!(clamp_per_page(Some(-10_i64)), 1);
+        assert_eq!(clamp_per_page(Some(5_000_i64)), 100);
+    }
+
+    fn filter(
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+        page: Option<i64>,
+    ) -> ListRefundsInput {
+        ListRefundsInput {
+            page,
+            per_page: None,
+            refund_type: None,
+            date_from: date_from.map(str::to_string),
+            date_to: date_to.map(str::to_string),
+        }
+    }
+
+    /// A date whose UTC boundary cannot be written as a sortable timestamp
+    /// (a five-digit year, the last day of the calendar) is a 400, not a panic
+    /// or a range compared against a made-up string.
+    #[tokio::test]
+    async fn a_date_without_a_boundary_is_a_validation_error() {
+        let conn = crate::test_support::setup_test_db().await;
+
+        // A malformed date used to be dropped, listing every refund instead.
+        let last = chrono::NaiveDate::MAX.format("%Y-%m-%d").to_string();
+        for bad in ["+10000-06-15", last.as_str(), "2026-02-30", "30/09/2026"] {
+            for input in [filter(Some(bad), None, None), filter(None, Some(bad), None)] {
+                match list(&conn, input).await {
+                    Err(AppError::Validation(message)) => {
+                        assert_eq!(message, crate::utils::time::INVALID_DATE)
+                    }
+                    other => panic!("expected a Validation error for {bad:?}, got {other:?}"),
+                }
+            }
+        }
+
+        // An ordinary range still lists.
+        list(&conn, filter(Some("2026-09-01"), Some("2026-09-30"), None))
+            .await
+            .expect("an ordinary range lists");
+    }
+
+    /// `page` is unchecked input; the offset it implies used to overflow.
+    #[tokio::test]
+    async fn a_huge_page_number_is_an_empty_page_not_an_overflow() {
+        let conn = crate::test_support::setup_test_db().await;
+
+        let result = list(&conn, filter(None, None, Some(i64::MAX)))
+            .await
+            .expect("list");
+
+        assert!(result.items.is_empty());
     }
 }

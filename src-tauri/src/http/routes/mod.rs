@@ -51,7 +51,8 @@ pub fn api_router(state: AppState) -> Router<AppState> {
 
     let public = Router::new()
         .merge(auth::public())
-        .merge(onboarding::public());
+        .merge(onboarding::public())
+        .merge(settings::public());
 
     let session = Router::new()
         .merge(auth::session())

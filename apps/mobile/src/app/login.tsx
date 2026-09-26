@@ -7,6 +7,8 @@ import { View, type TextInput } from "react-native";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { InlineError } from "@/components/state-view";
+import { StoreLogo } from "@/components/store-logo";
+import { usePublicStore } from "@/hooks/use-public-store";
 import { useLogin } from "@/hooks/use-session";
 import { hapticSuccess, hapticWarning } from "@/lib/haptics";
 import { fieldVariant, isIOS } from "@/lib/platform";
@@ -22,12 +24,18 @@ const PIN_PATTERN = /^\d{4,6}$/;
  * Which till this phone is about to sign in to is a secondary fact, so it sits
  * under the title as one muted line with the way to change it next to it — not
  * as a field someone could mistake for part of the login.
+ *
+ * The title is the shop's name (and its logo above it, when there is one), read
+ * from the same public `GET /store/public` the desktop login uses; "Masuk ke POS"
+ * then moves under it. Before onboarding, or while the server has not answered,
+ * the generic title stays.
  */
 export default function LoginScreen(): JSX.Element {
   const serverOrigin = useSessionStore((state) => state.serverOrigin);
   const setChangingServer = useSessionStore((state) => state.setChangingServer);
   const router = useRouter();
   const login = useLogin();
+  const { store, logoUrl } = usePublicStore();
 
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
@@ -51,9 +59,15 @@ export default function LoginScreen(): JSX.Element {
   return (
     <ScrollScreen className="justify-center flex-grow" headerless>
       <View className="gap-1 mb-2">
+        {logoUrl ? (
+          <View className="mb-2">
+            <StoreLogo key={logoUrl} uri={logoUrl} />
+          </View>
+        ) : null}
         <Typography.Heading type={isIOS ? "h1" : "h2"} weight={isIOS ? "bold" : "semibold"}>
-          {id.auth.loginTitle}
+          {store?.name || id.auth.loginTitle}
         </Typography.Heading>
+        {store?.name ? <Typography color="muted">{id.auth.loginTitle}</Typography> : null}
         {serverOrigin ? (
           <View className="flex-row items-center gap-2">
             <Typography type="body-sm" color="muted">

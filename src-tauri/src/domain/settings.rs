@@ -14,22 +14,25 @@ use crate::domain::backup::BackupSettings;
 // Prevents plaintext credential exposure in database files
 const OBFUSCATION_KEY: &[u8] = b"kasir-pos-2025-secure";
 
+/// XOR `bytes` with the repeating key. Its own inverse, so it both hides and
+/// reveals.
+fn xor_with_key(bytes: impl IntoIterator<Item = u8>) -> Vec<u8> {
+    bytes
+        .into_iter()
+        .enumerate()
+        .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
+        .collect()
+}
+
 pub fn obfuscate(input: &str) -> String {
     if input.is_empty() {
         return String::new();
     }
-    let bytes: Vec<u8> = input
-        .bytes()
-        .enumerate()
-        .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
+    let hex: String = xor_with_key(input.bytes())
+        .iter()
+        .map(|b| format!("{:02x}", b))
         .collect();
-    format!(
-        "OBF:{}",
-        bytes
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>()
-    )
+    format!("OBF:{hex}")
 }
 
 /// Decode an even-length ASCII hex string, or `None` if it is not one.
@@ -54,7 +57,7 @@ fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
 /// A corrupt `OBF:` payload yields an empty string rather than a panic.
 /// [`parse_app_settings`] is on the path of `get_app_settings`,
 /// `update_app_settings`, `services/ppob/executor.rs` and
-/// `commands/ppob/inquiry.rs`, so a single truncated character in
+/// `services/ppob/inquiry.rs`, so a single truncated character in
 /// `store_info.additional_info` used to take out PPOB and the entire Settings
 /// page. Empty (rather than the raw ciphertext) is returned so the admin sees a
 /// blank field to re-enter instead of garbage they might save back and
@@ -69,13 +72,7 @@ pub fn deobfuscate(input: &str) -> String {
         return String::new();
     };
 
-    let plain: Vec<u8> = bytes
-        .into_iter()
-        .enumerate()
-        .map(|(i, b)| b ^ OBFUSCATION_KEY[i % OBFUSCATION_KEY.len()])
-        .collect();
-
-    String::from_utf8(plain).unwrap_or_default()
+    String::from_utf8(xor_with_key(bytes)).unwrap_or_default()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -260,6 +257,16 @@ pub struct DatabaseInfo {
     pub path: String,
 }
 
+/// What the login screen may know about the shop before anyone has signed in:
+/// its name, and whether there is a logo to fetch from `/store/logo`. Nothing
+/// else from `store_info` — no address, phone, email or settings blob — so the
+/// unauthenticated route that serves it cannot leak more than a shop sign does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PublicStoreInfo {
+    pub name: String,
+    pub has_logo: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateStoreInfoInput {
     pub name: String,
@@ -412,7 +419,7 @@ mod tests {
     /// An odd number of hex characters made `&hex[i..i + 2]` run past the end of
     /// the string. [`parse_app_settings`] is called from `get_app_settings`,
     /// `update_app_settings`, `services/ppob/executor.rs` and
-    /// `commands/ppob/inquiry.rs`, so this panic disabled PPOB and the whole
+    /// `services/ppob/inquiry.rs`, so this panic disabled PPOB and the whole
     /// Settings page at once.
     #[test]
     fn deobfuscate_survives_an_odd_length_payload() {

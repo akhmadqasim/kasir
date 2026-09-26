@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
-import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { apiFailure, installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { TestNavbar } from "@/test-utils/test-navbar"
 import { formatRupiah } from "@/lib/format"
 import type {
@@ -113,7 +113,8 @@ function requestedDays(route: string): number[] {
 
 /** Membuka salah satu tab dashboard dan menunggu panelnya tergambar. */
 function openTab(name: string) {
-  fireEvent.click(screen.getByRole("tab", { name }))
+  // Awalan, bukan nama utuh: tab Stok membawa jumlah produk yang menipis.
+  fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}`) }))
 }
 
 beforeEach(() => {
@@ -153,8 +154,33 @@ describe("halaman dashboard", () => {
     expect(screen.getByText(rupiah(30_000))).toBeInTheDocument()
     expect(screen.getByText(rupiah(12_500))).toBeInTheDocument()
     // 150k dari 100k kemarin = +50%, margin 30k/150k = 20%.
-    expect(screen.getByText("+50.0%")).toBeInTheDocument()
-    expect(screen.getByText("20.0%")).toBeInTheDocument()
+    expect(screen.getByText("+50%")).toBeInTheDocument()
+    expect(screen.getByText("Margin 20%")).toBeInTheDocument()
+  })
+
+  it("tidak menulis Rp 0 selagi ringkasan masih dimuat", () => {
+    renderPage()
+
+    // Belum ada `await`: permintaannya masih tertahan, jadi yang tampil
+    // kerangka kartunya — nol akan terbaca sebagai hari tanpa penjualan.
+    expect(screen.getByText("Penjualan Hari Ini")).toBeInTheDocument()
+    expect(screen.queryByText(rupiah(0))).not.toBeInTheDocument()
+  })
+
+  it("membedakan ringkasan yang gagal dimuat dari hari tanpa penjualan", async () => {
+    api.route("GET /dashboard/summary", apiFailure(500, "internal", "Server tidak menjawab"))
+    renderPage()
+
+    expect(await screen.findByText("Gagal memuat ringkasan hari ini")).toBeInTheDocument()
+    expect(screen.getByText("Server tidak menjawab")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: /Coba lagi/ }).length).toBeGreaterThan(0)
+  })
+
+  it("menampilkan jumlah produk menipis di tab Stok", async () => {
+    renderPage()
+
+    await screen.findByText(rupiah(150_000))
+    expect(screen.getByRole("tab", { name: "Stok, 2 produk menipis" })).toBeInTheDocument()
   })
 
   /**
@@ -178,7 +204,7 @@ describe("halaman dashboard", () => {
     expect(requestedDays("GET /dashboard/revenue/daily")).toEqual([7])
     expect(requestedDays("GET /dashboard/payment-methods/daily")).toEqual([7])
 
-    fireEvent.click(screen.getByRole("button", { name: /Ganti rentang waktu/ }))
+    fireEvent.click(screen.getByRole("button", { name: /ganti rentang waktu/i }))
     fireEvent.click(await screen.findByRole("menuitemradio", { name: "1 Bulan" }))
 
     await vi.waitFor(() => {

@@ -6,7 +6,7 @@ import type {
   MonthlySalesRow,
   PeriodSalesSummary,
   ReceiptReport,
-  PaymentMethodRow,
+  PaymentMethodReport,
   ProductSalesRow,
   PopularProductRow,
   ReturnRow,
@@ -54,7 +54,7 @@ export function useSalesReceipt(startDate: string, endDate: string, search: stri
 
 export function usePaymentMethods(startDate: string, endDate: string) {
   const range = { startDate, endDate }
-  return useApiQuery<PaymentMethodRow[]>(queryKeys.reports.paymentMethods(range), () =>
+  return useApiQuery<PaymentMethodReport>(queryKeys.reports.paymentMethods(range), () =>
     reportsApi.reportPaymentMethods(range),
   )
 }

@@ -1,25 +1,31 @@
 //! Sales: ringing one up, reading them back, and the two admin corrections.
 //!
-//! [`checkout`] owns the write path — cart resolution, the money arithmetic,
-//! persistence and PPOB fulfilment. [`queries`] is the read side and [`admin`]
-//! holds voiding a sale and correcting its payment method. What all three share
-//! lives here.
+//! [`checkout`] owns the write path — cart resolution, the money arithmetic and
+//! persistence. PPOB lines are fulfilled after the commit by
+//! `ppob_fulfillment`, and `ppob_recovery` retries or settles the ones that did
+//! not come back clean. [`queries`] is the read side and [`admin`] holds voiding
+//! a sale and correcting its payment method. What they share lives here.
 
 #[cfg(test)]
 pub(crate) mod fixtures;
 
 pub mod admin;
 pub mod checkout;
+mod ppob_fulfillment;
+mod ppob_recovery;
 pub mod queries;
 
 pub use admin::{update_payment_method, void};
-pub use checkout::{checkout, retry_ppob_fulfillment};
+pub use checkout::checkout;
+pub use ppob_recovery::{
+    mark_interrupted_ppob_uncertain, resolve_uncertain_ppob, retry_ppob_fulfillment,
+};
 pub use queries::{detail, list, next_receipt_number};
 
-use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter, Statement};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 
 use crate::domain::settings::parse_app_settings;
-use crate::domain::transactions::{PaymentSplit, TransactionItemInput};
+use crate::domain::transactions::PaymentSplit;
 use crate::entity::store_info;
 use crate::entity::{transaction_items, transaction_payments, transactions};
 use crate::utils::AppError;
@@ -41,34 +47,17 @@ const PPOB_STATUS_PENDING: &str = "pending";
 const PPOB_STATUS_PROCESSING: &str = "processing";
 pub(crate) const PPOB_STATUS_SUCCESS: &str = "success";
 const PPOB_STATUS_FAILED: &str = "failed";
+/// The provider call went out but its answer never arrived (timeout, dropped
+/// connection, garbled body), or the app stopped while it was in flight. The
+/// money may be spent, so the line is neither retried nor refunded until a
+/// person checks the Mitra history and marks it success or failed.
+const PPOB_STATUS_UNCERTAIN: &str = "uncertain";
 
-fn now_timestamp() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
-async fn generate_receipt_number<C: ConnectionTrait>(db: &C) -> Result<String, AppError> {
-    // Use the same UTC basis as `created_at` (stored via `now_timestamp()` /
-    // `Utc::now()`), so a late-night local sale's receipt date matches the date
-    // recorded in `created_at` and the per-day sequence resets on the same day.
-    let today = chrono::Utc::now().format("%Y%m%d").to_string();
-    let prefix = format!("TRX-{}-", today);
-
-    let result = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT MAX(CAST(SUBSTR(receipt_number, LENGTH($1) + 1) AS INTEGER)) as max_num FROM transactions WHERE receipt_number LIKE $2",
-            vec![prefix.clone().into(), format!("{}%", prefix).into()],
-        ))
-        .await?;
-
-    let max_num: i64 = result
-        .map(|r| r.try_get::<i64>("", "max_num").unwrap_or(0))
-        .unwrap_or(0);
-
-    Ok(format!("{}{:04}", prefix, max_num + 1))
-}
-
-async fn load_allow_negative_stock<C: ConnectionTrait>(db: &C) -> Result<bool, AppError> {
+/// The store's `allow_negative_stock` setting; permissive when the store row
+/// is missing. Read by checkout and by the exchange half of a refund.
+pub(crate) async fn load_allow_negative_stock<C: ConnectionTrait>(
+    db: &C,
+) -> Result<bool, AppError> {
     Ok(store_info::Entity::find_by_id(1_i64)
         .one(db)
         .await?
@@ -80,71 +69,53 @@ async fn load_allow_negative_stock<C: ConnectionTrait>(db: &C) -> Result<bool, A
         .unwrap_or(true))
 }
 
-fn validate_cart_composition(items: &[TransactionItemInput]) -> Result<bool, AppError> {
-    if items.is_empty() {
-        return Err(AppError::Validation(
-            "Item transaksi tidak boleh kosong".into(),
-        ));
+/// Refuses anything but the five methods a sale may be paid with. `mixed` is
+/// derived from a split payment, never chosen.
+fn validate_payment_method(method: &str) -> Result<(), AppError> {
+    if !VALID_PAYMENT_METHODS.contains(&method) {
+        return Err(AppError::Validation(format!(
+            "Metode pembayaran tidak valid: {}",
+            method
+        )));
     }
 
-    let has_ppob = items.iter().any(|item| item.service_type.is_some());
-
-    Ok(has_ppob)
+    Ok(())
 }
 
-/// Which channel the cart may be stored under.
-///
-/// An absent channel is the cashier's cart, so a client that never heard of the
-/// field keeps working. The PPOB page may only ring up PPOB lines: it has no
-/// stock to move and its sales are deliberately excluded from the goods
-/// figures, so a product line arriving from there is a bug, not a sale.
-fn resolve_channel(
-    channel: Option<&str>,
-    items: &[TransactionItemInput],
-) -> Result<&'static str, AppError> {
-    match channel {
-        None | Some(CHANNEL_SALES) => Ok(CHANNEL_SALES),
-        Some(CHANNEL_PPOB) => {
-            if items.iter().all(|item| item.service_type.is_some()) {
-                Ok(CHANNEL_PPOB)
-            } else {
-                Err(AppError::Validation(
-                    "Transaksi di halaman PPOB hanya boleh berisi item PPOB".into(),
-                ))
-            }
-        }
-        Some(_) => Err(AppError::Validation("Channel transaksi tidak valid".into())),
-    }
-}
 async fn load_payment_breakdown<C: ConnectionTrait>(
     db: &C,
-    transaction_id: i64,
     transaction: &transactions::Model,
 ) -> Result<Vec<PaymentSplit>, AppError> {
     let splits = transaction_payments::Entity::find()
-        .filter(transaction_payments::Column::TransactionId.eq(transaction_id))
+        .filter(transaction_payments::Column::TransactionId.eq(transaction.id))
         .all(db)
         .await?;
 
-    if !splits.is_empty() {
-        return Ok(splits
-            .into_iter()
-            .map(|split| PaymentSplit {
-                payment_method: split.payment_method,
-                bank_name: split.bank_name,
-                amount: split.amount,
-            })
-            .collect());
+    Ok(payment_breakdown_from(splits, transaction))
+}
+
+/// A sale's recorded payment splits, or — for a sale written before splits
+/// were recorded — a single split for the whole total in its one method.
+fn payment_breakdown_from(
+    splits: Vec<transaction_payments::Model>,
+    transaction: &transactions::Model,
+) -> Vec<PaymentSplit> {
+    if splits.is_empty() {
+        return vec![PaymentSplit {
+            payment_method: transaction.payment_method.clone(),
+            bank_name: None,
+            amount: transaction.total_amount,
+        }];
     }
 
-    Ok(vec![PaymentSplit {
-        payment_method: transaction.payment_method.clone(),
-        bank_name: None,
-        amount: transaction.total_amount,
-    }])
-}
-fn clamp_per_page(requested: Option<u64>) -> u64 {
-    requested.unwrap_or(50).clamp(1, 100)
+    splits
+        .into_iter()
+        .map(|split| PaymentSplit {
+            payment_method: split.payment_method,
+            bank_name: split.bank_name,
+            amount: split.amount,
+        })
+        .collect()
 }
 
 fn summarize_ppob_items(

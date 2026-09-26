@@ -1,8 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { Spinner } from "@heroui/react"
 import { useCheckOnboarding } from "@/features/onboarding/hooks/use-onboarding"
-import { useCurrentUser } from "@/features/auth/hooks/use-auth"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useAuthStore, useCurrentUser } from "@/features/auth"
 import { getDefaultRouteForRole, isAdminOnlyRoute } from "./resume-route"
 
 /**

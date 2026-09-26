@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { TestNavbar } from "@/test-utils/test-navbar"
 import type { PaginatedTransactions, TransactionDetail } from "./types"
 
 import { TransactionsPage } from "./components/transactions-page"
@@ -109,7 +110,10 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <TransactionsPage />
+        {/* Tombol muat ulang dipasang lewat portal ke navbar. */}
+        <TestNavbar>
+          <TransactionsPage />
+        </TestNavbar>
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -163,7 +167,7 @@ describe("halaman riwayat transaksi", () => {
     renderPage()
 
     await screen.findByText("TRX-20260905-0001")
-    const pagination = screen.getByRole("navigation", { name: "pagination" })
+    const pagination = screen.getByRole("navigation", { name: "Navigasi halaman" })
 
     expect(within(pagination).getByText("Halaman 1 dari 3")).toBeInTheDocument()
     expect(within(pagination).getByRole("button", { name: /Sebelumnya/ })).toBeDisabled()
@@ -201,6 +205,32 @@ describe("halaman riwayat transaksi", () => {
 
     await vi.waitFor(() =>
       expect(api.lastCall("GET /transactions")?.query.has("channel")).toBe(false),
+    )
+  })
+
+  it("menamai aksi baris dengan nomor struknya", async () => {
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0001")
+    expect(
+      screen.getByRole("button", { name: "Lihat detail TRX-20260905-0001" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Cetak Struk TRX-20260905-0002" }),
+    ).toBeInTheDocument()
+  })
+
+  it("menawarkan reset filter saat hasil kosong karena filter", async () => {
+    api.route("GET /transactions", { ...PAGE, data: [], total: 0, total_pages: 1 })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole("radio", { name: "PPOB" }))
+
+    expect(await screen.findByText("Tidak ada transaksi yang cocok")).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole("button", { name: /Hapus filter/ }).at(-1)!)
+
+    await vi.waitFor(() =>
+      expect(api.lastCall("GET /transactions")?.query.get("channel")).toBe("sales"),
     )
   })
 })

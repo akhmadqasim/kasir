@@ -24,14 +24,11 @@ pub fn run() {
     utils::logging::log_startup(&format!("App starting, data_dir={}", data_dir.display()));
 
     if let Err(e) = fs::create_dir_all(&data_dir) {
-        let msg = format!(
+        fatal(format!(
             "Failed to create data directory {}: {}",
             data_dir.display(),
             e
-        );
-        utils::logging::log_error(&msg);
-        eprintln!("{}", msg);
-        panic!("{}", msg);
+        ));
     }
 
     let db_path = utils::paths::get_db_path();
@@ -59,17 +56,26 @@ pub fn run() {
                 utils::logging::log_startup("Database initialized successfully");
                 db
             }
-            Err(e) => {
-                let msg = format!(
-                    "Failed to initialize database at {}: {}",
-                    db_path.display(),
-                    e
-                );
-                utils::logging::log_error(&msg);
-                eprintln!("{}", msg);
-                panic!("{}", msg);
-            }
+            Err(e) => fatal(format!(
+                "Failed to initialize database at {}: {}",
+                db_path.display(),
+                e
+            )),
         };
+
+    // Before the HTTP server exists, so no checkout can start a fulfilment that
+    // this sweep would wrongly catch.
+    match tauri::async_runtime::block_on(services::transactions::mark_interrupted_ppob_uncertain(
+        &database,
+    )) {
+        Ok(0) => {}
+        Ok(count) => utils::logging::log_warning(&format!(
+            "[ppob] {count} item PPOB terputus saat aplikasi tertutup, ditandai 'uncertain'"
+        )),
+        Err(e) => utils::logging::log_error(&format!(
+            "[ppob] gagal menandai item PPOB yang terputus: {e}"
+        )),
+    }
 
     let mitra_client = Arc::new(Mutex::new(services::ppob::MitraClient::new()));
 
@@ -133,7 +139,10 @@ pub fn run() {
             // wired before this window existed, so it gets a closure over it.
             // The icon too: the store logo, drawn as a PNG by the page, or the
             // built-in mark again once the logo is removed.
-            let default_icon = app.default_window_icon().cloned().map(tauri::image::Image::to_owned);
+            let default_icon = app
+                .default_window_icon()
+                .cloned()
+                .map(tauri::image::Image::to_owned);
             let icon_window = window.clone();
             window_icon_clone.attach(move |png| match (png, &default_icon) {
                 (Some(bytes), _) => icon_window.set_icon(tauri::image::Image::from_bytes(bytes)?),
@@ -148,16 +157,16 @@ pub fn run() {
             }
             Ok(())
         })
-        .manage(database)
-        .manage(mitra_client)
-        .manage(backup_scheduler)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, _event| {});
-
-    http_server.shutdown();
-
-    utils::logging::log_startup("App shutdown");
+        // `run` never returns — the event loop exits the process — so shutdown
+        // work has to happen on the `Exit` event rather than after this call.
+        .run(move |_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                http_server.shutdown();
+                utils::logging::log_startup("App shutdown");
+            }
+        });
 }
 
 /// Bind the embedded HTTP server. The window has nothing to load without it,
@@ -187,13 +196,16 @@ fn start_http_server(
     );
     match tauri::async_runtime::block_on(http::start(state)) {
         Ok(server) => server,
-        Err(e) => {
-            let msg = format!("Failed to start the HTTP server: {e}");
-            utils::logging::log_error(&msg);
-            eprintln!("{}", msg);
-            panic!("{}", msg);
-        }
+        Err(e) => fatal(format!("Failed to start the HTTP server: {e}")),
     }
+}
+
+/// Stop the launch over something the app cannot run without, leaving the
+/// reason in `error.log` as well as on stderr.
+fn fatal(msg: String) -> ! {
+    utils::logging::log_error(&msg);
+    eprintln!("{}", msg);
+    panic!("{}", msg);
 }
 
 /// Create the one window the app has, pointed at the embedded server.

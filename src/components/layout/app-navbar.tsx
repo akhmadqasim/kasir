@@ -25,7 +25,7 @@ const TITLE_CLASS = "min-w-0 truncate text-xl font-semibold"
  * bawaan di sebelahnya. Tidak ada state yang menyinkronkan keduanya.
  */
 export function AppNavbar({ children }: { children: ReactNode }) {
-  const { toggleSidebar, hoverExpanded, pinSidebar } = useSidebar()
+  const { toggleSidebar, hoverExpanded, pinSidebar, open, isMobile, openMobile } = useSidebar()
   const location = useLocation()
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null)
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null)
@@ -40,12 +40,26 @@ export function AppNavbar({ children }: { children: ReactNode }) {
   // kepala sidebar, dan satu-satunya cara mengubah "lirik" menjadi "buka".
   const handleToggle = () => (hoverExpanded ? pinSidebar() : toggleSidebar())
 
+  // The label names what pressing does *now*: "Lipat" on a collapsed rail
+  // promised the opposite of what happened.
+  const isExpanded = isMobile ? openMobile : open
+  const toggleLabel = hoverExpanded
+    ? "Sematkan sidebar"
+    : isMobile
+      ? openMobile
+        ? "Tutup menu"
+        : "Buka menu"
+      : open
+        ? "Lipat sidebar"
+        : "Buka sidebar"
+
   return (
     <NavbarContext.Provider value={slots}>
       <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-4 bg-background px-6">
         <Button
           isIconOnly
-          aria-label={hoverExpanded ? "Sematkan sidebar" : "Lipat sidebar"}
+          aria-expanded={isExpanded}
+          aria-label={toggleLabel}
           size="sm"
           variant="tertiary"
           onPress={handleToggle}

@@ -17,3 +17,4 @@ export type {
   WriteoffReason,
 } from "./stock"
 export { WRITEOFF_REASONS } from "./stock"
+export type { PublicStoreInfo } from "./store"

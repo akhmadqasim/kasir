@@ -1,8 +1,9 @@
 //! Stock write-offs: damaged, expired, lost or otherwise unsellable units.
 
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    DbBackend, EntityTrait, QueryFilter, Set, Statement, TransactionTrait,
+    DbBackend, EntityTrait, QueryFilter, QueryResult, Set, Statement, TransactionTrait,
 };
 
 use crate::domain::stock::{
@@ -10,44 +11,23 @@ use crate::domain::stock::{
 };
 use crate::domain::Actor;
 use crate::entity::{products, stock_writeoffs, users};
+use crate::services::document_number::next_writeoff_number;
 use crate::services::guard;
+use crate::services::pagination::clamp_per_page;
+use crate::utils::time::{
+    invalid_date, local_date_last_second_to_utc, local_date_start_to_utc, now_ts, parse_date_filter,
+};
 use crate::utils::AppError;
 
 const VALID_REASONS: &[&str] = &["damaged", "expired", "lost", "other"];
 
-/// Timestamp for every `created_at`/`updated_at` this module writes.
-///
-/// MUST stay UTC. Every reader of `stock_writeoffs.created_at`
-/// ([`list`] below, `reports::query_losses`) converts a local calendar date into
-/// a UTC boundary before comparing, and the refund path writes `Utc::now()` into
-/// the same column. This used to be `Local::now()`, which put a WIB write-off
-/// made after 17:00 into the next day's report; migration 019 shifts the rows
-/// that were written that way.
-fn now_timestamp() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
-async fn generate_writeoff_number<C: ConnectionTrait>(db: &C) -> Result<String, AppError> {
-    // Deliberately local: `WO-YYYYMMDD-XXXX` is a human-facing document number
-    // keyed to the shop's business day, not an instant. `refunds.rs` numbers
-    // `RFD-` the same way.
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let prefix = format!("WO-{}-", today);
-
-    let result = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT MAX(CAST(SUBSTR(writeoff_number, LENGTH(?) + 1) AS INTEGER)) as max_num FROM stock_writeoffs WHERE writeoff_number LIKE ?",
-            vec![prefix.clone().into(), format!("{}%", prefix).into()],
-        ))
-        .await?;
-
-    let max_num: i64 = result
-        .map(|r| r.try_get::<i64>("", "max_num").unwrap_or(0))
-        .unwrap_or(0);
-
-    Ok(format!("{}{:04}", prefix, max_num + 1))
-}
+// Every `created_at`/`updated_at` this module writes comes from `now_ts`, which
+// MUST stay UTC. Every reader of `stock_writeoffs.created_at` ([`list`] below,
+// `reports::losses`) converts a local calendar date into a UTC boundary
+// before comparing, and the refund path writes `now_ts()` into the same
+// column. This module used to write `Local::now()`, which put a WIB write-off
+// made after 17:00 into the next day's report; migration 019 shifts the rows
+// that were written that way.
 
 /// Display name for a user id. Used for the actor, whose row the transport layer
 /// has just resolved, so the empty fallback is unreachable in practice.
@@ -59,20 +39,44 @@ async fn user_full_name(db: &DatabaseConnection, user_id: i64) -> Result<String,
         .unwrap_or_default())
 }
 
-async fn product_name(db: &DatabaseConnection, product_id: i64) -> Result<String, AppError> {
-    Ok(products::Entity::find_by_id(product_id)
-        .one(db)
-        .await?
-        .map(|p| p.name)
-        .unwrap_or_else(|| "(dihapus)".to_string()))
-}
+/// The columns [`row_to_writeoff`] reads, with the product and both user names
+/// joined in. Callers append their own `WHERE`.
+const WRITEOFF_SELECT: &str =
+    "SELECT w.id, w.writeoff_number, w.product_id, w.user_id, w.quantity, \
+     w.reason, w.loss_value, w.notes, w.approved_by, w.status, \
+     w.refund_id, w.created_at, \
+     p.name as product_name, \
+     u.full_name as cashier_name, \
+     a.full_name as approver_name \
+     FROM stock_writeoffs w \
+     LEFT JOIN products p ON w.product_id = p.id \
+     LEFT JOIN users u ON w.user_id = u.id \
+     LEFT JOIN users a ON w.approved_by = a.id";
 
-async fn cashier_name(db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
-    Ok(users::Entity::find_by_id(user_id)
-        .one(db)
-        .await?
-        .map(|u| u.full_name)
-        .unwrap_or_else(|| "Unknown".to_string()))
+fn row_to_writeoff(row: &QueryResult) -> StockWriteoffResponse {
+    StockWriteoffResponse {
+        id: row.try_get::<i64>("", "id").unwrap_or(0),
+        writeoff_number: row
+            .try_get::<String>("", "writeoff_number")
+            .unwrap_or_default(),
+        product_id: row.try_get::<i64>("", "product_id").unwrap_or(0),
+        product_name: row
+            .try_get::<String>("", "product_name")
+            .unwrap_or_else(|_| "(dihapus)".to_string()),
+        user_id: row.try_get::<i64>("", "user_id").unwrap_or(0),
+        cashier_name: row
+            .try_get::<String>("", "cashier_name")
+            .unwrap_or_default(),
+        quantity: row.try_get::<i64>("", "quantity").unwrap_or(0),
+        reason: row.try_get::<String>("", "reason").unwrap_or_default(),
+        loss_value: row.try_get::<f64>("", "loss_value").unwrap_or(0.0),
+        notes: row.try_get::<String>("", "notes").ok(),
+        approved_by: row.try_get::<i64>("", "approved_by").ok(),
+        approver_name: row.try_get::<String>("", "approver_name").ok(),
+        status: row.try_get::<String>("", "status").unwrap_or_default(),
+        refund_id: row.try_get::<i64>("", "refund_id").ok(),
+        created_at: row.try_get::<String>("", "created_at").unwrap_or_default(),
+    }
 }
 
 pub async fn list(
@@ -80,10 +84,8 @@ pub async fn list(
     input: ListWriteoffsInput,
 ) -> Result<ListWriteoffsResult, AppError> {
     let page = input.page.unwrap_or(1).max(1);
-    let per_page = input.per_page.unwrap_or(50).max(1);
-    let offset = (page - 1) * per_page;
-
-    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
+    let per_page = clamp_per_page(input.per_page);
+    let offset = (page - 1).saturating_mul(per_page);
 
     let mut conditions = String::from("WHERE 1=1");
     let mut params: Vec<sea_orm::Value> = Vec::new();
@@ -102,22 +104,22 @@ pub async fn list(
         }
     }
 
-    if let Some(ref date_from) = input.date_from {
-        let local_start = format!("{} 00:00:00", date_from);
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_start, "%Y-%m-%d %H:%M:%S") {
-            let utc_start = ndt - chrono::Duration::seconds(offset_secs);
-            conditions.push_str(" AND w.created_at >= ?");
-            params.push(utc_start.format("%Y-%m-%d %H:%M:%S").to_string().into());
-        }
+    if let Some(date_from) = parse_date_filter(input.date_from.as_deref())? {
+        conditions.push_str(" AND w.created_at >= ?");
+        params.push(
+            local_date_start_to_utc(date_from)
+                .ok_or_else(invalid_date)?
+                .into(),
+        );
     }
 
-    if let Some(ref date_to) = input.date_to {
-        let local_end = format!("{} 23:59:59", date_to);
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&local_end, "%Y-%m-%d %H:%M:%S") {
-            let utc_end = ndt - chrono::Duration::seconds(offset_secs);
-            conditions.push_str(" AND w.created_at <= ?");
-            params.push(utc_end.format("%Y-%m-%d %H:%M:%S").to_string().into());
-        }
+    if let Some(date_to) = parse_date_filter(input.date_to.as_deref())? {
+        conditions.push_str(" AND w.created_at <= ?");
+        params.push(
+            local_date_last_second_to_utc(date_to)
+                .ok_or_else(invalid_date)?
+                .into(),
+        );
     }
 
     // Count query
@@ -138,29 +140,15 @@ pub async fn list(
         .map(|r| r.try_get::<i64>("", "cnt").unwrap_or(0))
         .unwrap_or(0);
 
+    // One (empty) page rather than none, the way the product search counts.
     let total_pages = if total == 0 {
-        0
+        1
     } else {
         ((total as f64) / (per_page as f64)).ceil() as i64
     };
 
-    // Data query with JOINs
-    let data_sql = format!(
-        "SELECT w.id, w.writeoff_number, w.product_id, w.user_id, w.quantity, \
-         w.reason, w.loss_value, w.notes, w.approved_by, w.status, \
-         w.refund_id, w.created_at, \
-         p.name as product_name, \
-         u.full_name as cashier_name, \
-         a.full_name as approver_name \
-         FROM stock_writeoffs w \
-         LEFT JOIN products p ON w.product_id = p.id \
-         LEFT JOIN users u ON w.user_id = u.id \
-         LEFT JOIN users a ON w.approved_by = a.id \
-         {} \
-         ORDER BY w.created_at DESC \
-         LIMIT ? OFFSET ?",
-        conditions
-    );
+    let data_sql =
+        format!("{WRITEOFF_SELECT} {conditions} ORDER BY w.created_at DESC LIMIT ? OFFSET ?");
 
     params.push(per_page.into());
     params.push(offset.into());
@@ -173,32 +161,7 @@ pub async fn list(
         ))
         .await?;
 
-    let mut items: Vec<StockWriteoffResponse> = Vec::new();
-    for row in rows {
-        items.push(StockWriteoffResponse {
-            id: row.try_get::<i64>("", "id").unwrap_or(0),
-            writeoff_number: row
-                .try_get::<String>("", "writeoff_number")
-                .unwrap_or_default(),
-            product_id: row.try_get::<i64>("", "product_id").unwrap_or(0),
-            product_name: row
-                .try_get::<String>("", "product_name")
-                .unwrap_or_else(|_| "(dihapus)".to_string()),
-            user_id: row.try_get::<i64>("", "user_id").unwrap_or(0),
-            cashier_name: row
-                .try_get::<String>("", "cashier_name")
-                .unwrap_or_default(),
-            quantity: row.try_get::<i64>("", "quantity").unwrap_or(0),
-            reason: row.try_get::<String>("", "reason").unwrap_or_default(),
-            loss_value: row.try_get::<f64>("", "loss_value").unwrap_or(0.0),
-            notes: row.try_get::<String>("", "notes").ok(),
-            approved_by: row.try_get::<i64>("", "approved_by").ok(),
-            approver_name: row.try_get::<String>("", "approver_name").ok(),
-            status: row.try_get::<String>("", "status").unwrap_or_default(),
-            refund_id: row.try_get::<i64>("", "refund_id").ok(),
-            created_at: row.try_get::<String>("", "created_at").unwrap_or_default(),
-        });
-    }
+    let items: Vec<StockWriteoffResponse> = rows.iter().map(row_to_writeoff).collect();
 
     Ok(ListWriteoffsResult {
         items,
@@ -279,13 +242,9 @@ pub async fn create(
         )));
     }
 
-    let now = now_timestamp();
-    let writeoff_number = generate_writeoff_number(&txn).await?;
+    let now = now_ts();
+    let writeoff_number = next_writeoff_number(&txn).await?;
     let loss_value = product.buy_price * input.quantity as f64;
-
-    // Approved on the spot, by the actor who raised it. See the doc comment
-    // above for why the reason, not the role, is what decides this.
-    let (status, approved_by) = ("approved".to_string(), Some(actor.user_id));
 
     let new_writeoff = stock_writeoffs::ActiveModel {
         id: NotSet,
@@ -296,8 +255,10 @@ pub async fn create(
         reason: Set(input.reason),
         loss_value: Set(loss_value),
         notes: Set(input.notes),
-        approved_by: Set(approved_by),
-        status: Set(status),
+        // Approved on the spot, by the actor who raised it. See the doc comment
+        // above for why the reason, not the role, is what decides this.
+        approved_by: Set(Some(actor.user_id)),
+        status: Set("approved".to_string()),
         refund_id: Set(None),
         created_at: Set(Some(now.clone())),
     };
@@ -305,16 +266,7 @@ pub async fn create(
     let writeoff = new_writeoff.insert(&txn).await?;
 
     // Reduce stock immediately
-    txn.execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?",
-        vec![
-            input.quantity.into(),
-            now.clone().into(),
-            input.product_id.into(),
-        ],
-    ))
-    .await?;
+    adjust_stock(&txn, input.product_id, -input.quantity, &now).await?;
 
     txn.commit().await?;
 
@@ -330,15 +282,69 @@ pub async fn create(
         loss_value: writeoff.loss_value,
         notes: writeoff.notes,
         approved_by: writeoff.approved_by,
-        approver_name: if writeoff.approved_by.is_some() {
-            Some(actor_name)
-        } else {
-            None
-        },
+        approver_name: Some(actor_name),
         status: writeoff.status,
         refund_id: writeoff.refund_id,
         created_at: writeoff.created_at.unwrap_or_default(),
     })
+}
+
+/// Add `delta` units to a product's stock (negative to take them off), relative
+/// to whatever the row holds at write time.
+async fn adjust_stock<C: ConnectionTrait>(
+    db: &C,
+    product_id: i64,
+    delta: i64,
+    now: &str,
+) -> Result<(), AppError> {
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
+        vec![delta.into(), now.into(), product_id.into()],
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Move a `pending` write-off to `status`, or fail if it is not pending any more.
+///
+/// The check that decides is the `WHERE status = 'pending'` on the UPDATE
+/// itself, not the read the callers do first: two requests racing on the same
+/// row (a double-click, two admins) both pass that read, but only one UPDATE
+/// matches, so only one caller goes on to touch the stock.
+async fn settle_pending<C: ConnectionTrait>(
+    db: &C,
+    actor: &Actor,
+    writeoff_id: i64,
+    status: &str,
+) -> Result<(), AppError> {
+    let result = stock_writeoffs::Entity::update_many()
+        .col_expr(stock_writeoffs::Column::Status, Expr::value(status))
+        .col_expr(
+            stock_writeoffs::Column::ApprovedBy,
+            Expr::value(actor.user_id),
+        )
+        .filter(stock_writeoffs::Column::Id.eq(writeoff_id))
+        .filter(stock_writeoffs::Column::Status.eq("pending"))
+        .exec(db)
+        .await?;
+
+    if result.rows_affected == 0 {
+        return Err(AppError::Validation(
+            "Write-off ini sudah diproses, bukan 'pending' lagi".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn find_writeoff(
+    db: &DatabaseConnection,
+    writeoff_id: i64,
+) -> Result<stock_writeoffs::Model, AppError> {
+    stock_writeoffs::Entity::find_by_id(writeoff_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Data write-off tidak ditemukan".into()))
 }
 
 pub async fn approve(
@@ -348,11 +354,7 @@ pub async fn approve(
 ) -> Result<StockWriteoffResponse, AppError> {
     guard::require_admin(actor)?;
 
-    let writeoff = stock_writeoffs::Entity::find_by_id(writeoff_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Data write-off tidak ditemukan".into()))?;
-
+    let writeoff = find_writeoff(db, writeoff_id).await?;
     if writeoff.status != "pending" {
         return Err(AppError::Validation(format!(
             "Write-off tidak bisa disetujui karena statusnya '{}', bukan 'pending'",
@@ -360,30 +362,10 @@ pub async fn approve(
         )));
     }
 
-    let mut active: stock_writeoffs::ActiveModel = writeoff.into();
-    active.status = Set("approved".to_string());
-    active.approved_by = Set(Some(actor.user_id));
-    let updated = active.update(db).await?;
-
     // Stock was already reduced at creation, so approving changes nothing else.
+    settle_pending(db, actor, writeoff_id, "approved").await?;
 
-    Ok(StockWriteoffResponse {
-        id: updated.id,
-        writeoff_number: updated.writeoff_number,
-        product_id: updated.product_id,
-        product_name: product_name(db, updated.product_id).await?,
-        user_id: updated.user_id,
-        cashier_name: cashier_name(db, updated.user_id).await?,
-        quantity: updated.quantity,
-        reason: updated.reason,
-        loss_value: updated.loss_value,
-        notes: updated.notes,
-        approved_by: updated.approved_by,
-        approver_name: Some(user_full_name(db, actor.user_id).await?),
-        status: updated.status,
-        refund_id: updated.refund_id,
-        created_at: updated.created_at.unwrap_or_default(),
-    })
+    detail(db, writeoff_id).await
 }
 
 pub async fn reject(
@@ -393,11 +375,7 @@ pub async fn reject(
 ) -> Result<StockWriteoffResponse, AppError> {
     guard::require_admin(actor)?;
 
-    let writeoff = stock_writeoffs::Entity::find_by_id(writeoff_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Data write-off tidak ditemukan".into()))?;
-
+    let writeoff = find_writeoff(db, writeoff_id).await?;
     if writeoff.status != "pending" {
         return Err(AppError::Validation(format!(
             "Write-off tidak bisa ditolak karena statusnya '{}', bukan 'pending'",
@@ -405,50 +383,22 @@ pub async fn reject(
         )));
     }
 
-    let now = now_timestamp();
+    let now = now_ts();
     let txn = db.begin().await?;
 
-    let mut active: stock_writeoffs::ActiveModel = writeoff.clone().into();
-    active.status = Set("rejected".to_string());
-    active.approved_by = Set(Some(actor.user_id));
-    let updated = active.update(&txn).await?;
+    settle_pending(&txn, actor, writeoff_id, "rejected").await?;
 
     // Restore stock only for manual write-offs that actually deducted stock at
     // creation. Refund-originated write-offs (refund_id set) were inserted
     // WITHOUT deducting stock — the unit was already removed at sale time — so
     // restoring here would inflate stock. Mirrors `delete`'s guard.
     if writeoff.refund_id.is_none() {
-        txn.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
-            vec![
-                writeoff.quantity.into(),
-                now.into(),
-                writeoff.product_id.into(),
-            ],
-        ))
-        .await?;
+        adjust_stock(&txn, writeoff.product_id, writeoff.quantity, &now).await?;
     }
 
     txn.commit().await?;
 
-    Ok(StockWriteoffResponse {
-        id: updated.id,
-        writeoff_number: updated.writeoff_number,
-        product_id: updated.product_id,
-        product_name: product_name(db, updated.product_id).await?,
-        user_id: updated.user_id,
-        cashier_name: cashier_name(db, updated.user_id).await?,
-        quantity: updated.quantity,
-        reason: updated.reason,
-        loss_value: updated.loss_value,
-        notes: updated.notes,
-        approved_by: updated.approved_by,
-        approver_name: Some(user_full_name(db, actor.user_id).await?),
-        status: updated.status,
-        refund_id: updated.refund_id,
-        created_at: updated.created_at.unwrap_or_default(),
-    })
+    detail(db, writeoff_id).await
 }
 
 pub async fn delete(
@@ -458,10 +408,7 @@ pub async fn delete(
 ) -> Result<(), AppError> {
     guard::require_admin(actor)?;
 
-    let writeoff = stock_writeoffs::Entity::find_by_id(writeoff_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Data write-off tidak ditemukan".into()))?;
+    let writeoff = find_writeoff(db, writeoff_id).await?;
 
     if writeoff.status != "pending" {
         return Err(AppError::Validation(
@@ -475,24 +422,24 @@ pub async fn delete(
         ));
     }
 
-    let now = now_timestamp();
+    let now = now_ts();
     let txn = db.begin().await?;
 
-    // Restore stock before deleting
-    txn.execute(Statement::from_sql_and_values(
-        DbBackend::Sqlite,
-        "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
-        vec![
-            writeoff.quantity.into(),
-            now.into(),
-            writeoff.product_id.into(),
-        ],
-    ))
-    .await?;
-
-    stock_writeoffs::Entity::delete_by_id(writeoff_id)
+    // Delete first, and only while the row is still pending: a second request
+    // racing this one matches nothing here and never reaches the stock restore.
+    let deleted = stock_writeoffs::Entity::delete_many()
+        .filter(stock_writeoffs::Column::Id.eq(writeoff_id))
+        .filter(stock_writeoffs::Column::Status.eq("pending"))
+        .filter(stock_writeoffs::Column::RefundId.is_null())
         .exec(&txn)
         .await?;
+    if deleted.rows_affected == 0 {
+        return Err(AppError::Validation(
+            "Write-off ini sudah diproses, bukan 'pending' lagi".into(),
+        ));
+    }
+
+    adjust_stock(&txn, writeoff.product_id, writeoff.quantity, &now).await?;
 
     txn.commit().await?;
 
@@ -503,59 +450,23 @@ pub async fn detail(
     db: &DatabaseConnection,
     writeoff_id: i64,
 ) -> Result<StockWriteoffResponse, AppError> {
-    let sql = r#"
-        SELECT w.id, w.writeoff_number, w.product_id, w.user_id, w.quantity,
-               w.reason, w.loss_value, w.notes, w.approved_by, w.status,
-               w.refund_id, w.created_at,
-               p.name as product_name,
-               u.full_name as cashier_name,
-               a.full_name as approver_name
-        FROM stock_writeoffs w
-        LEFT JOIN products p ON w.product_id = p.id
-        LEFT JOIN users u ON w.user_id = u.id
-        LEFT JOIN users a ON w.approved_by = a.id
-        WHERE w.id = ?
-    "#;
-
     let row = db
         .query_one(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            sql,
+            format!("{WRITEOFF_SELECT} WHERE w.id = ?"),
             vec![writeoff_id.into()],
         ))
         .await?
         .ok_or_else(|| AppError::NotFound("Data write-off tidak ditemukan".into()))?;
 
-    Ok(StockWriteoffResponse {
-        id: row.try_get::<i64>("", "id").unwrap_or(0),
-        writeoff_number: row
-            .try_get::<String>("", "writeoff_number")
-            .unwrap_or_default(),
-        product_id: row.try_get::<i64>("", "product_id").unwrap_or(0),
-        product_name: row
-            .try_get::<String>("", "product_name")
-            .unwrap_or_else(|_| "(dihapus)".to_string()),
-        user_id: row.try_get::<i64>("", "user_id").unwrap_or(0),
-        cashier_name: row
-            .try_get::<String>("", "cashier_name")
-            .unwrap_or_default(),
-        quantity: row.try_get::<i64>("", "quantity").unwrap_or(0),
-        reason: row.try_get::<String>("", "reason").unwrap_or_default(),
-        loss_value: row.try_get::<f64>("", "loss_value").unwrap_or(0.0),
-        notes: row.try_get::<String>("", "notes").ok(),
-        approved_by: row.try_get::<i64>("", "approved_by").ok(),
-        approver_name: row.try_get::<String>("", "approver_name").ok(),
-        status: row.try_get::<String>("", "status").unwrap_or_default(),
-        refund_id: row.try_get::<i64>("", "refund_id").ok(),
-        created_at: row.try_get::<String>("", "created_at").unwrap_or_default(),
-    })
+    Ok(row_to_writeoff(&row))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::{
-        insert_product, insert_transaction, insert_user, insert_writeoff, now_ts, setup_test_db,
+        insert_product, insert_transaction, insert_user, insert_writeoff, setup_test_db,
         WriteoffSpec,
     };
     use chrono::{Local, NaiveDateTime, TimeZone, Utc};
@@ -565,17 +476,74 @@ mod tests {
     const MIGRATION_019: &str =
         include_str!("../../migrations/019_stock_writeoff_created_at_utc.sql");
 
+    /// A date whose UTC boundary cannot be written as a sortable timestamp
+    /// (a five-digit year, the last day of the calendar) is a 400, not a panic
+    /// or a range compared against a made-up string.
+    #[tokio::test]
+    async fn a_date_without_a_boundary_is_a_validation_error() {
+        let conn = setup_test_db().await;
+        let filter = |date_from: Option<&str>, date_to: Option<&str>| ListWriteoffsInput {
+            page: None,
+            per_page: None,
+            status: None,
+            reason: None,
+            date_from: date_from.map(str::to_string),
+            date_to: date_to.map(str::to_string),
+        };
+
+        // A malformed date used to be dropped, listing every write-off instead.
+        let last = chrono::NaiveDate::MAX.format("%Y-%m-%d").to_string();
+        for bad in ["+10000-06-15", last.as_str(), "2026-02-30", "30/09/2026"] {
+            for input in [filter(Some(bad), None), filter(None, Some(bad))] {
+                match list(&conn, input).await {
+                    Err(AppError::Validation(message)) => {
+                        assert_eq!(message, crate::utils::time::INVALID_DATE)
+                    }
+                    other => panic!("expected a Validation error for {bad:?}, got {other:?}"),
+                }
+            }
+        }
+
+        list(&conn, filter(Some("2026-09-01"), Some("2026-09-30")))
+            .await
+            .expect("an ordinary range lists");
+    }
+
+    /// The page size is clamped to `1..=100` like the other lists, and an empty
+    /// result is one empty page, as the product search reports it.
+    #[tokio::test]
+    async fn the_page_size_is_clamped_and_an_empty_list_has_one_page() {
+        let conn = setup_test_db().await;
+        let page = |per_page: Option<i64>| ListWriteoffsInput {
+            page: Some(i64::MAX),
+            per_page,
+            status: None,
+            reason: None,
+            date_from: None,
+            date_to: None,
+        };
+
+        let huge = list(&conn, page(Some(i64::MAX))).await.expect("list");
+        assert_eq!(huge.per_page, 100);
+        assert!(huge.items.is_empty());
+        assert_eq!(huge.total_pages, 1);
+
+        let zero = list(&conn, page(Some(0))).await.expect("list");
+        assert_eq!(zero.per_page, 1);
+    }
+
     /// B22: `stock_writeoffs.created_at` is filtered as UTC by [`list`] and
-    /// `reports::query_losses`, and the refund path writes UTC into the same
+    /// `reports::losses`, and the refund path writes UTC into the same
     /// column, so the manual path must too.
     #[test]
-    fn now_timestamp_is_utc() {
-        let parsed = NaiveDateTime::parse_from_str(&now_timestamp(), "%Y-%m-%d %H:%M:%S")
+    fn the_timestamp_this_module_writes_is_utc() {
+        let written = now_ts();
+        let parsed = NaiveDateTime::parse_from_str(&written, "%Y-%m-%d %H:%M:%S")
             .expect("timestamp is in the stored format");
         let drift = (Utc::now().naive_utc() - parsed).num_seconds().abs();
         assert!(
             drift <= 5,
-            "now_timestamp() drifted {}s from UTC — it is writing local time",
+            "now_ts() drifted {}s from UTC — it is writing local time",
             drift
         );
     }
@@ -761,5 +729,50 @@ mod tests {
             assert_eq!(writeoff.approved_by, Some(kasir.id), "reason '{}'", reason);
             assert_eq!(writeoff.user_id, kasir.id, "reason '{}'", reason);
         }
+    }
+
+    /// Two rejects racing on one row (a double-click) both pass the status
+    /// read. Only the conditional UPDATE stops the second from putting the
+    /// units back on the shelf a second time.
+    #[tokio::test]
+    async fn a_writeoff_settled_by_a_racing_request_is_not_settled_twice() {
+        let conn = setup_test_db().await;
+        let product = insert_product(&conn, "Beras 5kg", 10_000.0, 12_000.0, 8).await;
+        let pending = insert_writeoff(
+            &conn,
+            WriteoffSpec {
+                product_id: product.id,
+                user_id: 1,
+                quantity: 2,
+                reason: "damaged",
+                loss_value: 20_000.0,
+                status: "pending",
+                created_at: &now_ts(),
+            },
+        )
+        .await;
+        let admin = Actor::new(1, "admin");
+
+        let rejected = reject(&conn, &admin, pending.id)
+            .await
+            .expect("first reject");
+        assert_eq!(rejected.status, "rejected");
+        assert_eq!(rejected.approved_by, Some(1));
+
+        // The second request, already past its read when the first committed.
+        match settle_pending(&conn, &admin, pending.id, "rejected")
+            .await
+            .unwrap_err()
+        {
+            AppError::Validation(_) => {}
+            other => panic!("expected Validation, got {:?}", other),
+        }
+
+        let after = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("product");
+        assert_eq!(after.stock, 10, "the 2 units come back once, not twice");
     }
 }

@@ -26,6 +26,8 @@ export const id = {
     close: "Tutup",
     retry: "Coba lagi",
     noData: "Belum ada data",
+    /** A request that never reached the server. */
+    networkError: "Tidak dapat menghubungi server. Periksa koneksi jaringan.",
     required: "Wajib diisi",
     invalidNumber: "Angka tidak valid",
   },
@@ -37,7 +39,10 @@ export const id = {
     loginButton: "Masuk",
     loginTitle: "Masuk ke POS",
     sessionExpired: "Sesi berakhir, silakan login kembali",
-    pinHint: "4–6 digit",
+    pinHint: "4-6 digit angka",
+    loginFailed: "Gagal masuk",
+    /** Alt text of the store logo above the login form. */
+    storeLogo: "Logo toko",
   },
   roles: {
     admin: "Admin",
@@ -79,7 +84,7 @@ export const id = {
     hint: "Arahkan kamera ke barcode",
     permissionTitle: "Kamera belum diizinkan",
     permissionBody: "Izinkan kamera untuk memindai barcode, atau cari barang lewat kolom di atas.",
-    notFound: "Barang tidak ditemukan",
+    notFound: "Produk tidak ditemukan",
     notFoundBody: "Barcode ini belum terdaftar.",
     addProduct: "Tambah produk",
     scanAgain: "Scan lagi",
@@ -99,6 +104,7 @@ export const id = {
     noCategory: "Tanpa kategori",
     unit: "Satuan",
     sellPrice: "Harga Jual",
+    sellPricePositive: "Harga jual harus lebih dari 0",
     buyPrice: "Harga Modal",
     stock: "Stok",
     minStock: "Minimal Stok",
@@ -146,8 +152,12 @@ export const id = {
     notes: "Catatan",
     notesPlaceholder: "Opsional",
     lossValue: "Nilai kerugian",
-    writeoffSuccess: "Write-off tercatat",
-    quantityExceeds: "Jumlah melebihi stok saat ini",
+    /** A cashier's write-off waits for an admin; an admin's is approved at once. */
+    writeoffCreatedPending:
+      "Write-off dibuat dan stok sudah dikurangi. Menunggu persetujuan admin.",
+    writeoffCreatedApproved: "Write-off dibuat dan disetujui, stok sudah dikurangi",
+    /** `available` already formatted, with its unit when there is one. */
+    quantityExceeds: (available: string) => `Maks. stok tersedia: ${available}`,
     quantityPositive: "Jumlah harus lebih dari 0",
     reasons: {
       damaged: "Rusak",
@@ -155,7 +165,7 @@ export const id = {
       lost: "Hilang",
       other: "Lainnya",
     },
-    lostAdminOnly: "Barang hilang hanya bisa dicatat oleh admin.",
+    lostAdminOnly: "Hanya admin yang dapat melakukan write-off barang hilang",
   },
   settings: {
     title: "Pengaturan",

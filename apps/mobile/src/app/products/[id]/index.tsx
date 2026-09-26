@@ -6,6 +6,7 @@ import {
   formatRupiah,
   id,
   isLowStock,
+  type Product,
 } from "@kasir/shared";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Chip, Typography } from "heroui-native";
@@ -14,9 +15,9 @@ import { View } from "react-native";
 
 import { FieldRow } from "@/components/field-row";
 import { HeaderActions, type HeaderAction } from "@/components/header-actions";
+import { ProductGate } from "@/components/product-gate";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
-import { ErrorView, LoadingView } from "@/components/state-view";
 import { useCategories, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
 
@@ -34,22 +35,16 @@ import { useCurrentUser } from "@/hooks/use-session";
  */
 export default function ProductDetailScreen(): JSX.Element {
   const { id: rawId } = useLocalSearchParams<{ id: string }>();
-  const productId = Number(rawId);
+  const product = useProductDetail(Number(rawId));
+
+  return <ProductGate product={product}>{(item) => <ProductDetail item={item} />}</ProductGate>;
+}
+
+function ProductDetail({ item }: { item: Product }): JSX.Element {
   const router = useRouter();
   const user = useCurrentUser();
-  const product = useProductDetail(productId);
   const categories = useCategories();
 
-  if (product.isPending) return <LoadingView />;
-  if (product.isError) {
-    return (
-      <ScrollScreen>
-        <ErrorView error={product.error} onRetry={() => void product.refetch()} />
-      </ScrollScreen>
-    );
-  }
-
-  const item = product.data;
   const category = categories.data?.find((entry) => entry.id === item.category_id)?.name;
   const low = isLowStock(item);
   const params = { id: String(item.id) };

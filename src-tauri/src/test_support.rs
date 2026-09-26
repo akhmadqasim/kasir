@@ -8,7 +8,7 @@
 //! pinned to a single connection (`min_connections(1)`/`max_connections(1)`),
 //! which is what keeps an in-memory database alive across queries.
 
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Local, NaiveDate};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, NotSet, Set};
 
 use crate::db;
@@ -16,12 +16,7 @@ use crate::entity::{
     exchange_items, products, refund_items, refunds, stock_writeoffs, store_info,
     transaction_items, transactions, users,
 };
-
-/// Current UTC timestamp in the `"YYYY-MM-DD HH:MM:SS"` shape used by every
-/// `created_at` column.
-pub fn now_ts() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
+use crate::utils::time::{local_to_utc, now_ts};
 
 /// Today's date in the machine's local timezone.
 pub fn today() -> NaiveDate {
@@ -40,10 +35,7 @@ pub fn date_str(date: NaiveDate) -> String {
 /// boundaries derived from local dates, so seeding at local noon pins a row to
 /// a known local calendar day whatever the machine's timezone offset is.
 pub fn utc_at_local_noon(date: NaiveDate) -> String {
-    let offset_secs = Local::now().offset().local_minus_utc() as i64;
-    (date.and_hms_opt(12, 0, 0).unwrap() - Duration::seconds(offset_secs))
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string()
+    local_to_utc(date.and_hms_opt(12, 0, 0).unwrap()).expect("an ordinary test date")
 }
 
 /// Fresh in-memory database with migrations applied and one admin user (id 1).

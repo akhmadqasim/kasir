@@ -4,7 +4,7 @@ import { Button, Table } from "@heroui/react"
 
 import { StatusBadge } from "@/components/status-badge"
 import { id } from "@/i18n/id"
-import { formatRupiah } from "@/lib/format"
+import { formatNumber, formatRupiah } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PinActionButton } from "./pin-action-button"
 import type { Product } from "../types"
@@ -14,6 +14,8 @@ interface ProductRowProps {
   /** Nama kategorinya, atau `null` untuk produk tanpa kategori. */
   categoryName: string | null
   isPinned: boolean
+  /** `true` selama permintaan pin untuk baris ini berjalan. */
+  isPinPending: boolean
   onEdit: (product: Product) => void
   onDelete: (product: Product) => void
   onTogglePin: (productId: number) => void
@@ -35,6 +37,7 @@ export const ProductRow = memo(function ProductRow({
   product,
   categoryName,
   isPinned,
+  isPinPending,
   onEdit,
   onDelete,
   onTogglePin,
@@ -43,8 +46,10 @@ export const ProductRow = memo(function ProductRow({
     <Table.Row id={product.id} textValue={product.name}>
       {/* Tanpa lencana "Tanpa Barcode" / "Tanpa Kategori": kolom barcode dan
           kategori di baris yang sama sudah mengatakannya. */}
-      <Table.Cell className="font-medium">{product.name}</Table.Cell>
-      <Table.Cell className="text-muted">{product.barcode?.trim() || "—"}</Table.Cell>
+      {/* `text-pretty`: nama yang patah tidak menyisakan "g" atau "kg"
+          sendirian di baris kedua pada layar 1024px. */}
+      <Table.Cell className="font-medium text-pretty">{product.name}</Table.Cell>
+      <Table.Cell className="text-muted tabular-nums">{product.barcode?.trim() || "—"}</Table.Cell>
       <Table.Cell>
         <span className={cn(!categoryName && "text-muted")}>
           {categoryName ?? "Tanpa kategori"}
@@ -54,18 +59,31 @@ export const ProductRow = memo(function ProductRow({
         {formatRupiah(product.sell_price)}
       </Table.Cell>
       <Table.Cell className="text-right">
+        {/* Lencananya di kiri angka, bukan di kanan: dengan lencana di kanan,
+            angka baris "Stok Rendah" bergeser ke kiri dan kolomnya tidak lagi
+            rata di tepi kanan seperti kolom angka lainnya. */}
         <div className="flex items-center justify-end gap-2">
-          <span className={cn("tabular-nums", product.stock < 0 && "font-semibold text-danger")}>
-            {product.stock}
-          </span>
           <StockBadge stock={product.stock} minStock={product.min_stock} />
+          {/* Satuannya ikut tertulis: "12" untuk beras berarti kilogram, untuk
+              mi berarti bungkus. */}
+          <span className="whitespace-nowrap tabular-nums">
+            <span className={cn(product.stock < 0 && "font-semibold text-danger")}>
+              {formatNumber(product.stock)}
+            </span>{" "}
+            <span className="text-xs text-muted">{product.unit}</span>
+          </span>
         </div>
       </Table.Cell>
       <Table.Cell className="text-right">
         {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI: `tertiary`
             untuk aksi biasa, `danger-soft` untuk hapus (DESIGN.md §5.4). */}
         <div className="flex items-center justify-end gap-1">
-          <PinActionButton isPinned={isPinned} onPress={() => onTogglePin(product.id)} />
+          <PinActionButton
+            isPending={isPinPending}
+            isPinned={isPinned}
+            productName={product.name}
+            onPress={() => onTogglePin(product.id)}
+          />
           <Button
             aria-label={`${id.common.edit} ${product.name}`}
             isIconOnly

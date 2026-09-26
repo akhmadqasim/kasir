@@ -205,6 +205,12 @@ export const BANKS: readonly Bank[] = BANKS_BASE.map((bank) => ({
  * mana saja — semua tetap `allowsCustomValue`, ini cuma urutan tawaran.
  */
 export interface BankChoice {
+  /**
+   * The field's accessible name. It has no visible label (it sits under
+   * "Nominal <metode>"), and with a split payment several are on screen at
+   * once, so each names its method.
+   */
+  label: string
   placeholder: string
   options: readonly Bank[]
 }
@@ -213,10 +219,10 @@ const ONLY_BANKS = BANKS.filter((bank) => (bank.kind ?? "bank") === "bank")
 const ONLY_EWALLETS = BANKS.filter((bank) => bank.kind === "ewallet")
 
 export const BANK_CHOICE_BY_METHOD: Partial<Record<string, BankChoice>> = {
-  transfer: { placeholder: "Bank pengirim", options: BANKS },
-  debit: { placeholder: "Bank kartu", options: ONLY_BANKS },
-  ewallet: { placeholder: "Dompet digital", options: ONLY_EWALLETS },
-  qris: { placeholder: "Aplikasi pembayar", options: BANKS },
+  transfer: { label: "Bank Transfer", placeholder: "Bank pengirim", options: BANKS },
+  debit: { label: "Bank Debit", placeholder: "Bank kartu", options: ONLY_BANKS },
+  ewallet: { label: "Dompet E-Wallet", placeholder: "Dompet digital", options: ONLY_EWALLETS },
+  qris: { label: "Aplikasi QRIS", placeholder: "Aplikasi pembayar", options: BANKS },
 }
 
 /** Cocok untuk `ComboBox`'s `defaultFilter`: nama bank atau salah satu aliasnya. */

@@ -15,10 +15,10 @@ export type Role = User["role"]
 export function allowedWriteoffReasons(role: Role): readonly WriteoffReason[] {
   return role === "admin"
     ? WRITEOFF_REASONS
-    : WRITEOFF_REASONS.filter((reason) => reason !== "lost" && reason !== "other")
+    : WRITEOFF_REASONS.filter((reason) => reason !== "lost")
 }
 
-export function canUseWriteoffReason(role: Role, reason: WriteoffReason): boolean {
+function canUseWriteoffReason(role: Role, reason: WriteoffReason): boolean {
   return allowedWriteoffReasons(role).includes(reason)
 }
 
@@ -39,7 +39,7 @@ export function canSeeBuyPrice(role: Role): boolean {
  * - `adjust`: set the system stock to the counted value. Admin only, because
  *   the only endpoint that can do it is the whole-row product update.
  * - `writeoff`: counted is *below* system and the missing units can be
- *   explained as damaged/expired (any role) or lost/other (admin). The
+ *   explained as damaged/expired/other (any role) or lost (admin). The
  *   write-off quantity is the shortfall.
  * - `blocked`: the count needs a change this role cannot make; `reason` says
  *   why so the screen can print it.

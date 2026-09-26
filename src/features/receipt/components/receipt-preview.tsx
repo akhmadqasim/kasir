@@ -1,12 +1,13 @@
 import { Skeleton } from "@heroui/react"
+import { ReceiptText } from "lucide-react"
 
+import { LoadError } from "@/components/load-error"
 import { useApiQuery } from "@/hooks/use-api"
 import { getSaleReceiptLines } from "@/lib/api/transactions"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
+import { id } from "@/i18n/id"
 import { receiptColumns } from "../utils/receipt-png"
-
-/** Kolom struk 58mm dan 80mm — sama dengan `printing::receipt::columns` di Rust. */
 
 interface ReceiptPreviewProps {
   transactionId: number
@@ -31,22 +32,53 @@ interface ReceiptPreviewProps {
  */
 export function ReceiptPreview({ transactionId, paperWidth, className }: ReceiptPreviewProps) {
   const columns = receiptColumns(paperWidth)
-  const { data: lines, isLoading } = useApiQuery(
-    queryKeys.transactions.receiptLines(transactionId, paperWidth ?? null),
-    () => getSaleReceiptLines(transactionId, paperWidth),
+  const {
+    data: lines,
+    isPending,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useApiQuery(queryKeys.transactions.receiptLines(transactionId, paperWidth ?? null), () =>
+    getSaleReceiptLines(transactionId, paperWidth),
   )
+
+  // Gagal digambar di luar kertas, dengan token tema: kertasnya selalu putih,
+  // dan `text-danger` mode gelap (merah terang) tidak terbaca di atas putih.
+  // Tanpa cabang ini kerangka `Skeleton` berdenyut selamanya dan kasir tidak
+  // pernah tahu pratinjaunya tidak akan datang.
+  if (isError && !lines) {
+    return (
+      <LoadError
+        icon={<ReceiptText />}
+        isRetrying={isRefetching}
+        title={id.loadFailed.receiptPreview}
+        onRetry={() => void refetch()}
+      >
+        {error.message}
+      </LoadError>
+    )
+  }
+
+  const isLoading = isPending || !lines
 
   return (
     // `bg-white`/`text-black` mentah, bukan token tema: ini kertas termal
     // sungguhan, yang selalu putih terlepas dari tema gelap aplikasinya —
     // pengecualian yang sama dengan warna kategori di DESIGN.md §3.2.
     <div
+      aria-busy={isLoading}
       aria-label="Pratinjau struk"
+      // `role="region"` + `tabIndex=0`: kotak ini menggulir sendiri, jadi
+      // pengguna papan ketik harus bisa memfokuskannya untuk menggulir dengan
+      // panah — dan `aria-label` baru diumumkan pada elemen yang punya peran.
+      role="region"
+      tabIndex={0}
       // `font-mono text-xs` di kotaknya, bukan hanya di teksnya: lebar `ch`
       // dihitung dari huruf elemen ini sendiri, dan dengan huruf sans 16px kotak
       // itu jadi sepertiga lebih lebar dari teksnya lalu meluber keluar dialog.
       className={cn(
-        "mx-auto max-w-full overflow-auto rounded-md border border-border bg-white px-3 py-6 font-mono text-xs text-black shadow-xs [scrollbar-gutter:stable_both-edges] [scrollbar-width:thin]",
+        "mx-auto max-w-full overflow-auto rounded-md border border-border bg-white px-3 py-6 font-mono text-xs text-black shadow-xs outline-none [scrollbar-gutter:stable_both-edges] [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-focus",
         className,
       )}
       // `+ 1.5rem` = `px-3` kiri dan kanan; `+ 1.5rem` lagi = jalur scrollbar
@@ -56,8 +88,8 @@ export function ReceiptPreview({ transactionId, paperWidth, className }: Receipt
       // seperti sisa kertas yang keluar sebelum dan sesudah cetakan.
       style={{ width: `calc(${columns}ch + 3rem)` }}
     >
-      {!lines || isLoading ? (
-        <div className="flex flex-col gap-1.5">
+      {isLoading ? (
+        <div aria-hidden="true" className="flex flex-col gap-1.5">
           {Array.from({ length: 14 }).map((_, index) => (
             <Skeleton key={index} className="h-3 w-full bg-black/10" />
           ))}

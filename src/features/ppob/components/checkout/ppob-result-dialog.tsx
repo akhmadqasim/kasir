@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { Button, Kbd, Modal, Spinner } from "@heroui/react"
-import { Printer } from "lucide-react"
+import { Alert, Button, Kbd, Modal, Spinner } from "@heroui/react"
+import { CircleCheck, CircleX, Clock, Printer, TriangleAlert } from "lucide-react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
 import type { TransactionResult } from "@/features/cashier/types"
-import { isPpobInFlight, ppobStatusConfig } from "@/features/transactions/ppob-status"
+import { isPpobInFlight, ppobStatusConfig } from "@/lib/ppob-status"
 import type { TransactionDetail, TransactionItem } from "@/features/transactions/types"
 import { useApiQuery } from "@/hooks/use-api"
 import { id } from "@/i18n/id"
@@ -18,6 +18,7 @@ import { getTransactionDetail } from "@/lib/api/transactions"
 import { flashPress } from "@/lib/flash-press"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { cn } from "@/lib/utils"
 
 /** How often to ask whether the provider has answered yet. */
 const POLL_MS = 1500
@@ -35,6 +36,24 @@ type AutoPrintState =
   | { status: "printing" }
   | { status: "printed" }
   | { status: "failed"; message: string }
+
+/**
+ * The header icon follows the provider's answer, not the payment — the money
+ * is always in by now, so what the cashier needs from a glance is whether the
+ * token arrived. The same states `StatusBadge` names in words below it.
+ */
+function statusIcon(status: string) {
+  switch (status) {
+    case "success":
+      return { Icon: CircleCheck, tint: "bg-success-soft text-success-soft-foreground" }
+    case "failed":
+      return { Icon: CircleX, tint: "bg-danger-soft text-danger-soft-foreground" }
+    case "uncertain":
+      return { Icon: TriangleAlert, tint: "bg-warning-soft text-warning-soft-foreground" }
+    default:
+      return { Icon: Clock, tint: "bg-default text-foreground" }
+  }
+}
 
 function ppobLine(items: TransactionItem[] | undefined): TransactionItem | undefined {
   return items?.find((item) => item.service_type)
@@ -99,6 +118,7 @@ function ResultContent({ result, autoPrint, onDone }: ResultContentProps) {
   const statusConfig = ppobStatusConfig(status)
   const inFlight = isPpobInFlight(status)
   const changeAmount = transaction.change_amount ?? 0
+  const { Icon: StatusIcon, tint } = statusIcon(status)
 
   useEffect(() => {
     unmountedRef.current = false
@@ -112,13 +132,13 @@ function ResultContent({ result, autoPrint, onDone }: ResultContentProps) {
     setIsPrinting(true)
     try {
       await printReceipt(transaction.id)
-      toast.success("Struk berhasil dicetak!")
+      toast.success(id.print.printed)
     } catch (error) {
       const message = errorMessage(error)
       if (message.includes("belum dikonfigurasi")) {
-        toast.error("Printer belum diatur. Silakan atur di menu Pengaturan.")
+        toast.error(id.print.printerNotSet)
       } else {
-        toast.error(`Gagal mencetak struk: ${message}`)
+        toast.error(id.print.failed(message))
       }
     } finally {
       setIsPrinting(false)
@@ -165,6 +185,9 @@ function ResultContent({ result, autoPrint, onDone }: ResultContentProps) {
     <>
       <Modal.CloseTrigger />
       <Modal.Header>
+        <Modal.Icon className={cn("transition-colors", tint)}>
+          <StatusIcon className="size-5" />
+        </Modal.Icon>
         <Modal.Heading>Transaksi PPOB selesai</Modal.Heading>
       </Modal.Header>
       <Modal.Body className="overflow-visible">
@@ -204,24 +227,56 @@ function ResultContent({ result, autoPrint, onDone }: ResultContentProps) {
         )}
 
         {status === "failed" && (
-          <p className="text-danger">
-            {line?.ppob_message?.trim() || "Provider menolak transaksinya."} Coba ulang dari
-            Riwayat.
-          </p>
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{id.ppobFulfillment.rejectedTitle}</Alert.Title>
+              <Alert.Description>
+                {line?.ppob_message?.trim() || id.ppobFulfillment.rejectedFallback}{" "}
+                {id.ppobFulfillment.rejectedHint}
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
 
-        {autoPrintState.status === "printing" && (
-          <p className="flex items-center gap-2">
-            <Spinner color="current" size="sm" />
-            Struk sedang dicetak otomatis…
-          </p>
+        {status === "uncertain" && (
+          <Alert status="warning">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{id.ppobFulfillment.uncertainTitle}</Alert.Title>
+              <Alert.Description>{id.ppobFulfillment.uncertainHint}</Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
-        {autoPrintState.status === "printed" && <p>Struk otomatis dicetak.</p>}
-        {autoPrintState.status === "failed" && (
-          <p className="text-danger">
-            Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol "Cetak struk".
-          </p>
-        )}
+
+        {/* One live region for the auto-print, so its progress is announced too.
+            Always in the tree: a region that starts out display:none is not
+            reliably watched. Empty, it is taken out of the flow (no extra gap). */}
+        <div aria-live="polite" className="empty:absolute">
+          {autoPrintState.status === "printing" && (
+            <p className="flex items-center gap-2">
+              <Spinner color="current" size="sm" />
+              Struk sedang dicetak otomatis…
+            </p>
+          )}
+          {autoPrintState.status === "printed" && (
+            <p className="flex items-center gap-2">
+              <Printer aria-hidden="true" className="size-4" />
+              Struk otomatis dicetak.
+            </p>
+          )}
+          {autoPrintState.status === "failed" && (
+            <Alert status="danger">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>Struk gagal dicetak otomatis</Alert.Title>
+                <Alert.Description>
+                  {autoPrintState.message.replace(/[.\s]+$/, "")}. Gunakan tombol "Cetak struk".
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
+        </div>
       </Modal.Body>
       <Modal.Footer>
         <PendingButton
@@ -232,7 +287,7 @@ function ResultContent({ result, autoPrint, onDone }: ResultContentProps) {
         >
           <Printer />
           Cetak struk
-          <Kbd aria-hidden="true">
+          <Kbd aria-hidden="true" variant="light">
             <Kbd.Content>Enter</Kbd.Content>
           </Kbd>
         </PendingButton>

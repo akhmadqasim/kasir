@@ -33,9 +33,6 @@ export function OnboardingPage() {
           toast.success(t.success)
           navigate("/login")
         },
-        onError: (error) => {
-          toast.error(error.message || id.common.error)
-        },
       },
     )
   }
@@ -49,10 +46,16 @@ export function OnboardingPage() {
           onSubmit={handleAdminSubmit}
           onBack={(data) => {
             setAdminData(data)
+            // The old failure belongs to the old attempt; do not greet the
+            // user with it when they come back to this step.
+            completeMutation.reset()
             setStep(1)
           }}
           isLoading={completeMutation.isPending}
           initialData={adminData}
+          submitError={
+            completeMutation.isError ? completeMutation.error.message || id.common.error : null
+          }
         />
       )}
     </AuthScreen>

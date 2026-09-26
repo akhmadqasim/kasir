@@ -1,6 +1,7 @@
 import { Save } from "lucide-react"
 import { Card, Description, Fieldset, NumberField } from "@heroui/react"
 
+import { CardHeading } from "@/components/card-heading"
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
@@ -32,14 +33,14 @@ export function MarkupCard({ form }: { form: PpobSettingsForm }) {
   return (
     <Card>
       <Card.Header>
-        <Card.Title>Markup & Harga Jual</Card.Title>
+        <CardHeading>Markup & Harga Jual</CardHeading>
         <Card.Description>Atur margin keuntungan untuk setiap jenis layanan PPOB</Card.Description>
       </Card.Header>
       <Card.Content className="gap-6">
         {/* Dua kelompok isian dalam satu kartu: `Fieldset` memberi legenda dan
             keterangannya bentuk yang sama tanpa judul kartu kedua. */}
         <Fieldset>
-          <Fieldset.Legend>Markup per Layanan</Fieldset.Legend>
+          <Fieldset.Legend className="text-sm">Markup per Layanan</Fieldset.Legend>
           <Description>Harga jual = harga modal + markup</Description>
           <Fieldset.Group>
             {MARKUP_SERVICES.map(({ key, label }) => {

@@ -2,7 +2,6 @@ import { formatNumber, formatRupiah } from "./format"
 import { id } from "./i18n/id"
 import type { User } from "./types/auth"
 import type { WriteoffReason } from "./types/stock"
-import { WRITEOFF_REASONS } from "./types/stock"
 
 /**
  * Labels that map a backend vocabulary word to what the screen prints.
@@ -10,7 +9,7 @@ import { WRITEOFF_REASONS } from "./types/stock"
  * desktop's `src/lib/labels.ts`.
  */
 
-export const WRITEOFF_REASON_LABELS: Record<WriteoffReason, string> = {
+const WRITEOFF_REASON_LABELS: Record<WriteoffReason, string> = {
   damaged: id.stock.reasons.damaged,
   expired: id.stock.reasons.expired,
   lost: id.stock.reasons.lost,
@@ -21,11 +20,7 @@ export function writeoffReasonLabel(reason: string): string {
   return (WRITEOFF_REASON_LABELS as Record<string, string>)[reason] ?? reason
 }
 
-export function isWriteoffReason(value: string): value is WriteoffReason {
-  return (WRITEOFF_REASONS as readonly string[]).includes(value)
-}
-
-export const ROLE_LABELS: Record<User["role"], string> = {
+const ROLE_LABELS: Record<User["role"], string> = {
   admin: id.roles.admin,
   kasir: id.roles.kasir,
 }

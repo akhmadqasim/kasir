@@ -1,5 +1,5 @@
 import type { CheckoutTransactionInput, TransactionResult } from "@/features/cashier/types"
-import type { ReceiptData, ReceiptLine } from "@/features/receipt/types"
+import type { ReceiptLine } from "@/features/receipt/types"
 import type {
   ListTransactionsInput,
   PaginatedTransactions,
@@ -22,10 +22,6 @@ function listQuery(params: ListTransactionsInput): QueryParams {
 
 export function listTransactions(params: ListTransactionsInput): Promise<PaginatedTransactions> {
   return apiGet<PaginatedTransactions>("/transactions", listQuery(params))
-}
-
-export function getNextReceiptNumber(): Promise<string> {
-  return apiGet<string>("/transactions/next-receipt-number")
 }
 
 export function getTransactionDetail(transactionId: number): Promise<TransactionDetail> {
@@ -64,11 +60,6 @@ export function updateTransactionPaymentMethod(
   })
 }
 
-/** Everything a receipt needs, for the browser to render. */
-export function getReceiptData(transactionId: number): Promise<ReceiptData> {
-  return apiGet<ReceiptData>(`/transactions/${transactionId}/receipt`)
-}
-
 /**
  * The exact lines the printer would be handed for this sale, for the success
  * dialog's struk preview. `paperWidth` (58 or 80) overrides the store's
@@ -95,4 +86,16 @@ export function getSaleReceiptLines(
  */
 export function retryPpobFulfillment(transactionItemId: number, pin: string): Promise<string> {
   return apiPost<string>(`/transaction-items/${transactionItemId}/ppob/retry`, { pin })
+}
+
+/** Settle an `uncertain` PPOB line after checking it in the Mitra history. */
+export function resolvePpobFulfillment(
+  transactionItemId: number,
+  success: boolean,
+  serialNumber?: string,
+): Promise<string> {
+  return apiPost<string>(`/transaction-items/${transactionItemId}/ppob/resolve`, {
+    success,
+    serial_number: serialNumber || null,
+  })
 }

@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom"
+import { Alert, Button } from "@heroui/react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { id } from "@/i18n/id"
@@ -19,6 +20,21 @@ export function PpobSettings() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <SubpageHeader title={id.ppob.settingsTitle} onBack={() => navigate("/ppob")} />
+      {form.loadError ? (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{id.loadFailed.ppobSettings}</Alert.Title>
+            <Alert.Description>
+              {form.loadError.message.replace(/[.\s]+$/, "")}. Tombol Simpan tetap mati sampai
+              pengaturan berhasil dimuat.
+            </Alert.Description>
+          </Alert.Content>
+          <Button size="sm" variant="danger" onPress={form.reload}>
+            {id.common.retry}
+          </Button>
+        </Alert>
+      ) : null}
       <ConnectionCard form={form} />
       <MarkupCard form={form} />
     </div>

@@ -23,7 +23,14 @@ export function TimeRangeMenu({ value, onChange }: TimeRangeMenuProps) {
 
   return (
     <Dropdown>
-      <Button aria-label="Ganti rentang waktu" size="sm" variant="tertiary">
+      {/* Nama tombol diawali teks yang terlihat ("1 Minggu"), baru tujuannya:
+          label yang tidak memuat tulisan di tombol membuat perintah suara
+          "klik 1 Minggu" tidak menemukannya (WCAG 2.5.3). */}
+      <Button
+        aria-label={current ? `${current.label}, ganti rentang waktu` : "Ganti rentang waktu"}
+        size="sm"
+        variant="tertiary"
+      >
         <CalendarIcon />
         {current?.label}
         <ChevronDownIcon />

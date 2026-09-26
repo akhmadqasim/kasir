@@ -1,35 +1,31 @@
-import { memo, useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
-import { InputGroup, Kbd, ScrollShadow, Separator, Tabs } from "@heroui/react"
-import { Search, TrendingUp } from "lucide-react"
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import type { KeyboardEvent } from "react"
+import { InputGroup, Kbd, ScrollShadow, Separator } from "@heroui/react"
+import { Search } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
-import { NoData } from "@/components/no-data"
-import { StatusBadge } from "@/components/status-badge"
+import { formatNumber } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { useApiQuery } from "@/hooks/use-api"
-import {
-  getPopularProducts,
-  searchProducts,
-  trackProductSelection,
-} from "@/lib/api/products"
+import { getProductByBarcode, searchProducts, trackProductSelection } from "@/lib/api/products"
 import { queryKeys } from "@/lib/api/query-keys"
-import { SEARCH_DEBOUNCE_MS } from "@/lib/constants"
 import type { PaginatedProducts, Product, ShortcutProduct } from "@/features/products/types"
 import { useCartStore } from "@/stores/cart-store"
-import { getProductByBarcode } from "../hooks/use-cashier"
+import { id } from "@/i18n/id"
+import { useScanField } from "../hooks/use-scan-field"
 import {
   getProductSearchEnterAction,
   isLikelyBarcodeScannerInput,
   isWholeBarcodeQuery,
   rankProductsForSearch,
+  searchOptionId,
 } from "../search-behavior"
-import { formatRupiah } from "../utils"
-import { PpobQuickAccess } from "@/features/ppob"
-import { ShortcutTile } from "./shortcut-tile"
+import { CashierShortcutTabs } from "./cashier-shortcut-tabs"
+import { ProductSearchResults } from "./product-search-results"
 
-/** How many shortcut tiles the cashier screen asks for. */
-const SHORTCUT_LIMIT = 30
+/** Result rows fetched per search. */
+const SEARCH_PAGE_SIZE = 50
 
 interface ProductSearchPanelProps {
   focusKey?: number
@@ -63,31 +59,39 @@ interface ProductSearchPanelProps {
 export const ProductSearchPanel = memo(function ProductSearchPanel({
   focusKey = 0,
 }: ProductSearchPanelProps) {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
   const [pickedProductValue, setPickedProductValue] = useState<string | undefined>()
+  const resetPicked = useCallback(() => setPickedProductValue(undefined), [])
+  const {
+    searchQuery,
+    debouncedQuery,
+    searchNow,
+    handleSearchQueryChange,
+    clearSearch,
+    clearSubmittedSearch,
+    readCurrentQuery,
+    readInputTiming,
+  } = useScanField(resetPicked)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchQueryRef = useRef("")
-  const inputTimingRef = useRef({ query: "", startedAt: 0, lastInputAt: 0 })
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
   const listboxId = useId()
-  const optionId = (productId: number) => `${listboxId}-option-${productId}`
 
   useEffect(() => {
     searchInputRef.current?.focus()
   }, [])
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery)
-    }, SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
+  const searchParams = useMemo(
+    () => ({ query: debouncedQuery, per_page: SEARCH_PAGE_SIZE }),
+    [debouncedQuery],
+  )
 
-  const searchParams = useMemo(() => ({ query: debouncedQuery, per_page: 50 }), [debouncedQuery])
-
-  const { data: searchResults } = useApiQuery<PaginatedProducts>(
+  const {
+    data: searchResults,
+    isError: isSearchError,
+    error: searchError,
+    refetch: refetchSearch,
+    isFetching: isSearchFetching,
+  } = useApiQuery<PaginatedProducts>(
     queryKeys.products.search(searchParams),
     () => searchProducts(searchParams),
     { enabled: debouncedQuery.length > 0 },
@@ -115,52 +119,10 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     [rankedSearchResults, selectedProductValue],
   )
 
-  const { data: shortcutProducts } = useApiQuery<ShortcutProduct[]>(
-    queryKeys.products.popular(SHORTCUT_LIMIT),
-    () => getPopularProducts(SHORTCUT_LIMIT),
-  )
-
   const focusInput = useCallback(() => {
     setTimeout(() => {
       searchInputRef.current?.focus()
     }, 50)
-  }, [])
-
-  const resetSearchInputTiming = useCallback(() => {
-    searchQueryRef.current = ""
-    inputTimingRef.current = { query: "", startedAt: 0, lastInputAt: 0 }
-  }, [])
-
-  const clearSearch = useCallback(() => {
-    resetSearchInputTiming()
-    setSearchQuery("")
-    setDebouncedQuery("")
-    setPickedProductValue(undefined)
-  }, [resetSearchInputTiming])
-
-  const handleSearchQueryChange = useCallback((value: string) => {
-    const now = Date.now()
-    const previousValue = searchQueryRef.current
-    const previousTiming = inputTimingRef.current
-    const isSingleCharacterAppend =
-      value.length === previousValue.length + 1 && value.startsWith(previousValue)
-    const isContinuingFastInput = isSingleCharacterAppend && now - previousTiming.lastInputAt <= 50
-
-    searchQueryRef.current = value
-
-    if (!value) {
-      inputTimingRef.current = { query: "", startedAt: 0, lastInputAt: 0 }
-    } else if (isContinuingFastInput) {
-      inputTimingRef.current = {
-        query: value,
-        startedAt: previousTiming.startedAt,
-        lastInputAt: now,
-      }
-    } else {
-      inputTimingRef.current = { query: value, startedAt: now, lastInputAt: now }
-    }
-
-    setSearchQuery(value)
   }, [])
 
   useEffect(() => {
@@ -187,7 +149,7 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     (product: Product | ShortcutProduct, isManualSearch: boolean) => {
       addItem(product)
       if (product.stock <= 0) {
-        toast.warning(`Stok ${product.name} habis/minus, pastikan stok sudah diupdate`)
+        toast.warning(id.cashier.outOfStock(product.name))
       }
       if (isManualSearch) {
         trackSelection(product.id)
@@ -215,7 +177,53 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     setPickedProductValue(String(rankedSearchResults[next].id))
   }
 
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
+  /** Enter on a digit run: the exact barcode lookup first, the list search after. */
+  const lookupBarcode = async (query: string) => {
+    const submitted = readCurrentQuery()
+    try {
+      const product = await getProductByBarcode(query)
+      if (product) {
+        addToCart(product, false)
+        clearSubmittedSearch(submitted)
+        focusInput()
+        return
+      }
+    } catch {
+      // Fall through to barcode not found feedback
+    }
+
+    const isLikelyScannerInput = isLikelyBarcodeScannerInput({
+      submittedAt: Date.now(),
+      ...readInputTiming(),
+      query,
+    })
+
+    // A whole barcode that misses really is missing, so say so and clear the
+    // field — leaving it filled would let the next scan land on the tail of
+    // this one. A digit run of any other length may be the *tail* of a
+    // barcode read off a worn label, which only the list search resolves;
+    // toasting there would abort that search. The length test matters because
+    // the timing heuristic fires on hand-typed input too: any pause over 50ms
+    // restarts the window at the last keystroke.
+    if (isLikelyScannerInput && isWholeBarcodeQuery(query)) {
+      toast.error(id.cashier.barcodeNotFound(query))
+      clearSubmittedSearch(submitted)
+      focusInput()
+      return
+    }
+
+    if (debouncedQuery.trim() !== query || searchResults === undefined) {
+      searchNow(query)
+      focusInput()
+      return
+    }
+
+    toast.error(id.cashier.barcodeNotFound(query))
+    clearSubmittedSearch(submitted)
+    focusInput()
+  }
+
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       if (!showSearchResults) return
       e.preventDefault()
@@ -235,75 +243,31 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
       hasSearchData: searchResults !== undefined,
     })
 
-    if (enterAction === "ignore") return
-
-    if (enterAction === "select-active-result") {
-      // Baris pertama aktif secara bawaan; panah atas/bawah bisa memindahkannya
-      // sebelum Enter ditekan.
-      e.preventDefault()
-      if (activeProduct) handleProductSelect(activeProduct)
-      return
-    }
-
-    if (enterAction === "lookup-exact-barcode") {
-      e.preventDefault()
-      e.stopPropagation()
-
-      try {
-        const product = await getProductByBarcode(query)
-        if (product) {
-          addToCart(product, false)
-          clearSearch()
-          focusInput()
-          return
-        }
-      } catch {
-        // Fall through to barcode not found feedback
-      }
-
-      const isLikelyScannerInput = isLikelyBarcodeScannerInput({
-        submittedAt: Date.now(),
-        ...inputTimingRef.current,
-        query,
-      })
-
-      // A whole barcode that misses really is missing, so say so and clear the
-      // field — leaving it filled would let the next scan land on the tail of
-      // this one. A digit run of any other length may be the *tail* of a
-      // barcode read off a worn label, which only the list search resolves;
-      // toasting there would abort that search. The length test matters because
-      // the timing heuristic fires on hand-typed input too: any pause over 50ms
-      // restarts the window at the last keystroke.
-      if (isLikelyScannerInput && isWholeBarcodeQuery(query)) {
-        toast.error(`Barcode "${query}" tidak ditemukan`)
+    switch (enterAction) {
+      case "ignore":
+        return
+      case "select-active-result":
+        // Baris pertama aktif secara bawaan; panah atas/bawah bisa memindahkannya
+        // sebelum Enter ditekan.
+        e.preventDefault()
+        if (activeProduct) handleProductSelect(activeProduct)
+        return
+      case "lookup-exact-barcode":
+        e.preventDefault()
+        e.stopPropagation()
+        void lookupBarcode(query)
+        return
+      case "wait-for-search":
+        e.preventDefault()
+        searchNow(query)
+        focusInput()
+        return
+      case "show-not-found":
+        e.preventDefault()
+        toast.error(id.cashier.productNotFound(query))
         clearSearch()
         focusInput()
-        return
-      }
-
-      if (debouncedQuery.trim() !== query || searchResults === undefined) {
-        setDebouncedQuery(query)
-        focusInput()
-        return
-      }
-
-      toast.error(`Barcode "${query}" tidak ditemukan`)
-      clearSearch()
-      focusInput()
-      return
     }
-
-    if (enterAction === "wait-for-search") {
-      e.preventDefault()
-      setDebouncedQuery(query)
-      focusInput()
-      return
-    }
-
-    e.preventDefault()
-    toast.error(`Produk "${query}" tidak ditemukan`)
-    clearSearch()
-    focusInput()
   }
 
   // `useCallback` supaya `ShortcutTile` yang ter-`memo` benar-benar melewatkan
@@ -317,10 +281,25 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
   )
 
   const showSearchResults = debouncedQuery.length > 0
+  // The first answer for this query has not arrived yet. Without this the
+  // panel said "Produk tidak ditemukan" for the length of every request.
+  const isSearchLoading = showSearchResults && searchResults === undefined && !isSearchError
+  // Read out by screen readers as results change; the list itself is only
+  // "pointed at" through `aria-activedescendant` and never takes focus.
+  // Same precedence as the panel below: rows already on screen win over a
+  // failed background refetch, so the announcement matches what is shown.
+  const searchStatus = !showSearchResults
+    ? ""
+    : rankedSearchResults.length > 0
+      ? `${formatNumber(rankedSearchResults.length)} produk ditemukan`
+      : isSearchLoading
+        ? "Mencari…"
+        : isSearchError
+          ? id.cashier.searchStatusFailed
+          : id.products.notFound
 
   return (
     <div className="flex h-full flex-col">
-      {/* Search Bar */}
       <div className={cn("flex flex-col", showSearchResults ? "min-h-0 flex-1" : "h-auto")}>
         {/* Kolom scan tinggal di dalam panel `Surface`, jadi `variant="secondary"`;
             tinggi dan ukuran hurufnya bawaan HeroUI. */}
@@ -333,11 +312,15 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
               ref={searchInputRef}
               aria-activedescendant={
                 showSearchResults && selectedProductValue !== undefined
-                  ? optionId(Number(selectedProductValue))
+                  ? searchOptionId(listboxId, Number(selectedProductValue))
                   : undefined
               }
               aria-autocomplete="list"
-              aria-controls={listboxId}
+              // Only while the listbox is rendered: loading, error and "not
+              // found" show no `ul`, and a dangling id points at nothing.
+              aria-controls={
+                showSearchResults && rankedSearchResults.length > 0 ? listboxId : undefined
+              }
               aria-expanded={showSearchResults}
               aria-label="Scan barcode atau cari produk"
               autoComplete="off"
@@ -354,133 +337,33 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
               </Kbd>
             </InputGroup.Suffix>
           </InputGroup>
+          <p aria-live="polite" className="sr-only" role="status">
+            {searchStatus}
+          </p>
         </div>
 
-        {/* Search Results */}
         {showSearchResults && (
           <>
             <Separator />
             <ScrollShadow className="min-h-0 flex-1">
-              {rankedSearchResults.length > 0 ? (
-                <ul
-                  aria-label="Hasil pencarian produk"
-                  className="p-2"
-                  id={listboxId}
-                  role="listbox"
-                >
-                  {rankedSearchResults.map((product) => {
-                    const isActive = String(product.id) === selectedProductValue
-                    return (
-                      // Bentuk barisnya mengikuti `.list-box-item` HeroUI — sudut
-                      // `rounded-2xl`, hover `bg-default` — karena inilah listbox-nya.
-                      <li
-                        key={product.id}
-                        aria-selected={isActive}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm",
-                          isActive ? "bg-default text-default-foreground" : "hover:bg-default/60",
-                        )}
-                        id={optionId(product.id)}
-                        role="option"
-                        onPointerDown={(e) => {
-                          // Jangan sampai kolom scan kehilangan fokus sebelum
-                          // produknya masuk keranjang.
-                          e.preventDefault()
-                          handleProductSelect(product)
-                        }}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{product.name}</p>
-                          {product.barcode && (
-                            <p className="font-mono text-xs text-muted">{product.barcode}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {/* Lencana hanya untuk stok habis; stok yang ada cuma angka — DESIGN.md §5.4. */}
-                          {product.stock <= 0 ? (
-                            <StatusBadge size="sm" status="error">
-                              {product.stock} {product.unit}
-                            </StatusBadge>
-                          ) : (
-                            <span className="text-xs tabular-nums text-muted">
-                              {product.stock} {product.unit}
-                            </span>
-                          )}
-                          <span className="min-w-20 text-right font-medium tabular-nums">
-                            {formatRupiah(product.sell_price)}
-                          </span>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : (
-                <NoData title="Produk tidak ditemukan" />
-              )}
+              <ProductSearchResults
+                activeValue={selectedProductValue}
+                errorMessage={searchError?.message}
+                isError={isSearchError}
+                isLoading={isSearchLoading}
+                isRetrying={isSearchFetching}
+                listboxId={listboxId}
+                products={rankedSearchResults}
+                onRetry={() => refetchSearch()}
+                onSelect={handleProductSelect}
+              />
             </ScrollShadow>
           </>
         )}
       </div>
 
-      {/* Tabs: Favorit / PPOB — only when not searching. Tabnya sudah di panel
-          produk, jadi kata "Produk" tidak diulang di labelnya; tanpa ikon,
-          seperti tab dashboard. */}
-      {!showSearchResults && (
-        <Tabs className="min-h-0 flex-1" defaultSelectedKey="produk">
-          <Tabs.ListContainer className="mx-4 w-fit">
-            <Tabs.List aria-label="Pintasan kasir">
-              <Tabs.Tab id="produk">
-                Favorit
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="ppob">
-                PPOB
-                <Tabs.Indicator />
-              </Tabs.Tab>
-            </Tabs.List>
-          </Tabs.ListContainer>
-
-          {/* Panel mengisi sisa tinggi dan menggulung sendiri; jarak dan
-              padding-nya diambil dari `p-4` di dalam supaya sama dengan kepala
-              panel, bukan `mt-4 p-2` bawaan yang menambah 24px. */}
-          <Tabs.Panel className="mt-0 min-h-0 flex-1 p-0" id="produk">
-            <ScrollShadow className="h-full">
-              <div className="p-4">
-                {shortcutProducts && shortcutProducts.length > 0 ? (
-                  // Kolomnya dihitung dari lebar panel, bukan dari breakpoint
-                  // viewport: panel ini selebar sepertiga layar, jadi `lg:` yang
-                  // menyala di layar 1400px memecahnya jadi empat kolom 91px dan
-                  // setiap nama terpotong setelah tujuh huruf. `auto-fill` dengan
-                  // lebar minimum menjamin ubin selalu cukup lebar untuk dibaca.
-                  // `auto-rows-fr` menyamakan tingginya.
-                  <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
-                    {shortcutProducts.map((product) => (
-                      <ShortcutTile
-                        key={product.id}
-                        product={product}
-                        onSelect={handleShortcutSelect}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <NoData icon={<TrendingUp />} title="Produk yang sering dicari tampil di sini" />
-                )}
-              </div>
-            </ScrollShadow>
-          </Tabs.Panel>
-
-          {/* Padding luar milik panel ini, bukan `PpobQuickAccess`: di halaman
-              PPOB komponen yang sama berdiri langsung di atas kanvas yang sudah
-              diberi padding `AppLayout`. */}
-          <Tabs.Panel className="mt-0 min-h-0 flex-1 p-0" id="ppob">
-            <ScrollShadow className="h-full">
-              <div className="p-4">
-                <PpobQuickAccess />
-              </div>
-            </ScrollShadow>
-          </Tabs.Panel>
-        </Tabs>
-      )}
+      {/* Favorit / PPOB — only when not searching. */}
+      {!showSearchResults && <CashierShortcutTabs onSelectProduct={handleShortcutSelect} />}
     </div>
   )
 })

@@ -35,10 +35,10 @@ use super::receipt::{LineSize, ReceiptTextLine};
 pub const DOTS_58MM: u32 = 384;
 pub const DOTS_80MM: u32 = 576;
 
-/// One character cell. Shared with `receipt::columns`, which is where the
+/// One character cell. Shared with `layout::columns`, which is where the
 /// column counts come from: 12 dots across is what makes 32 of them come to
 /// exactly the 384 dots 58mm paper is.
-const CELL_WIDTH: u32 = super::receipt::CELL_DOTS as u32;
+const CELL_WIDTH: u32 = super::layout::CELL_DOTS as u32;
 /// Cell height. The Mitra app's print measures a 28-dot line pitch; four more
 /// dots here keep one line's descenders clear of the next line's ascenders now
 /// that the glyphs are taller than that print's.

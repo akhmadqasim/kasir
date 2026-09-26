@@ -57,7 +57,6 @@ export interface CheckoutTransactionInput {
   payment_breakdown?: PaymentSplitInput[]
   notes?: string
   transaction_discount?: number
-  shift_id?: number
   /** Omitted = `sales`, the cart. The PPOB page sends `ppob`. */
   channel?: TransactionChannel
   /**

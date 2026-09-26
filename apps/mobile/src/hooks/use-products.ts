@@ -26,8 +26,12 @@ export const PRODUCTS_PAGE_SIZE = 50;
 /**
  * Paged product search. `query` is already debounced by the caller. The
  * parameters are exactly what the desktop sends (`src/lib/api/products.ts`).
+ * `enabled: false` keeps the list empty instead of loading the whole catalogue.
  */
-export function useProductSearch(params: Pick<SearchProductsParams, "query" | "quick_filter">) {
+export function useProductSearch(
+  params: Pick<SearchProductsParams, "query" | "quick_filter">,
+  { enabled = true }: { enabled?: boolean } = {}
+) {
   const base: SearchProductsParams = {
     query: params.query ?? "",
     quick_filter: params.quick_filter,
@@ -41,6 +45,7 @@ export function useProductSearch(params: Pick<SearchProductsParams, "query" | "q
     queryFn: ({ pageParam }) => productsApi.search({ ...base, page: pageParam as number }),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.page < last.total_pages ? last.page + 1 : undefined),
+    enabled,
   });
 }
 
@@ -53,7 +58,12 @@ export function primeProduct(queryClient: QueryClient, product: Product): void {
   queryClient.setQueryData<Product>(queryKeys.products.detail(product.id), product);
 }
 
-export function useProductDetail(productId: number) {
+/**
+ * `alwaysFresh` re-reads the row on every mount, for a screen that computes
+ * something from the stock (a count's shortfall) and must not use the list's
+ * minutes-old copy.
+ */
+export function useProductDetail(productId: number, { alwaysFresh = false } = {}) {
   const queryClient = useQueryClient();
 
   return useQuery<Product, Error>({
@@ -72,15 +82,7 @@ export function useProductDetail(productId: number) {
     // The seed is fresh enough for the first paint; a re-read happens on the
     // next focus or after a mutation, not on every mount.
     staleTime: 60_000,
-  });
-}
-
-export function useProductByBarcode(barcode: string | null) {
-  return useQuery<Product | null, Error>({
-    queryKey: queryKeys.products.byBarcode(barcode ?? ""),
-    queryFn: () => productsApi.getByBarcode(barcode ?? ""),
-    enabled: barcode !== null && barcode.length > 0,
-    staleTime: 0,
+    refetchOnMount: alwaysFresh ? "always" : true,
   });
 }
 
@@ -94,16 +96,10 @@ export function useCategories() {
 
 function afterProductChange(queryClient: QueryClient, product: Product): void {
   primeProduct(queryClient, product);
-  if (product.barcode) {
-    queryClient.setQueryData<Product | null>(
-      queryKeys.products.byBarcode(product.barcode),
-      product
-    );
-  }
   void queryClient.invalidateQueries({ queryKey: queryKeys.products.searchAll });
 }
 
-/** Admin: sell/buy price, min_stock, category. */
+/** Admin: sell/buy price, min_stock, category, applied to the server's current row. */
 export function usePatchProduct() {
   const queryClient = useQueryClient();
   return useMutation<Product, Error, { product: Product; patch: ProductPatch }>({

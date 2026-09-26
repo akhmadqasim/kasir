@@ -1,6 +1,7 @@
 import { memo } from "react"
 import { Button } from "@heroui/react"
 
+import { StatusBadge } from "@/components/status-badge"
 import type { ShortcutProduct } from "@/features/products/types"
 import { formatRupiah } from "../utils"
 
@@ -34,8 +35,15 @@ export const ShortcutTile = memo(function ShortcutTile({ product, onSelect }: Sh
       onPress={() => onSelect(product)}
     >
       <span className="line-clamp-2 w-full break-words">{product.name}</span>
-      <span className="w-full text-xs tabular-nums text-muted">
-        {formatRupiah(product.sell_price)}
+      <span className="mt-auto flex w-full flex-wrap items-center justify-between gap-1">
+        <span className="text-xs tabular-nums text-muted">{formatRupiah(product.sell_price)}</span>
+        {/* Said before the tap, not only in the toast after it — and in words,
+            not just red (DESIGN.md §7). */}
+        {product.stock <= 0 && (
+          <StatusBadge size="sm" status="error">
+            Habis
+          </StatusBadge>
+        )}
       </span>
     </Button>
   )

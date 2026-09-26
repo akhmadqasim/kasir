@@ -45,12 +45,15 @@ export class ErrorBoundary extends Component<Props, State> {
     const home = resolveHomeAction()
 
     return (
-      <ErrorScreen
-        error={this.state.error}
-        homeLabel={home.label}
-        onHome={() => window.location.assign(home.path)}
-        onRetry={() => window.location.reload()}
-      />
+      // Di luar layout tidak ada `<main>` lain; layarnya jadi landmark sendiri.
+      <main className="flex h-full">
+        <ErrorScreen
+          error={this.state.error}
+          homeLabel={home.label}
+          onHome={() => window.location.assign(home.path)}
+          onRetry={() => window.location.reload()}
+        />
+      </main>
     )
   }
 }

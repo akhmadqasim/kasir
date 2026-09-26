@@ -23,7 +23,8 @@ export function SearchInput({ placeholder, ...props }: SearchInputProps) {
       <SearchField.Group>
         <SearchField.SearchIcon />
         <SearchField.Input placeholder={placeholder} />
-        <SearchField.ClearButton />
+        {/* Bawaan HeroUI menamai tombol ini "Close" dalam bahasa Inggris. */}
+        <SearchField.ClearButton aria-label="Hapus pencarian" />
       </SearchField.Group>
     </SearchField>
   )

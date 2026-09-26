@@ -87,7 +87,6 @@ pub struct BackupStatus {
     pub total_backups: usize,
     pub total_size_bytes: u64,
     pub backup_dir: String,
-    pub settings: BackupSettings,
 }
 
 #[cfg(test)]

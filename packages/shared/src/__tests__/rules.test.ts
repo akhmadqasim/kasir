@@ -14,8 +14,8 @@ describe("write-off reasons per role", () => {
     expect(allowedWriteoffReasons("admin")).toEqual(["damaged", "expired", "lost", "other"])
   })
 
-  it("keeps a kasir to reasons with physical proof", () => {
-    expect(allowedWriteoffReasons("kasir")).toEqual(["damaged", "expired"])
+  it("keeps only lost, which has no physical proof, from a kasir", () => {
+    expect(allowedWriteoffReasons("kasir")).toEqual(["damaged", "expired", "other"])
   })
 
   it("hides the buying price and product edits from a kasir", () => {

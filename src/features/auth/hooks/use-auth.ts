@@ -5,9 +5,10 @@ import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import * as authApi from "@/lib/api/auth"
 import { hasApiErrorCode } from "@/lib/api/client"
 import { queryKeys } from "@/lib/api/query-keys"
-import { flushPendingLogs } from "@/lib/startup-logger"
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
+import { useShiftStore } from "@/features/shift"
+import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "./use-auth-store"
 import type { LoginInput, User } from "../types"
 
@@ -73,15 +74,12 @@ export function useLogin() {
       // mutation cache, and this code is running inside a mutation.
       queryClient.removeQueries()
       queryClient.setQueryData(queryKeys.auth.me, user)
+      // Setting the user also releases the log buffer (see `use-auth-store`).
       setUser(user)
-      // `POST /api/logs` needs a session, so anything logged during boot has
-      // been waiting in the buffer for this moment.
-      flushPendingLogs()
       navigate("/")
     },
-    onError: (error) => {
-      toast.error(error.message || id.common.error)
-    },
+    // No toast on failure: the login screen shows the message inline, next to
+    // the PIN it clears and refocuses, where it is not gone before it is read.
   })
 }
 
@@ -91,6 +89,11 @@ export function useLogin() {
  * `onSettled` rather than `onSuccess`: if the request fails because the session
  * was already gone, the user still meant to log out and the screen still has to
  * follow them.
+ *
+ * The local cleanup lives here, not at each logout button, so no path can skip
+ * it: besides the query cache it drops the shift and cart stores, which live
+ * outside React Query and would otherwise be inherited by whoever logs in next
+ * on this till.
  */
 export function useLogout() {
   const queryClient = useQueryClient()
@@ -101,6 +104,10 @@ export function useLogout() {
       clearUser()
       queryClient.removeQueries()
       queryClient.setQueryData(queryKeys.auth.me, null)
+      useShiftStore.getState().clearShift()
+      // The cart is persisted to localStorage, so without this the next
+      // cashier inherits these items and rings them up as their own.
+      useCartStore.getState().clear()
     },
   })
 }

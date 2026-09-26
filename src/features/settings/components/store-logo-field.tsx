@@ -58,7 +58,7 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
 
   return (
     <Fieldset>
-      <Fieldset.Legend>{id.settings.storeLogo}</Fieldset.Legend>
+      <Fieldset.Legend className="text-sm">{id.settings.storeLogo}</Fieldset.Legend>
       <Description>{id.settings.storeLogoHint}</Description>
       {/* A plain row, not `Fieldset.Group`: that one stacks fields vertically
           (`space-y-4`, no flex), and here the preview sits beside its actions. */}
@@ -76,6 +76,7 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
             />
             <Fieldset.Actions className="flex-wrap pt-0">
               <PendingButton
+                isDisabled={removeMutation.isPending}
                 isPending={uploadMutation.isPending}
                 variant="secondary"
                 onPress={() => inputRef.current?.click()}
@@ -85,6 +86,7 @@ export function StoreLogoField({ store, isAdmin }: StoreLogoFieldProps) {
               </PendingButton>
               {store?.logo_path && (
                 <PendingButton
+                  isDisabled={uploadMutation.isPending}
                   isPending={removeMutation.isPending}
                   variant="danger-soft"
                   onPress={() => removeMutation.mutate()}

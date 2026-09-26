@@ -22,11 +22,14 @@ export type {
 export { createAuthApi } from "./auth"
 export type { AuthApi } from "./auth"
 
-export { createProductsApi, toUpdateInput } from "./products"
+export { createProductsApi } from "./products"
 export type { ProductLookupHint, ProductPatch, ProductsApi } from "./products"
 
 export { createStockApi } from "./stock"
 export type { StockApi } from "./stock"
+
+export { createStoreApi, publicStoreLogoUrl } from "./store"
+export type { StoreApi } from "./store"
 
 export { HEALTH_PATH, probeServer } from "./health"
 export type { ProbeOptions, ProbeResult } from "./health"

@@ -1,43 +1,31 @@
 import { useState } from "react"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale"
-import { Table } from "@heroui/react"
 
+import { id } from "@/i18n/id"
 import { OptionSelect } from "@/components/option-select"
-import { StatCard } from "@/components/stat-card"
-import { formatNumber, formatRupiah } from "@/lib/format"
+import { formatCalendarMonth } from "../calendar-day"
 import { useSalesMonthly } from "../hooks/use-reports"
-import { ReportPage, ReportTable } from "./report-shell"
+import { sumSalesRows } from "../sales-totals"
+import { ReportPage } from "./report-shell"
+import { SalesSummaryCards } from "./sales-summary-cards"
+import { SalesTable } from "./sales-table"
 
-const TITLE = "Penjualan per Bulan"
-const COLUMN_COUNT = 5
 /** Tahun yang bisa dipilih, dihitung mundur dari tahun berjalan. */
 const YEAR_CHOICES = 5
 
 export function SalesMonthlyPage() {
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
-  const { data, isLoading, error } = useSalesMonthly(year)
+  const { data, isLoading, isFetching, error, refetch } = useSalesMonthly(year)
 
   const years = Array.from({ length: YEAR_CHOICES }, (_, i) => currentYear - i)
   const yearOptions = years.map((option) => ({ key: String(option), label: String(option) }))
-
-  const totals = data?.reduce(
-    (acc, row) => ({
-      transactions: acc.transactions + row.transactionCount,
-      revenue: acc.revenue + row.totalRevenue,
-      cost: acc.cost + row.totalCost,
-      profit: acc.profit + row.grossProfit,
-    }),
-    { transactions: 0, revenue: 0, cost: 0, profit: 0 },
-  )
 
   return (
     <ReportPage
       filters={
         <div className="ml-auto">
           <OptionSelect
-            aria-label="Tahun laporan"
+            aria-label={id.reports.yearLabel}
             className="w-32"
             options={yearOptions}
             value={String(year)}
@@ -46,49 +34,23 @@ export function SalesMonthlyPage() {
         </div>
       }
     >
-      {totals && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Transaksi" value={formatNumber(totals.transactions)} />
-          <StatCard label="Total Pendapatan" value={formatRupiah(totals.revenue)} />
-          <StatCard label="Total Modal" value={formatRupiah(totals.cost)} />
-          <StatCard label="Laba Kotor" tone="success" value={formatRupiah(totals.profit)} />
-        </div>
-      )}
+      <SalesSummaryCards isLoading={isLoading} totals={data && sumSalesRows(data)} />
 
-      <ReportTable
-        label={TITLE}
-        columnCount={COLUMN_COUNT}
+      <SalesTable
+        title={id.reports.title.salesMonthly}
+        periodHeader={id.reports.column.month}
+        periodClassName="capitalize"
+        rows={(data ?? []).map((row) => ({
+          ...row,
+          id: row.month,
+          label: formatCalendarMonth(row.month),
+        }))}
         isLoading={isLoading}
         error={error}
-        columns={
-          <>
-            <Table.Column isRowHeader>Bulan</Table.Column>
-            <Table.Column className="text-right">Transaksi</Table.Column>
-            <Table.Column className="text-right">Pendapatan</Table.Column>
-            <Table.Column className="text-right">Modal</Table.Column>
-            <Table.Column className="text-right">Laba Kotor</Table.Column>
-          </>
-        }
-      >
-        {(data ?? []).map((row) => {
-          const monthLabel = format(new Date(`${row.month}-01`), "MMMM yyyy", {
-            locale: idLocale,
-          })
-          return (
-            <Table.Row key={row.month} id={row.month} textValue={monthLabel}>
-              <Table.Cell className="font-medium">{monthLabel}</Table.Cell>
-              <Table.Cell className="text-right">{row.transactionCount}</Table.Cell>
-              <Table.Cell className="text-right">{formatRupiah(row.totalRevenue)}</Table.Cell>
-              <Table.Cell className="text-right">{formatRupiah(row.totalCost)}</Table.Cell>
-              <Table.Cell
-                className={`text-right font-medium ${row.grossProfit < 0 ? "text-danger" : "text-success"}`}
-              >
-                {formatRupiah(row.grossProfit)}
-              </Table.Cell>
-            </Table.Row>
-          )
-        })}
-      </ReportTable>
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+        emptyMessage={id.reports.empty.salesInYear(year)}
+      />
     </ReportPage>
   )
 }

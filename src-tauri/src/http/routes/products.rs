@@ -75,10 +75,9 @@ async fn popular(
 
 /// The import template as a download.
 ///
-/// The Tauri command writes this file to the user's Desktop from content the
-/// webview supplies. Over HTTP the server both generates and serves it, so no
-/// client-supplied string ever becomes a path — the traversal question does not
-/// arise because there is no filesystem write left to traverse into.
+/// The server both generates and serves it, so no client-supplied string ever
+/// becomes a path — the traversal question does not arise because there is no
+/// filesystem write left to traverse into.
 async fn import_template() -> Response {
     (
         [

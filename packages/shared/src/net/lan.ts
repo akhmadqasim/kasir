@@ -126,11 +126,15 @@ export async function probeHosts(
  * Turn what a user typed into an origin the client can use, or `null`.
  *
  * Accepts `192.168.1.10`, `192.168.1.10:17720`, `http://kasir.lokal:17720/`,
- * and a hostname. A missing port gets {@link DEFAULT_SERVER_PORT}; a scheme
- * other than `http`/`https` is rejected; paths and query strings are dropped,
- * because the API prefix is added by the client.
+ * and a hostname. A missing port gets `defaultPort` ({@link DEFAULT_SERVER_PORT}
+ * unless the caller knows better); a scheme other than `http`/`https` is
+ * rejected; paths and query strings are dropped, because the API prefix is
+ * added by the client.
  */
-export function normalizeServerOrigin(input: string): string | null {
+export function normalizeServerOrigin(
+  input: string,
+  defaultPort: number = DEFAULT_SERVER_PORT,
+): string | null {
   let value = input.trim()
   if (!value) return null
 
@@ -149,7 +153,7 @@ export function normalizeServerOrigin(input: string): string | null {
   if (!url.hostname) return null
   if (url.username || url.password) return null
 
-  const port = url.port || (url.protocol === "https:" ? "443" : String(DEFAULT_SERVER_PORT))
+  const port = url.port || (url.protocol === "https:" ? "443" : String(defaultPort))
   return `${url.protocol}//${url.hostname}:${port}`
 }
 

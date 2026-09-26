@@ -1,4 +1,4 @@
-import { Skeleton } from "@heroui/react"
+import { SearchX } from "lucide-react"
 
 import { NoData } from "@/components/no-data"
 import { cn } from "@/lib/utils"
@@ -7,7 +7,7 @@ import { PPOB_SERVICE_COLORS, PPOB_SERVICES, type PpobServiceDef } from "../cons
 import type { PpSearchResult } from "../types"
 import { PaymentPointIcon } from "./payment-point-icon"
 import { TileButton } from "./tile-button"
-import { TileGrid } from "./tile-grid"
+import { TileGrid, TileGridSkeleton } from "./tile-grid"
 
 interface SearchResultsGridProps {
   /** The raw (non-debounced) search box value — matched against fixed service labels instantly. */
@@ -44,17 +44,15 @@ export function SearchResultsGrid({
   // search. `billers === undefined` stays true for exactly as long as no
   // answer, settled or not, has ever arrived.
   if (billers === undefined) {
-    return (
-      <TileGrid>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-24" />
-        ))}
-      </TileGrid>
-    )
+    return <TileGridSkeleton count={6} />
   }
 
   if (matchingServices.length === 0 && (billers?.length ?? 0) === 0) {
-    return <NoData title={id.ppob.searchNoResults(query)} />
+    return (
+      <NoData icon={<SearchX />} title={id.ppob.searchNoResults(query.trim())}>
+        Coba kata lain, misalnya nama biller atau jenis layanannya.
+      </NoData>
+    )
   }
 
   return (
@@ -62,7 +60,13 @@ export function SearchResultsGrid({
       {matchingServices.map((service) => (
         <TileButton
           key={service.key}
-          icon={<service.icon className={cn("size-6", PPOB_SERVICE_COLORS[service.key].text)} />}
+          icon={
+            <service.icon
+              aria-hidden="true"
+              className={cn("size-6", PPOB_SERVICE_COLORS[service.key].text)}
+            />
+          }
+          iconTint={PPOB_SERVICE_COLORS[service.key].bgMuted}
           label={service.label}
           onPress={() => onSelectService(service)}
         />

@@ -2,16 +2,19 @@ import { useState } from "react"
 import { Input, Label, Skeleton, TextField } from "@heroui/react"
 import { Droplets } from "lucide-react"
 
+import { LoadError } from "@/components/load-error"
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
 import { usePdamInquiry, usePdamProducts } from "../../hooks"
-import type { InquiryResult } from "../../types"
 import { markupItem } from "./markup-item"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
+import { useInquiryResult } from "./use-inquiry-result"
+import { PpobSetupAction } from "../ppob-setup-action"
 
 export function PdamInput({
   onAddToCart,
@@ -21,25 +24,33 @@ export function PdamInput({
 }: ServiceInputProps) {
   const [customerId, setCustomerId] = useState("")
   const [selectedPdam, setSelectedPdam] = useState("")
-  const { data: pdamProducts, isLoading: pdamLoading } = usePdamProducts()
+  const {
+    data: pdamProducts,
+    isLoading: pdamLoading,
+    error: pdamError,
+    refetch: refetchPdam,
+    isFetching: pdamFetching,
+  } = usePdamProducts()
   const pdamInquiry = usePdamInquiry()
-  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const { result: inquiryResult, reset: resetInquiry, accept: acceptInquiry } = useInquiryResult()
+
+  const pdam = pdamProducts?.find((p) => p.plu === selectedPdam)
+  const canInquiry = customerId.length >= 5 && !!selectedPdam
 
   const handleInquiry = () => {
-    if (!customerId || !selectedPdam) return
-    const pdam = pdamProducts?.find((p) => p.plu === selectedPdam)
+    if (!canInquiry || pdamInquiry.isPending) return
     pdamInquiry.mutate(
       { customerId, productId: pdam?.id ?? 0, paymentCode: selectedPdam },
       {
-        onSuccess: (result) => setInquiryResult(result),
-        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+        onSuccess: acceptInquiry(),
+        onError: (err) => toast.error(id.ppob.billCheckFailed(err.message)),
       },
     )
   }
 
   // Yang dibayar toko ke vendor = tagihan + biaya admin.
   const vendorCost = inquiryResult?.total ?? 0
-  const pdamName = pdamProducts?.find((p) => p.plu === selectedPdam)?.merchant ?? "PDAM"
+  const pdamName = pdam?.merchant ?? "PDAM"
   const itemName = `PDAM ${pdamName} - ${inquiryResult?.customerName ?? customerId}`
   const sellPrice = inquiryResult
     ? resolveSellPrice({ name: itemName, serviceType: "pdam", vendorCost })
@@ -53,7 +64,7 @@ export function PdamInput({
       service_type: "pdam",
       service_ref: customerId,
       buy_price: vendorCost,
-      ppob_product_id: pdamProducts?.find((p) => p.plu === selectedPdam)?.id,
+      ppob_product_id: pdam?.id,
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: selectedPdam,
     })
@@ -61,13 +72,13 @@ export function PdamInput({
 
   const confirmItems: SummaryItem[] | null = inquiryResult
     ? [
-        { label: "Layanan", value: "PDAM" },
-        { label: "ID Pelanggan", value: customerId, tone: "mono" },
-        { label: "Nama", value: inquiryResult.customerName ?? "-" },
-        { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        { label: id.ppob.quickAccess.service, value: id.ppob.pdam },
+        { label: id.ppob.quickAccess.customerId, value: customerId, tone: "mono" },
+        { label: id.ppob.quickAccess.name, value: inquiryResult.customerName ?? "-" },
+        { label: id.ppob.quickAccess.bill, value: formatRupiah(inquiryResult.amount) },
+        { label: id.ppob.quickAccess.adminFee, value: formatRupiah(inquiryResult.adminFee) },
         ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
-        { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
+        { label: id.ppob.quickAccess.totalPay, value: formatRupiah(sellPrice), tone: "strong" },
       ]
     : null
 
@@ -76,23 +87,32 @@ export function PdamInput({
       confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<Droplets />}
-      placeholderText="Cek tagihan untuk melihat detail"
+      placeholderText={id.ppob.quickAccess.checkBillHint}
       wideLayout={wideLayout}
       onConfirm={handleConfirm}
     >
       {pdamLoading ? (
         <Skeleton className="h-10 w-full" />
+      ) : pdamError ? (
+        <LoadError
+          isRetrying={pdamFetching}
+          secondaryAction={<PpobSetupAction error={pdamError} />}
+          title={id.loadFailed.ppobPdam}
+          onRetry={() => refetchPdam()}
+        >
+          {pdamError.message}
+        </LoadError>
       ) : (
         <OptionSelect
           fullWidth
-          label="PDAM"
+          label={id.ppob.pdam}
           options={pdamProducts?.map((p) => ({ key: p.plu, label: p.merchant })) ?? []}
-          placeholder="Pilih PDAM"
+          placeholder={id.ppob.quickAccess.pdamPlaceholder}
           value={selectedPdam || null}
           variant="secondary"
           onChange={(value) => {
             setSelectedPdam(value ?? "")
-            setInquiryResult(null)
+            resetInquiry()
           }}
         />
       )}
@@ -103,21 +123,28 @@ export function PdamInput({
         variant="secondary"
         onChange={(value) => {
           setCustomerId(value.replace(/\D/g, ""))
-          setInquiryResult(null)
+          resetInquiry()
         }}
       >
-        <Label>ID Pelanggan</Label>
-        <Input className="tabular-nums" inputMode="numeric" placeholder="Masukkan ID pelanggan" />
+        <Label>{id.ppob.quickAccess.customerId}</Label>
+        <Input
+          className="tabular-nums"
+          inputMode="numeric"
+          placeholder={id.ppob.quickAccess.customerIdPlaceholder}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !inquiryResult) handleInquiry()
+          }}
+        />
       </TextField>
 
       {customerId && selectedPdam && !inquiryResult && (
         <PendingButton
           fullWidth
-          isDisabled={customerId.length < 5}
+          isDisabled={!canInquiry}
           isPending={pdamInquiry.isPending}
           onPress={handleInquiry}
         >
-          Cek Tagihan
+          {id.ppob.quickAccess.checkBill}
         </PendingButton>
       )}
     </ServiceFlowLayout>

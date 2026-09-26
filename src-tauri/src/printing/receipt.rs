@@ -1,7 +1,12 @@
-//! Receipt formatter: takes store info + transaction data and produces text lines for ESC/POS printing
+//! The shop's own sales receipt, and the line type every formatter emits.
+//!
+//! Takes store info and transaction data and produces text lines for ESC/POS
+//! printing; the column arithmetic it lays them out with is in
+//! [`super::layout`].
 
-/// All data needed to generate a receipt
-use super::ppob_receipt::wrap_words;
+use super::layout::{
+    center_text, center_wrapped, columns, fit_or_wrap, format_rupiah, two_col_text, wrap_words,
+};
 
 /// Present and not just whitespace or a placeholder dash.
 fn non_blank(value: Option<&str>) -> Option<&str> {
@@ -10,6 +15,7 @@ fn non_blank(value: Option<&str>) -> Option<&str> {
         .filter(|text| !text.is_empty() && *text != "-")
 }
 
+/// All data needed to generate a receipt
 pub struct ReceiptData {
     pub store_name: String,
     pub store_address: Option<String>,
@@ -50,33 +56,6 @@ pub struct ReceiptItem {
     pub payment_code: Option<String>,
     /// PPOB lines only: the provider's `no_ref`, when there was one.
     pub reference_number: Option<String>,
-}
-
-/// Format currency in Indonesian style: 100.000
-pub(super) fn format_rupiah(amount: f64) -> String {
-    let rounded = amount.round() as i64;
-    if rounded == 0 {
-        return "0".to_string();
-    }
-
-    let is_negative = rounded < 0;
-    let abs_val = rounded.unsigned_abs();
-    let s = abs_val.to_string();
-    let mut result = String::new();
-
-    for (i, ch) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push('.');
-        }
-        result.push(ch);
-    }
-
-    let formatted: String = result.chars().rev().collect();
-    if is_negative {
-        format!("-{}", formatted)
-    } else {
-        formatted
-    }
 }
 
 /// Translate payment method to Indonesian
@@ -182,46 +161,6 @@ impl PrintMode {
     }
 }
 
-/// Width of one character cell when a receipt is drawn rather than typeset.
-///
-/// Font A is twelve dots wide at 203 dpi and the renderer matches it, which is
-/// what lets one set of column counts serve both modes.
-pub const CELL_DOTS: usize = 12;
-
-/// Printable columns for a paper width.
-///
-/// Font A on 58mm paper is 32 characters wide and on 80mm 42, and the same
-/// counts serve a raster: the cell the renderer draws into is [`CELL_DOTS`]
-/// wide, so 32 of them come to exactly the 384 dots the narrow paper is. The
-/// wide paper has 576 and Font A only ever used 504 of them, so the renderer
-/// centres the block and leaves the difference as a margin either side rather
-/// than inventing six columns the text formatters have never had.
-///
-/// Every column is used. The Mitra app's own job prints `STRUK PEMBELIAN
-/// LISTRIK PRABAYAR` — exactly 32 characters — as one line, and so do we.
-pub fn columns(paper_width_mm: u8) -> usize {
-    if paper_width_mm >= 80 {
-        42
-    } else {
-        32
-    }
-}
-
-/// Center text within given width using space padding (monospace)
-pub(super) fn center_text(text: &str, width: usize) -> String {
-    let text_len = text.chars().count();
-    let pad = width.saturating_sub(text_len) / 2;
-    format!("{}{}", " ".repeat(pad), text)
-}
-
-/// Two-column text padded to given width (left-aligned left, right-aligned right)
-pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
-    let left_len = left.chars().count();
-    let right_len = right.chars().count();
-    let spaces = width.saturating_sub(left_len + right_len).max(1);
-    format!("{}{}{}", left, " ".repeat(spaces), right)
-}
-
 /// The shop's own name and contact details. Sales receipt only — a PPOB
 /// struk opens with the store's name and nothing else, because it is the
 /// provider's document and Mitra's own slip carries no address either.
@@ -229,47 +168,51 @@ pub(super) fn two_col_text(left: &str, right: &str, width: usize) -> String {
 /// Draws no rule of its own; the caller puts one `-` line between this and
 /// whatever comes next, so the same banner works whether it is followed
 /// straight by the transaction header or by a VOID heading first.
-pub(super) fn push_store_banner(
+fn push_store_banner(
     lines: &mut Vec<ReceiptTextLine>,
     store_name: &str,
     store_address: Option<&str>,
     store_phone: Option<&str>,
     cpl: usize,
 ) {
-    lines.push(ReceiptTextLine::bold(center_text(store_name, cpl)));
+    lines.extend(
+        center_wrapped(store_name, cpl)
+            .into_iter()
+            .map(ReceiptTextLine::bold),
+    );
 
     if let Some(address) = store_address.map(str::trim).filter(|a| !a.is_empty()) {
-        lines.push(ReceiptTextLine::plain(center_text(address, cpl)));
+        lines.extend(
+            center_wrapped(address, cpl)
+                .into_iter()
+                .map(ReceiptTextLine::plain),
+        );
     }
     if let Some(phone) = store_phone.map(str::trim).filter(|p| !p.is_empty()) {
-        lines.push(ReceiptTextLine::plain(center_text(
-            &format!("Telp: {}", phone),
-            cpl,
-        )));
+        lines.extend(
+            center_wrapped(&format!("Telp: {}", phone), cpl)
+                .into_iter()
+                .map(ReceiptTextLine::plain),
+        );
     }
 }
 
-/// The date/time and cashier name on one line, date/time flush left and the
-/// cashier's full name flush right. Names are not truncated — a long enough
-/// name (a long-name test covers this) pushes the pair onto two lines instead
-/// of overflowing the paper width, date/time on its own line and the cashier
-/// name right-aligned below it.
-fn push_transaction_meta(
-    lines: &mut Vec<ReceiptTextLine>,
-    date_time: &str,
-    cashier_name: &str,
-    cpl: usize,
-) {
+/// `left` flush left and `right` flush right on one line — the date/time and
+/// cashier name, the void's "Void By:" and who did it. Neither side is
+/// truncated: a pair too long for one line (a long-name test covers this)
+/// goes onto two instead of overflowing the paper width, `left` on its own
+/// line and `right` right-aligned below it.
+fn push_pair(lines: &mut Vec<ReceiptTextLine>, left: &str, right: &str, cpl: usize) {
     // `two_col_text` pads to exactly `cpl` when the two sides fit, and only
     // overshoots once its forced single space can't make them fit — so
     // measuring its own output tells us which case this is, without
     // re-deriving the same fits-or-not rule from the two lengths by hand.
-    let one_line = two_col_text(date_time, cashier_name, cpl);
+    let one_line = two_col_text(left, right, cpl);
     if one_line.chars().count() <= cpl {
         lines.push(ReceiptTextLine::plain(one_line));
     } else {
-        lines.push(ReceiptTextLine::plain(date_time.to_string()));
-        lines.push(ReceiptTextLine::plain(two_col_text("", cashier_name, cpl)));
+        lines.push(ReceiptTextLine::plain(left.to_string()));
+        lines.push(ReceiptTextLine::plain(two_col_text("", right, cpl)));
     }
 }
 
@@ -294,7 +237,7 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     lines.push(ReceiptTextLine::plain(data.receipt_number.clone()));
-    push_transaction_meta(&mut lines, &data.date_time, &data.cashier_name, cpl);
+    push_pair(&mut lines, &data.date_time, &data.cashier_name, cpl);
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
     // Items
@@ -407,24 +350,29 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
     if data.is_deleted {
         lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
         if let Some(ref deleted_by_name) = data.deleted_by_name {
-            lines.push(ReceiptTextLine::plain(two_col_text(
-                "Void By:",
-                deleted_by_name,
-                cpl,
-            )));
+            push_pair(&mut lines, "Void By:", deleted_by_name, cpl);
         }
         if let Some(ref deleted_reason) = data.deleted_reason {
             lines.push(ReceiptTextLine::plain("Alasan Void:".to_string()));
-            lines.push(ReceiptTextLine::plain(deleted_reason.clone()));
+            lines.extend(
+                fit_or_wrap(deleted_reason, cpl)
+                    .into_iter()
+                    .map(ReceiptTextLine::plain),
+            );
         }
     }
 
     lines.push(ReceiptTextLine::plain("-".repeat(cpl)));
 
-    // Footer
-    if let Some(ref footer) = data.footer_text {
+    // Footer. A blank one is what the settings screen saves when the admin
+    // never typed any, and means the default, as it does on the HTML receipt.
+    if let Some(footer) = data.footer_text.as_deref().filter(|f| !f.trim().is_empty()) {
         for line in footer.lines() {
-            lines.push(ReceiptTextLine::plain(center_text(line, cpl)));
+            lines.extend(
+                center_wrapped(line, cpl)
+                    .into_iter()
+                    .map(ReceiptTextLine::plain),
+            );
         }
     } else {
         lines.push(ReceiptTextLine::plain(center_text("Terima kasih!", cpl)));
@@ -476,31 +424,7 @@ pub fn format_test_page_text(store_name: &str, paper_width_mm: u8) -> Vec<Receip
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_format_rupiah() {
-        assert_eq!(format_rupiah(0.0), "0");
-        assert_eq!(format_rupiah(500.0), "500");
-        assert_eq!(format_rupiah(1000.0), "1.000");
-        assert_eq!(format_rupiah(100000.0), "100.000");
-        assert_eq!(format_rupiah(1500000.0), "1.500.000");
-    }
-
-    #[test]
-    fn test_center_text() {
-        let centered = center_text("Hello", 32);
-        assert!(centered.starts_with("             "));
-        assert!(centered.contains("Hello"));
-    }
-
-    #[test]
-    fn test_two_col_text() {
-        let line = two_col_text("TOTAL", "100.000", 32);
-        assert_eq!(line.len(), 32);
-        assert!(line.starts_with("TOTAL"));
-        assert!(line.ends_with("100.000"));
-    }
-
-    pub(super) fn sample_receipt_data() -> ReceiptData {
+    fn sample_receipt_data() -> ReceiptData {
         ReceiptData {
             store_name: "Cahaya513 Mini Mart".to_string(),
             store_address: Some("Jl. Contoh No. 1 Samarinda".to_string()),
@@ -669,15 +593,27 @@ mod tests {
         assert_eq!(footer_lines.len(), 1);
         assert_eq!(footer_lines[0].text, center_text("Terima kasih!", cpl));
     }
-}
 
-#[cfg(test)]
-mod notes_tests {
-    use super::*;
+    /// Saving the printer settings without typing a footer stores `""`; the
+    /// struk still ends with the default rather than the bare rule.
+    #[test]
+    fn a_blank_footer_falls_back_to_the_default() {
+        let data = ReceiptData {
+            footer_text: Some("  ".to_string()),
+            ..sample_receipt_data()
+        };
+        let lines = format_receipt_text(&data, 58);
+        let cpl = columns(58);
+
+        assert_eq!(
+            lines.last().map(|l| l.text.as_str()),
+            Some(center_text("Terima kasih!", cpl).as_str())
+        );
+    }
 
     #[test]
     fn the_cashiers_note_prints_under_the_payment_block_wrapped_to_the_paper() {
-        let mut data = tests::sample_receipt_data();
+        let mut data = sample_receipt_data();
         data.notes =
             Some("  cash 300 untuk Bu Dini, ambil besok pagi sekalian galon  ".to_string());
         let text: Vec<String> = format_receipt_text(&data, 58)
@@ -701,22 +637,17 @@ mod notes_tests {
 
     #[test]
     fn a_blank_note_prints_nothing() {
-        let mut data = tests::sample_receipt_data();
+        let mut data = sample_receipt_data();
         data.notes = Some("   ".to_string());
         let with = format_receipt_text(&data, 58).len();
         data.notes = None;
         let without = format_receipt_text(&data, 58).len();
         assert_eq!(with, without);
     }
-}
-
-#[cfg(test)]
-mod long_name_tests {
-    use super::*;
 
     #[test]
     fn a_product_name_longer_than_the_paper_wraps_by_word() {
-        let mut data = tests::sample_receipt_data();
+        let mut data = sample_receipt_data();
         data.items[0].name = "Pulsa TELKOMSEL - TELKOMSEL 50.000,- Masa Aktif 45 Hari".to_string();
         let text: Vec<String> = format_receipt_text(&data, 58)
             .into_iter()
@@ -734,15 +665,10 @@ mod long_name_tests {
         assert_eq!(text[at + 1], "50.000,- Masa Aktif 45 Hari");
         assert!(text[at + 2].starts_with("  "), "qty line follows the name");
     }
-}
-
-#[cfg(test)]
-mod ppob_line_tests {
-    use super::*;
 
     #[test]
     fn a_ppob_line_prints_its_payment_code_and_reference_under_the_qty_row() {
-        let mut data = tests::sample_receipt_data();
+        let mut data = sample_receipt_data();
         data.items[0].name = "Pulsa TELKOMSEL - TELKOMSEL 50.000,-".to_string();
         data.items[0].payment_code = Some("D081347085447-932-260913064438".to_string());
         data.items[0].reference_number = Some("04273700000625739077".to_string());
@@ -769,7 +695,7 @@ mod ppob_line_tests {
 
     #[test]
     fn a_dash_or_blank_reference_prints_nothing() {
-        let mut data = tests::sample_receipt_data();
+        let mut data = sample_receipt_data();
         data.items[0].payment_code = Some("  ".to_string());
         data.items[0].reference_number = Some("-".to_string());
         let text: Vec<String> = format_receipt_text(&data, 58)
@@ -779,5 +705,42 @@ mod ppob_line_tests {
         assert!(!text
             .iter()
             .any(|line| line.contains("Kode Transaksi") || line.contains("No. Ref")));
+    }
+
+    /// An address, footer line or void reason longer than the paper used to go
+    /// out as one over-wide line: cut mid-word by the printer's text engine,
+    /// drawn off the edge of the paper in raster mode. Each now wraps, and the
+    /// centred ones stay centred.
+    #[test]
+    fn long_banner_footer_and_void_lines_wrap_to_the_paper() {
+        let mut data = sample_receipt_data();
+        data.store_address =
+            Some("Jl. Pangeran Suryanata No. 12 RT 05 Kel. Air Putih Samarinda".to_string());
+        data.footer_text = Some(
+            "Barang yang sudah dibeli tidak dapat dikembalikan kecuali ada perjanjian".to_string(),
+        );
+        data.is_deleted = true;
+        data.deleted_by_name = Some("Kartika Wulandari Puspitasari".to_string());
+        data.deleted_reason =
+            Some("Pelanggan membatalkan pesanan karena salah memilih merek".to_string());
+
+        let text: Vec<String> = format_receipt_text(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+
+        assert!(
+            text.iter().all(|line| line.chars().count() <= 32),
+            "{text:?}"
+        );
+        assert!(text.contains(&center_text("Jl. Pangeran Suryanata No. 12 RT", 32)));
+        let reason = text
+            .iter()
+            .position(|line| line == "Alasan Void:")
+            .expect("void reason heading");
+        assert!(text[reason + 1].starts_with("Pelanggan membatalkan"));
+        assert!(text
+            .iter()
+            .any(|line| line.contains("Kartika Wulandari Puspitasari")));
     }
 }

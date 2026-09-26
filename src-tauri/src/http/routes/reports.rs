@@ -5,10 +5,10 @@
 //! cannot see on their own screen. The contract keeps them in the session group
 //! for that reason.
 //!
-//! The services take their arguments as plain `String`s because that is the
-//! shape the Tauri commands handed them. Query strings arrive the same way, so
-//! the only work in this module is supplying the defaults an omitted parameter
-//! needs — a missing search box is an empty search, not a 400.
+//! The services take their arguments as plain `String`s, which is how query
+//! strings arrive too, so the only work in this module is supplying the
+//! defaults an omitted parameter needs — a missing search box is an empty
+//! search, not a 400.
 
 use axum::extract::State;
 use axum::routing::get;
@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use crate::domain::reports::{
     CashFlowReportSummary, CurrentStockReport, DailySalesRow, LossSummary, MonthlySalesRow,
-    PaymentMethodRow, PeriodSalesSummary, PopularProductRow, ProductSalesRow, ReceiptReport,
+    PaymentMethodReport, PeriodSalesSummary, PopularProductRow, ProductSalesRow, ReceiptReport,
     ReturnRow,
 };
 use crate::http::error::ApiResult;
@@ -113,7 +113,7 @@ async fn sales_receipts(
 async fn payment_methods(
     State(state): State<AppState>,
     Query(range): Query<DateRange>,
-) -> ApiResult<axum::Json<Vec<PaymentMethodRow>>> {
+) -> ApiResult<axum::Json<PaymentMethodReport>> {
     Ok(axum::Json(
         services::reports::payment_methods(&state.db, range.start_date, range.end_date).await?,
     ))

@@ -1,6 +1,8 @@
 import { useState } from "react"
-import { Button, Input, Modal, TextField } from "@heroui/react"
+import { Button, Description, Input, Label, Modal, TextField } from "@heroui/react"
+import { Percent } from "lucide-react"
 
+import { id } from "@/i18n/id"
 import { OptionSelect } from "@/components/option-select"
 import { SummaryList } from "@/components/summary-list"
 import { useCartStore } from "@/stores/cart-store"
@@ -34,25 +36,30 @@ export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
 function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const transactionDiscount = useCartStore((s) => s.transactionDiscount)
   const setTransactionDiscount = useCartStore((s) => s.setTransactionDiscount)
-  const getSubtotal = useCartStore((s) => s.getSubtotal)
-  const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
-  const getTotal = useCartStore((s) => s.getTotal)
-  const getItemDiscountsTotal = useCartStore((s) => s.getItemDiscountsTotal)
+  const getCartTotals = useCartStore((s) => s.getCartTotals)
 
   const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(
     transactionDiscount?.type ?? "fixed",
   )
   const [txnRaw, setTxnRaw] = useState(transactionDiscount ? String(transactionDiscount.value) : "")
+  // Set when the last keystroke asked for more than 100%. The hint shows only
+  // then: the Body already has its one sentence (DESIGN.md §5.7), and a
+  // standing "Maksimal 100%" under the field would be a second one.
+  const [wasClamped, setWasClamped] = useState(false)
 
-  const subtotal = getSubtotal()
-  const itemDiscountsTotal = getItemDiscountsTotal()
-  const totalDiscount = getTotalDiscount()
-  const finalTotal = getTotal()
+  const { subtotal, itemDiscountsTotal, totalDiscount, total: finalTotal } = getCartTotals()
+  // The store caps a fixed discount at what is left after the per-item ones.
+  const discountBase = Math.max(subtotal - itemDiscountsTotal, 0)
+  const isFixedOverBase = txnDiscType === "fixed" && Number(txnRaw || 0) > discountBase
 
   const handleTxnChange = (value: string) => {
-    const cleaned = value.replace(/[^\d]/g, "")
+    const digits = value.replace(/[^\d]/g, "")
+    const parsed = parseDiscount(digits, txnDiscType)
+    // A percentage above 100 is clamped by `parseDiscount`; the field shows the
+    // clamped value too, so it never reads "150" while 100% is applied.
+    const cleaned = txnDiscType === "percentage" && digits !== "" ? String(parsed) : digits
+    setWasClamped(txnDiscType === "percentage" && Number(digits) > 100)
     setTxnRaw(cleaned)
-    const parsed = parseDiscount(cleaned, txnDiscType)
     setTransactionDiscount(parsed > 0 ? { type: txnDiscType, value: parsed } : null)
   }
 
@@ -66,11 +73,13 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
   const handleToggleType = (newType: "fixed" | "percentage") => {
     setTxnDiscType(newType)
     setTxnRaw("")
+    setWasClamped(false)
     setTransactionDiscount(null)
   }
 
   const handleReset = () => {
     setTxnRaw("")
+    setWasClamped(false)
     setTransactionDiscount(null)
   }
 
@@ -78,40 +87,48 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
     <>
       <Modal.CloseTrigger />
       <Modal.Header>
+        <Modal.Icon className="bg-default text-foreground">
+          <Percent className="size-5" />
+        </Modal.Icon>
         <Modal.Heading>Diskon Total Transaksi</Modal.Heading>
       </Modal.Header>
 
       <Modal.Body>
-        {/* Jenis dan nilai berdampingan; judul bloknya ditulis sekali, kolomnya
-            sendiri diberi `aria-label` supaya tidak ada `<label>` menggantung. */}
-        <div className="flex flex-col gap-2">
-          <p className="font-medium text-foreground">Diskon</p>
-          <div className="flex items-center gap-2">
-            <OptionSelect
-              aria-label="Jenis diskon"
-              variant="secondary"
-              options={DISCOUNT_TYPES}
-              value={txnDiscType}
-              onChange={(key) => handleToggleType(key as "fixed" | "percentage")}
+        <p>{id.cashier.discountHint}</p>
+        {/* Jenis dan nilai berdampingan dengan label terlihat masing-masing,
+            sama seperti dialog ubah item — DESIGN.md §5.7. */}
+        <div className="grid grid-cols-2 items-start gap-3">
+          <OptionSelect
+            label="Jenis diskon"
+            variant="secondary"
+            options={DISCOUNT_TYPES}
+            value={txnDiscType}
+            onChange={(key) => handleToggleType(key as "fixed" | "percentage")}
+          />
+          <TextField
+            autoFocus
+            fullWidth
+            variant="secondary"
+            value={formatTxnDisplay(txnRaw)}
+            onChange={handleTxnChange}
+          >
+            <Label>{txnDiscType === "percentage" ? "Nilai diskon (%)" : "Nilai diskon"}</Label>
+            <Input
+              className="text-right tabular-nums"
+              inputMode="numeric"
+              placeholder="0"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onOpenChange(false)
+              }}
             />
-            <TextField
-              aria-label="Nilai diskon"
-              autoFocus
-              className="flex-1"
-              variant="secondary"
-              value={formatTxnDisplay(txnRaw)}
-              onChange={handleTxnChange}
-            >
-              <Input
-                className="text-right tabular-nums"
-                inputMode="numeric"
-                placeholder={txnDiscType === "percentage" ? "Persentase (%)" : "Nominal (Rp)"}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onOpenChange(false)
-                }}
-              />
-            </TextField>
-          </div>
+            {wasClamped ? (
+              <Description className="text-warning">Maksimal 100%</Description>
+            ) : isFixedOverBase ? (
+              <Description className="text-warning">
+                Melebihi belanja — dipotong jadi {formatRupiah(discountBase)}
+              </Description>
+            ) : null}
+          </TextField>
         </div>
 
         <SummaryList
@@ -137,7 +154,7 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
       <Modal.Footer>
         {transactionDiscount && (
           <Button variant="tertiary" onPress={handleReset}>
-            Reset
+            Reset Diskon
           </Button>
         )}
         <Button slot="close">Selesai</Button>

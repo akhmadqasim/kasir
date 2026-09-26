@@ -2,9 +2,9 @@
 //!
 //! Everything here is in the `session` group, including the two operations only
 //! an admin may perform — voiding a sale and correcting its payment method. The
-//! router does not enforce that; `services::transactions::admin` does, with the
-//! same `guard::require_admin` the Tauri path uses. Putting them in the admin
-//! group as well would be belt and braces, but it would also put the route table
+//! router does not enforce that; `services::transactions::admin` does, with
+//! `guard::require_admin`. Putting them in the admin group as well would be
+//! belt and braces, but it would also put the route table
 //! and the service at risk of disagreeing about who counts as an admin, and only
 //! one of the two can be the answer.
 //!
@@ -17,7 +17,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Router};
-use chrono::Utc;
 use serde::Deserialize;
 
 use crate::domain::receipt::{ReceiptDataResponse, ReceiptLineResponse};
@@ -29,7 +28,7 @@ use crate::domain::Actor;
 use crate::entity::transactions;
 use crate::http::error::ApiResult;
 use crate::http::extract::{json_from_slice, Json, Query};
-use crate::http::idempotency::{self, Claim};
+use crate::http::idempotency;
 use crate::http::AppState;
 use crate::services;
 
@@ -46,6 +45,7 @@ pub fn session() -> Router<AppState> {
         .route("/transactions/{id}/receipt", get(receipt))
         .route("/transactions/{id}/receipt/lines", get(receipt_lines))
         .route("/transaction-items/{id}/ppob/retry", post(retry_ppob))
+        .route("/transaction-items/{id}/ppob/resolve", post(resolve_ppob))
 }
 
 async fn list(
@@ -81,7 +81,8 @@ async fn detail(
 /// The order is parse, then claim, then work. Parsing first means a malformed
 /// body is rejected without consuming the key, so the client can fix it and
 /// retry with the same one — which is what a client that generated one key per
-/// cart will do.
+/// cart will do. A sale that did not happen releases the key for the corrected
+/// retry.
 async fn checkout(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
@@ -91,31 +92,20 @@ async fn checkout(
     let key = idempotency::key_from_headers(&headers)?;
     let input: CheckoutTransactionInput = json_from_slice(&body)?;
 
-    let guard = match idempotency::claim(
+    let user_id = actor.user_id;
+    let (db, mitra) = (state.db.clone(), state.mitra.clone());
+    idempotency::run(
         &state.db,
         idempotency::SCOPE_CHECKOUT,
-        actor.user_id,
+        user_id,
         &key,
         &body,
-        Utc::now(),
+        async move { services::transactions::checkout(&db, &mitra, &actor, input).await },
     )
-    .await?
-    {
-        Claim::Replay(response) => return Ok(response),
-        Claim::Fresh(guard) => guard,
-    };
-
-    match services::transactions::checkout(&state.db, &state.mitra, &actor, input).await {
-        Ok(result) => Ok(guard.complete(&state.db, &result).await),
-        Err(e) => {
-            // A sale that did not happen must not block the corrected retry.
-            guard.release(&state.db).await;
-            Err(e.into())
-        }
-    }
+    .await
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
 struct VoidBody {
     reason: String,
 }
@@ -139,7 +129,7 @@ async fn void(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
 struct PaymentMethodBody {
     payment_method: String,
     reason: String,
@@ -222,5 +212,34 @@ async fn retry_ppob(
     Ok(axum::Json(
         services::transactions::retry_ppob_fulfillment(&state.db, &state.mitra, id, body.pin)
             .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolvePpobBody {
+    /// What the Mitra history says happened to this purchase.
+    success: bool,
+    /// The serial number / token read off the Mitra history, if any.
+    #[serde(default)]
+    serial_number: Option<String>,
+}
+
+/// Settle a PPOB line whose provider answer never arrived. The acting user is
+/// written into the line's message, so the Riwayat shows who decided.
+async fn resolve_ppob(
+    State(state): State<AppState>,
+    Extension(actor): Extension<Actor>,
+    Path(id): Path<i64>,
+    Json(body): Json<ResolvePpobBody>,
+) -> ApiResult<axum::Json<String>> {
+    Ok(axum::Json(
+        services::transactions::resolve_uncertain_ppob(
+            &state.db,
+            &actor,
+            id,
+            body.success,
+            body.serial_number,
+        )
+        .await?,
     ))
 }

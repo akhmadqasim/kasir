@@ -2,31 +2,29 @@
 //!
 //! Everything reaches a third party over the network, and the upstream session
 //! that makes that possible lives in the one `MitraClient` on [`AppState`] —
-//! shared with the Tauri layer, because two clients would mean two upstream
-//! sessions and logging one in logs the other out.
+//! shared with the rest of the process, because two clients would mean two
+//! upstream sessions and logging one in logs the other out.
 //!
-//! Three groups of route, and the shape of each says what it is:
+//! Two groups of route, and the shape of each says what it is:
 //!
 //! * `GET /ppob/catalog/*` — what the provider sells. Reads, cacheable, boring.
 //! * `POST /ppob/inquiries/*` — "what does this customer owe?". Reads upstream,
 //!   POSTs here because they carry a body and because the provider bills for
 //!   them. Repeating one costs a query, not money.
-//! * `POST /ppob/payments` and `POST /ppob/topups` — money. Both take an
-//!   `Idempotency-Key`, for the same reason checkout does: a lost response on
-//!   shop wifi is indistinguishable from a request that never arrived, and the
-//!   retry would buy a second voucher.
+//!
+//! Nothing here spends Mitra balance. A PPOB purchase is only ever fulfilled
+//! inside a sales transaction (`POST /transactions`), so every rupiah that
+//! leaves the Mitra account has a receipt, a shift and an idempotency key.
 //!
 //! `POST /ppob/session` is admin-only: it authenticates the shop's own account
 //! upstream, which is an act of configuration rather than of selling.
 //!
 //! [`AppState`]: crate::http::AppState
 
-use axum::extract::{Extension, Path, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::Response;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::Router;
-use chrono::Utc;
 use serde::Deserialize;
 
 use crate::domain::ppob::{
@@ -35,14 +33,11 @@ use crate::domain::ppob::{
     PulsaDetailsResponse, PulsaProduct, PulsaProvider, TransferChannelGroup, VoucherGroup,
 };
 use crate::domain::receipt::ReceiptLineResponse;
-use crate::domain::Actor;
 use crate::http::error::{ApiError, ApiResult};
-use crate::http::extract::{json_from_slice, Json, Query};
-use crate::http::idempotency::{self, Claim};
+use crate::http::extract::{Json, Query};
 use crate::http::AppState;
 use crate::services;
 use crate::services::ppob::inquiry::{BpjsInquiryInput, TransferInquiryInput};
-use crate::services::ppob::payment::ConfirmPaymentInput;
 
 pub fn session() -> Router<AppState> {
     Router::new()
@@ -76,9 +71,6 @@ pub fn session() -> Router<AppState> {
         .route("/ppob/inquiries/pp", post(pp_inquiry))
         .route("/ppob/inquiries/transfer", post(transfer_inquiry))
         .route("/ppob/inquiries/emoney", post(emoney_inquiry))
-        // Money
-        .route("/ppob/payments", post(pay))
-        .route("/ppob/topups", post(topup))
         // History
         .route("/ppob/history", get(history))
         .route("/ppob/history/{trx_id}", get(history_detail))
@@ -91,16 +83,12 @@ pub fn session() -> Router<AppState> {
         .route("/ppob/notifications/{inbox_id}/read", post(mark_read))
 }
 
+/// `POST /ppob/session` authenticates the shop's account upstream and reports
+/// the balance it came back with — which is exactly what reading the balance
+/// does, so it is the same handler. Admin because it acts on the credentials,
+/// not on a sale.
 pub fn admin() -> Router<AppState> {
-    Router::new().route("/ppob/session", post(open_session))
-}
-
-/// Authenticate the shop's account upstream and report the balance it came back
-/// with. Admin because it acts on the credentials, not on a sale.
-async fn open_session(State(state): State<AppState>) -> ApiResult<axum::Json<PpobSaldoResponse>> {
-    Ok(axum::Json(
-        services::ppob::menu::saldo(&state.db, &state.mitra).await?,
-    ))
+    Router::new().route("/ppob/session", post(balance))
 }
 
 async fn balance(State(state): State<AppState>) -> ApiResult<axum::Json<PpobSaldoResponse>> {
@@ -289,33 +277,12 @@ async fn pdam_inquiry(
     ))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BpjsInquiryBody {
-    customer_id: String,
-    phone_number: String,
-    payment_code: String,
-    bpjs_type: String,
-    period: String,
-}
-
 async fn bpjs_inquiry(
     State(state): State<AppState>,
-    Json(body): Json<BpjsInquiryBody>,
+    Json(body): Json<BpjsInquiryInput>,
 ) -> ApiResult<axum::Json<InquiryResult>> {
     Ok(axum::Json(
-        services::ppob::inquiry::bpjs(
-            &state.db,
-            &state.mitra,
-            BpjsInquiryInput {
-                customer_id: body.customer_id,
-                phone_number: body.phone_number,
-                payment_code: body.payment_code,
-                bpjs_type: body.bpjs_type,
-                period: body.period,
-            },
-        )
-        .await?,
+        services::ppob::inquiry::bpjs(&state.db, &state.mitra, body).await?,
     ))
 }
 
@@ -345,37 +312,12 @@ async fn pp_inquiry(
     ))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TransferInquiryBody {
-    channel_id: String,
-    nomor_rekening: String,
-    amount: f64,
-    channel_name: String,
-    deskripsi: String,
-    nama_pengirim: String,
-    notelp_pengirim: String,
-}
-
 async fn transfer_inquiry(
     State(state): State<AppState>,
-    Json(body): Json<TransferInquiryBody>,
+    Json(body): Json<TransferInquiryInput>,
 ) -> ApiResult<axum::Json<InquiryResult>> {
     Ok(axum::Json(
-        services::ppob::inquiry::transfer(
-            &state.db,
-            &state.mitra,
-            TransferInquiryInput {
-                channel_id: body.channel_id,
-                nomor_rekening: body.nomor_rekening,
-                amount: body.amount,
-                channel_name: body.channel_name,
-                deskripsi: body.deskripsi,
-                nama_pengirim: body.nama_pengirim,
-                notelp_pengirim: body.notelp_pengirim,
-            },
-        )
-        .await?,
+        services::ppob::inquiry::transfer(&state.db, &state.mitra, body).await?,
     ))
 }
 
@@ -399,144 +341,6 @@ async fn emoney_inquiry(
         )
         .await?,
     ))
-}
-
-// ---------------------------------------------------------------------------
-// The two that spend money
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PaymentBody {
-    service_type: String,
-    inquiry_id: String,
-    customer_id: Option<String>,
-    product_code: Option<String>,
-    payment_code: Option<String>,
-    flag_id: Option<String>,
-    phone_number: Option<String>,
-    amount: Option<f64>,
-    /// The cashier's Mitra transaction PIN, typed for this purchase and never
-    /// stored. See `services::ppob::executor::validate_pin`.
-    #[serde(default)]
-    pin: Option<String>,
-}
-
-/// Complete an inquiry into a purchase.
-///
-/// Same shape as checkout: parse, claim the key, then act. A failure releases
-/// the key, because a bill that was not paid must stay payable with the key the
-/// cashier's screen already generated. The PIN is checked before the key is
-/// claimed, same as everything else malformed about the body — a request that
-/// was always going to be refused must not consume it.
-async fn pay(
-    State(state): State<AppState>,
-    Extension(actor): Extension<Actor>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> ApiResult<Response> {
-    let key = idempotency::key_from_headers(&headers)?;
-    let input: PaymentBody = json_from_slice(&body)?;
-    let pin = services::ppob::executor::validate_pin(input.pin, true)?;
-
-    let guard = match idempotency::claim(
-        &state.db,
-        idempotency::SCOPE_PPOB_PAYMENT,
-        actor.user_id,
-        &key,
-        &body,
-        Utc::now(),
-    )
-    .await?
-    {
-        Claim::Replay(response) => return Ok(response),
-        Claim::Fresh(guard) => guard,
-    };
-
-    let result = services::ppob::payment::confirm(
-        &state.db,
-        &state.mitra,
-        pin,
-        ConfirmPaymentInput {
-            service_type: input.service_type,
-            inquiry_id: input.inquiry_id,
-            customer_id: input.customer_id,
-            product_code: input.product_code,
-            payment_code: input.payment_code,
-            flag_id: input.flag_id,
-            phone_number: input.phone_number,
-            amount: input.amount,
-        },
-    )
-    .await;
-
-    match result {
-        Ok(payment) => Ok(guard.complete(&state.db, &payment).await),
-        Err(e) => {
-            guard.release(&state.db).await;
-            Err(e.into())
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TopupBody {
-    phone_number: String,
-    product_code: String,
-    product_id: i64,
-    product_type: String,
-    /// The cashier's Mitra transaction PIN, typed for this purchase and never
-    /// stored. See `services::ppob::executor::validate_pin`.
-    #[serde(default)]
-    pin: Option<String>,
-}
-
-/// Buy airtime or a data package outright — no inquiry step, so the request
-/// itself is the purchase and the key is the only thing standing between a lost
-/// response and a second voucher.
-async fn topup(
-    State(state): State<AppState>,
-    Extension(actor): Extension<Actor>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> ApiResult<Response> {
-    let key = idempotency::key_from_headers(&headers)?;
-    let input: TopupBody = json_from_slice(&body)?;
-    let pin = services::ppob::executor::validate_pin(input.pin, true)?;
-
-    let guard = match idempotency::claim(
-        &state.db,
-        idempotency::SCOPE_PPOB_TOPUP,
-        actor.user_id,
-        &key,
-        &body,
-        Utc::now(),
-    )
-    .await?
-    {
-        Claim::Replay(response) => return Ok(response),
-        Claim::Fresh(guard) => guard,
-    };
-
-    let result = services::ppob::inquiry::pulsa_purchase(
-        &state.db,
-        &state.mitra,
-        input.phone_number,
-        input.product_code,
-        input.product_id,
-        input.product_type,
-        pin,
-    )
-    .await;
-
-    match result {
-        Ok(payment) => Ok(guard.complete(&state.db, &payment).await),
-        Err(e) => {
-            guard.release(&state.db).await;
-            Err(e.into())
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

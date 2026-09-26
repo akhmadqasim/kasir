@@ -2,18 +2,18 @@ import { useCallback, useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button, Surface } from "@heroui/react"
 import { DoorOpen } from "lucide-react"
+import { id } from "@/i18n/id"
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { useApiQuery } from "@/hooks/use-api"
 import { getPrinterSettings } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useCartStore } from "@/stores/cart-store"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { OpenShiftDialog, useShiftStore } from "@/features/shift"
+import { useAuthStore } from "@/features/auth"
 import { CartPanel } from "./cart-panel"
 import { ProductSearchPanel } from "./product-search-panel"
 import { PaymentDialog } from "./payment/payment-dialog"
 import { TransactionSuccessDialog } from "./transaction-success-dialog"
-import { OpenShiftDialog } from "@/features/shift/components/open-shift-dialog"
 import type { PrinterSettings } from "@/features/settings/types"
 import type { TransactionResult } from "../types"
 
@@ -134,7 +134,7 @@ export function CashierPage() {
         <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden border lg:col-span-4 lg:flex-none">
           <CartPanel
             onPay={openPayment}
-            disabled={needsShift}
+            payBlockedReason={needsShift ? id.cashier.payNeedsShift : undefined}
             shortcutsDisabled={pageDialogOpen}
             onRequestProductSearchFocus={requestProductSearchFocus}
           />

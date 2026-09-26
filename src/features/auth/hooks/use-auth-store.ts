@@ -1,4 +1,6 @@
 import { create } from "zustand"
+
+import { setLogSessionActive } from "@/lib/startup-logger"
 import type { User } from "../types"
 
 /**
@@ -30,16 +32,23 @@ interface AuthState {
   isResolved: boolean
   setUser: (user: User | null) => void
   clearUser: () => void
-  isAuthenticated: () => boolean
 }
 
-export const useAuthStore = create<AuthState>()((set, get) => ({
+export const useAuthStore = create<AuthState>()((set) => ({
   user: null,
   isResolved: false,
   setUser: (user) => set({ user, isResolved: true }),
   clearUser: () => set({ user: null, isResolved: true }),
-  isAuthenticated: () => get().user !== null,
 }))
+
+// `POST /api/logs` needs a session. Every way a session starts or ends — login,
+// the boot `/auth/me`, logout, a 401 elsewhere — passes through this store, so
+// the logger follows it here rather than at each of those call sites.
+useAuthStore.subscribe((state, previous) => {
+  if ((state.user === null) !== (previous.user === null)) {
+    setLogSessionActive(state.user !== null)
+  }
+})
 
 /**
  * What the API client calls when a request comes back 401.

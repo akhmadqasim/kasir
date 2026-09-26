@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Skeleton } from "@heroui/react"
 
 import { cn } from "@/lib/utils"
 
@@ -31,5 +32,16 @@ export function TileGrid({ children, compact = false }: TileGridProps) {
     >
       {children}
     </div>
+  )
+}
+
+/** Placeholder ubin selama isi kisinya masih dimuat. */
+export function TileGridSkeleton({ count }: { count: number }) {
+  return (
+    <TileGrid>
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className="h-24" />
+      ))}
+    </TileGrid>
   )
 }

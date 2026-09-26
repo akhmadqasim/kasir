@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
+vi.mock("@/lib/toast", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}))
+
+import { toast } from "@/lib/toast"
 import { pressKey } from "@/test-utils/keyboard"
 import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
 import { CartItemEditDialog } from "./components/cart-item-edit-dialog"
@@ -103,17 +108,43 @@ describe("cart item edit dialog", () => {
     expect(summaryValue("Total")).toBe(formatRupiah(6000))
   })
 
-  it("saves the clamped quantity when Enter follows a scanned barcode in the field", () => {
+  it("saves the clamped quantity when an oversized number is entered without a scanner burst", () => {
     const item = cartItem()
     resetStore({ items: [item] })
     const onOpenChange = renderDialog(item)
 
-    // 13 digit — panjang barcode EAN-13, bukan jumlah yang wajar.
+    // 13 digit tanpa keydown berwaktu (mis. ditempel) — bukan semburan
+    // scanner, jadi NumberField menjepitnya ke batas dan Enter menyimpannya.
     fireEvent.change(qtyInput(), { target: { value: "8991234567890" } })
     pressKey("Enter", qtyInput())
 
     expect(useCartStore.getState().items[0].quantity).toBe(MAX_CART_QUANTITY)
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("ignores a barcode scanned into the quantity field instead of saving it", async () => {
+    const item = cartItem()
+    resetStore({ items: [item] })
+    const onOpenChange = renderDialog(item)
+    const field = qtyInput()
+
+    // Scanner: satu keydown per digit dalam satu semburan, lalu Enter.
+    const fireAt = (event: Event, timeStamp: number) => {
+      Object.defineProperty(event, "timeStamp", { value: timeStamp })
+      fireEvent(field, event)
+    }
+    const barcode = "8991234567890"
+    for (let length = 1; length <= barcode.length; length++) {
+      fireAt(createEvent.keyDown(field, { key: barcode[length - 1] }), 1000 + length * 10)
+      fireEvent.change(field, { target: { value: barcode.slice(0, length) } })
+    }
+    fireAt(createEvent.keyDown(field, { key: "Enter" }), 1000 + barcode.length * 10 + 20)
+    fireEvent.keyUp(field, { key: "Enter" })
+
+    expect(toast.warning).toHaveBeenCalled()
+    expect(useCartStore.getState().items[0].quantity).toBe(2)
+    expect(onOpenChange).not.toHaveBeenCalled()
+    await waitFor(() => expect(qtyInput()).toHaveValue("2"))
   })
 
   it("hides the quantity field for a PPOB line", () => {

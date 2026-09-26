@@ -14,17 +14,19 @@ import { useState, type JSX } from "react";
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
 import { FormSubmit } from "@/components/form-submit";
+import { AdminOnlyView, ProductGate } from "@/components/product-gate";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
-import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
+import { InlineError } from "@/components/state-view";
 import { useCategories, usePatchProduct, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
 import { savedThenBack } from "@/lib/mutation-feedback";
 
 /**
  * Admin: sell price, buy price, minimum stock, category. Stock itself is not
- * here on purpose — it changes through a count or a write-off, so that a price
- * edit can never silently rewrite the stock the server has since sold from.
+ * here on purpose — it changes through a count or a write-off — and the save
+ * re-reads the row first, so a price edit does not write back a stock the
+ * server has since sold from.
  */
 export default function EditProductScreen(): JSX.Element {
   const { id: rawId } = useLocalSearchParams<{ id: string }>();
@@ -34,32 +36,22 @@ export default function EditProductScreen(): JSX.Element {
   const categories = useCategories();
   const patch = usePatchProduct();
 
-  if (product.isPending) return <LoadingView />;
-  if (product.isError) {
-    return (
-      <ScrollScreen>
-        <ErrorView error={product.error} onRetry={() => void product.refetch()} />
-      </ScrollScreen>
-    );
-  }
-  if (!canEditProduct(user.role)) {
-    return (
-      <ScrollScreen>
-        <Typography color="muted">{id.stock.adjustAdminOnly}</Typography>
-      </ScrollScreen>
-    );
-  }
+  if (!canEditProduct(user.role)) return <AdminOnlyView />;
 
   return (
-    <EditForm
-      product={product.data}
-      categories={categories.data ?? []}
-      isPending={patch.isPending}
-      error={patch.error}
-      onSubmit={(values) =>
-        patch.mutate({ product: product.data, patch: values }, savedThenBack(router))
-      }
-    />
+    <ProductGate product={product}>
+      {(item) => (
+        <EditForm
+          product={item}
+          categories={categories.data ?? []}
+          isPending={patch.isPending}
+          error={patch.error}
+          onSubmit={(values) =>
+            patch.mutate({ product: item, patch: values }, savedThenBack(router))
+          }
+        />
+      )}
+    </ProductGate>
   );
 }
 
@@ -88,7 +80,8 @@ function EditForm({ product, categories, isPending, error, onSubmit }: EditFormP
   const buy = parseIndonesianNumber(buyPrice);
   const min = parseIndonesianInteger(minStock);
 
-  const valid = sell !== null && sell >= 0 && buy !== null && buy >= 0 && min !== null && min >= 0;
+  // The server refuses a sell price of 0 (`validate_product_fields`).
+  const valid = sell !== null && sell > 0 && buy !== null && buy >= 0 && min !== null && min >= 0;
 
   const submit = () => {
     if (!valid || isPending) return;
@@ -105,6 +98,7 @@ function EditForm({ product, categories, isPending, error, onSubmit }: EditFormP
           value={sellPrice}
           onChangeText={setSellPrice}
           parsed={sell}
+          error={sell !== null && sell <= 0 ? id.products.sellPricePositive : null}
           decimal
           isRequired
           returnKeyType="next"

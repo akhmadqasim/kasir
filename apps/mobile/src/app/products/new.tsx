@@ -5,18 +5,18 @@ import {
   parseIndonesianNumber,
   type Product,
 } from "@kasir/shared";
-import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Input, Label, TextField, Typography } from "heroui-native";
+import { Input, Label, TextField } from "heroui-native";
 import { useState, type JSX } from "react";
 
 import { CategorySelect } from "@/components/category-select";
 import { NumberField } from "@/components/number-field";
 import { FormSubmit } from "@/components/form-submit";
+import { AdminOnlyView } from "@/components/product-gate";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
 import { InlineError } from "@/components/state-view";
-import { primeProduct, useCategories, useCreateProduct } from "@/hooks/use-products";
+import { useCategories, useCreateProduct } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
 import { hapticError, hapticSuccess } from "@/lib/haptics";
 import { fieldVariant } from "@/lib/platform";
@@ -28,7 +28,6 @@ import { fieldVariant } from "@/lib/platform";
 export default function NewProductScreen(): JSX.Element {
   const { barcode: presetBarcode } = useLocalSearchParams<{ barcode?: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const user = useCurrentUser();
   const categories = useCategories();
   const create = useCreateProduct();
@@ -43,13 +42,7 @@ export default function NewProductScreen(): JSX.Element {
   const [minStock, setMinStock] = useState("0");
   const [categoryId, setCategoryId] = useState<number | null>(null);
 
-  if (!canEditProduct(user.role)) {
-    return (
-      <ScrollScreen>
-        <Typography color="muted">{id.stock.adjustAdminOnly}</Typography>
-      </ScrollScreen>
-    );
-  }
+  if (!canEditProduct(user.role)) return <AdminOnlyView />;
 
   const sell = parseIndonesianNumber(sellPrice);
   const buy = buyPrice.trim() ? parseIndonesianNumber(buyPrice) : 0;
@@ -60,7 +53,7 @@ export default function NewProductScreen(): JSX.Element {
     name.trim().length > 0 &&
     unit.trim().length > 0 &&
     sell !== null &&
-    sell >= 0 &&
+    sell > 0 &&
     buy !== null &&
     buy >= 0 &&
     stockValue !== null &&
@@ -85,7 +78,6 @@ export default function NewProductScreen(): JSX.Element {
       {
         onSuccess: (product: Product) => {
           hapticSuccess();
-          primeProduct(queryClient, product);
           router.replace({ pathname: "/products/[id]", params: { id: String(product.id) } });
         },
         onError: hapticError,
@@ -153,6 +145,7 @@ export default function NewProductScreen(): JSX.Element {
           value={sellPrice}
           onChangeText={setSellPrice}
           parsed={sell}
+          error={sell !== null && sell <= 0 ? id.products.sellPricePositive : null}
           decimal
           isRequired
           returnKeyType="next"

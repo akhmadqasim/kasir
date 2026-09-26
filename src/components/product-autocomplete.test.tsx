@@ -35,10 +35,17 @@ const RESULTS: PaginatedProducts = {
   total_pages: 1,
 }
 
-function Harness({ onSelect }: { onSelect?: (product: Product | null) => void }) {
+function Harness({
+  onSelect,
+  isRequired,
+}: {
+  onSelect?: (product: Product | null) => void
+  isRequired?: boolean
+}) {
   const [selected, setSelected] = useState<Product | null>(null)
   return (
     <ProductAutocomplete
+      isRequired={isRequired}
       label="Produk"
       placeholder="Pilih produk"
       searchPlaceholder="Cari nama produk atau barcode..."
@@ -52,13 +59,13 @@ function Harness({ onSelect }: { onSelect?: (product: Product | null) => void })
   )
 }
 
-function renderHarness(onSelect?: (product: Product | null) => void) {
+function renderHarness(onSelect?: (product: Product | null) => void, isRequired?: boolean) {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <Harness onSelect={onSelect} />
+      <Harness isRequired={isRequired} onSelect={onSelect} />
     </QueryClientProvider>,
   )
 }
@@ -135,9 +142,27 @@ describe("pencarian produk", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Beras Rojolele/ }))
     expect(trigger()).toHaveAccessibleName(/Beras Rojolele/)
 
-    fireEvent.click(screen.getByLabelText("Clear selection"))
+    fireEvent.click(screen.getByLabelText("Hapus pilihan"))
 
     expect(onSelect).toHaveBeenLastCalledWith(null)
     expect(trigger()).toHaveAccessibleName(/Pilih produk/)
+  })
+})
+
+// The write-off form used to write "Produk *" into the label because the
+// field had no `isRequired`; a screen reader read the asterisk out.
+describe("kolom wajib", () => {
+  it("menandai kolomnya wajib lewat isRequired, bukan bintang di label", () => {
+    const { container } = renderHarness(undefined, true)
+
+    expect(container.querySelector("select")).toBeRequired()
+    expect(trigger()).toHaveAccessibleName(/Produk$/)
+    expect(screen.queryByText("*", { exact: false })).not.toBeInTheDocument()
+  })
+
+  it("tidak wajib tanpa isRequired", () => {
+    const { container } = renderHarness()
+
+    expect(container.querySelector("select")).not.toBeRequired()
   })
 })

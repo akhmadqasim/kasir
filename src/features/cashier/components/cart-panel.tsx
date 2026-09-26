@@ -1,89 +1,42 @@
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Badge,
-  Button,
-  Input,
-  Kbd,
-  Label,
-  Modal,
-  ScrollShadow,
-  Separator,
-  Table,
-  TextField,
-} from "@heroui/react"
-import {
-  ArrowDownUp,
-  DoorClosed,
-  PauseCircle,
-  Percent,
-  PlayCircle,
-  ShoppingCart,
-} from "lucide-react"
+import { Badge, Button, ScrollShadow, Separator, Table } from "@heroui/react"
+import { PlayCircle, ShoppingCart } from "lucide-react"
 
+import { id } from "@/i18n/id"
 import { NoData } from "@/components/no-data"
-import { SummaryList } from "@/components/summary-list"
+import { formatNumber } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { useCartStore } from "@/stores/cart-store"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
+import { CashFlowDialog, useShiftStore } from "@/features/shift"
+import { CartFooter } from "./cart-footer"
 import { CartItemRow } from "./cart-item-row"
 import { CartItemEditDialog } from "./cart-item-edit-dialog"
 import { DiscountDialog } from "./discount-dialog"
 import { HeldCartsDialog } from "./held-carts-dialog"
-import { CashFlowDialog } from "@/features/shift/components/cash-flow-dialog"
-import { formatRupiah } from "../utils"
+import { HoldCartDialog } from "./hold-cart-dialog"
+import { ShortcutKey } from "./shortcut-key"
 import type { CartItem } from "../types"
 
 interface CartPanelProps {
   onPay: () => void
-  disabled?: boolean
+  /** Why Bayar is off even with items in the cart (no shift open), shown under it. */
+  payBlockedReason?: string
   /** Matikan shortcut saat dialog milik CashierPage sedang terbuka */
   shortcutsDisabled?: boolean
   onRequestProductSearchFocus?: () => void
 }
 
-/**
- * Tombol pintasan di dalam tombol aksinya, setelah label. Di tombol
- * `tertiary` (tanpa latar) dipakai `Kbd` bawaan dengan kotak abu-abunya,
- * seperti contoh di dokumentasi; di tombol utama yang biru, varian `light`
- * supaya tidak ada kotak abu-abu di atas warna aksen. Pengikatan tombolnya:
- * F1/F2/F3/F6/F9 di `CartPanel`, F4 di `CashierPage`.
- *
- * Spasi di depannya ikut nama aksesibel tombolnya — "Diskon F2", bukan
- * "DiskonF2" — dan tidak menambah jarak di layar karena tombolnya flex.
- * (`aria-keyshortcuts` tidak bisa dipakai: React Aria membuangnya dari `Button`.)
- */
-function ShortcutKey({
-  children,
-  className,
-  variant,
-}: {
-  children: string
-  className?: string
-  variant?: "light"
-}) {
-  return (
-    <>
-      {" "}
-      <Kbd className={className} variant={variant}>
-        <Kbd.Content>{children}</Kbd.Content>
-      </Kbd>
-    </>
-  )
-}
-
 export function CartPanel({
   onPay,
-  disabled,
+  payBlockedReason,
   shortcutsDisabled = false,
   onRequestProductSearchFocus,
 }: CartPanelProps) {
   const navigate = useNavigate()
   const items = useCartStore((s) => s.items)
   const removeItem = useCartStore((s) => s.removeItem)
-  const getTotal = useCartStore((s) => s.getTotal)
-  const getSubtotal = useCartStore((s) => s.getSubtotal)
-  const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
+  const getCartTotals = useCartStore((s) => s.getCartTotals)
   const heldCarts = useCartStore((s) => s.heldCarts)
   const holdCart = useCartStore((s) => s.holdCart)
   const recallCart = useCartStore((s) => s.recallCart)
@@ -94,13 +47,10 @@ export function CartPanel({
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
   const [cashFlowOpen, setCashFlowOpen] = useState(false)
   const [editItem, setEditItem] = useState<CartItem | null>(null)
-  const [holdLabel, setHoldLabel] = useState("")
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
   const activeShift = useShiftStore((s) => s.activeShift)
 
-  const total = getTotal()
-  const subtotal = getSubtotal()
-  const totalDiscount = getTotalDiscount()
+  const { total, subtotal, totalDiscount } = getCartTotals()
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
   const closeEditDialog = useCallback(() => {
@@ -108,25 +58,56 @@ export function CartPanel({
     onRequestProductSearchFocus?.()
   }, [onRequestProductSearchFocus])
 
+  // The name the store falls back to when the field is left empty — shown as
+  // the placeholder so the cashier knows what the held cart will be called.
+  // Taken when the dialog opens: derived live, it would tick to the next
+  // number on screen while the dialog animates out after a hold.
+  const [autoHoldLabel, setAutoHoldLabel] = useState("")
+
+  const openHoldDialog = useCallback(() => {
+    setAutoHoldLabel(`Pelanggan ${useCartStore.getState().heldCarts.length + 1}`)
+    setHoldDialogOpen(true)
+  }, [])
+
   const handleHold = () => {
     if (items.length === 0) return
-    setHoldLabel("")
-    setHoldDialogOpen(true)
+    openHoldDialog()
   }
 
-  const confirmHold = () => {
-    holdCart(holdLabel)
+  const confirmHold = (typedLabel: string) => {
+    // A second Enter while the dialog animates out would otherwise toast a
+    // hold that never happened: the cart is already empty by then.
+    if (items.length === 0) return
+    const label = typedLabel || autoHoldLabel
+    holdCart(label)
     setHoldDialogOpen(false)
-    toast.success(`Transaksi disimpan${holdLabel.trim() ? ` — ${holdLabel.trim()}` : ""}`)
+    toast.success(id.cashier.cartHeld(label))
+    onRequestProductSearchFocus?.()
   }
 
   const handleRecall = useCallback(
     (holdId: string) => {
+      const { heldCarts: held, items: current } = useCartStore.getState()
+      const label =
+        held.find((cart) => cart.id === holdId)?.label ?? id.cashier.heldCartFallbackLabel
+      // Recalling over a non-empty cart parks that cart as "Keranjang Aktif"
+      // (see `recallCart`); say so, or it looks like it vanished.
+      const parkedCurrent = current.length > 0
       recallCart(holdId)
       setRecallDialogOpen(false)
-      toast.success("Transaksi dilanjutkan")
+      toast.success(id.cashier.cartRecalled(label, parkedCurrent))
+      onRequestProductSearchFocus?.()
     },
-    [recallCart],
+    [recallCart, onRequestProductSearchFocus],
+  )
+
+  const handleRemoveHeld = useCallback(
+    (holdId: string) => {
+      const label = useCartStore.getState().heldCarts.find((cart) => cart.id === holdId)?.label
+      removeHeldCart(holdId)
+      toast.success(id.cashier.heldCartDeleted(label))
+    },
+    [removeHeldCart],
   )
 
   // F1 = cash flow, F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = edit last item
@@ -162,8 +143,7 @@ export function CartPanel({
       }
       if (e.key === "F3" && items.length > 0) {
         e.preventDefault()
-        setHoldLabel("")
-        setHoldDialogOpen(true)
+        openHoldDialog()
       }
       if (e.key === "F6" && activeShift) {
         e.preventDefault()
@@ -185,6 +165,7 @@ export function CartPanel({
     navigate,
     editItem,
     closeEditDialog,
+    openHoldDialog,
   ])
 
   return (
@@ -193,7 +174,9 @@ export function CartPanel({
       <div className="flex items-center gap-2 px-4 py-3">
         <h2 className="text-base font-medium">Keranjang</h2>
         {/* Teks, bukan lencana: jumlah item bukan status — DESIGN.md §9. */}
-        {items.length > 0 && <span className="text-sm text-muted">{itemCount} item</span>}
+        {items.length > 0 && (
+          <span className="text-sm tabular-nums text-muted">{formatNumber(itemCount)} item</span>
+        )}
         <div className="flex-1" />
         <Badge.Anchor>
           <Button
@@ -204,10 +187,16 @@ export function CartPanel({
           >
             <PlayCircle />
             Tersimpan
+            {/* The badge is drawn outside the button, so its number is not
+                part of the button's name; this says it to a screen reader. */}
+            {heldCarts.length > 0 && (
+              <span className="sr-only">({heldCarts.length} transaksi)</span>
+            )}
             <ShortcutKey>F9</ShortcutKey>
           </Button>
+          {/* Accent, not danger: a waiting cart is a count, not an error. */}
           {heldCarts.length > 0 && (
-            <Badge color="danger" size="sm">
+            <Badge aria-hidden="true" color="accent" size="sm">
               {heldCarts.length}
             </Badge>
           )}
@@ -221,21 +210,25 @@ export function CartPanel({
         <Table variant="secondary">
           <Table.ScrollContainer>
             <Table.Content aria-label="Isi keranjang">
+              {/* Pita selebar panel, bukan pil: kartunya tanpa padding samping,
+                  jadi sudut pil HeroUI menempel di garis tepi kartu dan
+                  terlihat terpotong. Garis pemisah sebelum kolom aksi (tanpa
+                  judul) juga dibuang — ia memisahkan dari ruang kosong. */}
               <Table.Header>
-                <Table.Column isRowHeader id="product">
+                <Table.Column isRowHeader className="rounded-none!" id="product">
                   Produk
                 </Table.Column>
-                <Table.Column className="w-24 text-right" id="subtotal">
+                <Table.Column className="w-24 rounded-none! text-right after:hidden" id="subtotal">
                   Subtotal
                 </Table.Column>
-                <Table.Column className="w-9" id="actions">
+                <Table.Column className="w-9 rounded-none! ps-0" id="actions">
                   <span className="sr-only">Aksi</span>
                 </Table.Column>
               </Table.Header>
               <Table.Body
                 renderEmptyState={() => (
                   <NoData icon={<ShoppingCart />} title="Keranjang Kosong">
-                    Scan barcode atau cari produk
+                    Scan barcode atau cari produk di panel sebelah.
                   </NoData>
                 )}
               >
@@ -254,138 +247,37 @@ export function CartPanel({
         </Table>
       </ScrollShadow>
 
-      {/* Footer */}
       <Separator />
-      <div className="flex flex-col gap-4 p-4">
-        {totalDiscount > 0 && (
-          <SummaryList
-            items={[
-              { label: "Subtotal", value: formatRupiah(subtotal) },
-              { label: "Diskon", value: `-${formatRupiah(totalDiscount)}`, tone: "danger" },
-            ]}
-          />
-        )}
-        {/* Total keranjang dibaca kasir dan pelanggan dari jarak, jadi ia satu
-            tingkat di atas angka KPI — DESIGN.md §3.4. */}
-        <div className="flex items-baseline justify-between gap-4">
-          <span className="text-sm text-muted">Total</span>
-          <span className="text-3xl font-semibold tracking-tight tabular-nums">
-            {formatRupiah(total)}
-          </span>
-        </div>
-        {/* Tombol aksi kecil di kiri, Bayar lebar di kanan: tangan kasir sudah
-            ada di sisi kanan setelah mengetik total, dan tombol yang paling
-            sering ditekan harus yang paling mudah dijangkau. */}
-        {/* `flex-wrap`: pada panel sempit (layar 1280) tiga kolom tidak muat
-            dan Bayar tadinya terpotong di tepi kartu; sekarang ia turun ke
-            baris sendiri selebar panel, dan di layar lebar tetap di kanan. */}
-        <div className="flex flex-wrap items-stretch gap-2">
-          <div className="grid grow basis-[15.5rem] grid-cols-2 gap-2">
-            <Button
-              isDisabled={items.length === 0}
-              fullWidth
-              className="justify-start"
-              size="sm"
-              variant="tertiary"
-              onPress={() => setDiscountDialogOpen(true)}
-            >
-              <Percent />
-              Diskon
-              <ShortcutKey className="ml-auto">F2</ShortcutKey>
-            </Button>
-            <Button
-              isDisabled={items.length === 0}
-              fullWidth
-              className="justify-start"
-              size="sm"
-              variant="tertiary"
-              onPress={handleHold}
-            >
-              <PauseCircle />
-              Simpan
-              <ShortcutKey className="ml-auto">F3</ShortcutKey>
-            </Button>
-            {activeShift && (
-              <>
-                <Button
-                  fullWidth
-                  className="justify-start"
-                  size="sm"
-                  variant="tertiary"
-                  onPress={() => setCashFlowOpen(true)}
-                >
-                  <ArrowDownUp />
-                  Uang
-                  <ShortcutKey className="ml-auto">F1</ShortcutKey>
-                </Button>
-                {/* Hanya membuka halaman tutup kasir; yang merusak dikonfirmasi di sana. */}
-                <Button
-                  fullWidth
-                  className="justify-start"
-                  size="sm"
-                  variant="tertiary"
-                  onPress={() => navigate("/close-shift")}
-                >
-                  <DoorClosed />
-                  Tutup
-                  <ShortcutKey className="ml-auto">F6</ShortcutKey>
-                </Button>
-              </>
-            )}
-          </div>
-          <Button
-            className="h-auto min-h-12 grow basis-32 text-lg"
-            isDisabled={items.length === 0 || disabled}
-            size="lg"
-            onPress={onPay}
-          >
-            Bayar
-            {/* `.kbd` memaksa `text-muted`; di atas latar aksen warnanya harus ikut tombolnya. */}
-            <ShortcutKey className="text-accent-foreground" variant="light">
-              F4
-            </ShortcutKey>
-          </Button>
-        </div>
-      </div>
+      <CartFooter
+        total={total}
+        subtotal={subtotal}
+        totalDiscount={totalDiscount}
+        hasItems={items.length > 0}
+        hasShift={!!activeShift}
+        payBlockedReason={payBlockedReason}
+        onDiscount={() => setDiscountDialogOpen(true)}
+        onHold={handleHold}
+        onCashFlow={() => setCashFlowOpen(true)}
+        onCloseShift={() => navigate("/close-shift")}
+        onPay={onPay}
+      />
 
-      {/* Hold Dialog */}
-      <Modal.Backdrop isOpen={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
-        <Modal.Container size="sm">
-          <Modal.Dialog aria-label="Simpan Transaksi">
-            <Modal.CloseTrigger />
-            <Modal.Header>
-              <Modal.Heading>Simpan Transaksi</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body>
-              <TextField
-                autoFocus
-                fullWidth
-                value={holdLabel}
-                variant="secondary"
-                onChange={setHoldLabel}
-              >
-                <Label>Label</Label>
-                <Input
-                  placeholder="Contoh: Pelanggan 1"
-                  onKeyDown={(e) => e.key === "Enter" && confirmHold()}
-                />
-              </TextField>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button fullWidth onPress={confirmHold}>
-                Simpan Transaksi
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <HoldCartDialog
+        open={holdDialogOpen}
+        onOpenChange={(open) => {
+          setHoldDialogOpen(open)
+          if (!open) onRequestProductSearchFocus?.()
+        }}
+        defaultLabel={autoHoldLabel}
+        onHold={confirmHold}
+      />
 
       <HeldCartsDialog
         open={recallDialogOpen}
         onOpenChange={setRecallDialogOpen}
         heldCarts={heldCarts}
         onRecall={handleRecall}
-        onRemove={removeHeldCart}
+        onRemove={handleRemoveHeld}
       />
 
       {/* Discount Dialog */}

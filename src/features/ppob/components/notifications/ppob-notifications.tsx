@@ -4,15 +4,20 @@ import { Badge, Button, Card, Modal, Skeleton, Spinner } from "@heroui/react"
 import { cardVariants } from "@heroui/styles"
 import { RefreshCw, Bell, Info, CreditCard, CheckCheck } from "lucide-react"
 
+import { CardHeading } from "@/components/card-heading"
 import { SubpageHeader } from "@/components/layout/subpage-header"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
 import { PendingButton } from "@/components/pending-button"
 import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
 import { id as i18n } from "@/i18n/id"
+import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { usePpobNotifications, usePpobMarkAllRead, usePpobMarkNotificationRead } from "../../hooks"
 import type { NotificationItem } from "../../types"
+import { formatDateTime } from "../history/history-utils"
+import { PpobSetupAction } from "../ppob-setup-action"
 
 const ITEMS_PER_PAGE = 20
 
@@ -20,22 +25,6 @@ const isTransaction = (category: string) => category.toUpperCase() === "TRANSAKS
 
 /** `inboxId` pernah datang kosong dari vendor; indeksnya jadi cadangan kunci. */
 const rowId = (item: NotificationItem, idx: number) => item.inboxId || `notif-${idx}`
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-"
-  try {
-    const d = new Date(dateStr.replace(" ", "T"))
-    return d.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return dateStr
-  }
-}
 
 /**
  * One notification as a pressable card, after the docs' notification card:
@@ -86,13 +75,15 @@ function NotificationCard({ item, onPress }: { item: NotificationItem; onPress: 
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-xs font-medium text-muted uppercase">{item.category}</span>
-          <Card.Title className={cn("line-clamp-2 text-sm", !unread && "font-normal text-muted")}>
+          <CardHeading className={cn("line-clamp-2 text-sm", !unread && "font-normal text-muted")}>
             {item.title && item.title !== item.category ? item.title : item.message}
-          </Card.Title>
+          </CardHeading>
           {item.title && item.title !== item.category && (
             <Card.Description className="line-clamp-2 text-xs">{item.message}</Card.Description>
           )}
-          <Card.Description className="text-xs">{formatDate(item.createdAt)}</Card.Description>
+          <Card.Description className="text-xs tabular-nums">
+            {formatDateTime(item.createdAt)}
+          </Card.Description>
         </div>
       </Card.Header>
     </button>
@@ -133,15 +124,15 @@ function NotificationDetailDialog({
           </Modal.Header>
 
           <Modal.Body>
-            <p>{formatDate(item.createdAt)}</p>
+            <p className="tabular-nums">{formatDateTime(item.createdAt)}</p>
             {item.title && item.title !== item.category && (
-              <p className="font-semibold">{item.title}</p>
+              <p className="font-medium text-foreground">{item.title}</p>
             )}
-            <p className="whitespace-pre-wrap">{item.message}</p>
+            <p className="whitespace-pre-wrap text-foreground">{item.message}</p>
           </Modal.Body>
           <Modal.Footer>
             <Button slot="close" variant="tertiary">
-              Tutup
+              {i18n.common.close}
             </Button>
           </Modal.Footer>
         </Modal.Dialog>
@@ -179,7 +170,10 @@ export function PpobNotifications() {
   }
 
   const handleMarkAllRead = () => {
-    markAllRead.mutate(undefined, { onSuccess: () => refetch() })
+    markAllRead.mutate(undefined, {
+      onSuccess: () => refetch(),
+      onError: (err) => toast.error(i18n.ppob.markReadFailed(err.message)),
+    })
   }
 
   return (
@@ -189,9 +183,10 @@ export function PpobNotifications() {
       <SubpageHeader
         actions={
           <>
+            {/* Angka dengan kata, bukan lencana merah berisi angka saja. */}
             {unreadCount > 0 && (
-              <StatusBadge size="sm" status="error">
-                {unreadCount}
+              <StatusBadge className="tabular-nums" size="sm" status="error">
+                {unreadCount} belum dibaca
               </StatusBadge>
             )}
             {unreadCount > 0 && (
@@ -206,7 +201,7 @@ export function PpobNotifications() {
               </PendingButton>
             )}
             <Button
-              aria-label="Muat ulang dari Mitra"
+              aria-label={i18n.reloadLabel.ppobNotifications}
               isIconOnly
               isPending={isRefetching}
               size="sm"
@@ -238,9 +233,14 @@ export function PpobNotifications() {
           ))}
         </div>
       ) : error ? (
-        <NoData icon={<Bell />} title="Gagal memuat informasi" tone="danger">
-          Silakan coba lagi nanti
-        </NoData>
+        <LoadError
+          isRetrying={isRefetching}
+          secondaryAction={<PpobSetupAction error={error} />}
+          title={i18n.loadFailed.ppobNotifications}
+          onRetry={() => refetch()}
+        >
+          {error.message}
+        </LoadError>
       ) : items.length === 0 ? (
         <NoData icon={<Bell />} title={i18n.ppob.noNotifications}>
           Belum ada informasi dari Mitra saat ini

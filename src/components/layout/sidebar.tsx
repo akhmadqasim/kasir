@@ -1,188 +1,29 @@
 import * as React from "react"
-import { NavLink } from "react-router-dom"
+import { NavLink, useLocation } from "react-router-dom"
 import { Drawer, Tooltip } from "@heroui/react"
 
-import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import {
-  SIDEBAR_AUTO_COLLAPSE_WIDTH,
   SIDEBAR_HOVER_EXPAND_DELAY_MS,
-  SIDEBAR_OPEN_STORAGE_KEY,
-  SidebarContext,
   sidebarMenuButtonClass,
   sidebarSubMenuButtonClass,
   useSidebar,
-  type SidebarContextValue,
   type SidebarMenuSize,
 } from "./sidebar-context"
 
 /**
- * Application sidebar.
- *
- * HeroUI v3 has no sidebar, so this is built from HeroUI primitives (Drawer for
- * the mobile sheet, Tooltip for the collapsed labels) plus Tailwind. It keeps the
- * behaviour the cashier screen relies on:
- *
- *   - collapse to an icon rail, remembered in `localStorage`
- *   - auto-collapse below 1280px without overwriting what the user chose
- *   - Ctrl/Cmd+B from anywhere, including while the barcode field has focus
- *   - hover to peek at the labels, click the header button to pin them open
- *
- * Only an explicit action writes to `localStorage`. Peeking at the rail with the
- * pointer must not turn into a stored preference.
+ * The sidebar's building blocks: the `<nav>` itself (a Drawer on mobile, a
+ * collapsible rail elsewhere) and the rows inside it. Their state comes from
+ * `SidebarProvider` in `sidebar-provider.tsx`.
  */
 
-function readStoredOpen(): boolean {
-  try {
-    return localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY) !== "false"
-  } catch {
-    return true
-  }
-}
-
-function persistOpen(open: boolean): void {
-  try {
-    localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, String(open))
-  } catch {
-    // Storage can be unavailable in a locked-down webview; the sidebar still works.
-  }
-}
-
-function isNarrowWindow(): boolean {
-  return window.innerWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH
-}
-
-function getInitialOpen(): boolean {
-  return isNarrowWindow() ? false : readStoredOpen()
-}
-
-interface SidebarProviderProps {
+/** The shape every layout slot below takes. */
+interface SlotProps {
   children: React.ReactNode
   className?: string
 }
 
-export function SidebarProvider({ children, className }: SidebarProviderProps) {
-  const isMobile = useIsMobile()
-  const [open, setOpenState] = React.useState(getInitialOpen)
-  const [openMobile, setOpenMobile] = React.useState(false)
-  const [hoverExpanded, setHoverExpanded] = React.useState(false)
-  // Tracks a collapse the window size forced on us, so widening the window can
-  // restore the stored preference instead of leaving the sidebar shut.
-  const [autoCollapsed, setAutoCollapsed] = React.useState(isNarrowWindow)
-
-  const setOpen = React.useCallback((value: boolean) => {
-    setHoverExpanded(false)
-    setAutoCollapsed(false)
-    setOpenState(value)
-    persistOpen(value)
-  }, [])
-
-  const toggleSidebar = React.useCallback(() => {
-    if (isMobile) {
-      setOpenMobile((previous) => !previous)
-      return
-    }
-    setOpen(!open)
-  }, [isMobile, open, setOpen])
-
-  const beginHoverExpand = React.useCallback(() => {
-    setHoverExpanded(true)
-    setOpenState(true)
-  }, [])
-
-  const endHoverExpand = React.useCallback(() => {
-    setHoverExpanded(false)
-    setOpenState(false)
-  }, [])
-
-  const pinSidebar = React.useCallback(() => {
-    setOpen(true)
-  }, [setOpen])
-
-  // Read by the resize handler below, which must not re-subscribe whenever the
-  // sidebar opens — otherwise a hover expansion on a narrow window would trip the
-  // auto-collapse and snap straight back.
-  const latest = React.useRef({ open, autoCollapsed })
-  React.useEffect(() => {
-    latest.current = { open, autoCollapsed }
-  }, [open, autoCollapsed])
-
-  React.useEffect(() => {
-    const query = window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_WIDTH - 1}px)`)
-
-    const handleChange = () => {
-      if (query.matches) {
-        if (!latest.current.open) return
-        setHoverExpanded(false)
-        setOpenState(false)
-        setAutoCollapsed(true)
-      } else if (latest.current.autoCollapsed) {
-        setOpenState(readStoredOpen())
-        setAutoCollapsed(false)
-      }
-    }
-
-    handleChange()
-    query.addEventListener("change", handleChange)
-    return () => query.removeEventListener("change", handleChange)
-  }, [])
-
-  // Ctrl/Cmd+B is bound on the window so it also fires while the cashier screen
-  // holds focus in the barcode field.
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) return
-      if (event.key.toLowerCase() !== "b") return
-      event.preventDefault()
-      toggleSidebar()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [toggleSidebar])
-
-  const value = React.useMemo<SidebarContextValue>(
-    () => ({
-      state: open ? "expanded" : "collapsed",
-      open,
-      setOpen,
-      toggleSidebar,
-      isMobile,
-      openMobile,
-      setOpenMobile,
-      hoverExpanded,
-      beginHoverExpand,
-      endHoverExpand,
-      pinSidebar,
-    }),
-    [
-      open,
-      setOpen,
-      toggleSidebar,
-      isMobile,
-      openMobile,
-      hoverExpanded,
-      beginHoverExpand,
-      endHoverExpand,
-      pinSidebar,
-    ],
-  )
-
-  return (
-    <SidebarContext.Provider value={value}>
-      <div
-        data-slot="sidebar-wrapper"
-        className={cn("flex h-svh w-full overflow-hidden bg-background", className)}
-      >
-        {children}
-      </div>
-    </SidebarContext.Provider>
-  )
-}
-
-interface SidebarProps {
-  children: React.ReactNode
-  className?: string
+interface SidebarProps extends SlotProps {
   /** Accessible name of the navigation landmark. */
   label: string
 }
@@ -199,6 +40,7 @@ export function Sidebar({ children, className, label }: SidebarProps) {
     endHoverExpand,
   } = useSidebar()
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { pathname } = useLocation()
 
   React.useEffect(
     () => () => {
@@ -206,6 +48,12 @@ export function Sidebar({ children, className, label }: SidebarProps) {
     },
     [],
   )
+
+  // The mobile drawer is modal: once a link has navigated, it would keep
+  // covering the page it just opened.
+  React.useEffect(() => {
+    setOpenMobile(false)
+  }, [pathname, setOpenMobile])
 
   if (isMobile) {
     return (
@@ -258,13 +106,7 @@ export function Sidebar({ children, className, label }: SidebarProps) {
  * HeroUI. Panel putih di atas kanvas abu-abu membuat kartu putih di dalamnya
  * kehilangan tepinya.
  */
-export function SidebarInset({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarInset({ children, className }: SlotProps) {
   return (
     <main
       data-slot="sidebar-inset"
@@ -275,13 +117,7 @@ export function SidebarInset({
   )
 }
 
-export function SidebarHeader({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarHeader({ children, className }: SlotProps) {
   return (
     <div
       data-slot="sidebar-header"
@@ -295,13 +131,7 @@ export function SidebarHeader({
   )
 }
 
-export function SidebarContent({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarContent({ children, className }: SlotProps) {
   return (
     <div
       data-slot="sidebar-content"
@@ -315,13 +145,7 @@ export function SidebarContent({
   )
 }
 
-export function SidebarFooter({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarFooter({ children, className }: SlotProps) {
   return (
     <div data-slot="sidebar-footer" className={cn("flex flex-col gap-1 px-3 pt-2 pb-4", className)}>
       {children}
@@ -329,13 +153,7 @@ export function SidebarFooter({
   )
 }
 
-export function SidebarGroup({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarGroup({ children, className }: SlotProps) {
   return (
     <div
       data-slot="sidebar-group"
@@ -346,13 +164,7 @@ export function SidebarGroup({
   )
 }
 
-export function SidebarMenu({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarMenu({ children, className }: SlotProps) {
   return (
     <ul data-slot="sidebar-menu" className={cn("flex w-full min-w-0 flex-col gap-1", className)}>
       {children}
@@ -360,13 +172,7 @@ export function SidebarMenu({
   )
 }
 
-export function SidebarMenuItem({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarMenuItem({ children, className }: SlotProps) {
   return (
     <li data-slot="sidebar-menu-item" className={cn("group/menu-item relative", className)}>
       {children}
@@ -374,19 +180,20 @@ export function SidebarMenuItem({
   )
 }
 
-/** Text that disappears when the rail collapses. */
-export function SidebarLabel({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+/**
+ * Text that disappears when the rail collapses.
+ *
+ * Collapsed, it is `sr-only`, not `hidden`: `display: none` also drops the text
+ * from the accessibility tree, and the rail's links and the "Laporan" trigger
+ * were left as icon-only controls with no name at all — the tooltip only
+ * describes, it does not label.
+ */
+export function SidebarLabel({ children, className }: SlotProps) {
   return (
     <span
       data-slot="sidebar-label"
       className={cn(
-        "min-w-0 flex-1 text-left group-data-[state=collapsed]/sidebar:hidden",
+        "min-w-0 flex-1 text-left group-data-[state=collapsed]/sidebar:sr-only",
         className,
       )}
     >
@@ -454,13 +261,7 @@ export function SidebarMenuLink({
   )
 }
 
-export function SidebarSubMenu({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SidebarSubMenu({ children, className }: SlotProps) {
   return (
     <ul
       data-slot="sidebar-sub-menu"

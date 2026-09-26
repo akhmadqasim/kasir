@@ -52,7 +52,17 @@ pub struct UpdateProductInput {
     pub buy_price: f64,
     pub sell_price: f64,
     pub margin: Option<f64>,
-    pub stock: i64,
+    /// Absent: the update leaves stock alone. Sales, refunds and write-offs
+    /// keep moving it while an edit form is open, so a form that only changed
+    /// the price must not write back the number it loaded.
+    #[serde(default)]
+    pub stock: Option<i64>,
+    /// The stock the form loaded. With it, `stock` is applied as the delta
+    /// `stock - expected_stock` on top of the current value, so sales made in
+    /// the meantime survive. Without it (older clients), `stock` is written
+    /// as is.
+    #[serde(default)]
+    pub expected_stock: Option<i64>,
     pub unit: String,
     pub min_stock: Option<i64>,
 }

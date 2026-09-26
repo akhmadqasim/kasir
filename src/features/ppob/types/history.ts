@@ -28,16 +28,6 @@ export interface HistoryPaymentItem {
   noRef: string | null
 }
 
-/**
- * One line of a struk as the server would hand it to the printer. `double` is
- * the PLN token block, set at twice the width and height of the other lines.
- */
-export interface PpobReceiptLine {
-  text: string
-  bold: boolean
-  size: "normal" | "double"
-}
-
 export interface MutasiItem {
   id: string | null
   mutationType: "in" | "out"

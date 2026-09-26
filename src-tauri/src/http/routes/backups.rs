@@ -15,12 +15,12 @@
 //! matching `kasir_YYYY-MM-DD[_HHMMSS].db.gz`. `..`, an absolute path, and a
 //! percent-encoded separator all fail that test before any filesystem call.
 //!
-//! `GET /backups/export` has no filename to abuse. The Tauri `export_database`
-//! command copies the database to a path its caller supplies, which is a
-//! traversal the moment the caller is a request; here the server opens its own
-//! file, streams it, and puts a name it generated itself in
-//! `Content-Disposition`. That header is a suggestion to the browser's download
-//! folder, not a path this process ever resolves.
+//! `GET /backups/export` has no filename to abuse. Copying the database to a
+//! path the caller supplies would be a traversal the moment the caller is a
+//! request; instead the server snapshots its own database, streams it, and puts
+//! a name it generated itself in `Content-Disposition`. That header is a
+//! suggestion to the browser's download folder, not a path this process ever
+//! resolves.
 //!
 //! `POST /backups/import` takes a multipart upload and reads only the bytes.
 //! The `filename` a multipart part carries is attacker-controlled and is
@@ -38,7 +38,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::domain::backup::{BackupInfo, BackupStatus};
 use crate::domain::Actor;
-use crate::http::error::{ApiError, ApiResult};
+use crate::http::error::ApiResult;
 use crate::http::extract::UploadedFile;
 use crate::http::AppState;
 use crate::services;
@@ -62,8 +62,23 @@ pub fn admin() -> Router<AppState> {
         .route("/backups/{filename}/restore", post(restore))
 }
 
+/// Run synchronous filesystem work off the async workers.
+///
+/// Restoring or importing decompresses and writes the whole database — up to
+/// [`MAX_IMPORT_BYTES`] — and doing that on a runtime worker stalls every
+/// checkout and search queued behind it.
+async fn blocking<T, F>(work: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| AppError::Internal(format!("tugas backup gagal: {e}")))?
+}
+
 async fn list() -> ApiResult<axum::Json<Vec<BackupInfo>>> {
-    Ok(axum::Json(services::backup::list()?))
+    Ok(axum::Json(blocking(services::backup::list).await?))
 }
 
 async fn create(
@@ -86,7 +101,7 @@ async fn remove(
     Extension(actor): Extension<Actor>,
     Path(filename): Path<String>,
 ) -> ApiResult<StatusCode> {
-    services::backup::delete(&actor, &filename)?;
+    blocking(move || services::backup::delete(&actor, &filename)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -95,29 +110,25 @@ async fn restore(
     Extension(actor): Extension<Actor>,
     Path(filename): Path<String>,
 ) -> ApiResult<axum::Json<String>> {
-    Ok(axum::Json(services::backup::restore(&actor, &filename)?))
+    Ok(axum::Json(
+        blocking(move || services::backup::restore(&actor, &filename)).await?,
+    ))
 }
 
-/// Stream the live database as a download.
+/// Stream a consistent snapshot of the live database as a download.
 ///
 /// Streamed rather than buffered because the file is the whole shop's history
 /// and reading it into memory to hand to `axum` would double that in RAM on a
 /// till that has 4 GB of it.
 async fn export(Extension(actor): Extension<Actor>) -> ApiResult<Response> {
-    let export = services::settings::prepare_export(&actor)?;
+    // A `VACUUM INTO` snapshot, already unlinked: the handle is the only thing
+    // keeping it, so the stream dropping it — finished or aborted — cleans up.
+    let export = blocking(move || services::settings::prepare_export(&actor)).await?;
+    let file = tokio::fs::File::from_std(export.file);
 
-    let file = tokio::fs::File::open(&export.path).await.map_err(|e| {
-        ApiError::from(AppError::Internal(format!(
-            "gagal membuka database untuk diekspor: {e}"
-        )))
-    })?;
-
-    // No `Content-Length`. The size was read a moment ago and the database is
-    // live: a sale committing in between would make the declared length a lie,
-    // and a body that disagrees with its length is a truncated download the
-    // admin has no way to notice. Chunked transfer costs a progress bar and
-    // cannot be wrong. (The compression layer strips the header anyway for any
-    // client that accepts gzip, which is all of them.)
+    // No `Content-Length`: the compression layer strips it for any client that
+    // accepts gzip, which is all of them, and chunked transfer cannot disagree
+    // with its body.
     Ok((
         [
             (header::CONTENT_TYPE, "application/vnd.sqlite3".to_string()),
@@ -143,7 +154,7 @@ async fn import(
     Extension(actor): Extension<Actor>,
     UploadedFile(data): UploadedFile,
 ) -> ApiResult<axum::Json<String>> {
-    Ok(axum::Json(services::settings::import_database_bytes(
-        &actor, &data,
-    )?))
+    Ok(axum::Json(
+        blocking(move || services::settings::import_database_bytes(&actor, &data)).await?,
+    ))
 }

@@ -1,8 +1,12 @@
 import type { ReactNode } from "react"
-import { Skeleton, Table } from "@heroui/react"
+import { Alert, Skeleton, Table } from "@heroui/react"
 
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
+import { TableSkeletonRows } from "@/components/table-skeleton-rows"
+import { formatNumber } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { id } from "@/i18n/id"
 
 /**
  * Bagian yang benar-benar sama di sebelas layar laporan — dan hanya itu.
@@ -39,6 +43,53 @@ export function ReportPage({ filters, children }: ReportPageProps) {
   )
 }
 
+/**
+ * Angka kartu ringkasan selagi laporan dimuat. Kartunya tetap digambar dengan
+ * labelnya, supaya tabel di bawahnya tidak melompat turun saat datanya datang —
+ * dulu kartu baru muncul setelah data ada, dan hilang lagi tiap filter diganti.
+ */
+export function StatSkeleton() {
+  // Rendered as a `span`, so it stays valid whatever element `StatCard` wraps its
+  // value in — the default `div` inside a `<p>` is invalid HTML (React logs it).
+  return (
+    <Skeleton<"span">
+      className="block h-8 w-28 rounded-lg"
+      render={(props) => <span {...props} />}
+    />
+  )
+}
+
+interface TruncationNoticeProps {
+  /** Baris yang dikirim backend. */
+  shown: number
+  /** Baris yang cocok seluruhnya (`totalCount`). */
+  total: number
+  /** Benda yang dihitung: "struk", "produk". */
+  noun: string
+  /** Apa yang harus dilakukan kasir untuk melihat sisanya. */
+  children: ReactNode
+}
+
+/**
+ * Peringatan bahwa backend memotong daftarnya (`items.length < totalCount`).
+ * Tidak menggambar apa pun selama daftarnya utuh.
+ */
+export function TruncationNotice({ shown, total, noun, children }: TruncationNoticeProps) {
+  if (shown >= total) return null
+
+  return (
+    <Alert status="warning">
+      <Alert.Indicator />
+      <Alert.Content>
+        <Alert.Title>
+          {id.reports.truncated(formatNumber(shown), formatNumber(total), noun)}
+        </Alert.Title>
+        <Alert.Description>{children}</Alert.Description>
+      </Alert.Content>
+    </Alert>
+  )
+}
+
 /** Banyak baris skeleton saat data pertama dimuat, sama seperti layar riwayat. */
 const SKELETON_ROWS = 5
 
@@ -59,6 +110,13 @@ interface ReportTableProps {
    * dengan laporan yang memang kosong, dan kasir tidak punya cara membedakannya.
    */
   error?: Error | null
+  /**
+   * Ulangi query yang gagal. Tanpa ini keadaan gagal hanya bisa dipulihkan
+   * dengan pindah halaman lalu kembali, karena laporan tidak dimuat ulang sendiri.
+   */
+  onRetry?: () => void
+  /** `true` selama permintaan ulang berjalan: tombol "Coba lagi" tidak bisa ditekan dua kali. */
+  isRetrying?: boolean
   /** Kalimat keadaan kosong. Tanpa ini dipakai bawaan `NoData` ("Belum ada data"). */
   emptyMessage?: string
   /** Kelas tambahan untuk `Table.Content`, dipakai tabel lebar untuk menahan lebar minimum. */
@@ -71,6 +129,10 @@ interface ReportTableProps {
  * `tabular-nums` dipasang sekali di `Table.Content` dan diwariskan ke setiap sel:
  * kolom nominal yang rata kanan tidak lagi bergoyang saat datanya berubah, dan
  * sebelas laporan tidak perlu mengulang kelas itu di tiap `Table.Cell`.
+ *
+ * Judul kolom tidak pernah dilipat: "Qty Terjual" dan "Metode Bayar" yang pecah
+ * dua baris di layar 1024px membuat kepala tabel lebih tinggi dari barisnya.
+ * Tabel yang memang lebih lebar dari layar menggulir di `Table.ScrollContainer`.
  */
 export function ReportTable({
   label,
@@ -78,13 +140,17 @@ export function ReportTable({
   columns,
   isLoading,
   error,
+  onRetry,
+  isRetrying = false,
   emptyMessage,
   contentClassName,
   children,
 }: ReportTableProps) {
   const renderEmptyState = () =>
     error ? (
-      <NoData title={`Error: ${error.message}`} tone="danger" />
+      <LoadError isRetrying={isRetrying} title={id.loadFailed.report} onRetry={onRetry}>
+        {error.message}
+      </LoadError>
     ) : (
       <NoData title={emptyMessage} />
     )
@@ -93,20 +159,17 @@ export function ReportTable({
     <div className="min-h-0 flex-1 overflow-auto">
       <Table variant="secondary">
         <Table.ScrollContainer>
-          <Table.Content aria-label={label} className={cn("tabular-nums", contentClassName)}>
+          <Table.Content
+            aria-label={label}
+            className={cn("tabular-nums [&_th]:whitespace-nowrap", contentClassName)}
+          >
             <Table.Header>{columns}</Table.Header>
             <Table.Body renderEmptyState={renderEmptyState}>
-              {isLoading
-                ? Array.from({ length: SKELETON_ROWS }).map((_, rowIndex) => (
-                    <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
-                      {Array.from({ length: columnCount }).map((_, cellIndex) => (
-                        <Table.Cell key={cellIndex}>
-                          <Skeleton className="h-5 w-full" />
-                        </Table.Cell>
-                      ))}
-                    </Table.Row>
-                  ))
-                : children}
+              {isLoading ? (
+                <TableSkeletonRows columns={columnCount} rows={SKELETON_ROWS} />
+              ) : (
+                children
+              )}
             </Table.Body>
           </Table.Content>
         </Table.ScrollContainer>

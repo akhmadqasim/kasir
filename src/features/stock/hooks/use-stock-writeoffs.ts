@@ -1,4 +1,5 @@
 import { useQueryClient, keepPreviousData, type QueryClient } from "@tanstack/react-query"
+import { id } from "@/i18n/id"
 import { toast } from "@/lib/toast"
 import { useApiMutation, useApiQuery } from "@/hooks/use-api"
 import {
@@ -21,12 +22,14 @@ import type {
  * and rejecting or deleting one puts it back. Invalidating only the write-off
  * list left the product picker validating "Maks. stok tersedia" against a stale
  * number, and the dashboard's low-stock panel showing a shelf that had already
- * been emptied.
+ * been emptied. The loss report (approved write-offs) and the current-stock
+ * report read the same rows.
  */
 function invalidateWriteoffQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: queryKeys.stock.all })
   queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.lowStock })
+  queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
 }
 
 export function useListWriteoffs(params: ListWriteoffsParams) {
@@ -48,13 +51,11 @@ export function useCreateWriteoff() {
     onSuccess: (writeoff) => {
       invalidateWriteoffQueries(queryClient)
       toast.success(
-        writeoff.status === "pending"
-          ? "Write-off dibuat dan stok sudah dikurangi. Menunggu persetujuan admin."
-          : "Write-off dibuat dan disetujui, stok sudah dikurangi",
+        writeoff.status === "pending" ? id.writeoff.createdPending : id.writeoff.createdApproved,
       )
     },
     onError: (error) => {
-      toast.error(error.message || "Gagal membuat write-off")
+      toast.error(error.message || id.writeoff.createFailed)
     },
   })
 }
@@ -67,10 +68,10 @@ export function useApproveWriteoff() {
     // write-off was created and the service deliberately does not touch it again.
     onSuccess: () => {
       invalidateWriteoffQueries(queryClient)
-      toast.success("Write-off disetujui, stok tidak berubah lagi")
+      toast.success(id.writeoff.approved)
     },
     onError: (error) => {
-      toast.error(error.message || "Gagal menyetujui write-off")
+      toast.error(error.message || id.writeoff.approveFailed)
     },
   })
 }
@@ -84,13 +85,11 @@ export function useRejectWriteoff() {
     onSuccess: (writeoff) => {
       invalidateWriteoffQueries(queryClient)
       toast.success(
-        writeoff.refundId === null
-          ? "Write-off ditolak, stok dikembalikan"
-          : "Write-off ditolak. Stok tidak dikembalikan karena berasal dari refund",
+        writeoff.refundId === null ? id.writeoff.rejected : id.writeoff.rejectedFromRefund,
       )
     },
     onError: (error) => {
-      toast.error(error.message || "Gagal menolak write-off")
+      toast.error(error.message || id.writeoff.rejectFailed)
     },
   })
 }
@@ -101,10 +100,10 @@ export function useDeleteWriteoff() {
   return useApiMutation<void, number>(deleteWriteoff, {
     onSuccess: () => {
       invalidateWriteoffQueries(queryClient)
-      toast.success("Write-off dihapus, stok dikembalikan")
+      toast.success(id.writeoff.deleted)
     },
     onError: (error) => {
-      toast.error(error.message || "Gagal menghapus write-off")
+      toast.error(error.message || id.writeoff.deleteFailed)
     },
   })
 }

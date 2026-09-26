@@ -17,8 +17,9 @@ use crate::domain::store_logo::LogoFormat;
 use crate::domain::Actor;
 use crate::entity::store_info;
 use crate::services::guard;
-use crate::services::settings::{get_store_info, now_ts, require_store_info};
+use crate::services::settings::{get_store_info, require_store_info};
 use crate::utils::paths::get_data_dir;
+use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
 /// Directory under the data dir, and the prefix of the relative path stored.
@@ -48,11 +49,15 @@ fn resolve(logo_path: &str) -> Option<(PathBuf, LogoFormat)> {
     Some((logo_dir().join(name), format))
 }
 
-/// Delete every `logo.<ext>` the module could have written. Called before a
-/// new one lands so a PNG replaced by an SVG does not leave the PNG behind.
-fn remove_all_files() -> Result<(), AppError> {
+/// Delete every `logo.<ext>` the module could have written, except the one in
+/// `keep`. Called once a new logo is in place so a PNG replaced by an SVG does
+/// not leave the PNG behind.
+fn remove_files_except(keep: Option<LogoFormat>) -> Result<(), AppError> {
     let dir = logo_dir();
     for format in LogoFormat::ALL {
+        if Some(format) == keep {
+            continue;
+        }
         let path = dir.join(file_name(format));
         match fs::remove_file(&path) {
             Ok(()) => {}
@@ -72,6 +77,9 @@ fn remove_all_files() -> Result<(), AppError> {
 ///
 /// The write goes to a `.tmp` sibling first and is renamed into place, so a
 /// crash mid-write cannot leave a half-file where the sidebar expects an image.
+/// A logo of another format is only deleted after `logo_path` points at the new
+/// file: deleting it first meant a failed update left the column naming a file
+/// that was already gone.
 pub async fn save(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -93,7 +101,6 @@ pub async fn save(
     fs::write(&tmp_path, bytes).map_err(|e| {
         AppError::Internal(format!("gagal menulis logo {}: {e}", tmp_path.display()))
     })?;
-    remove_all_files()?;
     fs::rename(&tmp_path, &final_path).map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         AppError::Internal(format!("gagal memasang logo {}: {e}", final_path.display()))
@@ -102,7 +109,14 @@ pub async fn save(
     let mut active: store_info::ActiveModel = store.into();
     active.logo_path = Set(Some(format!("{LOGO_DIR}/{name}")));
     active.updated_at = Set(Some(now_ts()));
-    Ok(active.update(db).await?)
+    let updated = active.update(db).await?;
+
+    // The new logo is saved and pointed at; a stale file left behind here is
+    // clutter, not a broken logo, so it does not fail the upload.
+    if let Err(e) = remove_files_except(Some(format)) {
+        crate::utils::logging::log_warning(&e.to_string());
+    }
+    Ok(updated)
 }
 
 /// Remove the logo file and clear `logo_path`. Idempotent: a store without a
@@ -111,7 +125,7 @@ pub async fn remove(db: &DatabaseConnection, actor: &Actor) -> Result<(), AppErr
     guard::require_admin(actor)?;
     let store = require_store_info(db).await?;
 
-    remove_all_files()?;
+    remove_files_except(None)?;
 
     if store.logo_path.is_some() {
         let mut active: store_info::ActiveModel = store.into();

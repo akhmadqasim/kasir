@@ -38,7 +38,7 @@ function renderPage() {
 }
 
 function usersTable() {
-  return screen.getByRole("grid", { name: "Manajemen User" })
+  return screen.getByRole("grid", { name: "Manajemen Pengguna" })
 }
 
 let api: ApiMock
@@ -81,7 +81,7 @@ describe("halaman manajemen user", () => {
     fireEvent.click(screen.getByRole("button", { name: "Nonaktifkan kasir01" }))
 
     const dialog = await screen.findByRole("alertdialog")
-    expect(within(dialog).getByText("Yakin ingin menonaktifkan user ini?")).toBeInTheDocument()
+    expect(within(dialog).getByText("Yakin ingin menonaktifkan pengguna ini?")).toBeInTheDocument()
     expect(api.callsFor(TOGGLE_ACTIVE)).toHaveLength(0)
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Nonaktifkan" }))
@@ -128,12 +128,12 @@ describe("halaman manajemen user", () => {
     renderPage()
 
     await screen.findByText("kasir01")
-    fireEvent.click(screen.getByRole("button", { name: "Tambah User" }))
+    fireEvent.click(screen.getByRole("button", { name: "Tambah Pengguna" }))
 
     const dialog = await screen.findByRole("dialog")
     const form = within(dialog)
 
-    fireEvent.change(form.getByLabelText("Username"), { target: { value: "kasir03" } })
+    fireEvent.change(form.getByLabelText("Nama Pengguna"), { target: { value: "kasir03" } })
     fireEvent.change(form.getByLabelText("Nama Lengkap"), { target: { value: "Kasir Tiga" } })
     fireEvent.change(form.getByLabelText("PIN"), { target: { value: "1234" } })
     fireEvent.change(form.getByLabelText("Konfirmasi PIN"), { target: { value: "9999" } })
@@ -157,11 +157,32 @@ describe("halaman manajemen user", () => {
     })
   })
 
+  it("mengunci role saat admin mengubah akunnya sendiri, dan memperbarui sesi setelah disimpan", async () => {
+    api.route("PATCH /users/*", { ...ADMIN, full_name: "Admin Baru" })
+    renderPage()
+
+    await screen.findByText("kasir01")
+    fireEvent.click(screen.getByRole("button", { name: "Ubah admin" }))
+
+    const dialog = await screen.findByRole("dialog")
+    const form = within(dialog)
+    // Menurunkan diri sendiri ke kasir bisa membuat toko tanpa admin sama sekali.
+    expect(form.getByText("Peran akun sendiri tidak bisa diubah")).toBeInTheDocument()
+    expect(form.getByRole("button", { name: /Peran/ })).toBeDisabled()
+
+    fireEvent.change(form.getByLabelText("Nama Lengkap"), { target: { value: "Admin Baru" } })
+    fireEvent.click(form.getByRole("button", { name: "Simpan" }))
+
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().user?.full_name).toBe("Admin Baru")
+    })
+  })
+
   it("hanya menerima angka di kolom PIN", async () => {
     renderPage()
 
     await screen.findByText("kasir01")
-    fireEvent.click(screen.getByRole("button", { name: "Tambah User" }))
+    fireEvent.click(screen.getByRole("button", { name: "Tambah Pengguna" }))
 
     const pin = within(await screen.findByRole("dialog")).getByLabelText("PIN")
     fireEvent.change(pin, { target: { value: "12ab34" } })

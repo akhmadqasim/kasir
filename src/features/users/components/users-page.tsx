@@ -1,14 +1,28 @@
 import { useState, useMemo } from "react"
-import { PlusIcon, PencilIcon, UserXIcon, UserCheckIcon } from "lucide-react"
-import { AlertDialog, Button, Skeleton, Table } from "@heroui/react"
+import {
+  PlusIcon,
+  PencilIcon,
+  SearchXIcon,
+  UserXIcon,
+  UserCheckIcon,
+  UsersIcon,
+} from "lucide-react"
+import { AlertDialog, Button, Spinner, Table } from "@heroui/react"
 
+import { InfoPanel } from "@/components/info-panel"
 import { NavbarActions } from "@/components/layout/app-navbar"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
+import { TableSkeletonRows } from "@/components/table-skeleton-rows"
+import { PendingButton } from "@/components/pending-button"
+import { SummaryList } from "@/components/summary-list"
 import { SearchInput } from "@/components/search-input"
 import { StatusBadge } from "@/components/status-badge"
 import { id } from "@/i18n/id"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useAuthStore } from "@/features/auth"
+import { cn } from "@/lib/utils"
 import { useUsers, useToggleUserActive } from "../hooks/use-users"
+import { roleLabel } from "@/lib/labels"
 import { UserFormDialog } from "./user-form-dialog"
 import type { User } from "@/features/auth/types"
 
@@ -16,7 +30,7 @@ const COLUMN_COUNT = 6
 
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { data: users, isLoading, isError, error } = useUsers()
+  const { data: users, isLoading, isFetching, isError, error, refetch } = useUsers()
   const toggleActive = useToggleUserActive()
 
   const [search, setSearch] = useState("")
@@ -47,6 +61,7 @@ export function UsersPage() {
   }
 
   const handleToggleActive = (user: User) => {
+    if (toggleActive.isPending) return
     if (!user.is_active) {
       // Reactivate directly
       toggleActive.mutate({
@@ -70,14 +85,20 @@ export function UsersPage() {
     )
   }
 
+  /** The row whose activation request is in flight, for its spinner. */
+  const togglingUserId = toggleActive.isPending ? toggleActive.variables?.userId : undefined
+
   const renderEmptyState = () =>
     isError ? (
-      <NoData
-        title={`Gagal memuat daftar pengguna: ${error?.message ?? id.common.error}`}
-        tone="danger"
-      />
+      <LoadError isRetrying={isFetching} title={id.loadFailed.users} onRetry={() => void refetch()}>
+        {error?.message ?? id.common.error}
+      </LoadError>
+    ) : search ? (
+      <NoData icon={<SearchXIcon />} title={id.noMatch.users}>
+        {id.users.noMatchHint}
+      </NoData>
     ) : (
-      <NoData title={search ? "Tidak ada hasil" : id.users.noUsers} />
+      <NoData icon={<UsersIcon />} title={id.users.noUsers} />
     )
 
   return (
@@ -110,64 +131,75 @@ export function UsersPage() {
               <Table.Column className="text-right">{id.users.actions}</Table.Column>
             </Table.Header>
             <Table.Body renderEmptyState={renderEmptyState}>
-              {isLoading
-                ? Array.from({ length: 3 }).map((_, rowIndex) => (
-                    <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
-                      {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
-                        <Table.Cell key={cellIndex}>
-                          <Skeleton className="h-5 w-full" />
-                        </Table.Cell>
-                      ))}
-                    </Table.Row>
-                  ))
-                : filteredUsers.map((user, index) => (
-                    <Table.Row
-                      key={user.id}
-                      id={user.id}
-                      className={user.is_active ? undefined : "opacity-50"}
-                      textValue={user.username}
-                    >
-                      <Table.Cell>{index + 1}</Table.Cell>
-                      <Table.Cell className="font-medium">{user.username}</Table.Cell>
-                      <Table.Cell>{user.full_name}</Table.Cell>
-                      {/* Peran adalah kategori, bukan status: teks polos (DESIGN.md §5.4). */}
-                      <Table.Cell>
-                        {user.role === "admin" ? id.users.admin : id.users.kasir}
-                      </Table.Cell>
-                      <Table.Cell>
-                        <StatusBadge status={user.is_active ? "success" : "neutral"}>
-                          {user.is_active ? id.users.active : id.users.inactive}
-                        </StatusBadge>
-                      </Table.Cell>
-                      <Table.Cell className="text-right">
-                        {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
+              {isLoading ? (
+                <TableSkeletonRows columns={COLUMN_COUNT} rows={3} />
+              ) : (
+                filteredUsers.map((user, index) => (
+                  // Inactive rows are muted through the text token on each cell
+                  // (`.table__cell` sets its own colour), not `opacity-50`:
+                  // half-opacity text falls far below AA, and the status badge
+                  // already says "Nonaktif" in words.
+                  <Table.Row key={user.id} id={user.id} textValue={user.username}>
+                    <Table.Cell className={cn("tabular-nums", !user.is_active && "text-muted")}>
+                      {index + 1}
+                    </Table.Cell>
+                    <Table.Cell className={cn("font-medium", !user.is_active && "text-muted")}>
+                      {user.username}
+                      {user.id === currentUser?.id && (
+                        <span className="ms-1.5 font-normal text-muted">{id.common.you}</span>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell className={cn(!user.is_active && "text-muted")}>
+                      {user.full_name}
+                    </Table.Cell>
+                    {/* Peran adalah kategori, bukan status: teks polos (DESIGN.md §5.4). */}
+                    <Table.Cell className={cn(!user.is_active && "text-muted")}>
+                      {roleLabel(user.role)}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <StatusBadge status={user.is_active ? "success" : "neutral"}>
+                        {user.is_active ? id.users.active : id.users.inactive}
+                      </StatusBadge>
+                    </Table.Cell>
+                    <Table.Cell className="text-right">
+                      {/* Aksi baris mengikuti contoh "Custom Cells" tabel HeroUI:
                             `tertiary` untuk aksi biasa, `danger-soft` untuk yang
                             merusak (DESIGN.md §5.4). */}
-                        <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          aria-label={`${id.common.edit} ${user.username}`}
+                          isIconOnly
+                          size="sm"
+                          variant="tertiary"
+                          onPress={() => handleEdit(user)}
+                        >
+                          <PencilIcon />
+                        </Button>
+                        {user.id !== currentUser?.id && (
                           <Button
-                            aria-label={`${id.users.edit} ${user.username}`}
+                            aria-label={`${user.is_active ? id.users.deactivate : id.users.activate} ${user.username}`}
                             isIconOnly
+                            isPending={togglingUserId === user.id}
                             size="sm"
-                            variant="tertiary"
-                            onPress={() => handleEdit(user)}
+                            variant={user.is_active ? "danger-soft" : "tertiary"}
+                            onPress={() => handleToggleActive(user)}
                           >
-                            <PencilIcon />
+                            {({ isPending }) =>
+                              isPending ? (
+                                <Spinner color="current" size="sm" />
+                              ) : user.is_active ? (
+                                <UserXIcon />
+                              ) : (
+                                <UserCheckIcon />
+                              )
+                            }
                           </Button>
-                          {user.id !== currentUser?.id && (
-                            <Button
-                              aria-label={`${user.is_active ? id.users.deactivate : id.users.activate} ${user.username}`}
-                              isIconOnly
-                              size="sm"
-                              variant={user.is_active ? "danger-soft" : "tertiary"}
-                              onPress={() => handleToggleActive(user)}
-                            >
-                              {user.is_active ? <UserXIcon /> : <UserCheckIcon />}
-                            </Button>
-                          )}
-                        </div>
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
+                        )}
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                ))
+              )}
             </Table.Body>
           </Table.Content>
         </Table.ScrollContainer>
@@ -175,8 +207,9 @@ export function UsersPage() {
 
       <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editingUser} />
 
+      {/* Escape stays off while the request runs, like the disabled Cancel. */}
       <AlertDialog.Backdrop
-        isKeyboardDismissDisabled={false}
+        isKeyboardDismissDisabled={toggleActive.isPending}
         isOpen={!!deactivateUser}
         onOpenChange={(open) => !open && setDeactivateUser(null)}
       >
@@ -188,14 +221,32 @@ export function UsersPage() {
             </AlertDialog.Header>
             <AlertDialog.Body>
               <p>{id.users.deactivateConfirm}</p>
+              {/* Names the account: the row that opened this dialog is hidden
+                  behind the backdrop. */}
+              {deactivateUser && (
+                <InfoPanel>
+                  <SummaryList
+                    layout="grid"
+                    items={[
+                      { label: id.users.username, value: deactivateUser.username },
+                      { label: id.users.fullName, value: deactivateUser.full_name },
+                    ]}
+                  />
+                </InfoPanel>
+              )}
+              <p>{id.users.deactivateNote}</p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <Button slot="close" variant="tertiary">
-                {id.users.cancel}
+              <Button isDisabled={toggleActive.isPending} slot="close" variant="tertiary">
+                {id.common.cancel}
               </Button>
-              <Button variant="danger" onPress={confirmDeactivate}>
+              <PendingButton
+                isPending={toggleActive.isPending}
+                variant="danger"
+                onPress={confirmDeactivate}
+              >
                 {id.users.deactivate}
-              </Button>
+              </PendingButton>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>

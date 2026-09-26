@@ -3,8 +3,9 @@ import { Button } from "@heroui/react"
 import { DatabaseBackupIcon, HistoryIcon, PackageIcon, ShoppingCartIcon } from "lucide-react"
 
 import { NavbarActions, NavbarTitle } from "@/components/layout/app-navbar"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { useAuthStore } from "@/features/auth"
 import { useCreateBackupMutation } from "@/features/settings/hooks/use-backup"
+import { IconActionButton } from "./icon-action-button"
 
 /**
  * Sapaan mengikuti jam dinding kasir, memakai pembagian waktu yang dipakai
@@ -40,37 +41,30 @@ export function DashboardHeader() {
         {user ? `, ${user.full_name}` : ""}
       </NavbarTitle>
       <NavbarActions>
-        <Button
-          isIconOnly
-          aria-label="Riwayat Transaksi"
-          size="sm"
-          variant="tertiary"
+        <IconActionButton
+          icon={<HistoryIcon />}
+          label="Riwayat Transaksi"
+          tooltipPlacement="bottom"
           onPress={() => navigate("/transactions")}
-        >
-          <HistoryIcon />
-        </Button>
+        />
         {isAdmin ? (
-          <Button
-            isIconOnly
-            aria-label="Kelola Produk"
-            size="sm"
-            variant="tertiary"
+          <IconActionButton
+            icon={<PackageIcon />}
+            label="Kelola Produk"
+            tooltipPlacement="bottom"
             onPress={() => navigate("/products")}
-          >
-            <PackageIcon />
-          </Button>
+          />
         ) : null}
         {isAdmin ? (
-          <Button
-            isIconOnly
-            aria-label="Backup Sekarang"
+          // Hasilnya diumumkan lewat toast dari `useCreateBackupMutation`;
+          // selama berjalan tombolnya berputar dan tidak bisa ditekan dua kali.
+          <IconActionButton
+            icon={<DatabaseBackupIcon />}
             isPending={createBackup.isPending}
-            size="sm"
-            variant="tertiary"
+            label="Backup Sekarang"
+            tooltipPlacement="bottom"
             onPress={() => createBackup.mutate(undefined)}
-          >
-            <DatabaseBackupIcon />
-          </Button>
+          />
         ) : null}
         <Button size="sm" onPress={() => navigate("/cashier")}>
           <ShoppingCartIcon />

@@ -4,8 +4,9 @@ import { Button, FieldError, Form, Input, Label, Modal, TextField } from "@herou
 
 import { OptionSelect } from "@/components/option-select"
 import { PendingButton } from "@/components/pending-button"
-import { PinInput } from "@/features/auth/components/pin-input"
+import { PinInput, useAuthStore } from "@/features/auth"
 import { id } from "@/i18n/id"
+import { useFieldErrors } from "@/hooks/use-field-errors"
 import { useCreateUser, useUpdateUser } from "../hooks/use-users"
 import type { User } from "@/features/auth/types"
 
@@ -13,6 +14,8 @@ const ROLE_OPTIONS = [
   { key: "admin", label: id.users.admin },
   { key: "kasir", label: id.users.kasir },
 ] as const
+
+type UserFormField = "username" | "fullName" | "pin" | "confirmPin"
 
 interface UserFormDialogProps {
   open: boolean
@@ -45,6 +48,9 @@ function UserFormBody({
   onOpenChange: (open: boolean) => void
 }) {
   const isEdit = !!user
+  // An admin demoting themselves could leave the store with no admin at all.
+  const currentUserId = useAuthStore((s) => s.user?.id)
+  const isSelf = isEdit && user.id === currentUserId
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
 
@@ -53,25 +59,25 @@ function UserFormBody({
   const [role, setRole] = useState<"admin" | "kasir">(user?.role ?? "kasir")
   const [pin, setPin] = useState("")
   const [confirmPin, setConfirmPin] = useState("")
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const { errors, setErrors, edit } = useFieldErrors<UserFormField>()
 
   const validate = () => {
-    const newErrors: Record<string, string> = {}
+    const newErrors: Partial<Record<UserFormField, string>> = {}
 
     if (!username.trim()) {
-      newErrors.username = id.users.usernameRequired
+      newErrors.username = id.validation.usernameRequired
     }
     if (!fullName.trim()) {
-      newErrors.fullName = id.users.fullNameRequired
+      newErrors.fullName = id.validation.fullNameRequired
     }
     if (!isEdit && !pin) {
-      newErrors.pin = id.users.pinRequired
+      newErrors.pin = id.validation.newUserPinRequired
     }
     if (pin && (pin.length < 4 || pin.length > 6)) {
-      newErrors.pin = id.profile.pinInvalid
+      newErrors.pin = id.validation.pinFormat
     }
     if (pin && pin !== confirmPin) {
-      newErrors.confirmPin = id.users.pinMismatch
+      newErrors.confirmPin = id.validation.pinMismatch
     }
 
     setErrors(newErrors)
@@ -123,13 +129,15 @@ function UserFormBody({
       </Modal.Header>
 
       <Modal.Body>
+        {/* First field takes focus on open, not the close button in the corner. */}
         <TextField
+          autoFocus
           fullWidth
           isDisabled={isPending}
           isInvalid={Boolean(errors.username)}
           value={username}
           variant="secondary"
-          onChange={setUsername}
+          onChange={edit("username", setUsername)}
         >
           <Label>{id.users.username}</Label>
           <Input placeholder="contoh: kasir01" />
@@ -142,7 +150,7 @@ function UserFormBody({
           isInvalid={Boolean(errors.fullName)}
           value={fullName}
           variant="secondary"
-          onChange={setFullName}
+          onChange={edit("fullName", setFullName)}
         >
           <Label>{id.users.fullName}</Label>
           <Input placeholder="contoh: Ahmad Kasir" />
@@ -151,7 +159,8 @@ function UserFormBody({
 
         <OptionSelect
           fullWidth
-          isDisabled={isPending}
+          description={isSelf ? id.users.selfRoleLocked : undefined}
+          isDisabled={isPending || isSelf}
           label={id.users.role}
           options={ROLE_OPTIONS}
           value={role}
@@ -168,7 +177,7 @@ function UserFormBody({
           description={isEdit ? id.users.resetPinDesc : id.onboarding.pinHint}
           value={pin}
           variant="secondary"
-          onChange={setPin}
+          onChange={edit("pin", setPin)}
         />
 
         {(pin || !isEdit) && (
@@ -178,17 +187,17 @@ function UserFormBody({
             label={id.users.confirmPin}
             value={confirmPin}
             variant="secondary"
-            onChange={setConfirmPin}
+            onChange={edit("confirmPin", setConfirmPin)}
           />
         )}
       </Modal.Body>
 
       <Modal.Footer>
         <Button isDisabled={isPending} slot="close" type="button" variant="tertiary">
-          {id.users.cancel}
+          {id.common.cancel}
         </Button>
         <PendingButton isPending={isPending} type="submit">
-          {id.users.save}
+          {id.common.save}
         </PendingButton>
       </Modal.Footer>
     </Form>

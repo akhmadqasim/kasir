@@ -5,6 +5,13 @@ import { cn } from "@/lib/utils"
 
 interface TileButtonProps {
   icon?: ReactNode
+  /**
+   * A soft disc behind the icon — a service's `bgMuted` class
+   * (`bg-[var(--service-pulsa)]/15`). The tinted disc is what lets a cashier
+   * spot "Listrik" by colour before reading its label (DESIGN.md §3.2); a
+   * vendor image icon has no tint of its own and is drawn bare.
+   */
+  iconTint?: string
   label: string
   /** A short muted line under the label — a group name, a biller description. */
   description?: string
@@ -29,6 +36,7 @@ interface TileButtonProps {
  */
 export function TileButton({
   icon,
+  iconTint,
   label,
   description,
   badge,
@@ -43,7 +51,20 @@ export function TileButton({
       variant="secondary"
       onPress={onPress}
     >
-      {icon}
+      {icon && iconTint ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-full",
+            compact ? "size-9" : "size-11",
+            iconTint,
+          )}
+        >
+          {icon}
+        </span>
+      ) : (
+        icon
+      )}
       <span className="line-clamp-2 w-full text-center break-words">{label}</span>
       {description ? (
         <span className="line-clamp-1 w-full text-center text-xs text-muted break-words">

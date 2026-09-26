@@ -1,10 +1,14 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Button, Tabs } from "@heroui/react"
+import { Chip, Tabs } from "@heroui/react"
 import { RefreshCwIcon } from "lucide-react"
 
+import { formatNumber } from "@/lib/format"
 import { queryKeys } from "@/lib/api/query-keys"
+import { id } from "@/i18n/id"
+import { useDashboardSummary } from "../hooks/use-dashboard"
 import { DashboardHeader } from "./dashboard-header"
+import { IconActionButton } from "./icon-action-button"
 import { LowStockTable } from "./low-stock-table"
 import { PaymentBreakdownTable } from "./payment-breakdown-table"
 import { PaymentTrendChart } from "./payment-trend-chart"
@@ -43,7 +47,22 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<DashboardTab>("overview")
   const [range, setRange] = useState<TimeRangeKey>("7d")
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const days = daysForRange(range)
+  // Query yang sama dengan kartu ringkasan, jadi tidak ada permintaan tambahan.
+  const { data: summary } = useDashboardSummary()
+  const lowStockCount = summary?.lowStockCount ?? 0
+
+  // Spinner hanya untuk muat ulang yang diminta: refetch berkala tiap 15–30
+  // detik tidak boleh membuat tombolnya berkedip sepanjang hari.
+  const refresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   return (
     // Dipusatkan dengan lebar maksimum, seperti template dashboard HeroUI. Layar
@@ -60,6 +79,24 @@ export function DashboardPage() {
               {TABS.map((item) => (
                 <Tabs.Tab key={item.id} id={item.id}>
                   {item.label}
+                  {/* Jumlah produk yang menipis ikut di tab Stok, supaya kasir tahu
+                      ada yang perlu dibeli tanpa harus membuka tabnya dulu. */}
+                  {item.id === "stock" && lowStockCount > 0 ? (
+                    <>
+                      <Chip
+                        aria-hidden="true"
+                        className="ms-1.5"
+                        color="warning"
+                        size="sm"
+                        variant="soft"
+                      >
+                        {formatNumber(lowStockCount)}
+                      </Chip>
+                      <span className="sr-only">
+                        , {formatNumber(lowStockCount)} produk menipis
+                      </span>
+                    </>
+                  ) : null}
                   <Tabs.Indicator />
                 </Tabs.Tab>
               ))}
@@ -67,17 +104,12 @@ export function DashboardPage() {
           </Tabs.ListContainer>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              isIconOnly
-              aria-label="Muat ulang data"
-              size="sm"
-              variant="tertiary"
-              onPress={() => {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-              }}
-            >
-              <RefreshCwIcon />
-            </Button>
+            <IconActionButton
+              icon={<RefreshCwIcon />}
+              isPending={isRefreshing}
+              label={id.reloadLabel.data}
+              onPress={() => void refresh()}
+            />
             {tab === "overview" ? <TimeRangeMenu value={range} onChange={setRange} /> : null}
           </div>
         </div>

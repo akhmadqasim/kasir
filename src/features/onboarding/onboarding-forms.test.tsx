@@ -18,7 +18,7 @@ describe("onboarding forms", () => {
     expect(name).toHaveAttribute("placeholder", "Contoh: Toko Sembako Jaya")
     fireEvent.click(screen.getByRole("button", { name: "Selanjutnya" }))
     expect(onNext).not.toHaveBeenCalled()
-    expect(screen.getByText("Nama Toko wajib diisi")).toBeInTheDocument()
+    expect(screen.getByText("Nama toko wajib diisi")).toBeInTheDocument()
     fireEvent.change(name, { target: { value: "Toko A" } })
     fireEvent.click(screen.getByRole("button", { name: "Selanjutnya" }))
     expect(onNext).toHaveBeenCalledWith({
@@ -27,6 +27,41 @@ describe("onboarding forms", () => {
       phone: undefined,
       email: undefined,
     })
+  })
+
+  it("rejects a malformed email and focuses the field that needs fixing", () => {
+    const onNext = vi.fn()
+    render(<StoreInfoForm onNext={onNext} initialData={{ name: "Toko A" }} />)
+    const email = screen.getByLabelText(/Email/)
+    fireEvent.change(email, { target: { value: "toko-a" } })
+    fireEvent.click(screen.getByRole("button", { name: "Selanjutnya" }))
+    expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByText("Format email tidak valid")).toBeInTheDocument()
+    expect(email).toHaveFocus()
+
+    // Editing the field clears its message straight away.
+    fireEvent.change(email, { target: { value: "toko@a.id" } })
+    expect(screen.queryByText("Format email tidak valid")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Selanjutnya" }))
+    expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ email: "toko@a.id" }))
+  })
+
+  it("does not submit the admin step twice while registration is running", () => {
+    const onSubmit = vi.fn()
+    render(
+      <AdminSetupForm
+        initialData={{ full_name: "Budi", username: "budi", pin: "1234" }}
+        isLoading
+        onBack={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
+    const confirm = screen.getByLabelText(/Konfirmasi PIN/)
+    fireEvent.change(confirm, { target: { value: "1234" } })
+    // Enter in a field submits the form even though the button shows a spinner.
+    fireEvent.submit(confirm.closest("form")!)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "Kembali" })).toBeDisabled()
   })
 
   it("marks the step the user is on in the stepper", () => {
@@ -51,9 +86,24 @@ describe("onboarding forms", () => {
     fireEvent.change(screen.getByLabelText(/Nama Lengkap/), {
       target: { value: "Budi" },
     })
-    fireEvent.change(screen.getByLabelText(/Username/), {
+    fireEvent.change(screen.getByLabelText(/Nama Pengguna/), {
       target: { value: "budi" },
     })
+    fireEvent.click(screen.getByRole("button", { name: "Daftarkan Toko" }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByText("PIN tidak cocok")).toBeInTheDocument()
+  })
+
+  it("asks for the PIN confirmation again after coming back to the step", () => {
+    const onSubmit = vi.fn()
+    render(
+      <AdminSetupForm
+        initialData={{ full_name: "Budi", username: "budi", pin: "1234" }}
+        isLoading={false}
+        onBack={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
     fireEvent.click(screen.getByRole("button", { name: "Daftarkan Toko" }))
     expect(onSubmit).not.toHaveBeenCalled()
     expect(screen.getByText("PIN tidak cocok")).toBeInTheDocument()

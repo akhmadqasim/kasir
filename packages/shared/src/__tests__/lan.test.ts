@@ -56,6 +56,11 @@ describe("normalizeServerOrigin", () => {
     expect(normalizeServerOrigin("kasir.lokal")).toBe(`http://kasir.lokal:${DEFAULT_SERVER_PORT}`)
   })
 
+  it("uses the given port when the address has none", () => {
+    expect(normalizeServerOrigin("192.168.1.10", 17721)).toBe("http://192.168.1.10:17721")
+    expect(normalizeServerOrigin("192.168.1.10:17722", 17721)).toBe("http://192.168.1.10:17722")
+  })
+
   it("drops paths and keeps an explicit scheme", () => {
     expect(normalizeServerOrigin("http://192.168.1.10:17720/api/")).toBe(
       "http://192.168.1.10:17720",
@@ -77,7 +82,9 @@ describe("normalizeServerOrigin", () => {
 
 describe("probeServer", () => {
   it("recognises the onboarding status boolean as a kasir server", async () => {
-    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response("false", { status: 200 }))
+    const fetch = vi.fn(
+      async (_url: string, _init: RequestInit) => new Response("false", { status: 200 }),
+    )
     const result = await probeServer("http://10.0.0.2:17720", { fetch })
 
     expect(fetch.mock.calls[0]?.[0]).toBe(`http://10.0.0.2:17720${HEALTH_PATH}`)

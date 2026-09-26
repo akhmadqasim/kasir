@@ -17,9 +17,10 @@ import { FieldRow } from "@/components/field-row";
 import { NumberField } from "@/components/number-field";
 import { ReasonSelect } from "@/components/reason-select";
 import { FormSubmit } from "@/components/form-submit";
+import { ProductGate } from "@/components/product-gate";
 import { ScrollScreen } from "@/components/screen";
 import { Section } from "@/components/section";
-import { ErrorView, InlineError, LoadingView } from "@/components/state-view";
+import { InlineError } from "@/components/state-view";
 import { useAdjustStock, useCreateWriteoff, useProductDetail } from "@/hooks/use-products";
 import { useCurrentUser } from "@/hooks/use-session";
 import { savedThenBack } from "@/lib/mutation-feedback";
@@ -31,48 +32,47 @@ import { savedThenBack } from "@/lib/mutation-feedback";
  * - Admin: the count becomes the new stock (`PUT /products/{id}` with `stock`
  *   replaced — the only endpoint that can do it). Explaining a shortfall with a
  *   reason turns it into a write-off instead, which leaves an audit row.
- * - Kasir: a shortfall can only be settled as a damaged/expired write-off; a
- *   surplus needs an admin. Both rules live in `@kasir/shared` `resolveStockCount`
- *   and are enforced again by the server.
+ * - Kasir: a shortfall can only be settled as a damaged/expired/other
+ *   write-off; a surplus needs an admin. Both rules live in `@kasir/shared`
+ *   `resolveStockCount` and are enforced again by the server.
+ *
+ * The difference is worked out against the system stock, so the row is re-read
+ * on every visit and the button waits for it: the list's copy may predate sales
+ * the desktop has made since, and those would be written off as a shortfall.
  */
 export default function StockCountScreen(): JSX.Element {
   const { id: rawId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const user = useCurrentUser();
-  const product = useProductDetail(Number(rawId));
+  const product = useProductDetail(Number(rawId), { alwaysFresh: true });
   const adjust = useAdjustStock();
   const writeoff = useCreateWriteoff();
 
-  if (product.isPending) return <LoadingView />;
-  if (product.isError) {
-    return (
-      <ScrollScreen>
-        <ErrorView error={product.error} onRetry={() => void product.refetch()} />
-      </ScrollScreen>
-    );
-  }
-
-  const isPending = adjust.isPending || writeoff.isPending;
+  const isPending = adjust.isPending || writeoff.isPending || product.isFetching;
 
   return (
-    <CountForm
-      product={product.data}
-      role={user.role}
-      isPending={isPending}
-      error={adjust.error ?? writeoff.error}
-      onAdjust={(countedStock) =>
-        adjust.mutate({ product: product.data, countedStock }, savedThenBack(router))
-      }
-      onWriteoff={(quantity, reason) =>
-        writeoff.mutate(
-          {
-            product: product.data,
-            input: { productId: product.data.id, quantity, reason, notes: id.stock.count },
-          },
-          savedThenBack(router)
-        )
-      }
-    />
+    <ProductGate product={product}>
+      {(item) => (
+        <CountForm
+          product={item}
+          role={user.role}
+          isPending={isPending}
+          error={adjust.error ?? writeoff.error}
+          onAdjust={(countedStock) =>
+            adjust.mutate({ product: item, countedStock }, savedThenBack(router))
+          }
+          onWriteoff={(quantity, reason) =>
+            writeoff.mutate(
+              {
+                product: item,
+                input: { productId: item.id, quantity, reason, notes: id.stock.count },
+              },
+              savedThenBack(router)
+            )
+          }
+        />
+      )}
+    </ProductGate>
   );
 }
 

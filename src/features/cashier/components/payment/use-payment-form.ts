@@ -1,43 +1,29 @@
 import type { KeyboardEvent } from "react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { id } from "@/i18n/id"
 import { toast } from "@/lib/toast"
 import { queryKeys } from "@/lib/api/query-keys"
-import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
-import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
+import { getSalesSettings } from "@/lib/api/settings"
+import { useApiQuery } from "@/hooks/use-api"
+import type { SalesSettings } from "@/features/settings/types"
+import { useAuthStore } from "@/features/auth"
 import { useCartStore } from "@/stores/cart-store"
 import { useCheckoutTransaction } from "../../hooks/use-cashier"
+import type { CartItem, TransactionChannel, TransactionResult } from "../../types"
+import { buildCheckoutInput } from "./checkout-input"
+import { resolveDefaultPaymentMethod } from "./payment-methods"
 import {
-  EMPTY_AMOUNT_ENTRY_TIMING,
-  isImplausiblePaymentAmount,
-  isScannerBurstEntry,
-  trackAmountEntry,
-} from "../../payment-behavior"
-import type {
-  CartItem,
-  PaymentSplitInput,
-  TransactionChannel,
-  TransactionResult,
-} from "../../types"
-
-/**
- * `shortcut` is the letter that toggles the method — a bare letter, because
- * the till is a keyboard and the cashier's left hand rests on Q/W/A/S/Z
- * while the right one is on the numpad. It fires from anywhere in the
- * dialog except a field that takes typing (bank, notes, PIN): the amount
- * fields are numeric, so a letter typed into one has no other meaning.
- * Alt+<letter> still works for anyone who learnt it that way. Not Ctrl,
- * because Ctrl+A/S/W already mean select-all/save/close-tab to the webview.
- */
-export const PAYMENT_METHODS = [
-  { value: "cash", label: "Tunai", shortcut: "A" },
-  { value: "qris", label: "QRIS", shortcut: "Q" },
-  { value: "debit", label: "Debit", shortcut: "Z" },
-  { value: "ewallet", label: "E-Wallet", shortcut: "W" },
-  { value: "transfer", label: "Transfer", shortcut: "S" },
-] as const
-
-export const QUICK_AMOUNT_OPTIONS = [5000, 10000, 20000, 50000, 100000] as const
+  createInitialPaymentSplits,
+  remainingAmountFor,
+  resolveActivePaymentMethod,
+  summarizePayment,
+  togglePaymentMethod,
+  withSplit,
+  type PaymentSplitForm,
+} from "./payment-splits"
+import { useAmountEntryGuard } from "./use-amount-entry-guard"
+import { usePaymentShortcuts } from "./use-payment-shortcuts"
 
 /**
  * A sale handed to the dialog by prop instead of read from the cart.
@@ -58,46 +44,10 @@ function directSaleTotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.product_price * item.quantity, 0)
 }
 
-/**
- * A field the cashier types words into. A bare-letter shortcut must not fire
- * from one of these — the bank field would lose the "A" in "BCA" to Tunai.
- * Amount fields are numeric (`inputmode="numeric"`), so a letter there is
- * free to mean the method; the PIN field is numeric too but is excluded by
- * name, the same way the Uang Pas shortcut excludes it.
- */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
-  if (target instanceof HTMLElement && target.isContentEditable) return true
-  if (!(target instanceof HTMLInputElement)) return false
-  if (target.name === PPOB_PIN_FIELD_NAME) return true
-  return target.getAttribute("inputmode") !== "numeric"
-}
+/** A Mitra transaction PIN is 4–6 digits. */
+const PPOB_PIN_PATTERN = /^\d{4,6}$/
 
-/**
- * The PIN field's `name`, so the global Uang Pas shortcut (below) can tell it
- * apart from every other field without a ref — `usePaymentForm` returning one
- * more ref alongside `cashInputRef` is what trips the `react-hooks/refs` lint
- * rule across the rest of this file's JSX.
- */
-export const PPOB_PIN_FIELD_NAME = "ppob_pin"
-
-export interface PaymentSplitForm {
-  payment_method: string
-  bank_name: string
-  amount: number | null
-  selected: boolean
-}
-
-function createInitialPaymentSplits(): PaymentSplitForm[] {
-  return PAYMENT_METHODS.map((method) => ({
-    payment_method: method.value,
-    bank_name: "",
-    amount: null,
-    selected: method.value === "cash",
-  }))
-}
-
-export interface UsePaymentFormArgs {
+interface UsePaymentFormArgs {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: (result: TransactionResult) => void
@@ -106,357 +56,159 @@ export interface UsePaymentFormArgs {
 }
 
 /**
- * All the state and business rules behind the payment dialog: split
- * payments, the barcode-scanner guard on every amount field, and the
- * checkout call itself. `payment-dialog.tsx` only lays these out.
+ * The state behind the payment dialog and the checkout call itself. The split
+ * rules live in `payment-splits.ts`, the keyboard in `usePaymentShortcuts`
+ * and `useAmountEntryGuard`; `payment-dialog.tsx` only lays this out.
  */
 export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePaymentFormArgs) {
   const queryClient = useQueryClient()
-  const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(createInitialPaymentSplits)
-  const [requestedPaymentMethod, setActivePaymentMethod] = useState("cash")
+  const user = useAuthStore((s) => s.user)
+  // The session-scoped slice, not `GET /settings`: that one is admin-only.
+  const salesSettingsQuery = useApiQuery<SalesSettings>(queryKeys.settings.sales, getSalesSettings)
+  const defaultPaymentMethod = resolveDefaultPaymentMethod(
+    salesSettingsQuery.data?.default_payment_method,
+  )
+  const [paymentSplits, setPaymentSplits] = useState<PaymentSplitForm[]>(() =>
+    createInitialPaymentSplits(
+      defaultPaymentMethod,
+      sale ? directSaleTotal(sale.items) : useCartStore.getState().getCartTotals().total,
+    ),
+  )
+  const [requestedPaymentMethod, setActivePaymentMethod] = useState(defaultPaymentMethod)
+  // The method this opening of the dialog started on, for the autofocus.
+  const [openedOn, setOpenedOn] = useState(defaultPaymentMethod)
+  // Whether the cashier has touched the payment yet (picked a method, typed an
+  // amount or a bank) during this opening. Until then a late default may still
+  // replace the starting one.
+  const [hasChosen, setHasChosen] = useState(false)
+  const [wasOpen, setWasOpen] = useState(open)
   const [notes, setNotes] = useState("")
   const [ppobPin, setPpobPin] = useState("")
-  const cashInputRef = useRef<HTMLInputElement>(null)
-  // One ref per method's amount field, so a shortcut can land the cursor in
-  // the field it just revealed. `cashInputRef` stays a named alias because
-  // the Uang Pas shortcut below wants the cash one specifically.
-  const amountInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-  const [focusRequest, setFocusRequest] = useState<{ method: string; seq: number } | null>(null)
-  const amountEntryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
-  const user = useAuthStore((s) => s.user)
-  const activeShift = useShiftStore((s) => s.activeShift)
   const cartItems = useCartStore((s) => s.items)
-  const getTotal = useCartStore((s) => s.getTotal)
-  const getSubtotal = useCartStore((s) => s.getSubtotal)
-  const getTotalDiscount = useCartStore((s) => s.getTotalDiscount)
+  const getCartTotals = useCartStore((s) => s.getCartTotals)
   const getItemDiscountAmount = useCartStore((s) => s.getItemDiscountAmount)
   const getTransactionDiscountAmount = useCartStore((s) => s.getTransactionDiscountAmount)
   const checkoutTransaction = useCheckoutTransaction(sale?.idempotencyKey)
+  const isPending = checkoutTransaction.isPending
 
   // A direct sale is charged as handed in: its line is already priced by the
   // PPOB markup, and the cart's discounts are not its discounts.
   const items = sale?.items ?? cartItems
-  const total = sale ? directSaleTotal(sale.items) : getTotal()
-  const subtotal = sale ? total : getSubtotal()
-  const totalDiscount = sale ? 0 : getTotalDiscount()
-  const selectedPaymentSplits = useMemo(
-    () => paymentSplits.filter((split) => split.selected),
-    [paymentSplits],
-  )
-  // Metode aktif harus selalu termasuk yang terpilih. Kalau tidak, "Uang Pas"
-  // dan tombol nominal cepat akan mengisi metode yang tidak dicentang — QRIS
-  // bisa tiba-tiba ikut ter-check. Diturunkan, bukan disinkronkan lewat efek,
-  // supaya tidak pernah ada render dengan nilai yang sudah basi.
-  const activePaymentMethod =
-    selectedPaymentSplits.length > 0 &&
-    !selectedPaymentSplits.some((split) => split.payment_method === requestedPaymentMethod)
-      ? selectedPaymentSplits[0].payment_method
-      : requestedPaymentMethod
-  const selectedMethodCount = selectedPaymentSplits.length
-  const isSingleCashSelection =
-    selectedMethodCount === 1 && selectedPaymentSplits[0]?.payment_method === "cash"
-  const primaryPaymentMethod = selectedPaymentSplits[0]?.payment_method ?? "cash"
-  const primaryPaymentAmount = selectedPaymentSplits[0]?.amount ?? 0
-  const changeAmount = isSingleCashSelection ? primaryPaymentAmount - total : 0
-  const totalSplitAmount = useMemo(
-    () => selectedPaymentSplits.reduce((sum, split) => sum + (split.amount ?? 0), 0),
-    [selectedPaymentSplits],
-  )
-  const nonCashSplitAmount = useMemo(
-    () =>
-      selectedPaymentSplits
-        .filter((split) => split.payment_method !== "cash")
-        .reduce((sum, split) => sum + (split.amount ?? 0), 0),
-    [selectedPaymentSplits],
-  )
-  const cashSplitAmount = useMemo(
-    () =>
-      selectedPaymentSplits
-        .filter((split) => split.payment_method === "cash")
-        .reduce((sum, split) => sum + (split.amount ?? 0), 0),
-    [selectedPaymentSplits],
-  )
-  const splitDifference = total - totalSplitAmount
-  const normalizedSplits: PaymentSplitInput[] = selectedPaymentSplits
-    .filter((split) => split.payment_method && (split.amount ?? 0) > 0)
-    .map((split) => ({
-      payment_method: split.payment_method,
-      bank_name: split.bank_name.trim() || undefined,
-      amount: split.amount ?? 0,
-    }))
-  const splitMethods = normalizedSplits.map((split) => split.payment_method)
-  const hasDuplicateSplitMethod = new Set(splitMethods).size !== splitMethods.length
-  const hasCashInSplit = selectedPaymentSplits.some((split) => split.payment_method === "cash")
-  const allSelectedMethodsHaveAmount = selectedPaymentSplits.every(
-    (split) => (split.amount ?? 0) > 0,
-  )
-  const isSplitSelectionValid =
-    normalizedSplits.length > 0 &&
-    normalizedSplits.length === selectedPaymentSplits.length &&
-    !hasDuplicateSplitMethod &&
-    (hasCashInSplit
-      ? nonCashSplitAmount <= total + 0.01 &&
-        cashSplitAmount + 0.01 >= Math.max(total - nonCashSplitAmount, 0)
-      : Math.abs(splitDifference) < 0.01)
+  const saleTotal = sale ? directSaleTotal(sale.items) : 0
+  const { total, subtotal, totalDiscount } = sale
+    ? { total: saleTotal, subtotal: saleTotal, totalDiscount: 0 }
+    : getCartTotals()
 
-  const isCashValid = !isSingleCashSelection || primaryPaymentAmount >= total
-  // Barcode yang nyasar ke kolom nominal selalu jauh di atas batas ini.
-  const hasImplausibleAmount = selectedPaymentSplits.some((split) =>
-    isImplausiblePaymentAmount(split.amount ?? 0),
-  )
-  // Sebuah keranjang berisi barang PPOB wajib membawa PIN Mitra — diminta di
-  // sini, saat transaksi dibayar, bukan dibaca diam-diam dari Pengaturan.
-  const hasPpobItems = items.some((item) => item.is_ppob)
-  const isPpobPinValid = /^\d{4,6}$/.test(ppobPin)
-  const canConfirm =
-    items.length > 0 &&
-    selectedMethodCount > 0 &&
-    !hasImplausibleAmount &&
-    (isSingleCashSelection ? isCashValid : allSelectedMethodsHaveAmount && isSplitSelectionValid) &&
-    (!hasPpobItems || isPpobPinValid) &&
-    !checkoutTransaction.isPending
-
-  // Auto-focus kolom nominal tunai saat dialog terbuka. React Aria sudah
-  // memindah fokus ke dialog itu sendiri begitu ia terbuka; `setTimeout`
-  // menjalankan fokus ini setelahnya, bukan sebelum, atau langsung tertimpa.
-  useEffect(() => {
-    if (open && isSingleCashSelection) {
-      setTimeout(() => cashInputRef.current?.focus(), 100)
+  // Every opening starts on the configured default. Adjusted during render
+  // rather than in an effect, so the dialog never paints one frame on cash
+  // before jumping to QRIS. The total is known only now, which is why the
+  // initial state above cannot do this for a later opening.
+  const startOn = (method: string) => {
+    setPaymentSplits(createInitialPaymentSplits(method, total))
+    setActivePaymentMethod(method)
+    setOpenedOn(method)
+  }
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setHasChosen(false)
+      startOn(defaultPaymentMethod)
     }
-  }, [isSingleCashSelection, open])
+  } else if (open && !hasChosen && defaultPaymentMethod !== openedOn) {
+    // Mounted already open (the PPOB page's checkout) before `GET
+    // /settings/sales` answered: the dialog started on cash, the fallback.
+    // Once the configured default arrives it takes over — unless the cashier
+    // has already chosen, and their choice is not ours to undo.
+    startOn(defaultPaymentMethod)
+  }
+
+  const payment = useMemo(() => summarizePayment(paymentSplits, total), [paymentSplits, total])
+  const activePaymentMethod = resolveActivePaymentMethod(paymentSplits, requestedPaymentMethod)
+
+  // A cart holding a PPOB line must carry the Mitra PIN — asked for here, at
+  // the moment of sale, never read quietly from Pengaturan.
+  const hasPpobItems = items.some((item) => item.is_ppob)
+  const isPpobPinValid = PPOB_PIN_PATTERN.test(ppobPin)
+  const canConfirm =
+    items.length > 0 && payment.isValid && (!hasPpobItems || isPpobPinValid) && !isPending
 
   const updateSplit = useCallback((method: string, next: Partial<PaymentSplitForm>) => {
-    setPaymentSplits((current) =>
-      current.map((split) => (split.payment_method === method ? { ...split, ...next } : split)),
-    )
+    setHasChosen(true)
+    setPaymentSplits((current) => withSplit(current, method, next))
   }, [])
 
   const handleAmountChange = useCallback(
-    (method: string, value: number | null) => {
-      updateSplit(method, { amount: value, selected: true })
-    },
+    (method: string, value: number | null) =>
+      updateSplit(method, { amount: value, selected: true }),
     [updateSplit],
   )
 
   const handleBankNameChange = useCallback(
-    (method: string, value: string) => {
-      updateSplit(method, { bank_name: value, selected: true })
-    },
+    (method: string, value: string) => updateSplit(method, { bank_name: value, selected: true }),
     [updateSplit],
   )
 
   const handleQuickRoundAmount = useCallback(
-    (amount: number) => {
-      updateSplit(activePaymentMethod, { amount, selected: true })
-    },
+    (amount: number) => updateSplit(activePaymentMethod, { amount, selected: true }),
     [activePaymentMethod, updateSplit],
   )
 
   const handleSetRemainingAmount = useCallback(() => {
-    const otherTotal = paymentSplits
-      .filter((split) => split.payment_method !== activePaymentMethod && split.selected)
-      .reduce((sum, split) => sum + (split.amount ?? 0), 0)
-
-    const remaining = Math.max(total - otherTotal, 0)
-    updateSplit(activePaymentMethod, { amount: remaining, selected: true })
+    updateSplit(activePaymentMethod, {
+      amount: remainingAmountFor(paymentSplits, activePaymentMethod, total),
+      selected: true,
+    })
   }, [activePaymentMethod, paymentSplits, total, updateSplit])
 
-  // Pintasan ` (backtick) di mana saja di dialog: isi tunai persis senilai
-  // total ("uang pas" tanpa menyentuh mouse), lalu fokuskan dan pilih isinya
-  // supaya Enter berikutnya langsung membayar.
-  useEffect(() => {
-    if (!open || !isSingleCashSelection) return
-
-    const handleShortcut = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
-        return
-      }
-
-      if (event.key !== "`" && event.code !== "Backquote") {
-        return
-      }
-
-      const target = event.target
-      if (target instanceof HTMLTextAreaElement) {
-        return
-      }
-      // A PIN is typed digit by digit like an amount, but it is not one —
-      // the shortcut must not overwrite the cash split while the cashier is
-      // in the middle of typing it.
-      if (target instanceof HTMLInputElement && target.name === PPOB_PIN_FIELD_NAME) {
-        return
-      }
-
-      event.preventDefault()
-      updateSplit("cash", { amount: total, selected: true })
-      cashInputRef.current?.focus()
-      cashInputRef.current?.select()
-    }
-
-    window.addEventListener("keydown", handleShortcut)
-    return () => window.removeEventListener("keydown", handleShortcut)
-  }, [isSingleCashSelection, open, total, updateSplit])
+  const handleExactCash = useCallback(
+    () => updateSplit("cash", { amount: total, selected: true }),
+    [total, updateSplit],
+  )
 
   /** Toggles `method` like a click on its button; returns the method now active. */
   const handleMethodClick = useCallback(
     (method: string): string => {
-      const split = paymentSplits.find((current) => current.payment_method === method)
-      if (!split) return activePaymentMethod
-
-      // Metode sudah dipilih → klik lagi untuk melepas (klik di mana saja pada
-      // tombol, bukan cuma di kotak centang). Kecuali ini satu-satunya metode
-      // aktif: cukup jadikan aktif, jangan sampai tidak ada metode terpilih.
-      if (split.selected) {
-        if (selectedMethodCount <= 1) {
-          setActivePaymentMethod(method)
-          return method
-        }
-
-        setPaymentSplits((current) =>
-          current.map((currentSplit) =>
-            currentSplit.payment_method === method
-              ? { ...currentSplit, selected: false, amount: null, bank_name: "" }
-              : currentSplit,
-          ),
-        )
-        const fallback = paymentSplits.find(
-          (current) => current.payment_method !== method && current.selected,
-        )
-        const next = fallback?.payment_method ?? "cash"
-        setActivePaymentMethod(next)
-        return next
-      }
-
-      // Belum dipilih. Selama pilihannya masih tunai tunggal → GANTI (radio).
-      // Setelah itu, setiap metode baru → TAMBAH (multi payment).
-      if (isSingleCashSelection && method !== "cash") {
-        setPaymentSplits((current) =>
-          current.map((currentSplit) =>
-            currentSplit.payment_method === method
-              ? { ...currentSplit, selected: true, amount: currentSplit.amount ?? total }
-              : { ...currentSplit, selected: false, amount: null, bank_name: "" },
-          ),
-        )
-        setActivePaymentMethod(method)
-        return method
-      }
-
-      setPaymentSplits((current) =>
-        current.map((currentSplit) =>
-          currentSplit.payment_method === method
-            ? {
-                ...currentSplit,
-                selected: true,
-                amount: method === "cash" ? null : currentSplit.amount,
-              }
-            : currentSplit,
-        ),
-      )
-      setActivePaymentMethod(method)
-      return method
+      const toggled = togglePaymentMethod(paymentSplits, method, total, activePaymentMethod)
+      setHasChosen(true)
+      setPaymentSplits(toggled.splits)
+      setActivePaymentMethod(toggled.active)
+      return toggled.active
     },
-    [activePaymentMethod, isSingleCashSelection, paymentSplits, selectedMethodCount, total],
+    [activePaymentMethod, paymentSplits, total],
   )
 
-  // <letter> (or Alt+<letter>) toggles a method exactly like a click on its
-  // button, then asks for the cursor to land in the active method's amount
-  // field — see the effect below. Without that, toggling away from Tunai
-  // unmounted the very field that had focus, and the cashier's next Enter
-  // went nowhere.
-  useEffect(() => {
-    if (!open) return
+  const { registerAmountInput } = usePaymentShortcuts({
+    open,
+    openedOn,
+    isSingleCashSelection: payment.isSingleCashSelection,
+    onExactCash: handleExactCash,
+    onToggleMethod: handleMethodClick,
+  })
 
-    const handleShortcut = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.repeat) {
-        return
-      }
-      const method = PAYMENT_METHODS.find(
-        (candidate) => candidate.shortcut === event.key.toUpperCase(),
-      )
-      if (!method) return
-      if (!event.altKey && isTypingTarget(event.target)) return
-
-      event.preventDefault()
-      const next = handleMethodClick(method.value)
-      setFocusRequest((previous) => ({ method: next, seq: (previous?.seq ?? 0) + 1 }))
-    }
-
-    window.addEventListener("keydown", handleShortcut)
-    return () => window.removeEventListener("keydown", handleShortcut)
-  }, [handleMethodClick, open])
-
-  // Runs after the render a shortcut caused, so the field it wants is mounted
-  // by the time it looks for it. The request names its method rather than
-  // reading the active one: that also changes when the cashier clicks into a
-  // bank field, and the click must not have its focus taken away.
-  useEffect(() => {
-    if (!focusRequest) return
-    const input = amountInputRefs.current[focusRequest.method]
-    input?.focus()
-    input?.select()
-  }, [focusRequest])
-
-  // Callback refs, one per method and stable across renders, for the amount
-  // fields to attach themselves to.
-  const registerAmountInput = useMemo(() => {
-    const refs: Record<string, (element: HTMLInputElement | null) => void> = {}
-    for (const method of PAYMENT_METHODS) {
-      refs[method.value] = (element) => {
-        amountInputRefs.current[method.value] = element
-        if (method.value === "cash") cashInputRef.current = element
-      }
-    }
-    return (method: string) => refs[method]
+  const resetForm = useCallback(() => {
+    setPaymentSplits(createInitialPaymentSplits())
+    setNotes("")
+    setPpobPin("")
   }, [])
-
-  const recordAmountEntry = (at: number) => {
-    amountEntryRef.current = trackAmountEntry(amountEntryRef.current, at)
-  }
 
   const handleConfirm = useCallback(() => {
     if (!user) return
 
-    const finalPaymentAmount = isSingleCashSelection ? primaryPaymentAmount : totalSplitAmount
-    const finalPaymentMethod =
-      selectedMethodCount > 1
-        ? (normalizedSplits[0]?.payment_method ?? "cash")
-        : primaryPaymentMethod
-
     checkoutTransaction.mutate(
-      {
-        items: items.map((item) => ({
-          product_id: item.is_ppob ? undefined : item.product_id,
-          quantity: item.quantity,
-          product_name: item.is_ppob ? item.product_name : undefined,
-          product_price: item.is_ppob ? item.product_price : undefined,
-          buy_price: item.buy_price,
-          item_discount: sale ? undefined : getItemDiscountAmount(item.cart_id) || undefined,
-          service_type: item.service_type,
-          service_ref: item.service_ref,
-          ppob_product_id: item.ppob_product_id,
-          ppob_product_code: item.ppob_product_code,
-          ppob_inquiry_id: item.ppob_inquiry_id,
-          ppob_payment_code: item.ppob_payment_code,
-          ppob_flag_id: item.ppob_flag_id,
-        })),
-        payment_method: finalPaymentMethod,
-        payment_amount: finalPaymentAmount,
-        // A single cash sale is fully described by the two fields above; any
-        // other single method may carry a bank/app name, which only the
-        // breakdown has room for.
-        payment_breakdown:
-          selectedMethodCount > 1 || primaryPaymentMethod !== "cash" ? normalizedSplits : undefined,
-        transaction_discount: sale ? undefined : getTransactionDiscountAmount() || undefined,
-        shift_id: activeShift?.id,
+      buildCheckoutInput({
+        items,
+        payment,
+        itemDiscount: (item) => (sale ? 0 : getItemDiscountAmount(item.cart_id)),
+        transactionDiscount: sale ? 0 : getTransactionDiscountAmount(),
         // The cart is booked as `sales` (the server's default); a direct sale
         // names its own channel.
         channel: sale?.channel,
-        notes: notes.trim() || undefined,
-        // Only sent when the cart actually needs it — a cart with no PPOB
+        notes,
+        // Only sent when the sale actually needs it — a cart with no PPOB
         // line ignores this field on the server too, but there is no reason
         // to send a PIN the sale never uses.
-        ppob_pin: hasPpobItems ? ppobPin : undefined,
-      },
+        ppobPin: hasPpobItems ? ppobPin : undefined,
+      }),
       {
         onSuccess: (result) => {
           // A sale moves stock, the transaction list, the shift's drawer and
@@ -475,105 +227,70 @@ export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePayme
           queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
           queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
           onSuccess(result)
-          setPaymentSplits(createInitialPaymentSplits())
-          setNotes("")
-          setPpobPin("")
+          resetForm()
         },
         onError: (err) => {
-          toast.error(`Gagal memproses transaksi: ${err.message}`)
+          toast.error(id.cashier.checkoutFailed(err.message))
         },
       },
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     user,
-    isSingleCashSelection,
-    primaryPaymentAmount,
-    totalSplitAmount,
-    selectedMethodCount,
-    normalizedSplits,
-    primaryPaymentMethod,
+    checkoutTransaction,
     items,
+    payment,
+    sale,
+    getItemDiscountAmount,
+    getTransactionDiscountAmount,
     notes,
     hasPpobItems,
     ppobPin,
-    activeShift,
-    sale,
-    checkoutTransaction,
     queryClient,
     onSuccess,
+    resetForm,
   ])
 
-  // Scanner adalah keyboard: burst digit + Enter di kolom nominal tidak boleh
-  // menutup transaksi. Waktu diambil dari `onKeyDown` (bukan `onChange` seperti
-  // sebelum `RupiahField`): `TextField` HeroUI hanya meneruskan nilainya, bukan
-  // event DOM-nya, jadi `event.timeStamp` per ketikan diambil di sini. Enter
-  // yang datang dalam satu burst scan diabaikan dan nominalnya dikosongkan
-  // supaya kasir tidak menagih angka barcode.
-  const handleAmountKeyDown = useCallback(
-    (method: string, currentAmount: number | null) => (event: KeyboardEvent<HTMLInputElement>) => {
-      // `\` = Uang Pas: satu tuts di sebelah Enter, tanpa melepas tangan
-      // dari deretan angka; di kolom nominal ia tidak punya arti lain.
-      if (event.key === "\\") {
-        event.preventDefault()
-        handleSetRemainingAmount()
-        return
-      }
-      if (event.key !== "Enter") {
-        recordAmountEntry(event.timeStamp)
-        return
-      }
+  const submitIfReady = useCallback(() => {
+    if (canConfirm) handleConfirm()
+  }, [canConfirm, handleConfirm])
 
-      event.preventDefault()
-
-      const typedAmount = currentAmount != null ? String(currentAmount) : ""
-      if (
-        isScannerBurstEntry({
-          amount: typedAmount,
-          ...amountEntryRef.current,
-          submittedAt: event.timeStamp,
-        })
-      ) {
-        amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
-        updateSplit(method, { amount: null, selected: true })
-        toast.warning(
-          "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
-        )
-        return
-      }
-
-      if (canConfirm) {
-        handleConfirm()
-      }
-    },
-    [canConfirm, handleConfirm, handleSetRemainingAmount, updateSplit],
+  const handleScanRejected = useCallback(
+    (method: string) => updateSplit(method, { amount: null, selected: true }),
+    [updateSplit],
   )
 
-  // Enter di kolom PIN membayar seperti Enter di kolom nominal — tanpa
-  // pemeriksaan burst scanner, karena PIN diketik tangan, bukan discan.
+  const { handleAmountKeyDown, resetAmountEntry } = useAmountEntryGuard({
+    onRemainingAmount: handleSetRemainingAmount,
+    onScanRejected: handleScanRejected,
+    onSubmit: submitIfReady,
+  })
+
+  // Enter in the PIN field pays like Enter in an amount field — without the
+  // scanner check, because a PIN is typed by hand, not scanned.
   const handlePinKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
       if (event.key !== "Enter") return
       event.preventDefault()
-      if (canConfirm) {
-        handleConfirm()
-      }
+      submitIfReady()
     },
-    [canConfirm, handleConfirm],
+    [submitIfReady],
   )
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
-      amountEntryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
+      // Esc or the close button while the sale is being booked would hide a
+      // checkout that is still going to succeed (and then pop the receipt
+      // over an empty screen). The dialog stays until the answer is in; the
+      // dialog also disables both while `isPending`, this is the backstop.
+      if (!isOpen && isPending) return
+      resetAmountEntry()
       if (!isOpen) {
-        setPaymentSplits(createInitialPaymentSplits())
+        resetForm()
         setActivePaymentMethod("cash")
-        setNotes("")
-        setPpobPin("")
       }
       onOpenChange(isOpen)
     },
-    [onOpenChange],
+    [isPending, onOpenChange, resetAmountEntry, resetForm],
   )
 
   return {
@@ -583,19 +300,14 @@ export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePayme
     totalDiscount,
     // Splits
     paymentSplits,
-    selectedPaymentSplits,
-    activePaymentMethod,
+    selectedPaymentSplits: payment.selectedPaymentSplits,
+    isSingleCashSelection: payment.isSingleCashSelection,
+    primaryPaymentAmount: payment.primaryPaymentAmount,
+    changeAmount: payment.changeAmount,
+    splitError: payment.splitError,
+    splitCashChange: payment.splitCashChange,
+    hasImplausibleAmount: payment.hasImplausibleAmount,
     setActivePaymentMethod,
-    selectedMethodCount,
-    isSingleCashSelection,
-    primaryPaymentAmount,
-    changeAmount,
-    totalSplitAmount,
-    nonCashSplitAmount,
-    cashSplitAmount,
-    splitDifference,
-    hasCashInSplit,
-    hasImplausibleAmount,
     // Handlers
     registerAmountInput,
     handleAmountChange,
@@ -613,10 +325,9 @@ export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePayme
     hasPpobItems,
     ppobPin,
     setPpobPin,
-    isPpobPinValid,
     handlePinKeyDown,
     // Confirm
     canConfirm,
-    isPending: checkoutTransaction.isPending,
+    isPending,
   }
 }

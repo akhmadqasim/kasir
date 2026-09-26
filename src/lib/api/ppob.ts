@@ -4,17 +4,13 @@ import type {
   InquiryResult,
   MutasiItem,
   NotificationListResult,
-  PaymentResult,
   PdamProduct,
   PlnDenom,
   PpSearchResult,
   PpSubMenuItem,
   PpobMenuGroup,
-  PpobReceiptLine,
   PpobSaldoResponse,
   PulsaDetailsResponse,
-  PulsaProduct,
-  PulsaProvider,
   TransferChannelGroup,
   VoucherGroup,
 } from "@/features/ppob/types"
@@ -23,14 +19,15 @@ import { apiGet, apiPost } from "./client"
 /**
  * PPOB: bills, top-ups and the provider's catalogue.
  *
- * Three shapes of request, and the shape says what it costs:
+ * Two shapes of request, and the shape says what it costs:
  *
  * * `GET /ppob/catalog/*` — what the provider sells. Cacheable, boring.
  * * `POST /ppob/inquiries/*` — "what does this customer owe?". Reads upstream,
  *   but carries a body and the provider charges for it. Repeating one costs a
  *   query, not money.
- * * `POST /ppob/payments` and `POST /ppob/topups` — money, and therefore an
- *   `Idempotency-Key`.
+ *
+ * Nothing here spends money: a PPOB purchase is fulfilled inside
+ * `POST /transactions`, never on its own.
  *
  * The parameter casing here is camelCase throughout, because every PPOB struct
  * on the Rust side carries `rename_all = "camelCase"`. That is not true of the
@@ -55,20 +52,8 @@ export function openPpobSession(): Promise<PpobSaldoResponse> {
 // Catalogue
 // ---------------------------------------------------------------------------
 
-export function getPulsaProviders(): Promise<PulsaProvider[]> {
-  return apiGet<PulsaProvider[]>("/ppob/catalog/providers")
-}
-
 export function getPulsaDetails(phoneNumber: string): Promise<PulsaDetailsResponse> {
   return apiGet<PulsaDetailsResponse>("/ppob/catalog/pulsa/details", { phoneNumber })
-}
-
-export function getPulsaPrices(providerUid: string): Promise<PulsaProduct[]> {
-  return apiGet<PulsaProduct[]>("/ppob/catalog/pulsa/prices", { providerUid })
-}
-
-export function getDataPrices(providerUid: string): Promise<PulsaProduct[]> {
-  return apiGet<PulsaProduct[]>("/ppob/catalog/data/prices", { providerUid })
 }
 
 export function getPlnDenominations(): Promise<PlnDenom[]> {
@@ -154,20 +139,6 @@ export function paymentPointInquiry(input: PaymentPointInquiryInput): Promise<In
   return apiPost<InquiryResult>("/ppob/inquiries/pp", input)
 }
 
-export interface TransferInquiryInput {
-  channelId: string
-  nomorRekening: string
-  amount: number
-  channelName: string
-  deskripsi: string
-  namaPengirim: string
-  notelpPengirim: string
-}
-
-export function transferInquiry(input: TransferInquiryInput): Promise<InquiryResult> {
-  return apiPost<InquiryResult>("/ppob/inquiries/transfer", input)
-}
-
 export interface EmoneyInquiryInput {
   customerId: string
   productCode: string
@@ -178,73 +149,11 @@ export function emoneyInquiry(input: EmoneyInquiryInput): Promise<InquiryResult>
 }
 
 // ---------------------------------------------------------------------------
-// The two that spend money
-// ---------------------------------------------------------------------------
-
-export interface PpobPaymentInput {
-  serviceType: string
-  inquiryId: string
-  customerId?: string
-  productCode?: string
-  paymentCode?: string
-  flagId?: string
-  phoneNumber?: string
-  amount?: number
-}
-
-/**
- * Turn an inquiry into a purchase.
- *
- * `idempotencyKey` is mandatory. One key per attempt by the cashier, reused by
- * every retry of that attempt: on shop wifi a lost response is
- * indistinguishable from a request that never arrived, and without the key the
- * retry buys a second voucher.
- *
- * In this application the cart route is the one that spends money — a PPOB line
- * is fulfilled inside `POST /transactions` — so this exists to complete the
- * contract rather than because a screen calls it today.
- */
-export function payPpob(input: PpobPaymentInput, idempotencyKey: string): Promise<PaymentResult> {
-  return apiPost<PaymentResult>("/ppob/payments", input, { idempotencyKey })
-}
-
-export interface PpobTopupInput {
-  phoneNumber: string
-  productCode: string
-  productId: number
-  productType: string
-}
-
-/** Airtime or a data package bought outright — the request itself is the purchase. */
-export function topupPpob(input: PpobTopupInput, idempotencyKey: string): Promise<PaymentResult> {
-  return apiPost<PaymentResult>("/ppob/topups", input, { idempotencyKey })
-}
-
-// ---------------------------------------------------------------------------
 // History and notifications
 // ---------------------------------------------------------------------------
 
 export function getPpobHistory(startDate: string, endDate: string): Promise<HistoryPaymentItem[]> {
   return apiGet<HistoryPaymentItem[]>("/ppob/history", { startDate, endDate })
-}
-
-/** One transaction, by Mitra's `trxId` — the same row the history table shows. */
-export function getPpobHistoryDetail(trxId: string): Promise<HistoryPaymentItem> {
-  return apiGet<HistoryPaymentItem>(`/ppob/history/${encodeURIComponent(trxId)}`)
-}
-
-/**
- * The struk a history transaction would print at `sellPrice`, line by line —
- * the same lines `printPpobHistoryReceipt` hands to the printer, so the
- * screen can show exactly what the paper will say.
- */
-export function getPpobHistoryReceipt(
-  trxId: string,
-  sellPrice: number,
-): Promise<PpobReceiptLine[]> {
-  return apiGet<PpobReceiptLine[]>(`/ppob/history/${encodeURIComponent(trxId)}/receipt`, {
-    sellPrice,
-  })
 }
 
 /**

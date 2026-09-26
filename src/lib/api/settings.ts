@@ -2,6 +2,8 @@ import type {
   AppSettings,
   DatabaseInfo,
   PpobMarkup,
+  PublicStoreInfo,
+  SalesSettings,
   StoreInfo,
   UpdateAppSettingsInput,
   UpdatePpobCredentialsInput,
@@ -19,6 +21,14 @@ import { API_BASE_URL, apiDelete, apiGet, apiPut, apiUpload } from "./client"
 
 export function getStoreInfo(): Promise<StoreInfo | null> {
   return apiGet<StoreInfo | null>("/store")
+}
+
+/**
+ * The shop's name and whether it has a logo — public, for the login screen.
+ * Carries nothing else from the store row.
+ */
+export function getPublicStoreInfo(): Promise<PublicStoreInfo | null> {
+  return apiGet<PublicStoreInfo | null>("/store/public")
 }
 
 export function updateStoreInfo(input: UpdateStoreInfoInput): Promise<StoreInfo> {
@@ -39,6 +49,14 @@ export function getAppSettings(): Promise<AppSettings> {
  */
 export function getPpobMarkup(): Promise<PpobMarkup> {
   return apiGet<PpobMarkup>("/settings/ppob/markup")
+}
+
+/**
+ * The sales block only, open to any cashier session — the payment dialog
+ * opens on its `default_payment_method`, and a kasir cannot read `/settings`.
+ */
+export function getSalesSettings(): Promise<SalesSettings> {
+  return apiGet<SalesSettings>("/settings/sales")
 }
 
 /**
@@ -92,6 +110,22 @@ export function uploadStoreLogo(file: File): Promise<StoreInfo> {
 
 export function deleteStoreLogo(): Promise<void> {
   return apiDelete<void>("/settings/store/logo")
+}
+
+/**
+ * The logo URL for a screen that only has the public store slice (the login
+ * screen), or `null` when the store has none.
+ *
+ * The slice carries no `updated_at`, so the caller passes a `version` instead —
+ * when it fetched the slice. Without one the path never changes and the browser
+ * would keep a replaced logo for the hour the server lets it cache the image.
+ */
+export function publicStoreLogoUrl(
+  store: PublicStoreInfo | null | undefined,
+  version: number | string,
+): string | null {
+  if (!store?.has_logo) return null
+  return `${API_BASE_URL}/store/logo?v=${encodeURIComponent(String(version))}`
 }
 
 /**

@@ -69,46 +69,54 @@ impl LoginThrottle {
         Self::default()
     }
 
-    /// How long the caller must wait, if at all.
+    /// Admit one login attempt, or say how long the caller must wait.
     ///
-    /// The longest lock across all keys wins: being under backoff for the
-    /// address is as disqualifying as being under backoff for the username.
-    pub fn retry_after(&self, keys: &[String], now: Instant) -> Option<Duration> {
-        let entries = self.entries.lock().expect("throttle mutex");
-        keys.iter()
-            .filter_map(|key| entries.get(key))
-            .filter_map(|entry| entry.locked_until)
-            .filter(|until| *until > now)
-            .map(|until| until - now)
-            .max()
+    /// An admitted attempt is charged as a failure *now*, under the same lock
+    /// as the check, and [`record_success`](Self::record_success) takes the
+    /// charge back. Checking first and recording only once bcrypt has answered
+    /// would let a burst of parallel requests all pass the check before the
+    /// first failure landed — the whole PIN space in one go. Charged up front,
+    /// the burst gets exactly the free attempts and nothing more.
+    pub fn begin_attempt(&self, keys: &[String], now: Instant) -> Result<(), Duration> {
+        let mut entries = self.entries.lock().expect("throttle mutex");
+        if let Some(wait) = wait_in(&entries, keys, now) {
+            return Err(wait);
+        }
+        charge(&mut entries, keys, now);
+        Ok(())
+    }
+
+    /// Restart the lock of a failed attempt from the moment it failed.
+    ///
+    /// [`begin_attempt`](Self::begin_attempt) stamps the lock before the PIN is
+    /// checked, and bcrypt can take a noticeable share of the lock to answer — a
+    /// slow CPU, or a busy one, could otherwise serve out most of a short lock
+    /// while the verify is still running. The count is not raised again: the
+    /// charge taken up front already stands for this failure.
+    pub fn settle_failure(&self, keys: &[String], now: Instant) {
+        let mut entries = self.entries.lock().expect("throttle mutex");
+        for key in keys {
+            let Some(entry) = entries.get_mut(key) else {
+                continue;
+            };
+            entry.last_failure = entry.last_failure.max(now);
+            if let Some(lock) = lock_duration(entry.count) {
+                let until = now + lock;
+                entry.locked_until = Some(entry.locked_until.map_or(until, |held| held.max(until)));
+            }
+        }
+    }
+
+    /// How long the caller must wait, if at all.
+    #[cfg(test)]
+    fn retry_after(&self, keys: &[String], now: Instant) -> Option<Duration> {
+        wait_in(&self.entries.lock().expect("throttle mutex"), keys, now)
     }
 
     /// Record a rejected attempt and lengthen the lock.
-    pub fn record_failure(&self, keys: &[String], now: Instant) {
-        let mut entries = self.entries.lock().expect("throttle mutex");
-
-        if entries.len() > PRUNE_THRESHOLD {
-            entries.retain(|_, entry| !entry.is_forgettable(now));
-        }
-
-        for key in keys {
-            let entry = entries.entry(key.clone()).or_insert(Failures {
-                count: 0,
-                last_failure: now,
-                locked_until: None,
-            });
-
-            if entry.is_forgettable(now) {
-                entry.count = 0;
-                entry.locked_until = None;
-            }
-
-            entry.count = entry.count.saturating_add(1);
-            entry.last_failure = now;
-            if let Some(lock) = lock_duration(entry.count) {
-                entry.locked_until = Some(now + lock);
-            }
-        }
+    #[cfg(test)]
+    fn record_failure(&self, keys: &[String], now: Instant) {
+        charge(&mut self.entries.lock().expect("throttle mutex"), keys, now);
     }
 
     /// A correct PIN clears the record, so a user who eventually remembers their
@@ -131,6 +139,43 @@ impl Failures {
     fn is_forgettable(&self, now: Instant) -> bool {
         let unlocked = self.locked_until.is_none_or(|until| until <= now);
         unlocked && now.duration_since(self.last_failure) >= RESET_AFTER
+    }
+}
+
+/// The longest lock across `keys`: being under backoff for the address is as
+/// disqualifying as being under backoff for the username.
+fn wait_in(entries: &HashMap<String, Failures>, keys: &[String], now: Instant) -> Option<Duration> {
+    keys.iter()
+        .filter_map(|key| entries.get(key))
+        .filter_map(|entry| entry.locked_until)
+        .filter(|until| *until > now)
+        .map(|until| until - now)
+        .max()
+}
+
+/// Count one failure against every key and lengthen its lock.
+fn charge(entries: &mut HashMap<String, Failures>, keys: &[String], now: Instant) {
+    if entries.len() > PRUNE_THRESHOLD {
+        entries.retain(|_, entry| !entry.is_forgettable(now));
+    }
+
+    for key in keys {
+        let entry = entries.entry(key.clone()).or_insert(Failures {
+            count: 0,
+            last_failure: now,
+            locked_until: None,
+        });
+
+        if entry.is_forgettable(now) {
+            entry.count = 0;
+            entry.locked_until = None;
+        }
+
+        entry.count = entry.count.saturating_add(1);
+        entry.last_failure = now;
+        if let Some(lock) = lock_duration(entry.count) {
+            entry.locked_until = Some(now + lock);
+        }
     }
 }
 
@@ -294,6 +339,71 @@ mod tests {
             throttle.tracked_keys() < before_sweep,
             "forgotten entries are swept once the map grows"
         );
+    }
+
+    /// Attempts that are all in flight at once — none has failed yet — still
+    /// get only the free budget between them.
+    #[test]
+    fn a_parallel_burst_is_admitted_only_up_to_the_free_attempts() {
+        let throttle = LoginThrottle::new();
+        let now = Instant::now();
+        let keys = keys();
+
+        let admitted = (0..100)
+            .filter(|_| throttle.begin_attempt(&keys, now).is_ok())
+            .count();
+        assert_eq!(admitted, FREE_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn a_successful_attempt_takes_its_charge_back() {
+        let throttle = LoginThrottle::new();
+        let now = Instant::now();
+        let keys = keys();
+
+        for _ in 0..10 {
+            throttle.begin_attempt(&keys, now).expect("admitted");
+            throttle.record_success(&keys);
+        }
+        assert!(throttle.retry_after(&keys, now).is_none());
+    }
+
+    /// The lock runs from when the failure is known, not from when the attempt
+    /// started: a verify slower than the lock must not leave the caller free.
+    #[test]
+    fn a_slow_failure_still_serves_its_whole_lock() {
+        let throttle = LoginThrottle::new();
+        let start = Instant::now();
+        let keys = keys();
+
+        for _ in 0..FREE_ATTEMPTS {
+            throttle.begin_attempt(&keys, start).expect("admitted");
+        }
+        let failed_at = start + Duration::from_secs(BASE_LOCK_SECS + 2);
+        throttle.settle_failure(&keys, failed_at);
+
+        assert!(
+            throttle
+                .retry_after(&keys, failed_at + Duration::from_secs(1))
+                .is_some(),
+            "the lock is measured from the failure"
+        );
+        assert!(throttle
+            .retry_after(&keys, failed_at + Duration::from_secs(BASE_LOCK_SECS + 1))
+            .is_none());
+    }
+
+    #[test]
+    fn settling_a_failure_does_not_count_it_twice() {
+        let throttle = LoginThrottle::new();
+        let now = Instant::now();
+        let keys = keys();
+
+        for _ in 0..(FREE_ATTEMPTS - 1) {
+            throttle.begin_attempt(&keys, now).expect("admitted");
+            throttle.settle_failure(&keys, now);
+        }
+        assert!(throttle.retry_after(&keys, now).is_none());
     }
 
     /// A username differing only in case must not get a fresh attempt budget.

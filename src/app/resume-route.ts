@@ -2,7 +2,7 @@ import type { User } from "@/features/auth/types"
 
 type UserRole = User["role"]
 
-export const LAST_ROUTE_STORAGE_KEY = "kasir-last-route"
+const LAST_ROUTE_STORAGE_KEY = "kasir-last-route"
 
 // `/start` no longer exists as a route, but an older release stored it, so keep
 // rejecting it rather than letting a stale localStorage value resume onto a 404.

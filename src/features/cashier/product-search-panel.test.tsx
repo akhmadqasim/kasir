@@ -13,7 +13,7 @@ vi.mock("@/lib/toast", () => ({
   },
 }))
 
-import { installApiMock, type ApiCall, type ApiMock } from "@/test-utils/api-mock"
+import { apiFailure, installApiMock, type ApiCall, type ApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "@/stores/cart-store"
 import { ProductSearchPanel } from "./components/product-search-panel"
@@ -162,6 +162,26 @@ describe("product search panel", () => {
     await waitFor(() => expect(cartLines()[0].quantity).toBe(2))
   })
 
+  it("keeps the digits of the next scan typed while the lookup is still answering", async () => {
+    let release: () => void = () => {}
+    api.route(
+      "GET /products/barcode/*",
+      () => new Promise((resolve) => (release = () => resolve(CATALOGUE[0]))),
+    )
+    renderPanel()
+    const field = searchField()
+
+    scan(field, "8991234567890")
+    await waitFor(() => expect(api.callsFor("GET /products/barcode/*")).toHaveLength(1))
+    // Scan kedua mulai sebelum lookup pertama menjawab.
+    fireEvent.change(field, { target: { value: "89912345678908" } })
+    fireEvent.change(field, { target: { value: "899123456789089" } })
+    release()
+
+    await waitFor(() => expect(cartLines()).toHaveLength(1))
+    expect(field).toHaveValue("89")
+  })
+
   it("reports a barcode that is not in the catalogue", async () => {
     renderPanel()
 
@@ -213,6 +233,35 @@ describe("product search panel", () => {
     expect(options).toHaveLength(1)
     expect(options[0]).toHaveAttribute("aria-selected", "true")
     expect(searchField()).toHaveAttribute("aria-activedescendant", options[0].id)
+  })
+
+  it("does not claim 'not found' while the search is still answering", async () => {
+    let release: () => void = () => {}
+    api.route(
+      "GET /products",
+      (call) => new Promise((resolve) => (release = () => resolve(searchResults(call)))),
+    )
+    renderPanel()
+
+    fireEvent.change(searchField(), { target: { value: "beras" } })
+    await waitFor(() => expect(api.callsFor("GET /products")).toHaveLength(1))
+
+    expect(screen.queryByText("Produk tidak ditemukan")).not.toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("Mencari…")
+
+    release()
+    expect(await screen.findByRole("option", { name: /Beras Premium/ })).toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("1 produk ditemukan")
+  })
+
+  it("says so, with a retry, when the search request fails", async () => {
+    api.route("GET /products", apiFailure(500, "internal", "Server sedang sibuk"))
+    renderPanel()
+
+    fireEvent.change(searchField(), { target: { value: "beras" } })
+
+    expect(await screen.findByText("Gagal mencari produk")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Coba lagi" })).toBeInTheDocument()
   })
 
   it("adds the active result on Enter", async () => {

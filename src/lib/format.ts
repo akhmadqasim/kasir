@@ -161,11 +161,15 @@ export function formatDayDate(value: string | null | undefined, fallback = "—"
  * "YYYY-MM-DD" for the *local* calendar day, the shape every date-range filter expects.
  * `toISOString().slice(0, 10)` would answer with the UTC day, which is yesterday for any
  * local time before 07:00 in WIB.
+ *
+ * The year is padded to four digits too: the backend rejects any other shape with
+ * "Tanggal tidak valid" instead of ignoring the filter.
  */
 export function toLocalDateString(date: Date): string {
+  const year = String(date.getFullYear()).padStart(4, "0")
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
-  return `${date.getFullYear()}-${month}-${day}`
+  return `${year}-${month}-${day}`
 }
 
 /** "2.0 KB" / "1.5 MB" — ukuran berkas backup, database, dan unduhan pembaruan. */

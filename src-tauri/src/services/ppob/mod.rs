@@ -13,7 +13,7 @@ pub mod inquiry;
 pub mod menu;
 pub mod notifications;
 pub mod parsers;
-pub mod payment;
 pub mod search;
+mod session_cache;
 
 pub use client::MitraClient;

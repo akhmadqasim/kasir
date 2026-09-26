@@ -9,16 +9,3 @@ export interface InquiryResult {
   serviceType: string
   rawData: Record<string, unknown>
 }
-
-export interface PaymentResult {
-  success: boolean
-  receiptData: Record<string, unknown>
-  serviceType: string
-  customerId: string
-  amount: number
-  adminFee: number
-  total: number
-  productName: string | null
-  customerName: string | null
-  serialNumber: string | null
-}

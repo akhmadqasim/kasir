@@ -1,34 +1,20 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { createIdempotencyKey } from "@/lib/api/client"
-import type { CartItem } from "@/features/cashier/types"
+import { migrateCartState, type HeldCart, type PersistedCart } from "./cart-persistence"
+import {
+  computeCartTotals,
+  discountAmount,
+  type CartTotals,
+  type DiscountEntry,
+} from "./cart-totals"
+
+export { migrateCartState, type HeldCart } from "./cart-persistence"
 
 /** Guards against a barcode landing in a quantity field */
 export const MAX_CART_QUANTITY = 9999
 
-export interface DiscountEntry {
-  type: "fixed" | "percentage"
-  value: number
-}
-
-export interface HeldCart {
-  id: string
-  label: string
-  items: CartItem[]
-  /** Discounts travel with the cart, never with the terminal */
-  itemDiscounts: Record<string, DiscountEntry>
-  transactionDiscount: DiscountEntry | null
-  /** Total after discounts */
-  total: number
-  heldAt: number
-}
-
-interface CartStore {
-  items: CartItem[]
-  ppobCounter: number
-  heldCarts: HeldCart[]
-  itemDiscounts: Record<string, DiscountEntry>
-  transactionDiscount: DiscountEntry | null
+interface CartStore extends PersistedCart {
   addItem: (product: {
     id: number
     name: string
@@ -58,7 +44,7 @@ interface CartStore {
   getItemDiscountAmount: (cartId: string) => number
   getItemDiscountsTotal: () => number
   getTransactionDiscountAmount: () => number
-  getCartTotals: () => { subtotal: number; totalDiscount: number; total: number }
+  getCartTotals: () => CartTotals
   getTotalDiscount: () => number
   getSubtotal: () => number
   getTotal: () => number
@@ -66,58 +52,27 @@ interface CartStore {
   holdCart: (label?: string) => void
   recallCart: (holdId: string) => void
   removeHeldCart: (holdId: string) => void
-  /**
-   * The `Idempotency-Key` this cart checks out with.
-   *
-   * `null` until the first attempt, then fixed for the life of the cart. See
-   * {@link CartStore.getCheckoutKey}.
-   */
-  checkoutKey: string | null
+  /** Mints {@link PersistedCart.checkoutKey} on the first checkout attempt and returns it. */
   getCheckoutKey: () => string
 }
 
-type PersistedCart = Pick<
-  CartStore,
-  "items" | "ppobCounter" | "heldCarts" | "itemDiscounts" | "transactionDiscount" | "checkoutKey"
->
-
 /**
- * Baris PPOB membawa `ppob_inquiry_id` yang kedaluwarsa dalam hitungan menit.
- * Keranjang yang dipulihkan setelah aplikasi ditutup pasti sudah lewat batas itu,
- * dan checkout dengan inquiry basi berarti pelanggan membayar tapi fulfillment
- * gagal. Jadi buang baris PPOB saat rehydrate, sisakan barang fisiknya.
+ * The cart as it stands, parked under `id` — for holding a cart, and for the
+ * active cart that recalling another one swaps out.
  */
-export function dropStalePpobItems(items: CartItem[]): CartItem[] {
-  return items.filter((item) => !item.is_ppob)
-}
-
-export function migrateCartState(persisted: unknown, version: number): PersistedCart {
-  const state = (persisted ?? {}) as Partial<PersistedCart>
-  const heldCarts = (state.heldCarts ?? []).map((cart) => ({
-    ...cart,
-    items: dropStalePpobItems(cart.items ?? []),
-  }))
-
-  // Sebelum v1, diskon disimpan global dan ikut bocor ke keranjang berikutnya.
-  // Tidak ada cara memetakannya kembali ke keranjang asalnya, jadi dibuang.
-  if (version < 1) {
-    return {
-      items: dropStalePpobItems(state.items ?? []),
-      ppobCounter: state.ppobCounter ?? 0,
-      heldCarts,
-      itemDiscounts: {},
-      transactionDiscount: null,
-      checkoutKey: null,
-    }
-  }
-
+function snapshotCart(
+  { items, itemDiscounts, transactionDiscount }: PersistedCart,
+  id: string,
+  label: string,
+): HeldCart {
   return {
-    items: dropStalePpobItems(state.items ?? []),
-    ppobCounter: state.ppobCounter ?? 0,
-    heldCarts,
-    itemDiscounts: state.itemDiscounts ?? {},
-    transactionDiscount: state.transactionDiscount ?? null,
-    checkoutKey: state.checkoutKey ?? null,
+    id,
+    label,
+    items: [...items],
+    itemDiscounts: { ...itemDiscounts },
+    transactionDiscount,
+    total: computeCartTotals(items, itemDiscounts, transactionDiscount).total,
+    heldAt: Date.now(),
   }
 }
 
@@ -251,65 +206,20 @@ export const useCartStore = create<CartStore>()(
         const item = items.find((i) => i.cart_id === cartId)
         const disc = itemDiscounts[cartId]
         if (!item || !disc) return 0
-        const lineTotal = item.product_price * item.quantity
-        if (disc.type === "percentage") {
-          return Math.round((lineTotal * disc.value) / 100)
-        }
-        return Math.min(disc.value, lineTotal)
+        return discountAmount(item.product_price * item.quantity, disc)
       },
 
       getItemDiscountsTotal: () => {
-        const { items, itemDiscounts } = get()
-        let total = 0
-        for (const item of items) {
-          const disc = itemDiscounts[item.cart_id]
-          if (!disc) continue
-          const lineTotal = item.product_price * item.quantity
-          if (disc.type === "percentage") {
-            total += Math.round((lineTotal * disc.value) / 100)
-          } else {
-            total += Math.min(disc.value, lineTotal)
-          }
-        }
-        return total
+        return get().getCartTotals().itemDiscountsTotal
       },
 
       getTransactionDiscountAmount: () => {
-        const { transactionDiscount } = get()
-        if (!transactionDiscount) return 0
-        const subtotal = get().getSubtotal()
-        const itemDiscTotal = get().getItemDiscountsTotal()
-        const afterItemDisc = subtotal - itemDiscTotal
-        if (transactionDiscount.type === "percentage") {
-          return Math.round((afterItemDisc * transactionDiscount.value) / 100)
-        }
-        return Math.min(transactionDiscount.value, afterItemDisc)
+        return get().getCartTotals().transactionDiscountAmount
       },
 
       getCartTotals: () => {
         const { items, itemDiscounts, transactionDiscount } = get()
-        let subtotal = 0
-        let itemDiscTotal = 0
-        for (const item of items) {
-          const lineTotal = item.product_price * item.quantity
-          subtotal += lineTotal
-          const disc = itemDiscounts[item.cart_id]
-          if (disc) {
-            if (disc.type === "percentage") {
-              itemDiscTotal += Math.round((lineTotal * disc.value) / 100)
-            } else {
-              itemDiscTotal += Math.min(disc.value, lineTotal)
-            }
-          }
-        }
-        const afterItemDisc = subtotal - itemDiscTotal
-        const txnDiscAmount = transactionDiscount
-          ? transactionDiscount.type === "percentage"
-            ? Math.round((afterItemDisc * transactionDiscount.value) / 100)
-            : Math.min(transactionDiscount.value, afterItemDisc)
-          : 0
-        const totalDiscount = itemDiscTotal + txnDiscAmount
-        return { subtotal, totalDiscount, total: Math.max(0, subtotal - totalDiscount) }
+        return computeCartTotals(items, itemDiscounts, transactionDiscount)
       },
 
       getTotalDiscount: () => {
@@ -364,26 +274,13 @@ export const useCartStore = create<CartStore>()(
         }),
 
       holdCart: (label?: string) => {
-        const { items, heldCarts, itemDiscounts, transactionDiscount } = get()
-        if (items.length === 0) return
+        const state = get()
+        if (state.items.length === 0) return
 
-        const { total } = get().getCartTotals()
-        const holdId = `hold-${Date.now()}`
-        const autoLabel = label?.trim() || `Pelanggan ${heldCarts.length + 1}`
+        const autoLabel = label?.trim() || `Pelanggan ${state.heldCarts.length + 1}`
 
         set({
-          heldCarts: [
-            ...heldCarts,
-            {
-              id: holdId,
-              label: autoLabel,
-              items: [...items],
-              itemDiscounts: { ...itemDiscounts },
-              transactionDiscount,
-              total,
-              heldAt: Date.now(),
-            },
-          ],
+          heldCarts: [...state.heldCarts, snapshotCart(state, `hold-${Date.now()}`, autoLabel)],
           items: [],
           itemDiscounts: {},
           transactionDiscount: null,
@@ -393,7 +290,8 @@ export const useCartStore = create<CartStore>()(
       },
 
       recallCart: (holdId: string) => {
-        const { heldCarts, items, itemDiscounts, transactionDiscount } = get()
+        const state = get()
+        const { heldCarts } = state
         const held = heldCarts.find((c) => c.id === holdId)
         if (!held) return
 
@@ -402,21 +300,11 @@ export const useCartStore = create<CartStore>()(
         const heldTransactionDiscount = held.transactionDiscount ?? null
 
         // If current cart has items, hold them first
-        if (items.length > 0) {
-          const { total } = get().getCartTotals()
-          const swapId = `hold-${Date.now()}`
+        if (state.items.length > 0) {
           set({
             heldCarts: [
               ...heldCarts.filter((c) => c.id !== holdId),
-              {
-                id: swapId,
-                label: `Keranjang Aktif`,
-                items: [...items],
-                itemDiscounts: { ...itemDiscounts },
-                transactionDiscount,
-                total,
-                heldAt: Date.now(),
-              },
+              snapshotCart(state, `hold-${Date.now()}`, "Keranjang Aktif"),
             ],
             items: held.items,
             itemDiscounts: heldItemDiscounts,
@@ -457,6 +345,11 @@ export const useCartStore = create<CartStore>()(
         checkoutKey: state.checkoutKey,
       }),
       migrate: migrateCartState,
+      // `migrate` only runs when the stored version differs from `version`, so a
+      // cart this build saved would skip it. Stale PPOB rows must go on every
+      // hydrate, hence the same normalisation here.
+      merge: (persisted, current) =>
+        persisted ? { ...current, ...migrateCartState(persisted, 1) } : current,
     },
   ),
 )

@@ -1,6 +1,7 @@
 import { Button, Card } from "@heroui/react"
 import { Lock, RefreshCw, SearchX, TriangleAlert } from "lucide-react"
 
+import { CardHeading } from "@/components/card-heading"
 import { InfoPanel } from "@/components/info-panel"
 import { id as t } from "@/i18n/id"
 import { cn } from "@/lib/utils"
@@ -14,6 +15,12 @@ export interface ErrorScreenProps {
   onHome: () => void
   /** Hanya ditampilkan untuk kesalahan aplikasi; alamat yang salah tidak perlu dicoba lagi. */
   onRetry: () => void
+  /**
+   * Tingkat heading judul kartu. `2` di dalam layout, di bawah `<h1>` navbar
+   * yang sudah menyebut judul yang sama; `1` (bawaan) saat layar ini berdiri
+   * sendiri tanpa navbar dan judul kartunya satu-satunya judul halaman.
+   */
+  headingLevel?: 1 | 2
 }
 
 const ICONS: Record<RouteErrorKind, typeof TriangleAlert> = {
@@ -37,7 +44,13 @@ const ICONS: Record<RouteErrorKind, typeof TriangleAlert> = {
  * Tidak memakai hook router maupun store: kalau yang rusak justru provider di
  * atasnya, layar ini tetap harus bisa digambar.
  */
-export function ErrorScreen({ error, homeLabel, onHome, onRetry }: ErrorScreenProps) {
+export function ErrorScreen({
+  error,
+  homeLabel,
+  onHome,
+  onRetry,
+  headingLevel = 1,
+}: ErrorScreenProps) {
   const { kind, title, description, details } = describeRouteError(error)
   const Icon = ICONS[kind]
   const isCrash = kind === "crash"
@@ -45,23 +58,33 @@ export function ErrorScreen({ error, homeLabel, onHome, onRetry }: ErrorScreenPr
   return (
     <div className="flex min-h-full flex-1 items-center justify-center p-6">
       <Card className="w-full max-w-xl">
-        <Card.Header className="items-center gap-2 text-center">
+        {/* `role="alert"`: layar ini menggantikan halaman tanpa aba-aba, jadi
+            pembaca layar mengumumkan judul dan kalimatnya begitu muncul. */}
+        <Card.Header className="items-center gap-2 text-center" role="alert">
           <span
             aria-hidden="true"
             className={cn(
-              "flex size-10 items-center justify-center rounded-full",
+              "mb-1 flex size-12 items-center justify-center rounded-full",
               isCrash ? "bg-danger-soft text-danger-soft-foreground" : "bg-default text-foreground",
             )}
           >
-            <Icon className="size-5" />
+            <Icon className="size-6" />
           </span>
-          <Card.Title>{title}</Card.Title>
+          <CardHeading level={headingLevel}>{title}</CardHeading>
           <Card.Description className="text-balance">{description}</Card.Description>
         </Card.Header>
         {details ? (
           <Card.Content>
             <InfoPanel>
-              <pre className="max-h-48 overflow-auto text-start text-xs break-words whitespace-pre-wrap text-muted select-text">
+              {/* Jejak tumpukan bisa lebih tinggi dari kotaknya; `tabIndex`
+                  membuatnya bisa digulung dengan papan ketik (axe
+                  `scrollable-region-focusable`), dan cincinnya menandai
+                  kotak yang sedang digulung. */}
+              <pre
+                aria-label="Detail teknis"
+                className="max-h-48 overflow-auto rounded-md text-start text-xs break-words whitespace-pre-wrap text-muted outline-none select-text focus-visible:ring-2 focus-visible:ring-focus"
+                tabIndex={0}
+              >
                 {details}
               </pre>
             </InfoPanel>
@@ -78,7 +101,7 @@ export function ErrorScreen({ error, homeLabel, onHome, onRetry }: ErrorScreenPr
               </Button>
               <Button onPress={onRetry}>
                 <RefreshCw />
-                {t.errorPage.retry}
+                {t.common.retry}
               </Button>
             </>
           ) : (

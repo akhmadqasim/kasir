@@ -1,43 +1,74 @@
 //! Dashboard aggregates: today against yesterday, the last seven days, and the
 //! lists the home screen shows.
 
-use chrono::Local;
+use std::collections::{BTreeSet, HashMap};
+
+use chrono::{Duration, Local, NaiveDate};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 
 use crate::domain::dashboard::{
     DailyRevenue, DashboardSummary, LowStockProduct, PaymentMethodDaily, PaymentMethodStat,
     RecentTransaction, TopProduct,
 };
-use crate::services::reports::{refund_adjust_cte, SALE_FILTER};
+use crate::services::products::LOW_STOCK_SQL;
+use crate::services::reports::{
+    net_product_sales_ctes, payment_refund_adjust_cte, query_payment_methods, refund_adjust_cte,
+    SALE_FILTER,
+};
+use crate::utils::time::{invalid_date, local_date_end_exclusive_to_utc, local_date_start_to_utc};
 use crate::utils::AppError;
 
-/// Converts a local calendar date (taken at 00:00:00 local time) into the UTC
-/// `"YYYY-MM-DD HH:MM:SS"` string used to compare against the raw `created_at`
-/// column. `created_at` is stored as a UTC timestamp string, so filtering on
-/// the raw column keeps `idx_transactions_date` usable (sargable), unlike
-/// `date(created_at,'localtime')` which forces a full scan.
-///
-/// This mirrors the boundary logic in `services/transactions.rs` (`list`) and
-/// `services/refunds.rs` (`list`), so the results are identical to the previous
-/// `date(created_at,'localtime')` filters. Using half-open ranges
-/// (`>= start AND < next_day_start`) makes the translation exact regardless of
-/// timestamp sub-second precision.
-fn local_date_start_to_utc(date: chrono::NaiveDate) -> String {
-    let offset_secs = chrono::Local::now().offset().local_minus_utc() as i64;
-    let local_start = date.and_hms_opt(0, 0, 0).unwrap();
-    (local_start - chrono::Duration::seconds(offset_secs))
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string()
+// Every window below is a run of whole local days turned into precomputed UTC
+// boundaries, so the date filters stay sargable on `idx_transactions_date`.
+// Half-open ranges reproduce the old `date(created_at,'localtime') = ...`
+// semantics exactly.
+
+/// UTC boundary for 00:00 local on `date`. Only a clock set to the very edge
+/// of chrono's calendar can make it fail, which is still an error, not a panic.
+fn day_start(date: NaiveDate) -> Result<String, AppError> {
+    local_date_start_to_utc(date).ok_or_else(invalid_date)
+}
+
+/// UTC boundary for 00:00 local on the day after `date`.
+fn day_end_exclusive(date: NaiveDate) -> Result<String, AppError> {
+    local_date_end_exclusive_to_utc(date).ok_or_else(invalid_date)
+}
+
+/// Today's half-open UTC window: `(today 00:00 local, tomorrow 00:00 local)`.
+fn today_utc() -> Result<(String, String), AppError> {
+    let today = Local::now().date_naive();
+    Ok((day_start(today)?, day_end_exclusive(today)?))
+}
+
+/// The last `days` local days ending today, for the two charts: each date as
+/// `YYYY-MM-DD`, oldest first, plus the UTC window covering them.
+struct TrailingDays {
+    dates: Vec<String>,
+    start_utc: String,
+    end_utc: String,
+}
+
+/// The result covers `today-(days-1)..today` inclusive, so the query window
+/// starts at `today-(days-1)` — not `today-days`, which pulled an extra
+/// calendar day the caller then dropped. `days` defaults to a week and is
+/// capped at a year.
+fn trailing_days(days: Option<i64>) -> Result<TrailingDays, AppError> {
+    let days = days.unwrap_or(7).clamp(1, 365);
+    let today = Local::now().date_naive();
+    let first = today - Duration::days(days - 1);
+    Ok(TrailingDays {
+        dates: (0..days)
+            .map(|i| (first + Duration::days(i)).format("%Y-%m-%d").to_string())
+            .collect(),
+        start_utc: day_start(first)?,
+        end_utc: day_end_exclusive(today)?,
+    })
 }
 
 pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppError> {
-    // Precompute UTC day boundaries (local day -> UTC) so the date filters stay
-    // sargable on idx_transactions_date. Half-open ranges reproduce the old
-    // `date(created_at,'localtime') = date('now','localtime')` semantics exactly.
     let today = Local::now().date_naive();
-    let yesterday_start = local_date_start_to_utc(today - chrono::Duration::days(1));
-    let today_start = local_date_start_to_utc(today);
-    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+    let yesterday_start = day_start(today - Duration::days(1))?;
+    let (today_start, tomorrow_start) = today_utc()?;
 
     // Revenue and profit are NET of returns, on the day the money went back over
     // the counter — the same rule the reports follow, so the dashboard card and
@@ -48,6 +79,10 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
     // LEFT JOINed) rather than an inner join that silently dropped PPOB lines
     // and lines whose product row was deleted, which made the dashboard's profit
     // disagree with the report's for the same day.
+    //
+    // Today's returns are counted over the same sales the revenue is: a return
+    // of a purchase paid on the PPOB page (`channel = 'ppob'`) is not a return
+    // of a sale the card counted, so it is left out like the purchase itself.
     let sql = format!(
         "WITH today_sales AS ( \
            SELECT COALESCE(SUM(t.total_amount), 0) as revenue, COUNT(*) as cnt \
@@ -56,9 +91,11 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
            AND {SALE_FILTER} \
          ), \
          today_refunds AS ( \
-           SELECT COUNT(*) as cnt, COALESCE(SUM(total_refund_amount), 0) as amt \
-           FROM refunds \
-           WHERE created_at >= $2 AND created_at < $3 \
+           SELECT COUNT(*) as cnt, COALESCE(SUM(r.total_refund_amount), 0) as amt \
+           FROM refunds r \
+           JOIN transactions t ON t.id = r.transaction_id \
+           WHERE r.created_at >= $2 AND r.created_at < $3 \
+           AND {SALE_FILTER} \
          ), \
          yesterday AS ( \
            SELECT COALESCE(SUM(t.total_amount), 0) as revenue \
@@ -97,7 +134,6 @@ pub async fn summary(db: &DatabaseConnection) -> Result<DashboardSummary, AppErr
            (ts.revenue - ta.revenue) - (tc.cost - ta.cost) \
          FROM today_sales ts, today_refunds tr, yesterday y, product_counts pc, \
               today_cost tc, today_adjust ta, yesterday_adjust ya",
-        LOW_STOCK_SQL = crate::services::products::LOW_STOCK_SQL,
         refund_adjust = refund_adjust_cte(
             "date(r.created_at, 'localtime')",
             "date(r.created_at, 'localtime')",
@@ -164,17 +200,10 @@ pub async fn daily_revenue(
     db: &DatabaseConnection,
     days: Option<i64>,
 ) -> Result<Vec<DailyRevenue>, AppError> {
-    let days = days.unwrap_or(7).clamp(1, 365);
+    let window = trailing_days(days)?;
 
-    // The result covers `today-(days-1)..today` inclusive, so the query window
-    // starts at `today-(days-1)` — not `today-days`, which pulled an extra
-    // calendar day the caller then dropped. Keep date(...) in the
-    // SELECT/GROUP BY (grouping by local day), but filter on the raw column via
-    // precomputed UTC boundaries so the index stays usable.
-    let today = Local::now().date_naive();
-    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(days - 1));
-    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
-    // Net of returns, dated to the day the money went back — the same rule the
+    // Grouped by local day with date(...), filtered on the raw column. Net of
+    // returns, dated to the day the money went back — the same rule the
     // sales reports use, so the chart agrees with them.
     let sql = format!(
         "WITH sales AS ( \
@@ -207,11 +236,11 @@ pub async fn daily_revenue(
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             &sql,
-            vec![start_utc.into(), end_utc.into()],
+            vec![window.start_utc.into(), window.end_utc.into()],
         ))
         .await?;
 
-    let mut revenue_map = std::collections::HashMap::new();
+    let mut revenue_map = HashMap::new();
     for row in &rows {
         let date: String = row.try_get_by_index(0).unwrap_or_default();
         let revenue: f64 = row.try_get_by_index(1).unwrap_or(0.0);
@@ -219,107 +248,57 @@ pub async fn daily_revenue(
         revenue_map.insert(date, (revenue, transactions));
     }
 
-    // Fill in missing dates with zero values
-    let mut result = Vec::with_capacity(days as usize);
-    for i in (0..days).rev() {
-        let date = today - chrono::Duration::days(i);
-        let date_str = date.format("%Y-%m-%d").to_string();
-        let (revenue, transactions) = revenue_map.get(&date_str).copied().unwrap_or((0.0, 0));
-        result.push(DailyRevenue {
-            date: date_str,
-            revenue,
-            transactions,
-        });
-    }
-
-    Ok(result)
+    // Days without activity get a zero row.
+    Ok(window
+        .dates
+        .into_iter()
+        .map(|date| {
+            let (revenue, transactions) = revenue_map.get(&date).copied().unwrap_or((0.0, 0));
+            DailyRevenue {
+                date,
+                revenue,
+                transactions,
+            }
+        })
+        .collect())
 }
 
 pub async fn payment_method_stats(
     db: &DatabaseConnection,
 ) -> Result<Vec<PaymentMethodStat>, AppError> {
-    let today = Local::now().date_naive();
-    let today_start = local_date_start_to_utc(today);
-    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+    let (today_start, tomorrow_start) = today_utc()?;
 
-    // Mirrors `reports::payment_methods` exactly, over today's window: a return
-    // is deducted from the method it was paid back on.
-    let sql = format!(
-        "WITH payment_method_rows AS ( \
-           SELECT tp.payment_method as payment_method, tp.amount as amount, tp.transaction_id as transaction_id \
-           FROM transaction_payments tp \
-           JOIN transactions t ON t.id = tp.transaction_id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
-           UNION ALL \
-           SELECT t.payment_method as payment_method, t.total_amount as amount, t.id as transaction_id \
-           FROM transactions t \
-           WHERE t.created_at >= $1 AND t.created_at < $2 AND {SALE_FILTER} \
-             AND NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id) \
-         ), \
-         sales AS ( \
-           SELECT payment_method, COUNT(DISTINCT transaction_id) as cnt, COALESCE(SUM(amount), 0) as total \
-           FROM payment_method_rows \
-           GROUP BY payment_method \
-         ), \
-         {refund_adjust}, \
-         methods AS (SELECT payment_method as method FROM sales UNION SELECT bucket as method FROM refund_adjust) \
-         SELECT methods.method, \
-                COALESCE(sales.cnt, 0) as cnt, \
-                COALESCE(sales.total, 0) - COALESCE(refund_adjust.revenue, 0) as total \
-         FROM methods \
-         LEFT JOIN sales ON sales.payment_method = methods.method \
-         LEFT JOIN refund_adjust ON refund_adjust.bucket = methods.method",
-        refund_adjust = refund_adjust_cte(
-            "COALESCE(r.payment_method, t.payment_method)",
-            "COALESCE(r.payment_method, t.payment_method)",
-            "$1",
-            "$2",
-        ),
-    );
+    // The payment-method report's own query, over today's window: a return is
+    // deducted from the method it was paid back on.
+    let rows = query_payment_methods(db, today_start, tomorrow_start).await?;
 
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            &sql,
-            vec![today_start.into(), tomorrow_start.into()],
-        ))
-        .await?;
-
-    let result = rows
-        .iter()
-        .map(|row| PaymentMethodStat {
-            method: row.try_get_by_index(0).unwrap_or_default(),
-            count: row.try_get_by_index(1).unwrap_or(0),
-            total: row.try_get_by_index(2).unwrap_or(0.0),
+    Ok(rows
+        .into_iter()
+        .map(|(method, count, total)| PaymentMethodStat {
+            method,
+            count,
+            total,
         })
-        .collect();
-
-    Ok(result)
+        .collect())
 }
 
 /// A day-by-day breakdown of [`payment_method_stats`], for the line chart: one
 /// row per `(date, method)` pair over the window, net of returns on the day
 /// and method they were paid back on.
 ///
-/// The bucket the sales side groups by and the one `refund_adjust_cte` groups
-/// by are the same string, `"<date>|<method>"` — `refund_adjust_cte` only
-/// takes a single grouping column, so date and method are packed together and
-/// split back apart in Rust. `split_once('|')` is safe here because
-/// `date(...)` never contains `|` and payment methods are a small fixed set of
-/// plain identifiers (`cash`, `qris`, `debit`, `ewallet`, `transfer`,
-/// `mixed`).
+/// The bucket the sales side groups by and the one `payment_refund_adjust_cte`
+/// groups by are the same string, `"<date>|<method>"` — the CTE only takes a
+/// single grouping column, so date and method are packed together and split
+/// back apart in Rust. `split_once('|')` is safe here because `date(...)` never
+/// contains `|` and payment methods are a small fixed set of plain identifiers
+/// (`cash`, `qris`, `debit`, `ewallet`, `transfer`). A return on a split sale
+/// is attributed to the real methods, never to `mixed`.
 pub async fn payment_method_daily(
     db: &DatabaseConnection,
     days: Option<i64>,
 ) -> Result<Vec<PaymentMethodDaily>, AppError> {
-    let days = days.unwrap_or(7).clamp(1, 365);
-
-    // Same window convention as `daily_revenue`: `today-(days-1)..today`
-    // inclusive, filtered on the raw `created_at` column via precomputed UTC
-    // boundaries so `idx_transactions_date` stays usable.
-    let today = Local::now().date_naive();
-    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(days - 1));
-    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
+    // Same window as `daily_revenue`.
+    let window = trailing_days(days)?;
 
     // Mirrors `payment_method_stats`'s read of `transaction_payments` (with the
     // fallback to `transactions.payment_method` for transactions that never got
@@ -350,25 +329,21 @@ pub async fn payment_method_daily(
          FROM buckets \
          LEFT JOIN sales ON sales.bucket = buckets.bucket \
          LEFT JOIN refund_adjust ON refund_adjust.bucket = buckets.bucket",
-        refund_adjust = refund_adjust_cte(
-            "date(r.created_at, 'localtime') || '|' || COALESCE(r.payment_method, t.payment_method)",
-            "date(r.created_at, 'localtime') || '|' || COALESCE(r.payment_method, t.payment_method)",
-            "$1",
-            "$2",
-        ),
+        refund_adjust = payment_refund_adjust_cte(|method| {
+            format!("date(rn.refunded_at, 'localtime') || '|' || {method}")
+        }),
     );
 
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             &sql,
-            vec![start_utc.into(), end_utc.into()],
+            vec![window.start_utc.into(), window.end_utc.into()],
         ))
         .await?;
 
-    let mut totals: std::collections::HashMap<(String, String), f64> =
-        std::collections::HashMap::new();
-    let mut methods: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut totals: HashMap<(String, String), f64> = HashMap::new();
+    let mut methods: BTreeSet<String> = BTreeSet::new();
     for row in &rows {
         let bucket: String = row.try_get_by_index(0).unwrap_or_default();
         let total: f64 = row.try_get_by_index(1).unwrap_or(0.0);
@@ -382,17 +357,15 @@ pub async fn payment_method_daily(
     // Every method seen anywhere in the window gets a row for every day in the
     // window, zero-filled where there was no activity — otherwise the line
     // chart would show gaps instead of a flat line at zero.
-    let mut result = Vec::with_capacity(days as usize * methods.len());
-    for i in (0..days).rev() {
-        let date = today - chrono::Duration::days(i);
-        let date_str = date.format("%Y-%m-%d").to_string();
+    let mut result = Vec::with_capacity(window.dates.len() * methods.len());
+    for date in &window.dates {
         for method in &methods {
             let total = totals
-                .get(&(date_str.clone(), method.clone()))
+                .get(&(date.clone(), method.clone()))
                 .copied()
                 .unwrap_or(0.0);
             result.push(PaymentMethodDaily {
-                date: date_str.clone(),
+                date: date.clone(),
                 method: method.clone(),
                 total,
             });
@@ -413,40 +386,21 @@ pub async fn top_products(
     // span as the sales side (and so a row dated in the future by a wrong clock
     // no longer leaks in).
     let today = Local::now().date_naive();
-    let start_utc = local_date_start_to_utc(today - chrono::Duration::days(30));
-    let end_utc = local_date_start_to_utc(today + chrono::Duration::days(1));
+    let start_utc = day_start(today - Duration::days(30))?;
+    let end_utc = day_end_exclusive(today)?;
 
     // Net quantities and net revenue: units handed back come off the product
     // they were sold as, units handed over as exchange replacements are added to
-    // the product that went out. Revenue is `net_subtotal` for the same reason
-    // `reports::PRODUCT_SOLD_CTE` uses it — it is the money the line actually
-    // brought in.
+    // the product that went out. The aggregate is the product report's own
+    // (`reports::net_product_sales_ctes`), so the two never disagree about a
+    // product.
     let sql = format!(
-        "WITH sold AS ( \
-           SELECT ti.product_id as product_id, \
-                  MAX(ti.product_name) as product_name, \
-                  SUM(ti.quantity) as qty, \
-                  SUM(ti.net_subtotal) as revenue \
-           FROM transaction_items ti \
-           JOIN transactions t ON ti.transaction_id = t.id \
-           WHERE t.created_at >= $1 AND t.created_at < $2 \
-             AND {SALE_FILTER} \
-             AND ti.product_id IS NOT NULL \
-           GROUP BY ti.product_id \
-         ), \
-         {refund_adjust}, \
-         ids AS (SELECT product_id FROM sold UNION SELECT bucket as product_id FROM refund_adjust) \
-         SELECT ids.product_id, \
-                COALESCE(sold.product_name, p.name, '(dihapus)') as product_name, \
-                COALESCE(sold.qty, 0) - COALESCE(refund_adjust.qty, 0) as total_qty, \
-                COALESCE(sold.revenue, 0) - COALESCE(refund_adjust.revenue, 0) as total_revenue \
-         FROM ids \
-         LEFT JOIN sold ON sold.product_id = ids.product_id \
-         LEFT JOIN refund_adjust ON refund_adjust.bucket = ids.product_id \
-         LEFT JOIN products p ON p.id = ids.product_id \
-         ORDER BY total_qty DESC \
+        "WITH {net} \
+         SELECT product_id, product_name, qty_sold, total_revenue \
+         FROM net \
+         ORDER BY qty_sold DESC \
          LIMIT $3",
-        refund_adjust = refund_adjust_cte("ri.product_id", "ei.product_id", "$1", "$2"),
+        net = net_product_sales_ctes(),
     );
 
     let rows = db
@@ -482,10 +436,9 @@ pub async fn low_stock_products(db: &DatabaseConnection) -> Result<Vec<LowStockP
                 "SELECT id, name, stock, min_stock, unit \
                  FROM products \
                  WHERE is_active = 1 \
-                 AND {} \
+                 AND {LOW_STOCK_SQL} \
                  ORDER BY (stock - COALESCE(min_stock, 0)) ASC, id ASC \
-                 LIMIT 20",
-                crate::services::products::LOW_STOCK_SQL
+                 LIMIT 20"
             ),
         ))
         .await?;
@@ -506,29 +459,30 @@ pub async fn low_stock_products(db: &DatabaseConnection) -> Result<Vec<LowStockP
 
 /// The only transaction query in this file that used to omit the status filter
 /// every other one applies, so voided (`deleted`) and unfulfilled PPOB
-/// transactions showed up in "Transaksi Terbaru" at full value.
+/// transactions showed up in "Transaksi Terbaru" at full value. It applies
+/// [`SALE_FILTER`] now and, on top of it, leaves out fully `refunded` sales,
+/// which the revenue figures still count gross.
 pub async fn recent_transactions(
     db: &DatabaseConnection,
 ) -> Result<Vec<RecentTransaction>, AppError> {
-    let today = Local::now().date_naive();
-    let today_start = local_date_start_to_utc(today);
-    let tomorrow_start = local_date_start_to_utc(today + chrono::Duration::days(1));
+    let (today_start, tomorrow_start) = today_utc()?;
 
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT t.id, t.receipt_number, t.total_amount, t.payment_method, \
-             t.status, u.full_name as cashier_name, t.created_at, \
-             COALESCE(SUM(ti.quantity), 0) as total_items \
-             FROM transactions t \
-             JOIN users u ON t.user_id = u.id \
-             LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
-             WHERE t.created_at >= $1 AND t.created_at < $2 \
-             AND t.status NOT IN ('refunded', 'pending_ppob', 'ppob_failed', 'deleted') \
-             AND t.channel = 'sales' \
-             GROUP BY t.id \
-             ORDER BY t.created_at DESC \
-             LIMIT 10",
+            format!(
+                "SELECT t.id, t.receipt_number, t.total_amount, t.payment_method, \
+                 t.status, u.full_name as cashier_name, t.created_at, \
+                 COALESCE(SUM(ti.quantity), 0) as total_items \
+                 FROM transactions t \
+                 JOIN users u ON t.user_id = u.id \
+                 LEFT JOIN transaction_items ti ON ti.transaction_id = t.id \
+                 WHERE t.created_at >= $1 AND t.created_at < $2 \
+                 AND {SALE_FILTER} AND t.status <> 'refunded' \
+                 GROUP BY t.id \
+                 ORDER BY t.created_at DESC \
+                 LIMIT 10"
+            ),
             vec![today_start.into(), tomorrow_start.into()],
         ))
         .await?;
@@ -555,6 +509,7 @@ mod tests {
     use super::*;
     use crate::entity::transactions;
     use crate::services::reports;
+    use crate::services::reports::fixtures::{return_lines, three_item_sale};
     use crate::test_support::{
         insert_product, insert_refund, insert_refund_item, insert_transaction,
         insert_transaction_item, setup_test_db, utc_at_local_noon, RefundSpec,
@@ -562,42 +517,11 @@ mod tests {
     use sea_orm::{ActiveModelTrait, Set};
 
     /// A Rp 300.000 sale of three Rp 100.000 items (cost Rp 60.000 each), with
-    /// `returned` of them handed straight back the same day.
-    async fn sale_with_return(db: &DatabaseConnection, returned: usize) {
+    /// two of them handed straight back the same day in cash.
+    async fn sale_with_two_returned(db: &DatabaseConnection) {
         let created_at = utc_at_local_noon(Local::now().date_naive());
-        let txn = insert_transaction(db, 1, 300_000.0, "completed", &created_at).await;
-
-        let mut lines = Vec::new();
-        for name in ["Beras 5kg", "Gula 1kg", "Minyak 1L"] {
-            let product = insert_product(db, name, 60_000.0, 100_000.0, 100).await;
-            let item =
-                insert_transaction_item(db, txn.id, Some(product.id), name, 100_000.0, 60_000.0, 1)
-                    .await;
-            lines.push((item.id, product.id));
-        }
-
-        if returned == 0 {
-            return;
-        }
-
-        let refund = insert_refund(
-            db,
-            RefundSpec {
-                transaction_id: txn.id,
-                user_id: 1,
-                refund_type: "refund",
-                total_refund_amount: 100_000.0 * returned as f64,
-                total_exchange_amount: 0.0,
-                difference_amount: 100_000.0 * returned as f64,
-                payment_method: "cash",
-                shift_id: None,
-                created_at: &created_at,
-            },
-        )
-        .await;
-        for (item_id, product_id) in lines.iter().take(returned) {
-            insert_refund_item(db, refund.id, *item_id, *product_id, 1, 100_000.0).await;
-        }
+        let (txn_id, lines) = three_item_sale(db, &created_at).await;
+        return_lines(db, txn_id, &created_at, "cash", &lines[..2], 100_000.0).await;
     }
 
     /// The card at the top of the home screen and the sales report behind it are
@@ -605,7 +529,7 @@ mod tests {
     #[tokio::test]
     async fn the_summary_card_agrees_with_the_daily_sales_report() {
         let conn = setup_test_db().await;
-        sale_with_return(&conn, 2).await;
+        sale_with_two_returned(&conn).await;
 
         let card = summary(&conn).await.expect("summary");
         let day = Local::now().date_naive().format("%Y-%m-%d").to_string();
@@ -624,7 +548,7 @@ mod tests {
     #[tokio::test]
     async fn yesterday_revenue_is_net_too() {
         let conn = setup_test_db().await;
-        let yesterday = Local::now().date_naive() - chrono::Duration::days(1);
+        let yesterday = Local::now().date_naive() - Duration::days(1);
         let created_at = utc_at_local_noon(yesterday);
 
         let product = insert_product(&conn, "Beras 5kg", 60_000.0, 100_000.0, 100).await;
@@ -664,7 +588,7 @@ mod tests {
     #[tokio::test]
     async fn top_products_drop_the_units_that_came_back() {
         let conn = setup_test_db().await;
-        sale_with_return(&conn, 2).await;
+        sale_with_two_returned(&conn).await;
 
         let rows = top_products(&conn, Some(10)).await.expect("top products");
 
@@ -735,6 +659,47 @@ mod tests {
         assert_eq!(rows.len(), 1);
     }
 
+    /// Today's return count and amount cover the same sales the revenue does:
+    /// a return of a purchase paid on the PPOB page used to be counted next to
+    /// a revenue figure that never included the purchase.
+    #[tokio::test]
+    async fn todays_returns_count_only_sales_channel_sales() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(Local::now().date_naive());
+        let sale = insert_transaction(&conn, 1, 50_000.0, "partial_refund", &created_at).await;
+        let ppob = crate::test_support::insert_transaction_in_channel(
+            &conn,
+            1,
+            40_000.0,
+            "partial_refund",
+            &created_at,
+            "ppob",
+        )
+        .await;
+        for (transaction_id, amount) in [(sale.id, 10_000.0), (ppob.id, 25_000.0)] {
+            insert_refund(
+                &conn,
+                RefundSpec {
+                    transaction_id,
+                    user_id: 1,
+                    refund_type: "refund",
+                    total_refund_amount: amount,
+                    total_exchange_amount: 0.0,
+                    difference_amount: amount,
+                    payment_method: "cash",
+                    shift_id: None,
+                    created_at: &created_at,
+                },
+            )
+            .await;
+        }
+
+        let card = summary(&conn).await.expect("summary");
+
+        assert_eq!(card.today_refunds, 1);
+        assert_eq!(card.today_refund_amount, 10_000.0);
+    }
+
     /// Two sales on the same day, paid two different ways, land in two separate
     /// rows rather than being merged into one method.
     #[tokio::test]
@@ -773,9 +738,7 @@ mod tests {
         // Only one method ever appears in the window, so three days times one
         // method is the whole result.
         assert_eq!(rows.len(), 3);
-        let two_days_ago = (today - chrono::Duration::days(2))
-            .format("%Y-%m-%d")
-            .to_string();
+        let two_days_ago = (today - Duration::days(2)).format("%Y-%m-%d").to_string();
         let row = rows
             .iter()
             .find(|r| r.date == two_days_ago)
@@ -790,7 +753,7 @@ mod tests {
     async fn payment_method_daily_deducts_refund_on_its_own_day_and_method() {
         let conn = setup_test_db().await;
         let today = Local::now().date_naive();
-        let sale_day = today - chrono::Duration::days(2);
+        let sale_day = today - Duration::days(2);
         let sale_created_at = utc_at_local_noon(sale_day);
         let refund_created_at = utc_at_local_noon(today);
 

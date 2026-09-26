@@ -37,19 +37,28 @@ export function RouteErrorPage() {
     console.error("[RouteErrorPage]", error)
   }, [error])
 
-  return (
+  const screen = (
+    <ErrorScreen
+      error={error}
+      headingLevel={insideLayout ? 2 : 1}
+      homeLabel={home.label}
+      onHome={() =>
+        pathname === home.path
+          ? window.location.assign(home.path)
+          : void navigate(home.path, { replace: true })
+      }
+      onRetry={() => window.location.reload()}
+    />
+  )
+
+  // Di dalam layout, `<main>` dan `<h1>` sudah ada di sekelilingnya. Di luar
+  // layout layar ini berdiri sendiri, jadi ia sendiri yang menjadi `<main>`.
+  return insideLayout ? (
     <>
-      {insideLayout ? <NavbarTitle>{describeRouteError(error).title}</NavbarTitle> : null}
-      <ErrorScreen
-        error={error}
-        homeLabel={home.label}
-        onHome={() =>
-          pathname === home.path
-            ? window.location.assign(home.path)
-            : void navigate(home.path, { replace: true })
-        }
-        onRetry={() => window.location.reload()}
-      />
+      <NavbarTitle>{describeRouteError(error).title}</NavbarTitle>
+      {screen}
     </>
+  ) : (
+    <main className="flex h-svh overflow-y-auto bg-background">{screen}</main>
   )
 }

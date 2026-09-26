@@ -45,7 +45,7 @@ export function SettingsPage() {
       key: "printer",
       label: id.settings.tabPrinter,
       icon: <Printer aria-hidden="true" className="size-4" />,
-      panel: <PrinterSettingsTab />,
+      panel: <PrinterSettingsTab isAdmin={isAdmin} />,
     },
     ...(isAdmin
       ? [

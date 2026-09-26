@@ -1,4 +1,5 @@
-import type { CompleteOnboardingInput, StoreInfo } from "@/features/onboarding/types"
+import type { CompleteOnboardingInput } from "@/features/onboarding/types"
+import type { StoreInfo } from "@/features/settings/types"
 import { apiGet, apiPost } from "./client"
 
 /** `true` while the shop has not been set up yet. Public — there is nobody to authenticate as. */

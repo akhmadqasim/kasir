@@ -9,6 +9,7 @@ import type { User } from "@/features/auth/types"
 import type { PrinterSettings, StoreInfo } from "./types"
 
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
+import { AutoBackupCard } from "./components/data/auto-backup-card"
 import { DataTab } from "./components/data-tab"
 import { PrinterSettingsTab } from "./components/printer-settings-tab"
 import { SalesSettingsTab } from "./components/sales-settings-tab"
@@ -97,13 +98,54 @@ describe("penjaga tombol simpan pengaturan", () => {
     })
   })
 
+  /**
+   * Two cards share one blob. What the Data tab saved after the Penjualan tab
+   * read its copy must survive a later save from Penjualan.
+   */
+  it("menyimpan tab Penjualan di atas pengaturan terbaru, bukan salinan lama", async () => {
+    api = installApiMock({ "GET /settings": SETTINGS, "PUT /settings": null })
+    renderTab(<SalesSettingsTab />)
+    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
+
+    const newerBackup = { interval_hours: 12, retention_days: 180 }
+    api.route("GET /settings", { ...SETTINGS, backup: newerBackup })
+
+    fireEvent.click(saveButtons()[0])
+    await vi.waitFor(() => {
+      expect(api.lastCall("PUT /settings")?.body).toMatchObject({
+        sales: SETTINGS.sales,
+        backup: newerBackup,
+      })
+    })
+  })
+
+  it("menyimpan Backup Otomatis di atas pengaturan terbaru, bukan salinan lama", async () => {
+    api = installApiMock({ "GET /settings": SETTINGS, "PUT /settings": null })
+    renderTab(<AutoBackupCard backupStatus={undefined} />)
+    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
+
+    const newerSales = {
+      ...SETTINGS.sales,
+      allow_negative_stock: !SETTINGS.sales.allow_negative_stock,
+    }
+    api.route("GET /settings", { ...SETTINGS, sales: newerSales })
+
+    fireEvent.click(saveButtons()[0])
+    await vi.waitFor(() => {
+      expect(api.lastCall("PUT /settings")?.body).toMatchObject({
+        sales: newerSales,
+        backup: SETTINGS.backup,
+      })
+    })
+  })
+
   it("mematikan tombol simpan Printer sampai pengaturan printer dimuat", async () => {
     const deferred = installDeferredApiMock("GET /printers/settings", PRINTER_SETTINGS, {
       "GET /printers": [],
       "PUT /printers/settings": null,
     })
     api = deferred.api
-    renderTab(<PrinterSettingsTab />)
+    renderTab(<PrinterSettingsTab isAdmin />)
 
     fireEvent.click(saveButtons()[0])
     expect(saveButtons()[0]).toBeDisabled()
@@ -122,6 +164,34 @@ describe("penjaga tombol simpan pengaturan", () => {
         print_mode: "raster",
       })
     })
+  })
+
+  it("Test Print hanya menyala untuk printer yang sudah disimpan", async () => {
+    api = installApiMock({
+      "GET /printers": [
+        { id: "POS-58", name: "POS-58", printer_type: "usb", is_default: true },
+        { id: "POS-80", name: "POS-80", printer_type: "usb", is_default: false },
+      ],
+      "GET /printers/settings": PRINTER_SETTINGS,
+    })
+    renderTab(<PrinterSettingsTab isAdmin />)
+
+    const testPrint = await screen.findByRole("button", { name: /Test Print/ })
+    await vi.waitFor(() => expect(testPrint).toBeEnabled())
+
+    // Server mencetak ke printer yang tersimpan, bukan yang baru dipilih.
+    fireEvent.click(screen.getByRole("button", { name: /Pilih Printer/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "POS-80" }))
+    await vi.waitFor(() => expect(testPrint).toBeDisabled())
+  })
+
+  it("tab Printer hanya-baca untuk kasir, tanpa tombol simpan", async () => {
+    api = installApiMock({ "GET /printers": [], "GET /printers/settings": PRINTER_SETTINGS })
+    renderTab(<PrinterSettingsTab isAdmin={false} />)
+
+    await screen.findByText("Hanya admin yang dapat mengubah pengaturan printer")
+    expect(screen.queryByRole("button", { name: "Simpan" })).toBeNull()
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: /Test Print/ })).toBeEnabled())
   })
 
   it("mematikan tombol simpan Toko sampai informasi toko dimuat", async () => {
@@ -158,7 +228,6 @@ const BACKUP_STATUS = {
   total_backups: BACKUPS.length,
   total_size_bytes: 3072,
   backup_dir: "C:\\kasir\\backup",
-  settings: SETTINGS.backup,
 }
 
 /** The settings screen as a whole: which tabs show, and the confirmations. */
@@ -217,6 +286,26 @@ describe("layar pengaturan", () => {
     })
   })
 
+  it("memulihkan backup yang dipilih setelah dikonfirmasi", async () => {
+    api.route("POST /backups/*/restore", "Backup siap dipulihkan.")
+    renderTab(<DataTab />)
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Pulihkan backup kasir-20260905.db.gz" }),
+    )
+
+    const dialog = await screen.findByRole("alertdialog")
+    expect(within(dialog).getByText(/kasir-20260905\.db\.gz/)).toBeInTheDocument()
+    expect(api.callsFor("POST /backups/*/restore")).toHaveLength(0)
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ya, Pulihkan" }))
+    await vi.waitFor(() => {
+      expect(api.lastCall("POST /backups/*/restore")?.path).toBe(
+        "/backups/kasir-20260905.db.gz/restore",
+      )
+    })
+  })
+
   /**
    * Import no longer takes a path the client typed. It takes a file, and the
    * confirmation names the file that is about to replace the shop's database.
@@ -241,5 +330,46 @@ describe("layar pengaturan", () => {
     await vi.waitFor(() => {
       expect(api.callsFor("POST /backups/import")).toHaveLength(1)
     })
+  })
+})
+
+/** Feedback the settings forms give instead of a dead or silent control. */
+describe("umpan balik formulir pengaturan", () => {
+  it("menolak email toko yang salah ketik tanpa mengirimnya", async () => {
+    api = installApiMock({ "GET /store": STORE, "PUT /store": STORE })
+    renderTab(<StoreInfoTab isAdmin />)
+
+    await vi.waitFor(() => expect(saveButtons()[0]).toBeEnabled())
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "toko@gmail" } })
+    fireEvent.click(saveButtons()[0])
+
+    expect(await screen.findByText("Format email tidak valid")).toBeInTheDocument()
+    expect(api.callsFor("PUT /store")).toHaveLength(0)
+  })
+
+  it("tetap menampilkan printer tersimpan yang sedang tidak terdeteksi", async () => {
+    api = installApiMock({ "GET /printers": [], "GET /printers/settings": PRINTER_SETTINGS })
+    renderTab(<PrinterSettingsTab isAdmin />)
+
+    expect(
+      await screen.findByRole("button", { name: /POS-58 \(tidak terdeteksi\)/ }),
+    ).toBeInTheDocument()
+  })
+
+  it("menampilkan interval backup di luar daftar pilihan apa adanya", async () => {
+    api = installApiMock({
+      "GET /settings": { ...SETTINGS, backup: { interval_hours: 4, retention_days: 90 } },
+      "GET /settings/database": { size_bytes: 4096, path: "C:/kasir/kasir.db" },
+      "GET /backups/status": BACKUP_STATUS,
+      "GET /backups": [],
+    })
+    renderTab(<DataTab />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: /4 jam.*Interval backup otomatis|Interval backup otomatis.*4 jam/,
+      }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText("Belum ada backup")).toBeInTheDocument()
   })
 })

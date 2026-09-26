@@ -9,9 +9,13 @@ import { writeLogEntry, type LogLevel } from "@/lib/api/logs"
  * ways an IPC call could not: the server may not be listening yet while the
  * window is still loading.
  *
- * So entries go into a small buffer and are flushed in order. A flush that
- * fails puts its entries back at the front and stops, and the next entry tries
- * again. Nothing here ever rejects, and nothing here ever blocks a render: a
+ * So entries go into a small buffer and are flushed in order — but only while a
+ * session exists. Before login the buffer just fills: posting would only earn
+ * a 401 for every line and a red entry in the console of the login screen.
+ * The auth store reports the session through `setLogSessionActive`, and the
+ * moment it turns on (login, or a session restored at boot) the backlog goes
+ * out. A flush that fails keeps its entry at the front and stops, and the next
+ * entry tries again. Nothing here ever rejects, and nothing here ever blocks a render: a
  * lost log line is a lost log line, while an unhandled rejection from the
  * logger would be an error report that causes errors.
  */
@@ -30,13 +34,14 @@ const MAX_BUFFERED_ENTRIES = 50
 
 let buffer: PendingEntry[] = []
 let flushing = false
+let sessionActive = false
 
 async function flush(): Promise<void> {
-  if (flushing) return
+  if (flushing || !sessionActive) return
   flushing = true
 
   try {
-    while (buffer.length > 0) {
+    while (sessionActive && buffer.length > 0) {
       const entry = buffer[0]
       try {
         await writeLogEntry(entry.level, entry.message)
@@ -68,9 +73,14 @@ export const logger = {
   error: (msg: string) => writeLog("error", msg),
 }
 
-/** Retry the buffer, for the moment a session appears and the endpoint starts accepting. */
-export function flushPendingLogs(): void {
-  void flush()
+/**
+ * Tell the logger whether `POST /api/logs` can succeed. Turning it on sends the
+ * backlog; turning it off (logout, expired session) makes new entries wait in
+ * the buffer again instead of failing one by one.
+ */
+export function setLogSessionActive(active: boolean): void {
+  sessionActive = active
+  if (active) void flush()
 }
 
 export function installGlobalErrorHandlers(): void {

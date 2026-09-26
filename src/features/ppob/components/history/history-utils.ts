@@ -19,36 +19,41 @@ export interface ServiceInfo {
   /** The canonical service, or `null` for a row nothing here recognises. */
   key: PpobServiceKey | null
   icon: LucideIcon
-  bg: string
+  /**
+   * The soft disc behind the icon — a service's `bgMuted`, never its solid
+   * `bg`, which is the very colour of `text` and would swallow the glyph.
+   */
+  tint: string
+  /** The icon's own colour, readable on `tint`. */
   text: string
   label: string
 }
 
 function fromKey(key: PpobServiceKey, icon: LucideIcon, label: string): ServiceInfo {
   const c = PPOB_SERVICE_COLORS[key]
-  return { key, icon, bg: c.bgMuted, text: c.text, label }
+  return { key, icon, tint: c.bgMuted, text: c.text, label }
 }
 
 const SERVICE_MAP: Record<string, ServiceInfo> = {
-  pulsa: fromKey("pulsa", Smartphone, "PULSA"),
-  data: fromKey("data", Wifi, "PAKET DATA"),
+  pulsa: fromKey("pulsa", Smartphone, "Pulsa"),
+  data: fromKey("data", Wifi, "Paket Data"),
   pln: fromKey("pln", Zap, "PLN"),
   pdam: fromKey("pdam", Droplets, "PDAM"),
   bpjs: fromKey("bpjs", ShieldCheck, "BPJS"),
-  pp: fromKey("pp", Building2, "PAYMENT POINT"),
-  payment_point: fromKey("pp", Building2, "PAYMENT POINT"),
-  emoney: fromKey("emoney", Wallet, "E-MONEY"),
-  "e-money": fromKey("emoney", Wallet, "E-MONEY"),
-  transfer: fromKey("transfer", ArrowLeftRight, "TRANSFER"),
-  voucher: fromKey("voucher", Ticket, "VOUCHER"),
+  pp: fromKey("pp", Building2, "Payment Point"),
+  payment_point: fromKey("pp", Building2, "Payment Point"),
+  emoney: fromKey("emoney", Wallet, "E-Money"),
+  "e-money": fromKey("emoney", Wallet, "E-Money"),
+  transfer: fromKey("transfer", ArrowLeftRight, "Transfer"),
+  voucher: fromKey("voucher", Ticket, "Voucher"),
 }
 
 const FALLBACK_SERVICE: ServiceInfo = {
   key: null,
   icon: Package,
-  bg: "bg-default",
+  tint: "bg-default",
   text: "text-muted",
-  label: "LAINNYA",
+  label: "Lainnya",
 }
 
 export function detectServiceType(item: HistoryPaymentItem): ServiceInfo {
@@ -209,7 +214,8 @@ export function getNominal(item: HistoryPaymentItem): number | null {
 export function getDefaultDateRangeDates(): { from: Date; to: Date } {
   const to = new Date()
   const from = new Date()
-  from.setDate(from.getDate() - 7)
+  // Today counts as one of the seven.
+  from.setDate(from.getDate() - 6)
   return { from, to }
 }
 
@@ -225,12 +231,14 @@ export function getDefaultDateRange() {
 export const PRODUCT_FILTER_OPTIONS = [
   { key: "all", label: "Semua Produk" },
   { key: "pulsa", label: "Pulsa" },
+  { key: "data", label: "Paket Data" },
   { key: "pln", label: "PLN" },
   { key: "pdam", label: "PDAM" },
   { key: "bpjs", label: "BPJS" },
   { key: "pp", label: "Payment Point" },
   { key: "emoney", label: "E-Money" },
   { key: "transfer", label: "Transfer" },
+  { key: "voucher", label: "Voucher" },
 ] as const
 
 export const STATUS_FILTER_OPTIONS = [
@@ -243,22 +251,8 @@ export const STATUS_FILTER_OPTIONS = [
 export function matchesProductFilter(item: HistoryPaymentItem, filter: string): boolean {
   if (filter === "all") return true
 
-  // Use the same smart detection
-  const detected = detectServiceType(item)
-
-  const filterToLabel: Record<string, string> = {
-    pulsa: "PULSA",
-    data: "PAKET DATA",
-    pln: "PLN",
-    pdam: "PDAM",
-    bpjs: "BPJS",
-    pp: "PAYMENT POINT",
-    emoney: "E-MONEY",
-    transfer: "TRANSFER",
-    voucher: "VOUCHER",
-  }
-
-  return detected.label === (filterToLabel[filter] ?? "")
+  // Filter keys are the service keys `detectServiceType` resolves to.
+  return detectServiceType(item).key === filter
 }
 
 /**

@@ -1,16 +1,24 @@
+use std::sync::{Arc, Mutex};
+
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::domain::ppob::PpobSaldoResponse;
 use crate::utils::{logging, AppError};
 
 const BASE_URL: &str = "https://v2.mitraindogrosir.co.id/api";
+
+/// The access token Mitra last answered "Unauthenticated" to. Shared between
+/// the client and every request context it hands out, so a token that dies
+/// mid-shift is noticed by the next session lookup and replaced, instead of
+/// being handed out again until the app restarts.
+type RejectedToken = Arc<Mutex<Option<String>>>;
 
 #[derive(Clone)]
 pub struct MitraRequestContext {
     http: Client,
     token: String,
     device_id: String,
+    rejected: RejectedToken,
 }
 
 pub struct MitraClient {
@@ -18,6 +26,7 @@ pub struct MitraClient {
     pub(crate) token: Option<String>,
     pub(crate) refresh_token: Option<String>,
     pub(crate) device_id: String,
+    rejected: RejectedToken,
 }
 
 impl MitraClient {
@@ -41,6 +50,7 @@ impl MitraClient {
             token: None,
             refresh_token: None,
             device_id: String::new(),
+            rejected: RejectedToken::default(),
         }
     }
 
@@ -49,7 +59,7 @@ impl MitraClient {
         phone: &str,
         password: &str,
         device_id: &str,
-    ) -> Result<PpobSaldoResponse, AppError> {
+    ) -> Result<(), AppError> {
         self.device_id = device_id.to_string();
 
         let resp = self
@@ -63,12 +73,12 @@ impl MitraClient {
             }))
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Gagal koneksi ke Mitra: {}", e)))?;
+            .map_err(|e| transport_failure("login", "koneksi", &e))?;
 
-        let body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Gagal parsing response Mitra: {}", e)))?;
+        let status = resp.status();
+        let body: Value = resp.json().await.map_err(|e| {
+            transport_failure("login", &format!("parsing respons (HTTP {status})"), &e)
+        })?;
 
         if body["message"].as_str() != Some("OK") {
             let err_msg = body["errorMessage"].as_str().unwrap_or("Login gagal");
@@ -81,18 +91,7 @@ impl MitraClient {
         self.token = body["access_token"].as_str().map(String::from);
         self.refresh_token = body["refresh_token"].as_str().map(String::from);
 
-        Ok(PpobSaldoResponse {
-            saldo: 0.0,
-            username: body["detail_member"]["username"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            store_name: body["detail_member"]["store_name"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            flag_member: body["flag_member"].as_str().unwrap_or("").to_string(),
-        })
+        Ok(())
     }
 
     /// Try refreshing the token using the refresh_token
@@ -114,8 +113,13 @@ impl MitraClient {
 
         match resp {
             Ok(r) => {
+                let status = r.status();
                 let body: Value = r.json().await.map_err(|e| {
-                    AppError::Internal(format!("Gagal parsing refresh response: {}", e))
+                    transport_failure(
+                        "refresh-token",
+                        &format!("parsing respons (HTTP {status})"),
+                        &e,
+                    )
                 })?;
 
                 if body["message"].as_str() == Some("OK") && body["access_token"].is_string() {
@@ -127,12 +131,23 @@ impl MitraClient {
                 }
                 Ok(false)
             }
-            Err(_) => Ok(false),
+            // No answer is not a refusal: the refresh token may still be good,
+            // so the caller must not treat this as "log in from scratch".
+            Err(e) => Err(transport_failure("refresh-token", "koneksi", &e)),
         }
     }
 
     pub fn is_authenticated(&self) -> bool {
         self.token.is_some()
+    }
+
+    /// Whether Mitra has answered "Unauthenticated" to the token held now.
+    pub fn token_was_rejected(&self) -> bool {
+        self.token.is_some()
+            && self
+                .rejected
+                .lock()
+                .is_ok_and(|rejected| *rejected == self.token)
     }
 
     pub fn request_context(&self) -> Result<MitraRequestContext, AppError> {
@@ -144,6 +159,7 @@ impl MitraClient {
             http: self.http.clone(),
             token,
             device_id: self.device_id.clone(),
+            rejected: Arc::clone(&self.rejected),
         })
     }
 
@@ -154,6 +170,15 @@ impl MitraClient {
 }
 
 impl MitraRequestContext {
+    /// Remember this context's token as dead if Mitra said so.
+    fn note_rejection(&self, result: &Value) {
+        if is_unauthenticated(result) {
+            if let Ok(mut rejected) = self.rejected.lock() {
+                *rejected = Some(self.token.clone());
+            }
+        }
+    }
+
     pub async fn post(&self, path: &str, extra_body: Value) -> Result<Value, AppError> {
         let mut body = extra_body.as_object().cloned().unwrap_or_default();
         body.insert("device_id".to_string(), json!(self.device_id));
@@ -167,13 +192,27 @@ impl MitraRequestContext {
             .json(&body)
             .send()
             .await
-            .map_err(|e| transport_failure(path, "koneksi", &e))?;
+            .map_err(|e| {
+                let error = transport_failure(path, "koneksi", &e);
+                // Only a failed connect proves Mitra never saw the request. A
+                // timeout or a reset after that may have come after Mitra acted.
+                if e.is_connect() {
+                    error
+                } else {
+                    uncertain(error)
+                }
+            })?;
 
         let status = resp.status();
         let result: Value = resp.json().await.map_err(|e| {
-            transport_failure(path, &format!("parsing respons (HTTP {status})"), &e)
+            uncertain(transport_failure(
+                path,
+                &format!("parsing respons (HTTP {status})"),
+                &e,
+            ))
         })?;
 
+        self.note_rejection(&result);
         validate_mitra_response(path, result)
     }
 
@@ -192,6 +231,7 @@ impl MitraRequestContext {
             transport_failure(path, &format!("parsing respons (HTTP {status})"), &e)
         })?;
 
+        self.note_rejection(&result);
         validate_mitra_response(path, result)
     }
 }
@@ -202,7 +242,53 @@ impl MitraRequestContext {
 /// and logged with the endpoint because the toast does not name it.
 fn transport_failure(path: &str, stage: &str, err: &dyn std::fmt::Display) -> AppError {
     logging::log_error(&format!("[mitra] {path}: gagal {stage}: {err}"));
-    AppError::Upstream(format!("Gagal {stage} ke Mitra ({path}): {err}"))
+    AppError::Upstream(format!(
+        "Gagal {stage}{TRANSPORT_FAILURE_MARKER}{path}): {err}"
+    ))
+}
+
+/// Sits in every [`transport_failure`] message and in no message built from
+/// a Mitra response body, which is what lets [`is_transport_failure`] tell
+/// the two apart.
+const TRANSPORT_FAILURE_MARKER: &str = " ke Mitra (";
+
+/// Whether `error` means Mitra never gave a usable answer — no connection, a
+/// timeout, a body that is not JSON — as opposed to Mitra answering and
+/// refusing. Only a refusal says anything about the token that was sent.
+pub fn is_transport_failure(error: &AppError) -> bool {
+    match error {
+        AppError::UpstreamUncertain(_) => true,
+        AppError::Upstream(message) => {
+            message.starts_with("Gagal ") && message.contains(TRANSPORT_FAILURE_MARKER)
+        }
+        _ => false,
+    }
+}
+
+/// A POST whose request left this machine but whose answer never arrived
+/// intact, so Mitra may or may not have acted on it.
+fn uncertain(error: AppError) -> AppError {
+    match error {
+        AppError::Upstream(message) => AppError::UpstreamUncertain(message),
+        other => other,
+    }
+}
+
+/// Mitra's own error text for a non-OK body.
+fn error_message(result: &Value) -> &str {
+    result["errorMessage"]
+        .as_str()
+        .or_else(|| result["message"].as_str())
+        .unwrap_or("Unknown error")
+}
+
+/// A non-OK body saying the access token itself is no longer accepted.
+fn is_unauthenticated(result: &Value) -> bool {
+    if result["message"].as_str() == Some("OK") {
+        return false;
+    }
+    let err_msg = error_message(result);
+    err_msg.contains("Unauthenticated") || err_msg.contains("unauthenticated")
 }
 
 /// Every non-OK Mitra body goes to warning.log with its endpoint, code and
@@ -211,10 +297,7 @@ fn transport_failure(path: &str, stage: &str, err: &dyn std::fmt::Display) -> Ap
 /// customer data, so they are logged whole.
 fn validate_mitra_response(path: &str, result: Value) -> Result<Value, AppError> {
     if result["message"].as_str() != Some("OK") {
-        let err_msg = result["errorMessage"]
-            .as_str()
-            .or_else(|| result["message"].as_str())
-            .unwrap_or("Unknown error");
+        let err_msg = error_message(&result);
 
         logging::log_warning(&format!(
             "[mitra] {path} -> {} {}: {}",
@@ -223,7 +306,7 @@ fn validate_mitra_response(path: &str, result: Value) -> Result<Value, AppError>
             result
         ));
 
-        if err_msg.contains("Unauthenticated") || err_msg.contains("unauthenticated") {
+        if is_unauthenticated(&result) {
             return Err(AppError::Upstream(
                 "Sesi Mitra expired. Silakan coba lagi.".into(),
             ));
@@ -318,6 +401,59 @@ mod tests {
             }
             other => panic!("expected Upstream, got {other:?}"),
         }
+    }
+
+    /// A token Mitra rejected is recognised by the client that handed it
+    /// out, and only while that client still holds it — a token replaced by a
+    /// refresh or a new login is not dropped over its predecessor's rejection.
+    #[test]
+    fn a_rejected_token_is_noticed_until_it_is_replaced() {
+        let mut client = MitraClient::new();
+        client.token = Some("old".to_string());
+        let context = client.request_context().expect("token is set");
+
+        context.note_rejection(&json!({ "message": "OK" }));
+        assert!(!client.token_was_rejected());
+
+        context.note_rejection(&json!({
+            "message": "Unauthorized",
+            "errorMessage": "Unauthenticated."
+        }));
+        assert!(client.token_was_rejected());
+
+        client.token = Some("new".to_string());
+        assert!(!client.token_was_rejected());
+    }
+
+    /// A dropped connection or an unreadable body is a transport failure; any
+    /// verdict Mitra itself returned, the expired-session one included, is not.
+    #[test]
+    fn transport_failures_are_told_apart_from_mitra_refusals() {
+        let connect = transport_failure("get-menu-saldo", "koneksi", &"connection refused");
+        assert!(is_transport_failure(&connect));
+        assert!(is_transport_failure(&uncertain(transport_failure(
+            "get-menu-saldo",
+            "parsing respons (HTTP 502)",
+            &"expected value",
+        ))));
+
+        let expired = validate_mitra_response(
+            "get-menu-saldo",
+            json!({ "message": "Unauthorized", "errorMessage": "Unauthenticated." }),
+        )
+        .expect_err("rejected token");
+        assert!(!is_transport_failure(&expired));
+
+        let refused = validate_mitra_response(
+            "get-menu-saldo",
+            json!({ "message": "Error", "errorMessage": "Gagal ke Mitra (x)" }),
+        )
+        .expect_err("mitra error");
+        assert!(!is_transport_failure(&refused));
+
+        assert!(!is_transport_failure(&AppError::Internal(
+            "Gagal ke Mitra (x)".into()
+        )));
     }
 
     #[test]

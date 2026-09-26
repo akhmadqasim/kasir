@@ -6,9 +6,10 @@
 //! the owner is the session, full stop: `POST /shifts` opens *your* shift and
 //! `GET /shifts/active` answers about *yours*.
 //!
-//! Deleting a cash-flow entry is the one rule the router cannot express — the
-//! author may do it, and so may an admin — so it stays in the session group and
-//! the service decides.
+//! Reading a shift's summary or cash flows, closing it, booking cash against it
+//! and deleting a cash-flow entry are rules the router cannot express — the
+//! owner (or the entry's author) may, and so may an admin — so they stay in the
+//! session group and the service decides.
 
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
@@ -65,12 +66,14 @@ struct CloseShiftBody {
 
 async fn close(
     State(state): State<AppState>,
+    Extension(actor): Extension<Actor>,
     Path(id): Path<i64>,
     Json(body): Json<CloseShiftBody>,
 ) -> ApiResult<axum::Json<ShiftSummaryResponse>> {
     Ok(axum::Json(
         services::shifts::close(
             &state.db,
+            &actor,
             CloseShiftInput {
                 shift_id: id,
                 closing_cash: body.closing_cash,
@@ -81,19 +84,25 @@ async fn close(
     ))
 }
 
+/// The shift's figures. The service allows its owner or an admin.
 async fn summary(
     State(state): State<AppState>,
+    Extension(actor): Extension<Actor>,
     Path(id): Path<i64>,
 ) -> ApiResult<axum::Json<ShiftSummaryResponse>> {
-    Ok(axum::Json(services::shifts::summary(&state.db, id).await?))
+    Ok(axum::Json(
+        services::shifts::summary(&state.db, &actor, id).await?,
+    ))
 }
 
+/// The shift's cash movements. The service allows its owner or an admin.
 async fn list_cash_flows(
     State(state): State<AppState>,
+    Extension(actor): Extension<Actor>,
     Path(id): Path<i64>,
 ) -> ApiResult<axum::Json<Vec<CashFlowResponse>>> {
     Ok(axum::Json(
-        services::shifts::list_cash_flows(&state.db, id).await?,
+        services::shifts::list_cash_flows(&state.db, &actor, id).await?,
     ))
 }
 

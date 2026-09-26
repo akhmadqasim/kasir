@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { FormEvent } from "react"
 import { Button, Description, FieldError, Form, Input, Label, TextField } from "@heroui/react"
 import { id } from "@/i18n/id"
@@ -11,21 +11,38 @@ interface StoreInfoFormProps {
   initialData?: SetupStoreInput | null
 }
 
+/** Cukup untuk menangkap salah ketik yang jelas (tanpa `@`, tanpa domain); sisanya urusan server. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
   const [name, setName] = useState(initialData?.name ?? "")
   const [address, setAddress] = useState(initialData?.address ?? "")
   const [phone, setPhone] = useState(initialData?.phone ?? "")
   const [email, setEmail] = useState(initialData?.email ?? "")
-  const [error, setError] = useState("")
+  const [nameError, setNameError] = useState("")
+  const [emailError, setEmailError] = useState("")
+  const nameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
 
   const t = id.onboarding
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setError("")
 
-    if (!name.trim()) {
-      setError(`${t.storeName} wajib diisi`)
+    const trimmedEmail = email.trim()
+    const nextNameError = name.trim() ? "" : id.validation.storeNameRequired
+    const nextEmailError =
+      trimmedEmail && !EMAIL_PATTERN.test(trimmedEmail) ? id.validation.invalidEmail : ""
+    setNameError(nextNameError)
+    setEmailError(nextEmailError)
+
+    // Caret to the first field that needs fixing, in on-screen order.
+    if (nextNameError) {
+      nameRef.current?.focus()
+      return
+    }
+    if (nextEmailError) {
+      emailRef.current?.focus()
       return
     }
 
@@ -33,7 +50,7 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
       name: name.trim(),
       address: address.trim() || undefined,
       phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
+      email: trimmedEmail || undefined,
     })
   }
 
@@ -48,31 +65,46 @@ export function StoreInfoForm({ onNext, initialData }: StoreInfoFormProps) {
         <TextField
           autoFocus
           fullWidth
-          isInvalid={Boolean(error)}
+          isInvalid={Boolean(nameError)}
           isRequired
           value={name}
           variant="secondary"
-          onChange={setName}
+          onChange={(value) => {
+            setName(value)
+            setNameError("")
+          }}
         >
           <Label>{t.storeName}</Label>
-          <Input placeholder={t.storeNamePlaceholder} />
-          <FieldError>{error}</FieldError>
+          <Input ref={nameRef} autoComplete="organization" placeholder={t.storeNamePlaceholder} />
+          <FieldError>{nameError}</FieldError>
         </TextField>
         <TextField fullWidth value={address} variant="secondary" onChange={setAddress}>
           <Label>{t.address}</Label>
-          <Input />
+          <Input autoComplete="street-address" />
           <Description>{t.addressHint}</Description>
         </TextField>
         {/* Telepon dan email berdampingan: keduanya pendek, dan barisnya
-            menghemat satu tinggi kolom di jendela 1000×500. */}
-        <div className="grid grid-cols-2 gap-3">
+            menghemat satu tinggi kolom di jendela 1000×500. Di ponsel
+            (di bawah `sm`) keduanya bertumpuk supaya tidak terjepit. */}
+        <div className="grid gap-3 sm:grid-cols-2">
           <TextField fullWidth type="tel" value={phone} variant="secondary" onChange={setPhone}>
             <Label>{t.phone}</Label>
-            <Input />
+            <Input autoComplete="tel" inputMode="tel" />
           </TextField>
-          <TextField fullWidth type="email" value={email} variant="secondary" onChange={setEmail}>
+          <TextField
+            fullWidth
+            isInvalid={Boolean(emailError)}
+            type="email"
+            value={email}
+            variant="secondary"
+            onChange={(value) => {
+              setEmail(value)
+              setEmailError("")
+            }}
+          >
             <Label>{t.email}</Label>
-            <Input />
+            <Input ref={emailRef} autoComplete="email" />
+            <FieldError>{emailError}</FieldError>
           </TextField>
         </div>
         <Button fullWidth type="submit">

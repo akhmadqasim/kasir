@@ -2,6 +2,8 @@ import { useRef, useState, type ChangeEvent } from "react"
 import { Download, Upload } from "lucide-react"
 import { AlertDialog, Button, Card, Separator } from "@heroui/react"
 
+import { CardHeading } from "@/components/card-heading"
+import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
 import { id } from "@/i18n/id"
 import { errorMessage } from "@/lib/api/client"
@@ -81,7 +83,7 @@ export function ImportExportCard() {
   return (
     <Card>
       <Card.Header>
-        <Card.Title>Ekspor & Impor Database</Card.Title>
+        <CardHeading>Ekspor & Impor Database</CardHeading>
         <Card.Description>
           Pindahkan database ke komputer lain lewat berkas, atau pasang database dari berkas backup
           — dipakai saat ganti komputer atau instalasi ulang aplikasi.
@@ -92,7 +94,13 @@ export function ImportExportCard() {
           <p className="text-sm text-muted">
             Berkas database diunduh oleh browser ini, masuk ke folder unduhan PC kasir.
           </p>
-          <PendingButton isPending={isExporting} variant="secondary" onPress={handleExport}>
+          <PendingButton
+            className="shrink-0"
+            isDisabled={isImporting}
+            isPending={isExporting}
+            variant="secondary"
+            onPress={handleExport}
+          >
             <Download />
             {id.settings.exportDatabase}
           </PendingButton>
@@ -106,6 +114,8 @@ export function ImportExportCard() {
             saat aplikasi dijalankan berikutnya.
           </p>
           <PendingButton
+            className="shrink-0"
+            isDisabled={isExporting}
             isPending={isImporting}
             variant="secondary"
             onPress={() => importInputRef.current?.click()}
@@ -118,6 +128,7 @@ export function ImportExportCard() {
           <input
             ref={importInputRef}
             accept=".db,application/vnd.sqlite3,application/x-sqlite3"
+            aria-label={id.settings.importDatabase}
             className="hidden"
             onChange={handleImportFileChosen}
             type="file"
@@ -141,9 +152,14 @@ export function ImportExportCard() {
             <AlertDialog.Body>
               <p>{id.settings.importConfirm}</p>
               {pendingImportFile && (
-                <p className="font-medium">
-                  {pendingImportFile.name} ({formatFileSize(pendingImportFile.size)})
-                </p>
+                <InfoPanel className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 font-mono break-all text-foreground">
+                    {pendingImportFile.name}
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    {formatFileSize(pendingImportFile.size)}
+                  </span>
+                </InfoPanel>
               )}
             </AlertDialog.Body>
             <AlertDialog.Footer>

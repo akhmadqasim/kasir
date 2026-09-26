@@ -65,16 +65,8 @@ export function PpobQuickAccess({
       return
     }
 
-    addPpobItem({
-      ...line,
-      sell_price: sellPrice,
-      ppob_product_id: item.ppob_product_id,
-      ppob_product_code: item.ppob_product_code,
-      ppob_inquiry_id: item.ppob_inquiry_id,
-      ppob_payment_code: item.ppob_payment_code,
-      ppob_flag_id: item.ppob_flag_id,
-    })
-    toast.success(`${item.name} ditambahkan ke keranjang`)
+    addPpobItem({ ...line, sell_price: sellPrice })
+    toast.success(id.cashier.addedToCart(item.name))
     setSelectedService(initialService ?? null)
   }
 

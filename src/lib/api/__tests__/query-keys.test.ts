@@ -124,6 +124,11 @@ const PAIRS: Array<{
     invalidation: queryKeys.settings.app,
   },
   {
+    what: "metode bayar default di kasir setelah pengaturan penjualan disimpan",
+    query: queryKeys.settings.sales,
+    invalidation: queryKeys.settings.sales,
+  },
+  {
     what: "daftar backup setelah backup dibuat",
     query: queryKeys.backups.list,
     invalidation: queryKeys.backups.all,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react"
 import { Card, Separator } from "@heroui/react"
 
+import { CardHeading } from "@/components/card-heading"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
 
 interface ConfirmCardProps {
@@ -41,7 +42,7 @@ export function ConfirmCard({
     <div ref={ref}>
       <Card>
         <Card.Header>
-          <Card.Title>{title}</Card.Title>
+          <CardHeading>{title}</CardHeading>
         </Card.Header>
         <Card.Content className="gap-3">
           <SummaryList items={items} />

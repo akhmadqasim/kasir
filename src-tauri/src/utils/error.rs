@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("{0}")]
@@ -25,15 +23,14 @@ pub enum AppError {
     #[error("{0}")]
     Upstream(String),
 
+    /// The request reached (or may have reached) the third party, but no
+    /// usable answer came back: a timeout after sending, a dropped connection,
+    /// a body that is not JSON. Unlike [`AppError::Upstream`] nobody knows
+    /// whether it acted — for a PPOB payment the money may already be spent,
+    /// so the caller must not treat this as a failure it can simply retry.
+    #[error("{0}")]
+    UpstreamUncertain(String),
+
     #[error("{0}")]
     Internal(String),
-}
-
-impl Serialize for AppError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
 }

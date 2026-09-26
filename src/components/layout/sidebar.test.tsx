@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 
 import {
@@ -10,13 +10,13 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuLink,
-  SidebarProvider,
 } from "./sidebar"
 import {
   SIDEBAR_HOVER_EXPAND_DELAY_MS,
   SIDEBAR_OPEN_STORAGE_KEY,
   useSidebar,
 } from "./sidebar-context"
+import { SidebarProvider } from "./sidebar-provider"
 
 const WIDE = 1440
 const NARROW = 1024
@@ -195,5 +195,44 @@ describe("sidebar shell", () => {
     const link = screen.getByRole("link", { name: "Kasir" })
     expect(link).toHaveAttribute("href", "/cashier")
     expect(link).toHaveAttribute("data-active", "true")
+  })
+})
+
+describe("mobile sidebar drawer", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setWindowWidth(500)
+  })
+
+  afterEach(() => {
+    setWindowWidth(WIDE)
+  })
+
+  it("closes once a menu link has navigated", async () => {
+    render(
+      <MemoryRouter initialEntries={["/cashier"]}>
+        <SidebarProvider>
+          <Sidebar label="Menu utama">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuLink to="/transactions">
+                  <SidebarLabel>Transaksi</SidebarLabel>
+                </SidebarMenuLink>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </Sidebar>
+          <SidebarInset>Konten</SidebarInset>
+        </SidebarProvider>
+      </MemoryRouter>,
+    )
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "b", ctrlKey: true })
+    })
+    fireEvent.click(await screen.findByRole("link", { name: "Transaksi" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: "Transaksi" })).not.toBeInTheDocument()
+    })
   })
 })

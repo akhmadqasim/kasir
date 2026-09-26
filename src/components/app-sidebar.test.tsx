@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { AppSidebar } from "./app-sidebar"
-import { SidebarProvider } from "@/components/layout/sidebar"
+import { SidebarProvider } from "@/components/layout/sidebar-provider"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { User } from "@/features/auth/types"
 import type { StoreInfo } from "@/features/settings/types"

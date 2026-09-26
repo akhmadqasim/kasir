@@ -12,8 +12,13 @@ import {
   TextField,
 } from "@heroui/react"
 
+import { ArrowRightLeft } from "lucide-react"
+
+import { CardHeading } from "@/components/card-heading"
 import { SubpageHeader } from "@/components/layout/subpage-header"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
+import { RupiahField } from "@/components/rupiah-field"
 import { SearchInput } from "@/components/search-input"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
@@ -21,6 +26,7 @@ import { useTransferChannels } from "../hooks"
 import type { TransferChannelGroup, TransferChannelDetail } from "../types"
 import { FlowColumns } from "./flow-columns"
 import { ConfirmCard } from "./quick-access/confirm-card"
+import { PpobSetupAction } from "./ppob-setup-action"
 
 export function TransferFlow() {
   const navigate = useNavigate()
@@ -28,12 +34,12 @@ export function TransferFlow() {
   const [selectedChannel, setSelectedChannel] = useState<TransferChannelGroup | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<TransferChannelDetail | null>(null)
   const [accountNumber, setAccountNumber] = useState("")
-  const [amount, setAmount] = useState("")
+  const [amount, setAmount] = useState<number | null>(null)
   const [description, setDescription] = useState("")
   const [senderName, setSenderName] = useState("")
   const [senderPhone, setSenderPhone] = useState("")
 
-  const { data: channels, isLoading } = useTransferChannels()
+  const { data: channels, isLoading, isFetching, error, refetch } = useTransferChannels()
 
   const filtered = useMemo(() => {
     if (!channels) return []
@@ -42,7 +48,7 @@ export function TransferFlow() {
     return channels.filter((ch) => ch.channel.toLowerCase().includes(q))
   }, [channels, search])
 
-  const amountNum = parseInt(amount, 10) || 0
+  const amountNum = amount != null && amount > 0 ? amount : 0
   const fee = selectedDetail?.fee ?? 0
   const total = amountNum + fee
 
@@ -57,6 +63,15 @@ export function TransferFlow() {
   const resetChannel = () => {
     setSelectedChannel(null)
     setSelectedDetail(null)
+  }
+
+  const changeBank = () => {
+    resetChannel()
+    setAccountNumber("")
+    setAmount(null)
+    setDescription("")
+    setSenderName("")
+    setSenderPhone("")
   }
 
   return (
@@ -91,7 +106,14 @@ export function TransferFlow() {
           ) : channels ? (
             <Card>
               <Card.Content>
-                <NoData title="Pilih produk untuk melihat konfirmasi" />
+                <NoData
+                  icon={<ArrowRightLeft />}
+                  title={
+                    selectedDetail
+                      ? "Lengkapi data transfer untuk melihat konfirmasi"
+                      : "Pilih bank tujuan untuk memulai"
+                  }
+                />
               </Card.Content>
             </Card>
           ) : null
@@ -114,6 +136,15 @@ export function TransferFlow() {
                   <Skeleton key={i} className="h-16" />
                 ))}
               </div>
+            ) : error ? (
+              <LoadError
+                isRetrying={isFetching}
+                secondaryAction={<PpobSetupAction error={error} />}
+                title={id.loadFailed.ppobBanks}
+                onRetry={() => refetch()}
+              >
+                {error.message}
+              </LoadError>
             ) : filtered.length === 0 ? (
               <NoData title={id.ppob.bankNotFound} />
             ) : (
@@ -151,10 +182,11 @@ export function TransferFlow() {
         {selectedChannel && !selectedDetail && selectedChannel.details.length > 1 && (
           <Card>
             <Card.Header>
-              <Card.Title>{selectedChannel.channel}</Card.Title>
+              <CardHeading>{selectedChannel.channel}</CardHeading>
             </Card.Header>
             <Card.Content>
               <ListBox
+                autoFocus="first"
                 aria-label="Tipe transfer"
                 selectionMode="none"
                 onAction={(key) => {
@@ -193,29 +225,19 @@ export function TransferFlow() {
           <Card>
             <Card.Header className="flex-row items-start justify-between gap-2">
               <div className="min-w-0">
-                <Card.Title>{selectedChannel.channel}</Card.Title>
+                <CardHeading>{selectedChannel.channel}</CardHeading>
                 <Card.Description>
                   {selectedDetail.transferType} — {id.ppob.fee}: {formatRupiah(selectedDetail.fee)}
                 </Card.Description>
               </div>
-              <Button
-                size="sm"
-                variant="tertiary"
-                onPress={() => {
-                  resetChannel()
-                  setAccountNumber("")
-                  setAmount("")
-                  setDescription("")
-                  setSenderName("")
-                  setSenderPhone("")
-                }}
-              >
-                Ganti
+              <Button size="sm" variant="tertiary" onPress={changeBank}>
+                Ganti Bank
               </Button>
             </Card.Header>
             <Card.Content>
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField
+                  autoFocus
                   fullWidth
                   value={accountNumber}
                   variant="secondary"
@@ -229,19 +251,14 @@ export function TransferFlow() {
                   />
                 </TextField>
 
-                <TextField
-                  fullWidth
+                {/* Ribuan dikelompokkan saat diketik: "1000000" dan "100000"
+                    terlalu mudah tertukar untuk uang yang dikirim ke orang. */}
+                <RupiahField
+                  label={id.ppob.amount}
+                  placeholder={id.ppob.amountPlaceholder}
                   value={amount}
-                  variant="secondary"
-                  onChange={(value) => setAmount(value.replace(/\D/g, ""))}
-                >
-                  <Label>{id.ppob.amount}</Label>
-                  <Input
-                    className="text-right tabular-nums"
-                    inputMode="numeric"
-                    placeholder={id.ppob.amountPlaceholder}
-                  />
-                </TextField>
+                  onChange={setAmount}
+                />
 
                 <TextField
                   fullWidth

@@ -2,7 +2,6 @@ import { useState } from "react"
 import { Button, Modal, Separator, Table } from "@heroui/react"
 
 import { NoData } from "@/components/no-data"
-import { StatusBadge } from "@/components/status-badge"
 import { SummaryList, type SummaryItem } from "@/components/summary-list"
 import { id as t } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
@@ -10,6 +9,7 @@ import type { HistoryPaymentItem } from "../../types"
 import { PendingButton } from "@/components/pending-button"
 import { HistoryPrintFields } from "./history-print"
 import { useHistoryPrint } from "./use-history-print"
+import { VendorStatusBadge } from "./vendor-status-badge"
 import {
   detectServiceType,
   normalizeStatus,
@@ -18,35 +18,6 @@ import {
   getNominal,
   getProviderTotal,
 } from "./history-utils"
-
-function PpobStatusBadge({ status }: { status: string | null }) {
-  switch (normalizeStatus(status)) {
-    case "sukses":
-      return (
-        <StatusBadge status="success" size="sm">
-          Sukses
-        </StatusBadge>
-      )
-    case "gagal":
-      return (
-        <StatusBadge status="error" size="sm">
-          Gagal
-        </StatusBadge>
-      )
-    case "proses":
-      return (
-        <StatusBadge status="warning" size="sm">
-          Proses
-        </StatusBadge>
-      )
-    default:
-      return (
-        <StatusBadge status="neutral" size="sm">
-          {status ?? "-"}
-        </StatusBadge>
-      )
-  }
-}
 
 /** Baris rincian hanya digambar bila vendor memang mengisi nilainya. */
 function detailItem(
@@ -60,9 +31,16 @@ function detailItem(
 
 export function TransactionDetailDialog({
   item,
+  isOpen = item !== null,
   onClose,
 }: {
   item: HistoryPaymentItem | null
+  /**
+   * Separate from `item` so the table can keep the last row on screen while
+   * the dialog animates out — clearing `item` on close emptied the body and
+   * the header icon mid-animation, a visible flicker on every close.
+   */
+  isOpen?: boolean
   onClose: () => void
 }) {
   const service = item ? detectServiceType(item) : null
@@ -102,14 +80,15 @@ export function TransactionDetailDialog({
     : []
 
   return (
-    <Modal.Backdrop isOpen={!!item} onOpenChange={(open) => !open && onClose()}>
+    <Modal.Backdrop isOpen={isOpen && !!item} onOpenChange={(open) => !open && onClose()}>
       <Modal.Container size="sm">
         <Modal.Dialog aria-label="Detail Transaksi">
           <Modal.CloseTrigger />
           <Modal.Header>
-            {/* Ikon layanan di tempat `Modal.Icon`, warnanya dari token `--service-*`. */}
+            {/* Ikon layanan di tempat `Modal.Icon`: cakram tipis `--service-*`/15 dengan
+                glyph berwarna penuh, sama seperti tile PPOB. */}
             {service ? (
-              <Modal.Icon className={`${service.bg} ${service.text}`}>
+              <Modal.Icon className={`${service.tint} ${service.text}`}>
                 <service.icon className="size-5" />
               </Modal.Icon>
             ) : null}
@@ -123,7 +102,7 @@ export function TransactionDetailDialog({
                   <span aria-hidden="true"> · </span>
                   {formatDateTime(item.createdAt)}
                 </p>
-                <PpobStatusBadge status={item.status} />
+                <VendorStatusBadge size="sm" status={item.status} />
               </div>
 
               <SummaryList
@@ -169,6 +148,7 @@ interface HistoryTableProps {
 
 export function HistoryTable({ items }: HistoryTableProps) {
   const [selectedItem, setSelectedItem] = useState<HistoryPaymentItem | null>(null)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
 
   return (
     <>
@@ -195,9 +175,13 @@ export function HistoryTable({ items }: HistoryTableProps) {
                 return (
                   <Table.Row
                     key={rowId}
+                    className="cursor-pointer"
                     id={rowId}
                     textValue={service.label}
-                    onAction={() => setSelectedItem(item)}
+                    onAction={() => {
+                      setSelectedItem(item)
+                      setIsDetailOpen(true)
+                    }}
                   >
                     <Table.Cell>
                       {/* Ikon berwarna token `--service-*` (DESIGN.md §3.2) di
@@ -207,15 +191,15 @@ export function HistoryTable({ items }: HistoryTableProps) {
                         <span>{service.label}</span>
                       </div>
                     </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-muted">
+                    <Table.Cell className="whitespace-nowrap text-muted tabular-nums">
                       {formatDateTime(item.createdAt)}
                     </Table.Cell>
                     <Table.Cell className="max-w-64 truncate">{buildDescription(item)}</Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-right font-medium tabular-nums">
+                    <Table.Cell className="text-right font-medium whitespace-nowrap tabular-nums">
                       {nominal != null ? formatRupiah(nominal) : "-"}
                     </Table.Cell>
                     <Table.Cell>
-                      <PpobStatusBadge status={item.status} />
+                      <VendorStatusBadge size="sm" status={item.status} />
                     </Table.Cell>
                   </Table.Row>
                 )
@@ -225,7 +209,11 @@ export function HistoryTable({ items }: HistoryTableProps) {
         </Table.ScrollContainer>
       </Table>
 
-      <TransactionDetailDialog item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <TransactionDetailDialog
+        isOpen={isDetailOpen}
+        item={selectedItem}
+        onClose={() => setIsDetailOpen(false)}
+      />
     </>
   )
 }

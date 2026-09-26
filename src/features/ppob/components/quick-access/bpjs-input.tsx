@@ -6,8 +6,8 @@ import { PendingButton } from "@/components/pending-button"
 import type { SummaryItem } from "@/components/summary-list"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
 import { useBpjsInquiry } from "../../hooks"
-import type { InquiryResult } from "../../types"
 import {
   BPJS_TYPE_OPTIONS,
   getBpjsDataBook,
@@ -17,6 +17,7 @@ import {
 import { markupItem } from "./markup-item"
 import { ServiceFlowLayout } from "./service-flow-layout"
 import type { ServiceInputProps } from "./types"
+import { useInquiryResult } from "./use-inquiry-result"
 
 export function BpjsInput({
   onAddToCart,
@@ -27,7 +28,7 @@ export function BpjsInput({
   const [customerId, setCustomerId] = useState("")
   const [bpjsType, setBpjsType] = useState<BpjsType>("BPJSKES")
   const bpjsInquiry = useBpjsInquiry()
-  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const { result: inquiryResult, reset: resetInquiry, accept: acceptInquiry } = useInquiryResult()
   const bpjsRawData = inquiryResult?.rawData as Record<string, unknown> | undefined
   const bpjsDataBook = getBpjsDataBook(bpjsRawData)
   const bpjsParticipants = parseBpjsParticipants(bpjsDataBook)
@@ -36,9 +37,12 @@ export function BpjsInput({
   const displayCustomerName = primaryParticipant?.name ?? inquiryResult?.customerName ?? customerId
   const selectedBpjsType =
     BPJS_TYPE_OPTIONS.find((option) => option.value === bpjsType) ?? BPJS_TYPE_OPTIONS[0]
-  const customerIdLabel = selectedBpjsType.value === "BPJSKES" ? "Nomor VA" : "Nomor Kartu"
+  const customerIdLabel =
+    selectedBpjsType.value === "BPJSKES" ? id.ppob.quickAccess.bpjsVa : id.ppob.quickAccess.bpjsCard
   const customerIdPlaceholder =
-    selectedBpjsType.value === "BPJSKES" ? "Masukkan nomor VA BPJS" : "Masukkan nomor kartu BPJS"
+    selectedBpjsType.value === "BPJSKES"
+      ? id.ppob.quickAccess.bpjsVaPlaceholder
+      : id.ppob.quickAccess.bpjsCardPlaceholder
   const bpjsPaymentCode = (() => {
     const raw = inquiryResult?.rawData as
       | { data?: Record<string, unknown>; payment_code?: unknown }
@@ -50,8 +54,10 @@ export function BpjsInput({
     return customerId
   })()
 
+  const canInquiry = customerId.length >= 10
+
   const handleInquiry = () => {
-    if (!customerId) return
+    if (!canInquiry || bpjsInquiry.isPending) return
     bpjsInquiry.mutate(
       {
         customerId,
@@ -61,15 +67,15 @@ export function BpjsInput({
         period: "1",
       },
       {
-        onSuccess: (result) => setInquiryResult(result),
-        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+        onSuccess: acceptInquiry(),
+        onError: (err) => toast.error(id.ppob.billCheckFailed(err.message)),
       },
     )
   }
 
   // Yang dibayar toko ke vendor = tagihan + biaya admin.
   const vendorCost = inquiryResult?.total ?? 0
-  const itemName = `${selectedBpjsType.serviceLabel} - ${displayCustomerName}${bpjsParticipants.length > 1 ? ` +${bpjsParticipants.length - 1} peserta` : ""}`
+  const itemName = `${selectedBpjsType.serviceLabel} - ${displayCustomerName}${bpjsParticipants.length > 1 ? ` ${id.ppob.quickAccess.bpjsMoreParticipants(bpjsParticipants.length - 1)}` : ""}`
   const sellPrice = inquiryResult
     ? resolveSellPrice({ name: itemName, serviceType: "bpjs", vendorCost })
     : 0
@@ -91,20 +97,25 @@ export function BpjsInput({
 
   const confirmItems: SummaryItem[] | null = inquiryResult
     ? [
-        { label: "Layanan", value: selectedBpjsType.serviceLabel },
+        { label: id.ppob.quickAccess.service, value: selectedBpjsType.serviceLabel },
         { label: customerIdLabel, value: customerId, tone: "mono" },
-        { label: "Nama Utama", value: displayCustomerName },
+        { label: id.ppob.quickAccess.bpjsMainName, value: displayCustomerName },
         ...(bpjsParticipants.length > 1
-          ? [{ label: "Jumlah Peserta", value: String(bpjsParticipants.length) }]
+          ? [
+              {
+                label: id.ppob.quickAccess.bpjsParticipantCount,
+                value: String(bpjsParticipants.length),
+              },
+            ]
           : []),
         ...bpjsParticipants.map((participant, index) => ({
-          label: `Peserta ${index + 1}`,
+          label: id.ppob.quickAccess.bpjsParticipant(index + 1),
           value: participant.name || participant.number || "-",
         })),
-        { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-        { label: "Admin", value: formatRupiah(inquiryResult.adminFee) },
+        { label: id.ppob.quickAccess.bill, value: formatRupiah(inquiryResult.amount) },
+        { label: id.ppob.quickAccess.adminFee, value: formatRupiah(inquiryResult.adminFee) },
         ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
-        { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
+        { label: id.ppob.quickAccess.totalPay, value: formatRupiah(sellPrice), tone: "strong" },
       ]
     : null
 
@@ -113,12 +124,12 @@ export function BpjsInput({
       confirmLabel={confirmLabel}
       confirmItems={confirmItems}
       placeholderIcon={<HeartPulse />}
-      placeholderText="Cek tagihan untuk melihat detail"
+      placeholderText={id.ppob.quickAccess.checkBillHint}
       wideLayout={wideLayout}
       onConfirm={handleConfirm}
     >
       <ToggleButtonGroup
-        aria-label="Jenis BPJS"
+        aria-label={id.ppob.quickAccess.bpjsType}
         fullWidth
         disallowEmptySelection
         selectedKeys={[bpjsType]}
@@ -127,7 +138,7 @@ export function BpjsInput({
           const [next] = [...keys]
           if (!next) return
           setBpjsType(next as BpjsType)
-          setInquiryResult(null)
+          resetInquiry()
         }}
       >
         {BPJS_TYPE_OPTIONS.map((option, index) => (
@@ -145,21 +156,28 @@ export function BpjsInput({
         variant="secondary"
         onChange={(value) => {
           setCustomerId(value.replace(/\D/g, ""))
-          setInquiryResult(null)
+          resetInquiry()
         }}
       >
         <Label>{customerIdLabel}</Label>
-        <Input className="tabular-nums" inputMode="numeric" placeholder={customerIdPlaceholder} />
+        <Input
+          className="tabular-nums"
+          inputMode="numeric"
+          placeholder={customerIdPlaceholder}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !inquiryResult) handleInquiry()
+          }}
+        />
       </TextField>
 
       {!inquiryResult && (
         <PendingButton
           fullWidth
-          isDisabled={customerId.length < 10}
+          isDisabled={!canInquiry}
           isPending={bpjsInquiry.isPending}
           onPress={handleInquiry}
         >
-          Cek Tagihan
+          {id.ppob.quickAccess.checkBill}
         </PendingButton>
       )}
     </ServiceFlowLayout>

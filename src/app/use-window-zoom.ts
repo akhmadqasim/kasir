@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/api/query-keys"
  */
 export const ZOOM_MIN = 0.5
 export const ZOOM_MAX = 2.0
-export const ZOOM_STEP = 0.1
+const ZOOM_STEP = 0.1
 const ZOOM_DEFAULT = 1.0
 
 /**
@@ -24,7 +24,7 @@ export const LEGACY_ZOOM_KEY = "kasir-zoom-level"
 const UNKNOWN: WindowZoom = { factor: ZOOM_DEFAULT, available: false }
 
 /** One step from `zoom`, kept on tenths so 1.1 + 0.1 reads 1.2 and not 1.2000000000000002. */
-export function stepZoom(zoom: number, step: number): number {
+function stepZoom(zoom: number, step: number): number {
   const next = Math.round((zoom + step) * 10) / 10
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next))
 }

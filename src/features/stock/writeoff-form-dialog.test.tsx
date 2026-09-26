@@ -47,7 +47,7 @@ function renderDialog() {
 }
 
 function productTrigger() {
-  return screen.getByRole("button", { name: /Produk \*$/ })
+  return screen.getByRole("button", { name: /Produk$/ })
 }
 
 async function pickProduct() {
@@ -122,12 +122,27 @@ describe("formulir write-off", () => {
     expect(screen.getByText("Rp 300.000")).toBeInTheDocument()
   })
 
+  // Produk yang stoknya sudah habis langsung diberi tahu saat dipilih, bukan
+  // setelah seluruh formulir diisi lalu dikirim.
+  it("langsung memberi tahu bila produk yang dipilih stoknya habis", async () => {
+    api.route("GET /products", {
+      ...SEARCH_RESULTS,
+      data: [product(5, "Telur Ayam 1kg", 0, 25000)],
+    })
+    renderDialog()
+    await pickProduct()
+
+    expect(
+      await screen.findByText("Stok produk ini sudah habis, tidak ada yang bisa di-write-off"),
+    ).toBeInTheDocument()
+  })
+
   it("mengirim write-off setelah produk, jumlah dan alasan terisi", async () => {
     renderDialog()
     await pickProduct()
     setQuantity("2")
 
-    fireEvent.click(screen.getByRole("button", { name: /Alasan \*$/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Alasan$/ }))
     fireEvent.click(await screen.findByRole("option", { name: /Rusak/ }))
 
     fireEvent.click(screen.getByRole("button", { name: "Buat Write-off" }))
@@ -143,6 +158,36 @@ describe("formulir write-off", () => {
     })
   })
 
+  // Sama seperti dialog lain: selama permintaan berjalan, "Batal" tidak bisa
+  // menutup dialog di tengah jalan.
+  it("mematikan tombol Batal selama write-off dikirim", async () => {
+    api.route("POST /stock/writeoffs", () => new Promise(() => {}))
+    renderDialog()
+    await pickProduct()
+    setQuantity("2")
+    fireEvent.click(screen.getByRole("button", { name: /Alasan$/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Rusak/ }))
+
+    expect(screen.getByRole("button", { name: "Batal" })).toBeEnabled()
+    fireEvent.click(screen.getByRole("button", { name: "Buat Write-off" }))
+
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Batal" })).toBeDisabled())
+  })
+
+  // Tanda wajib datang dari `isRequired`, bukan " *" di teks label — pembaca
+  // layar dulu mengucapkan "bintang".
+  it("menandai produk, jumlah dan alasan sebagai wajib", () => {
+    renderDialog()
+
+    // The product field used to say so with "Produk *" in its label.
+    expect(screen.getByText("Produk").closest('[data-required="true"]')).not.toBeNull()
+    expect(screen.queryByText("Produk *")).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Jumlah" })).toBeRequired()
+    // A Select has no input to carry `aria-required`; its root carries the flag
+    // that draws the asterisk.
+    expect(screen.getByText("Alasan").closest('[data-required="true"]')).not.toBeNull()
+  })
+
   it("menahan pengiriman sampai alasannya dipilih", async () => {
     renderDialog()
     await pickProduct()
@@ -154,11 +199,39 @@ describe("formulir write-off", () => {
     expect(api.callsFor("POST /stock/writeoffs")).toHaveLength(0)
   })
 
+  // Barang hilang hanya untuk admin. Pilihannya dulu terbuka untuk kasir dan
+  // baru ditolak setelah formulir dikirim.
+  it("mematikan alasan 'Hilang' untuk kasir", async () => {
+    useAuthStore.setState({
+      user: {
+        id: 2,
+        username: "kasir",
+        full_name: "Kasir",
+        role: "kasir",
+        is_active: true,
+        created_at: "2026-01-01 00:00:00",
+        updated_at: "2026-01-01 00:00:00",
+      },
+    })
+    renderDialog()
+
+    expect(screen.getByText("Barang hilang hanya bisa dicatat admin")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /Alasan$/ }))
+    expect(await screen.findByRole("option", { name: /Hilang/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    )
+    expect(screen.getByRole("option", { name: /Rusak/ })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    )
+  })
+
   it("mengosongkan produk lewat tombol hapus", async () => {
     renderDialog()
     await pickProduct()
 
-    fireEvent.click(screen.getByLabelText("Clear selection"))
+    fireEvent.click(screen.getByLabelText("Hapus pilihan"))
 
     expect(productTrigger()).toHaveAccessibleName(/Pilih produk/)
     expect(screen.queryByText("12 pcs")).not.toBeInTheDocument()

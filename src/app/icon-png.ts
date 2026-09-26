@@ -1,5 +1,5 @@
 /** The square the window icon is drawn at; Windows scales it down from here. */
-export const ICON_SIZE = 256
+const ICON_SIZE = 256
 
 /**
  * Draw the image at `src` as a square PNG for the window icon: fitted inside

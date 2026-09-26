@@ -1,43 +1,35 @@
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  AlertDialog,
-  Button,
-  Card,
-  Input,
-  Label,
-  Separator,
-  Spinner,
-  TextField,
-  Tooltip,
-} from "@heroui/react"
-import { ArrowDownCircle, ArrowLeft, ArrowUpCircle, Trash2 } from "lucide-react"
+import { Button, Card } from "@heroui/react"
+import { ArrowLeft, ReceiptText } from "lucide-react"
 
-import { InfoPanel } from "@/components/info-panel"
 import { SubpageHeader } from "@/components/layout/subpage-header"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
-import { PendingButton } from "@/components/pending-button"
 import { StatCard } from "@/components/stat-card"
-import { StatusBadge } from "@/components/status-badge"
 import { SummaryList } from "@/components/summary-list"
 import { getDefaultRouteForRole } from "@/app/resume-route"
-import { useAuthStore } from "@/features/auth"
-import { useLogout } from "@/features/auth/hooks/use-auth"
+import { useGoBack } from "@/hooks/use-go-back"
+import { useAuthStore, useLogout } from "@/features/auth"
+import { useStoreInfo } from "@/features/settings"
+import { errorMessage } from "@/lib/api/client"
 import * as shiftsApi from "@/lib/api/shifts"
-import { getStoreInfo } from "@/lib/api/settings"
-import { formatDateTime, formatRupiah } from "@/lib/format"
-import { paymentMethodLabel } from "@/lib/labels"
+import { formatDateTime, formatNumber, formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
+import { id } from "@/i18n/id"
+import { CashFlowsCard } from "./close-shift/cash-flows-card"
+import { CloseShiftConfirmDialogs, type CloseStep } from "./close-shift/close-shift-confirm-dialogs"
+import { CloseShiftSkeleton } from "./close-shift/close-shift-skeleton"
+import { ClosingCashCard } from "./close-shift/closing-cash-card"
+import { DeleteCashFlowDialog } from "./close-shift/delete-cash-flow-dialog"
+import { CardHeading } from "./card-heading"
 import { ShiftCloseReport } from "./shift-close-report"
 import { useShiftStore } from "../hooks/use-shift-store"
-import { cashDifferenceStatus, groupDigits, signedRupiah, toDigits } from "../utils"
+import { useShiftSummary } from "../hooks/use-shift-summary"
+import { paymentBreakdownItems } from "../utils"
 import type { CashFlow, ShiftSummary } from "../types"
 
-/**
- * Closing a shift is irreversible, so it takes two confirmations: a summary to
- * read, then a plain "are you sure". `"idle"` means neither dialog is up.
- */
-type CloseStep = "idle" | "review" | "final"
+const PAGE_TITLE = "Tutup Kasir"
 
 export function CloseShiftPage() {
   const navigate = useNavigate()
@@ -46,64 +38,43 @@ export function CloseShiftPage() {
   const [closingCash, setClosingCash] = useState("")
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isDeletingCashFlow, setIsDeletingCashFlow] = useState(false)
-  const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [closedSummary, setClosedSummary] = useState<ShiftSummary | null>(null)
   const [cashFlowToDelete, setCashFlowToDelete] = useState<CashFlow | null>(null)
   const [closeStep, setCloseStep] = useState<CloseStep>("idle")
-  const [storeName, setStoreName] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
   const activeShift = useShiftStore((s) => s.activeShift)
+  const fetchActiveShift = useShiftStore((s) => s.fetchActiveShift)
   const clearShift = useShiftStore((s) => s.clearShift)
+  // Only the cashier screen loads the shift into the store. Opened from its
+  // address, reloaded, or resumed after a restart, this page comes up with an
+  // empty store and used to bounce straight home; ask the server first, and
+  // leave only when it answers that there is no open shift.
+  const [shiftChecked, setShiftChecked] = useState(
+    () => useShiftStore.getState().activeShift !== null,
+  )
+  const storeName = useStoreInfo().data?.name ?? ""
+  const { summary, isLoading, loadError, retry, removeCashFlow } = useShiftSummary(activeShift)
+  const homeRoute = getDefaultRouteForRole(user?.role ?? "kasir")
 
   useEffect(() => {
-    getStoreInfo()
-      .then((info) => {
-        if (info) setStoreName(info.name)
-      })
-      .catch(() => {})
-  }, [])
-
-  const loadSummary = useCallback(async () => {
-    if (!activeShift) return
-    setSummary(await shiftsApi.getShiftSummary(activeShift.id))
-  }, [activeShift])
+    if (shiftChecked) return
+    let isCurrent = true
+    void fetchActiveShift().finally(() => {
+      if (isCurrent) setShiftChecked(true)
+    })
+    return () => {
+      isCurrent = false
+    }
+  }, [shiftChecked, fetchActiveShift])
 
   useEffect(() => {
-    if (!activeShift) {
-      if (!closedSummary) {
-        // An admin has no business being dropped on the cashier screen; send
-        // everyone to the same landing route the router picks after login.
-        navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })
-      }
-      return
-    }
-    loadSummary()
-      .then(() => setIsLoading(false))
-      .catch(() => {
-        setIsLoading(false)
-        toast.error("Gagal memuat ringkasan shift")
-      })
-  }, [activeShift, closedSummary, navigate, loadSummary, user?.role])
-
-  const handleDeleteCashFlow = async () => {
-    if (!cashFlowToDelete || !user) return
-
-    setIsDeletingCashFlow(true)
-    try {
-      await shiftsApi.deleteCashFlow(cashFlowToDelete.id)
-      await loadSummary()
-      toast.success("Arus kas berhasil dihapus")
-      setCashFlowToDelete(null)
-    } catch (err) {
-      toast.error(`Gagal menghapus arus kas: ${err}`)
-    } finally {
-      setIsDeletingCashFlow(false)
-    }
-  }
+    // An admin has no business being dropped on the cashier screen; send
+    // everyone to the same landing route the router picks after login. A shift
+    // that was closed here stays put: its report is on screen.
+    if (shiftChecked && !activeShift && !closedSummary) navigate(homeRoute, { replace: true })
+  }, [shiftChecked, activeShift, closedSummary, navigate, homeRoute])
 
   const handleClose = async () => {
-    if (!activeShift) return
+    if (!activeShift || isSubmitting) return
     setIsSubmitting(true)
     try {
       const result = await shiftsApi.closeShift(activeShift.id, {
@@ -111,35 +82,41 @@ export function CloseShiftPage() {
         notes: notes.trim() || undefined,
       })
       clearShift()
-      toast.success("Shift ditutup")
+      toast.success(id.shift.closed)
       setCloseStep("idle")
       setClosedSummary(result)
     } catch (err) {
-      toast.error(`Gagal menutup shift: ${err}`)
+      toast.error(id.shift.closeFailed(errorMessage(err)))
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const numericClosing = Number(closingCash) || 0
-  const cashDifference = summary && closingCash ? numericClosing - summary.expectedCash : null
+  // Opened straight from its address there is nothing of ours to step back
+  // to; the cashier lands on their own start screen instead of being stuck.
+  const goBack = useGoBack(homeRoute)
 
   if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner aria-label="Memuat ringkasan shift" size="lg" />
-      </div>
-    )
+    return <CloseShiftSkeleton title={PAGE_TITLE} onBack={goBack} />
   }
 
   if (!summary) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <NoData title="Gagal memuat ringkasan shift." tone="danger" />
-        <Button variant="tertiary" onPress={() => navigate(-1)}>
-          <ArrowLeft />
-          Kembali
-        </Button>
+      <div className="flex h-full flex-col items-center justify-center">
+        <SubpageHeader title={PAGE_TITLE} onBack={goBack} />
+        <LoadError
+          secondaryAction={
+            <Button size="sm" variant="tertiary" onPress={goBack}>
+              <ArrowLeft />
+              {id.common.back}
+            </Button>
+          }
+          isRetrying={isLoading}
+          title={id.loadFailed.shiftSummary}
+          onRetry={retry}
+        >
+          {loadError}
+        </LoadError>
       </div>
     )
   }
@@ -149,8 +126,10 @@ export function CloseShiftPage() {
       <ShiftCloseReport
         summary={closedSummary}
         storeName={storeName}
-        onBack={() => navigate(getDefaultRouteForRole(user?.role ?? "kasir"), { replace: true })}
+        isLoggingOut={logout.isPending}
+        onBack={() => navigate(homeRoute, { replace: true })}
         onLogout={() => {
+          if (logout.isPending) return
           logout.mutate(undefined, {
             onSettled: () => navigate("/login", { replace: true }),
           })
@@ -159,17 +138,19 @@ export function CloseShiftPage() {
     )
   }
 
+  const countedCash = closingCash ? Number(closingCash) : null
+  const cashDifference = countedCash !== null ? countedCash - summary.expectedCash : null
   const canDeleteCashFlow = (cf: CashFlow) => user?.role === "admin" || user?.id === cf.userId
 
   return (
     // Padding luar milik `app-layout`; halaman hanya mengatur jarak antar kartu — DESIGN.md §3.5.
     <div className="flex flex-col gap-4">
-      <SubpageHeader title="Tutup Kasir" onBack={() => navigate(-1)} />
+      <SubpageHeader title={PAGE_TITLE} onBack={goBack} />
 
       {/* Detail Kasir card */}
       <Card>
         <Card.Header>
-          <Card.Title>Detail Kasir</Card.Title>
+          <CardHeading>Detail Kasir</CardHeading>
         </Card.Header>
         <Card.Content>
           <SummaryList
@@ -185,298 +166,62 @@ export function CloseShiftPage() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Transaksi" value={String(summary.totalTransactions)} />
+        <StatCard label="Transaksi" value={formatNumber(summary.totalTransactions)} />
         <StatCard label="Total Penjualan" value={formatRupiah(summary.totalSales)} />
-        <StatCard label="Saldo Tutup Kasir" value={formatRupiah(summary.expectedCash)} />
+        {/* Nama yang sama dengan "Saldo aplikasi" di dialog konfirmasi dan di
+            laporan: satu nama untuk uang tunai yang seharusnya ada di laci. */}
+        <StatCard label="Saldo Aplikasi" value={formatRupiah(summary.expectedCash)} />
       </div>
 
       {/* Detail cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Payment breakdown */}
+        {/* Payment breakdown — jumlah transaksi ikut di label sebagai teks,
+            sama dengan laporan cetaknya. */}
         <Card>
           <Card.Header>
-            <Card.Title>Pembayaran</Card.Title>
+            <CardHeading>Pembayaran</CardHeading>
           </Card.Header>
           <Card.Content>
             {summary.paymentBreakdown.length > 0 ? (
-              <SummaryList
-                items={summary.paymentBreakdown.map((pb) => ({
-                  label: paymentMethodLabel(pb.method),
-                  value: formatRupiah(pb.total),
-                }))}
-              />
+              <SummaryList items={paymentBreakdownItems(summary.paymentBreakdown)} />
             ) : (
-              <NoData title="Belum ada transaksi" />
+              <NoData icon={<ReceiptText />} title={id.transactions.noTransactions} />
             )}
           </Card.Content>
         </Card>
 
-        {/* Cash flows */}
-        <Card>
-          <Card.Header>
-            <Card.Title>Uang Masuk / Keluar</Card.Title>
-          </Card.Header>
-          <Card.Content>
-            {summary.cashFlows.length > 0 ? (
-              <div className="flex flex-col gap-3">
-                {summary.cashFlows.map((cf) => (
-                  <div key={cf.id} className="flex items-center gap-2">
-                    {cf.flowType === "in" ? (
-                      <ArrowDownCircle className="size-4 shrink-0 text-success" />
-                    ) : (
-                      <ArrowUpCircle className="size-4 shrink-0 text-danger" />
-                    )}
-                    <CashFlowDescription description={cf.description} />
-                    <span
-                      className={`ml-auto shrink-0 text-sm font-medium tabular-nums ${cf.flowType === "in" ? "text-success" : "text-danger"}`}
-                    >
-                      {cf.flowType === "in" ? "+" : "-"}
-                      {formatRupiah(cf.amount)}
-                    </span>
-                    {canDeleteCashFlow(cf) && (
-                      <Button
-                        aria-label={`Hapus arus kas ${cf.description}`}
-                        className="shrink-0"
-                        isIconOnly
-                        size="sm"
-                        variant="danger"
-                        onPress={() => setCashFlowToDelete(cf)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                <Separator />
-                <SummaryList
-                  items={[
-                    {
-                      label: "Total",
-                      value: signedRupiah(summary.cashIn - summary.cashOut),
-                      tone: summary.cashIn - summary.cashOut >= 0 ? "success" : "danger",
-                    },
-                    // Retur tunai bukan arus kas manual, tapi sudah dipotong dari
-                    // saldo tutup kasir. Tanpa barisnya, laci kurang dan tidak ada
-                    // yang menjelaskan kenapa.
-                    ...(summary.cashRefunds > 0
-                      ? [
-                          {
-                            label: "Retur tunai",
-                            value: signedRupiah(-summary.cashRefunds),
-                            tone: "danger" as const,
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              </div>
-            ) : (
-              <NoData title="Tidak ada arus kas" />
-            )}
-          </Card.Content>
-        </Card>
+        <CashFlowsCard
+          canDelete={canDeleteCashFlow}
+          summary={summary}
+          onDelete={setCashFlowToDelete}
+        />
       </div>
 
-      {/* Close shift action */}
-      <Card>
-        <Card.Header>
-          <Card.Title>Tutup Shift</Card.Title>
-          <Card.Description>Masukkan saldo aktual di laci kasir lalu tutup shift</Card.Description>
-        </Card.Header>
-        <Card.Content>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <TextField
-                autoFocus
-                fullWidth
-                value={groupDigits(closingCash)}
-                variant="secondary"
-                onChange={(value) => setClosingCash(toDigits(value))}
-              >
-                <Label>Saldo Aktual</Label>
-                <Input
-                  className="text-right tabular-nums"
-                  inputMode="numeric"
-                  placeholder="Opsional"
-                />
-              </TextField>
-              {cashDifference !== null && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-muted">Selisih:</span>
-                  <StatusBadge status={cashDifferenceStatus(cashDifference)}>
-                    {signedRupiah(cashDifference)}
-                  </StatusBadge>
-                </div>
-              )}
-            </div>
-            <TextField fullWidth value={notes} variant="secondary" onChange={setNotes}>
-              <Label>Catatan</Label>
-              <Input placeholder="Opsional" />
-            </TextField>
-          </div>
-        </Card.Content>
-        <Card.Footer>
-          {/* Hanya membuka langkah review — belum ada mutasi, jadi bukan `isPending`. */}
-          <Button
-            fullWidth
-            isDisabled={isSubmitting}
-            variant="danger"
-            onPress={() => setCloseStep("review")}
-          >
-            Tutup Kasir
-          </Button>
-        </Card.Footer>
-      </Card>
-
-      {/* Step 1 of the close chain: read the numbers back.
-          `isKeyboardDismissDisabled={false}` restores Escape-to-cancel, which the
-          Radix alert dialog gave for free and HeroUI turns off by default. */}
-      <AlertDialog.Backdrop
-        isKeyboardDismissDisabled={false}
-        isOpen={closeStep === "review"}
-        onOpenChange={(open) => !open && setCloseStep("idle")}
-      >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog aria-label="Konfirmasi Tutup Kasir">
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>Konfirmasi Tutup Kasir</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p>Pastikan semua transaksi hari ini sudah selesai sebelum shift ditutup.</p>
-              <InfoPanel>
-                <SummaryList
-                  items={[
-                    { label: "Kasir", value: summary.shift.userName },
-                    { label: "Total transaksi", value: String(summary.totalTransactions) },
-                    { label: "Saldo aplikasi", value: formatRupiah(summary.expectedCash) },
-                    ...(closingCash
-                      ? [{ label: "Saldo aktual", value: formatRupiah(numericClosing) }]
-                      : []),
-                    ...(cashDifference !== null
-                      ? [{ label: "Selisih", value: signedRupiah(cashDifference) }]
-                      : []),
-                  ]}
-                />
-              </InfoPanel>
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button isDisabled={isSubmitting} slot="close" variant="tertiary">
-                Batal
-              </Button>
-              <Button
-                isDisabled={isSubmitting}
-                variant="danger"
-                onPress={() => setCloseStep("final")}
-              >
-                Lanjutkan
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-
-      {/* Step 2: the last stop before the shift is actually closed. */}
-      <AlertDialog.Backdrop
-        isKeyboardDismissDisabled={false}
-        isOpen={closeStep === "final"}
-        onOpenChange={(open) => !open && setCloseStep("idle")}
-      >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog aria-label="Verifikasi Terakhir">
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>Verifikasi Terakhir</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              {/* Satu kalimat, tanpa `Alert` tambahan yang mengulang peringatan
-                  yang sudah dibawa ikon `danger` di kepala — DESIGN.md §5.7. */}
-              <p>
-                Shift ditutup sekarang dan laporannya dibuat. Pastikan tidak ada pelanggan yang
-                masih dalam proses pembayaran.
-              </p>
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button isDisabled={isSubmitting} slot="close" variant="tertiary">
-                Kembali
-              </Button>
-              <PendingButton isPending={isSubmitting} variant="danger" onPress={handleClose}>
-                Ya, Tutup Kasir
-              </PendingButton>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-
-      <AlertDialog.Backdrop
-        isKeyboardDismissDisabled={false}
-        isOpen={!!cashFlowToDelete}
-        onOpenChange={(open) => !open && setCashFlowToDelete(null)}
-      >
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog aria-label="Hapus Arus Kas">
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>Hapus Arus Kas</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p>Entri uang masuk/keluar ini akan dihapus dari shift yang sedang berjalan.</p>
-              {cashFlowToDelete && (
-                <InfoPanel>
-                  <SummaryList
-                    layout="grid"
-                    items={[
-                      {
-                        label: "Jenis",
-                        value: cashFlowToDelete.flowType === "in" ? "Uang Masuk" : "Uang Keluar",
-                      },
-                      { label: "Nominal", value: formatRupiah(cashFlowToDelete.amount) },
-                      { label: "Keterangan", value: cashFlowToDelete.description },
-                    ]}
-                  />
-                </InfoPanel>
-              )}
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button isDisabled={isDeletingCashFlow} slot="close" variant="tertiary">
-                Batal
-              </Button>
-              <PendingButton
-                isPending={isDeletingCashFlow}
-                variant="danger"
-                onPress={handleDeleteCashFlow}
-              >
-                Hapus
-              </PendingButton>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-    </div>
-  )
-}
-
-/**
- * The description is truncated, so the tooltip is the only way to read a long
- * one — but it explains *text*, not a control. `Tooltip.Trigger` would otherwise
- * wrap it in `div[role=button][tabindex=0]` and put a tab stop on every row,
- * between the row above and the delete button beside it. The render function
- * drops both attributes and keeps the hover handlers, which is what the Radix
- * `asChild` trigger did.
- */
-function CashFlowDescription({ description }: { description: string }) {
-  return (
-    <Tooltip>
-      <Tooltip.Trigger<"span">
-        render={({ role: _role, tabIndex: _tabIndex, className, ...domProps }) => (
-          <span {...domProps} className={`min-w-0 truncate text-sm text-muted ${className ?? ""}`}>
-            {description}
-          </span>
-        )}
+      <ClosingCashCard
+        cashDifference={cashDifference}
+        closingCash={closingCash}
+        isSubmitting={isSubmitting}
+        notes={notes}
+        onClosingCashChange={setClosingCash}
+        onNotesChange={setNotes}
+        onRequestClose={() => setCloseStep("review")}
       />
-      <Tooltip.Content placement="top">
-        <p className="max-w-xs">{description}</p>
-      </Tooltip.Content>
-    </Tooltip>
+
+      <CloseShiftConfirmDialogs
+        cashDifference={cashDifference}
+        closingCash={countedCash}
+        isSubmitting={isSubmitting}
+        step={closeStep}
+        summary={summary}
+        onConfirm={handleClose}
+        onStepChange={setCloseStep}
+      />
+
+      <DeleteCashFlowDialog
+        cashFlow={cashFlowToDelete}
+        onClose={() => setCashFlowToDelete(null)}
+        onDeleted={(cashFlow) => void removeCashFlow(cashFlow)}
+      />
+    </div>
   )
 }

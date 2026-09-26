@@ -2,32 +2,35 @@ import { useState, useMemo, useCallback, useEffect } from "react"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 import { useApiQuery } from "@/hooks/use-api"
+import { errorMessage } from "@/lib/api/client"
 import { createRefund } from "@/lib/api/refunds"
 import { getTransactionDetail } from "@/lib/api/transactions"
 import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
-import { netAmountForQuantity } from "@/features/transactions/line-amounts"
-import { refundBlockedReason } from "@/features/transactions/refund-window"
+import { netAmountForQuantity } from "@/lib/line-amounts"
+import { refundBlockedReason } from "@/lib/refund-window"
 import type { TransactionDetail } from "@/features/transactions/types"
 import {
+  hasRefundedLines,
   parseRemainingQuantityError,
   remainingQuantityMessage,
+  remainingRefundableQuantity,
   type RemainingQuantityLimit,
 } from "../refund-limits"
 import type { Product } from "@/features/products/types"
-import type { CreateRefundInput } from "../types"
+import type { CreateRefundInput, RefundCondition } from "../types"
 
-export type Condition = "good" | "damaged" | "expired"
 export type ActionType = "refund" | "exchange"
 
 export interface RefundItemState {
   checked: boolean
   quantity: number
-  condition: Condition
+  condition: RefundCondition
   /**
-   * Highest quantity the input offers. It starts at the purchased quantity
-   * because no command exposes how much of the line has already been returned —
-   * see `refund-limits.ts`. A rejected submit lowers it to the real remainder.
+   * Highest quantity the input offers: what is left of the line after earlier
+   * refunds (`quantity - refunded_quantity`). A rejected submit can lower it
+   * further when another till refunded the same sale in the meantime — see
+   * `refund-limits.ts`.
    */
   maxQty: number
 }
@@ -38,12 +41,6 @@ export interface ExchangeItem {
   sell_price: number
   quantity: number
   unit: string
-}
-
-export const CONDITION_LABELS: Record<Condition, string> = {
-  good: id.refund.conditionGood,
-  damaged: id.refund.conditionDamaged,
-  expired: id.refund.conditionExpired,
 }
 
 interface UseRefundFormOptions {
@@ -62,10 +59,20 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const [actionType, setActionTypeRaw] = useState<ActionType>("refund")
   const [exchangeItems, setExchangeItems] = useState<ExchangeItem[]>([])
 
-  const { data: detail, isLoading } = useApiQuery<TransactionDetail>(
+  // `/refund/abc` parses to NaN; treat it as "no such sale" instead of leaving
+  // a disabled query that never resolves.
+  const hasValidId = transactionId !== null && Number.isInteger(transactionId) && transactionId > 0
+
+  const {
+    data: detail,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useApiQuery<TransactionDetail>(
     queryKeys.transactions.detail(Number(transactionId)),
     () => getTransactionDetail(Number(transactionId)),
-    { enabled: !!transactionId },
+    { enabled: hasValidId },
   )
 
   /**
@@ -86,18 +93,37 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     [detail],
   )
 
+  // Seed a state per line, but keep what the cashier already set: a background
+  // refetch of the same sale (another screen invalidating `transactions`) used
+  // to wipe every tick, quantity and condition — and the lowered caps from a
+  // rejected submit — halfway through filling in the form. A refetch that
+  // reports more units returned still lowers the cap; nothing raises it.
   useEffect(() => {
     if (!detail) return
-    const states: Record<number, RefundItemState> = {}
-    for (const item of refundableItems) {
-      states[item.id] = {
-        checked: false,
-        quantity: item.quantity,
-        condition: "good",
-        maxQty: item.quantity,
+    setItemStates((prev) => {
+      const states: Record<number, RefundItemState> = {}
+      for (const item of refundableItems) {
+        const remaining = remainingRefundableQuantity(item)
+        const current = prev[item.id]
+        if (!current) {
+          states[item.id] = {
+            checked: false,
+            quantity: Math.max(remaining, 1),
+            condition: "good",
+            maxQty: remaining,
+          }
+          continue
+        }
+        const maxQty = Math.min(current.maxQty, remaining)
+        states[item.id] = {
+          ...current,
+          checked: maxQty > 0 && current.checked,
+          maxQty,
+          quantity: Math.max(Math.min(current.quantity, maxQty), 1),
+        }
       }
-    }
-    setItemStates(states)
+      return states
+    })
   }, [detail, refundableItems])
 
   const updateItem = useCallback((itemId: number, updates: Partial<RefundItemState>) => {
@@ -181,7 +207,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   )
 
   // Money handed back is what the customer paid, not the list price. Mirrors
-  // `refund_amount_for` in `commands/refunds.rs`; using `product_price` here gave
+  // `refund_amount_for` in `services/refunds/mod.rs`; using `product_price` here gave
   // every discount back on top of the refund, at the shop's expense.
   const totalRefund = useMemo(() => {
     return selectedItems.reduce((sum, item) => {
@@ -197,17 +223,18 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const difference = totalRefund - totalExchange
 
   /**
-   * Some of this sale has already come back. The per-line remainder is not part
-   * of any command's response, so the form can only warn that the maximum it
-   * offers is the purchased quantity, not the remaining one.
+   * Some of this sale has already come back. Each line's maximum already has the
+   * returned units taken off; this only tells the cashier why it is lower than
+   * what the receipt says was bought.
    */
-  const hasEarlierRefund = detail?.transaction.status === "partial_refund"
+  const hasEarlierRefund =
+    detail?.transaction.status === "partial_refund" || hasRefundedLines(refundableItems)
 
   /** Why this sale cannot be refunded at all, or `null` when it can. */
   const blockedReason = detail ? refundBlockedReason(detail.transaction.created_at) : null
 
   const handleSubmit = async () => {
-    if (!transactionId || !userId) return
+    if (!transactionId || !userId || isSubmitting) return
 
     if (blockedReason) {
       toast.error(blockedReason)
@@ -243,16 +270,18 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
       await createRefund(refundInput)
       // A return moves the sale's status, the refund list, stock, and — because
       // report figures are net of refunds — every report and dashboard panel.
+      // Damaged/expired returns also land as write-offs.
       queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.refunds.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.products.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.shifts.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.stock.all })
       toast.success(actionType === "exchange" ? id.refund.exchangeSuccess : id.refund.refundSuccess)
       onSuccess?.()
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
+      const message = errorMessage(e)
       const limit = parseRemainingQuantityError(message)
       if (limit) {
         applyRemainingQuantityLimit(limit)
@@ -270,7 +299,13 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     detail,
     refundableItems,
     nonRefundableItems,
-    isLoading,
+    isLoading: hasValidId && isLoading,
+    isFetching,
+    /** Why the sale could not be loaded, or `null`. */
+    loadError: hasValidId ? (error?.message ?? null) : id.refund.invalidTransactionId,
+    /** A malformed id cannot be fixed by loading again, so there is no retry for it. */
+    canRetryLoad: hasValidId,
+    refetch,
     // State
     itemStates,
     actionType,

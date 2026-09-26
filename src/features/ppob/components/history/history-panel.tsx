@@ -1,37 +1,33 @@
 import { useState, useMemo } from "react"
-import { Card, Skeleton } from "@heroui/react"
-import { Search } from "lucide-react"
+import { Button, Card, Skeleton, Spinner } from "@heroui/react"
+import { FilterX, ReceiptText, RefreshCw } from "lucide-react"
 
+import { CardHeading } from "@/components/card-heading"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
-import type { DateRange } from "@/lib/date-range"
 import { id as i18n } from "@/i18n/id"
-import { toLocalDateString } from "@/lib/format"
 import { usePpobHistory } from "../../hooks"
 import { HistoryFilters } from "./history-filters"
 import { HistoryTable } from "./history-table"
-import {
-  getDefaultDateRange,
-  getDefaultDateRangeDates,
-  matchesProductFilter,
-  normalizeStatus,
-} from "./history-utils"
+import { matchesProductFilter, normalizeStatus } from "./history-utils"
+import { useLocalDateRange } from "./use-local-date-range"
 
 /**
  * Riwayat transaksi Mitra sebagai kartu di sebelah kanan menu layanan — bukan
  * sub-halaman lagi, supaya kasir melihat menu dan riwayat sekaligus.
  */
 export function HistoryPanel() {
-  const defaults = getDefaultDateRange()
-
   const [productFilter, setProductFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getDefaultDateRangeDates)
+  const { dateRange, setDateRange, startDate, endDate } = useLocalDateRange()
 
-  // The picker holds local dates; `toISOString()` here would send yesterday.
-  const startDate = dateRange?.from ? toLocalDateString(dateRange.from) : defaults.start
-  const endDate = dateRange?.to ? toLocalDateString(dateRange.to) : defaults.end
+  const { data: items, isLoading, isFetching, error, refetch } = usePpobHistory(startDate, endDate)
+  const hasFilters = productFilter !== "all" || statusFilter !== "all"
 
-  const { data: items, isLoading, error } = usePpobHistory(startDate, endDate)
+  const resetFilters = () => {
+    setProductFilter("all")
+    setStatusFilter("all")
+  }
 
   const filteredItems = useMemo(() => {
     if (!items) return []
@@ -44,8 +40,20 @@ export function HistoryPanel() {
 
   return (
     <Card>
-      <Card.Header>
-        <Card.Title>{i18n.ppob.history}</Card.Title>
+      {/* "Sudah masuk belum?" adalah pertanyaan yang dibawa kasir ke kartu ini,
+          jadi muat-ulangnya ada di kepala kartu, bukan menunggu 30 detik. */}
+      <Card.Header className="flex-row items-center justify-between gap-2">
+        <CardHeading>{i18n.ppob.history}</CardHeading>
+        <Button
+          isIconOnly
+          aria-label={i18n.reloadLabel.history}
+          isPending={isFetching && !isLoading}
+          size="sm"
+          variant="tertiary"
+          onPress={() => refetch()}
+        >
+          {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
+        </Button>
       </Card.Header>
       <Card.Content className="gap-4">
         <HistoryFilters
@@ -55,6 +63,7 @@ export function HistoryPanel() {
           onProductFilterChange={setProductFilter}
           onStatusFilterChange={setStatusFilter}
           onDateRangeChange={setDateRange}
+          onResetFilters={resetFilters}
         />
 
         {isLoading ? (
@@ -64,12 +73,28 @@ export function HistoryPanel() {
             ))}
           </div>
         ) : error ? (
-          <NoData title="Gagal memuat riwayat" tone="danger">
+          <LoadError
+            isRetrying={isFetching}
+            title={i18n.loadFailed.ppobHistory}
+            onRetry={() => refetch()}
+          >
             {error.message}
+          </LoadError>
+        ) : filteredItems.length === 0 && hasFilters && (items?.length ?? 0) > 0 ? (
+          <NoData
+            action={
+              <Button size="sm" variant="secondary" onPress={resetFilters}>
+                {i18n.common.clearFilters}
+              </Button>
+            }
+            icon={<FilterX />}
+            title={i18n.noMatch.transactions}
+          >
+            Ada {items?.length} transaksi pada rentang ini, tapi tidak ada yang cocok dengan filter.
           </NoData>
         ) : filteredItems.length === 0 ? (
-          <NoData icon={<Search />} title="Tidak ada transaksi">
-            Tidak ditemukan riwayat pada rentang tanggal yang dipilih
+          <NoData icon={<ReceiptText />} title={i18n.transactions.noTransactions}>
+            {i18n.empty.ppobHistoryHint}
           </NoData>
         ) : (
           <HistoryTable items={filteredItems} />

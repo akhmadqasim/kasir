@@ -74,15 +74,21 @@ export function PpobCustomPrices({
 
   return (
     <Fieldset>
-      <Fieldset.Legend>Harga Jual Pulsa per Nominal</Fieldset.Legend>
+      <Fieldset.Legend className="text-sm">Harga Jual Pulsa per Nominal</Fieldset.Legend>
       <Description>
         Berlaku untuk semua provider. Nominal tanpa harga pakai markup umum.
       </Description>
 
-      <div className="grid gap-2">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs text-muted">
+      {/* `max-w-md`: stretched across the card, each price sat half a screen
+          away from the nominal it belongs to. `w-36` fits the widest
+          placeholder ("cth: Rp 202.000") without clipping it. */}
+      <div className="grid max-w-md gap-2">
+        <div
+          aria-hidden="true"
+          className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs text-muted"
+        >
           <span>Nominal</span>
-          <span className="w-28 text-center">Harga Jual</span>
+          <span className="w-36 text-center">Harga Jual</span>
           <span aria-hidden="true" className="w-9 md:w-8" />
         </div>
         {allNominals.map((nominal) => {
@@ -94,14 +100,14 @@ export function PpobCustomPrices({
             <div key={nominal} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium tabular-nums">{formatRupiah(nominal)}</span>
-                {isCustomNominal && <Chip size="sm">custom</Chip>}
+                {isCustomNominal && <Chip size="sm">Tambahan</Chip>}
               </div>
               {/* NumberField replaces `<input type="number">` and the CSS that used to
                   hide its spinners. Whole rupiah, grouped the Indonesian way by the
                   app's I18nProvider. */}
               <NumberField
                 aria-label={`Harga jual untuk nominal ${formatRupiah(nominal)}`}
-                className="w-28"
+                className="w-36"
                 formatOptions={{ maximumFractionDigits: 0 }}
                 isDisabled={disabled}
                 minValue={0}
@@ -139,7 +145,7 @@ export function PpobCustomPrices({
         })}
       </div>
 
-      <Fieldset.Actions>
+      <Fieldset.Actions className="max-w-md">
         <TextField
           aria-label="Nominal lain"
           className="flex-1"

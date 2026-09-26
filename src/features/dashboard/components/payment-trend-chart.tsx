@@ -1,7 +1,9 @@
 import { useMemo } from "react"
-import { Card } from "@heroui/react"
+import { Card, Skeleton } from "@heroui/react"
+import { ChartLineIcon } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
+import { CardHeading } from "@/components/card-heading"
 import {
   ChartContainer,
   ChartTooltip,
@@ -11,10 +13,11 @@ import {
 import { id as t } from "@/i18n/id"
 import { formatCompactRupiah, formatRupiah } from "@/lib/format"
 import { METHOD_COLORS, paymentMethodColor as colorFor, paymentMethodLabel } from "@/lib/labels"
-import { NoData } from "@/components/no-data"
 import type { PaymentMethodDaily } from "../types"
 import { usePaymentMethodDaily } from "../hooks/use-dashboard"
-import { longDate, shortDate } from "./chart-dates"
+import { dayTicks, longDate, shortDate } from "./chart-dates"
+import { rupiahTooltipValue } from "./chart-tooltip"
+import { ChartPlaceholder } from "./chart-placeholder"
 import { InlineStat } from "./inline-stat"
 
 /** Baris panjang dari API menjadi satu baris per tanggal, satu kolom per metode. */
@@ -36,7 +39,7 @@ function pivot(rows: PaymentMethodDaily[]) {
  * toko — apakah QRIS naik terhadap tunai — karena sumbunya tidak punya waktu.
  */
 export function PaymentTrendChart({ days }: { days: number }) {
-  const { data: rows } = usePaymentMethodDaily(days)
+  const { data: rows, isLoading, isFetching, error, refetch } = usePaymentMethodDaily(days)
 
   const methods = useMemo(() => {
     const seen = [...new Set((rows ?? []).map((row) => row.method))]
@@ -63,11 +66,12 @@ export function PaymentTrendChart({ days }: { days: number }) {
   // Sama seperti grafik penjualan: baris nol untuk mengisi hari kosong bukan
   // data yang bisa digambar.
   const hasData = methods.length > 0 && (rows ?? []).some((row) => row.total !== 0)
+  const xTicks = useMemo(() => dayTicks(data.map((row) => String(row.date))), [data])
 
   return (
     <Card>
       <Card.Header className="flex-row flex-wrap items-center justify-between gap-3">
-        <Card.Title>{t.dashboard.paymentMethods}</Card.Title>
+        <CardHeading>{t.dashboard.paymentMethods}</CardHeading>
         {hasData ? (
           <ul
             aria-label="Legenda metode pembayaran"
@@ -75,9 +79,11 @@ export function PaymentTrendChart({ days }: { days: number }) {
           >
             {methods.map((method) => (
               <li key={method} className="flex items-center gap-1.5 text-xs text-muted">
+                {/* Garis pendek, bukan titik: bentuknya sama dengan tanda di
+                    grafiknya, jadi legenda terbaca sebagai kunci garis. */}
                 <span
                   aria-hidden="true"
-                  className="size-2 rounded-full"
+                  className="h-1 w-3 rounded-full"
                   style={{ backgroundColor: colorFor(method) }}
                 />
                 {paymentMethodLabel(method)}
@@ -87,17 +93,26 @@ export function PaymentTrendChart({ days }: { days: number }) {
         ) : null}
       </Card.Header>
       <Card.Content className="gap-4">
-        <InlineStat label={t.dashboard.totalRevenue} value={formatRupiah(total)} />
+        <InlineStat
+          label={t.dashboard.totalRevenue}
+          value={isLoading ? <Skeleton className="h-7 w-24" /> : formatRupiah(total)}
+        />
 
         {hasData ? (
-          <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
-            <LineChart accessibilityLayer data={data} margin={{ left: 4, right: 4 }}>
+          <ChartContainer
+            aria-label={`Grafik garis penjualan per metode pembayaran, ${days} hari terakhir`}
+            className="aspect-auto h-[240px] w-full"
+            config={chartConfig}
+            role="group"
+          >
+            <LineChart accessibilityLayer data={data} margin={{ left: 4, right: 20 }}>
               <CartesianGrid vertical={false} />
               <XAxis
                 axisLine={false}
                 dataKey="date"
-                minTickGap={24}
+                interval={0}
                 tickFormatter={shortDate}
+                ticks={xTicks}
                 tickLine={false}
                 tickMargin={10}
               />
@@ -111,7 +126,7 @@ export function PaymentTrendChart({ days }: { days: number }) {
               <ChartTooltip
                 content={
                   <ChartTooltipContent
-                    formatter={(value) => formatRupiah(Number(value))}
+                    formatter={rupiahTooltipValue}
                     labelFormatter={(value) => longDate(String(value))}
                   />
                 }
@@ -120,18 +135,34 @@ export function PaymentTrendChart({ days }: { days: number }) {
                 <Line
                   key={method}
                   dataKey={method}
-                  dot={false}
+                  // Titik per hari selama rentangnya pendek: dengan data yang
+                  // baru ada di satu-dua hari, lengkung garisnya sendiri
+                  // tampak seperti tren naik dari hari-hari kosong, padahal
+                  // yang tercatat hanya titik di ujungnya. Pada rentang
+                  // panjang titiknya justru menumpuk jadi garis tebal.
+                  dot={
+                    data.length <= 14
+                      ? { r: 2.5, strokeWidth: 0, fill: `var(--color-${method})` }
+                      : false
+                  }
+                  activeDot={{ r: 4 }}
                   stroke={`var(--color-${method})`}
                   strokeWidth={2}
-                  type="monotone"
+                  type="linear"
                 />
               ))}
             </LineChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-[240px] items-center justify-center">
-            <NoData />
-          </div>
+          <ChartPlaceholder
+            emptyDescription={t.empty.paymentsChartHint}
+            emptyIcon={<ChartLineIcon />}
+            emptyTitle={t.empty.payments}
+            error={error}
+            isLoading={isLoading}
+            isRetrying={isFetching}
+            onRetry={() => void refetch()}
+          />
         )}
       </Card.Content>
     </Card>

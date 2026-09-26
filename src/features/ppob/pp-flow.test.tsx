@@ -20,6 +20,7 @@ import type { Shift } from "@/features/shift/types"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "@/stores/cart-store"
 import { PpFlow } from "./components/pp-flow"
+import { PPOB_MARKUP_STORAGE_KEY } from "./hooks/use-ppob-markup"
 
 const GROUPS = [
   { id: 33, group: "Internet & TV", imageUrl: null, pathIcon: null },
@@ -106,10 +107,16 @@ function basePpRoutes(overrides: ApiRoutes = {}): ApiRoutes {
   }
 }
 
-function renderFlow(initialEntry: string | { pathname: string; state?: unknown } = "/ppob/pp") {
-  const client = new QueryClient({
+function newClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+}
+
+function renderFlow(
+  initialEntry: string | { pathname: string; state?: unknown } = "/ppob/pp",
+  client = newClient(),
+) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[initialEntry]}>
@@ -540,5 +547,133 @@ describe("payment point flow", () => {
     await screen.findByText("BUDI SANTOSO")
     const call = api.lastCall("POST /ppob/inquiries/pp")
     expect(call?.body).toMatchObject({ customerId: "1234567890" })
+  })
+})
+
+describe("payment point flow — markup", () => {
+  const INQUIRY = {
+    inquiryId: "INQ-1",
+    customerName: "BUDI SANTOSO",
+    customerId: "1234567890",
+    productName: null,
+    amount: 300000,
+    adminFee: 2500,
+    total: 302500,
+    serviceType: "pp",
+    rawData: {},
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  async function reachConfirmation() {
+    fireEvent.click(await screen.findByRole("button", { name: "Internet & TV" }))
+    fireEvent.click(await screen.findByRole("button", { name: /Indihome/ }))
+    fireEvent.change(await screen.findByLabelText("Kode Pembayaran"), {
+      target: { value: "1234567890" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Cek Tagihan" }))
+    await screen.findByText("BUDI SANTOSO")
+  }
+
+  async function expectPayOpensDialog() {
+    const pay = screen.getByRole("button", { name: "Bayar" })
+    expect(pay).toBeEnabled()
+    fireEvent.click(pay)
+    expect(await screen.findByRole("dialog", { name: "Pembayaran" })).toBeInTheDocument()
+  }
+
+  it("prices with the loaded markup and remembers it for next time", async () => {
+    installApiMock(
+      basePpRoutes({
+        "GET /settings/ppob/markup": { pp: { type: "fixed", value: 2000 } },
+        "POST /ppob/inquiries/pp": INQUIRY,
+      }),
+    )
+    renderFlow()
+    await reachConfirmation()
+
+    expect(await screen.findByText("Rp 304.500")).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PPOB_MARKUP_STORAGE_KEY) ?? "null")).toEqual({
+      pp: { type: "fixed", value: 2000 },
+    })
+    await expectPayOpensDialog()
+  })
+
+  it("uses the cached markup while the request is in flight, and lets the cashier pay", async () => {
+    localStorage.setItem(
+      PPOB_MARKUP_STORAGE_KEY,
+      JSON.stringify({ pp: { type: "fixed", value: 2000 } }),
+    )
+    installApiMock(
+      basePpRoutes({
+        // Never answers: the markup stays in flight for the whole test.
+        "GET /settings/ppob/markup": () => new Promise(() => {}),
+        "POST /ppob/inquiries/pp": INQUIRY,
+      }),
+    )
+    renderFlow()
+    await reachConfirmation()
+
+    expect(screen.getByText("Rp 304.500")).toBeInTheDocument()
+    await expectPayOpensDialog()
+  })
+
+  it("toasts a failure, keeps the cached markup, and lets the cashier pay", async () => {
+    localStorage.setItem(
+      PPOB_MARKUP_STORAGE_KEY,
+      JSON.stringify({ pp: { type: "fixed", value: 2000 } }),
+    )
+    installApiMock(
+      basePpRoutes({
+        "GET /settings/ppob/markup": apiFailure(500, "internal", "db error"),
+        "POST /ppob/inquiries/pp": INQUIRY,
+      }),
+    )
+    renderFlow()
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Gagal memuat markup PPOB, memakai markup terakhir"),
+    )
+    expect(toastError).toHaveBeenCalledTimes(1)
+
+    await reachConfirmation()
+    expect(screen.getByText("Rp 304.500")).toBeInTheDocument()
+    await expectPayOpensDialog()
+  })
+
+  /** Every PPOB screen mounts the markup hook; a failure used to toast on each one. */
+  it("toasts a failure once, however often the screen is remounted", async () => {
+    const api = installApiMock(
+      basePpRoutes({ "GET /settings/ppob/markup": apiFailure(500, "internal", "db error") }),
+    )
+    const client = newClient()
+
+    const first = renderFlow("/ppob/pp", client)
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    // Remounting refetches the query in error, and that refetch fails too.
+    renderFlow("/ppob/pp", client)
+    await waitFor(() => expect(api.callsFor("GET /settings/ppob/markup")).toHaveLength(2))
+    await screen.findByRole("button", { name: "Internet & TV" })
+
+    expect(toastError).toHaveBeenCalledTimes(1)
+  })
+
+  it("still lets the cashier pay when the markup fails and nothing is cached", async () => {
+    installApiMock(
+      basePpRoutes({
+        "GET /settings/ppob/markup": apiFailure(500, "internal", "db error"),
+        "POST /ppob/inquiries/pp": INQUIRY,
+      }),
+    )
+    renderFlow()
+    await reachConfirmation()
+
+    // No markup ever loaded on this terminal: the configured zero default applies.
+    expect(screen.getByText("Rp 302.500")).toBeInTheDocument()
+    await expectPayOpensDialog()
   })
 })

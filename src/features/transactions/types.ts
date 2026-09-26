@@ -104,9 +104,18 @@ export interface Transaction {
   created_at: string | null
 }
 
+/**
+ * A sold line as `GET /transactions/:id` returns it: the row, plus how many of
+ * its units earlier refunds already took back. `quantity - refunded_quantity` is
+ * the remainder `create_refund` still accepts for the line.
+ */
+export interface TransactionDetailItem extends TransactionItem {
+  refunded_quantity: number
+}
+
 export interface TransactionDetail {
   transaction: Transaction
-  items: TransactionItem[]
+  items: TransactionDetailItem[]
   cashier_name: string
   has_ppob: boolean
   ppob_status: string | null

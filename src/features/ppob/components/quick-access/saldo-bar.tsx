@@ -1,9 +1,9 @@
 import { useNavigate } from "react-router-dom"
-import { Button, Skeleton, Surface } from "@heroui/react"
-import { History, RefreshCw, Wallet } from "lucide-react"
+import { Button, Skeleton, Spinner, Surface, Tooltip } from "@heroui/react"
+import { History, Info, RefreshCw, Wallet } from "lucide-react"
 
-import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
+import { id } from "@/i18n/id"
 import { usePpobSaldo } from "../../hooks"
 
 /**
@@ -12,7 +12,7 @@ import { usePpobSaldo } from "../../hooks"
  */
 export function SaldoBar() {
   const navigate = useNavigate()
-  const { data, isLoading, error, refetch } = usePpobSaldo()
+  const { data, isLoading, isFetching, error, refetch } = usePpobSaldo()
 
   return (
     <Surface className="flex items-center justify-between gap-2 px-3 py-2" variant="secondary">
@@ -21,7 +21,23 @@ export function SaldoBar() {
         {isLoading ? (
           <Skeleton className="h-5 w-28" />
         ) : error ? (
-          <span className="text-sm text-muted">Saldo tidak tersedia</span>
+          <>
+            <span className="text-sm text-muted">{id.ppob.quickAccess.saldoUnavailable}</span>
+            {/* Alasannya di tooltip tombol ikon, bukan atribut `title`: tombol
+                bisa difokus dengan Tab, dan tooltip HeroUI muncul saat fokus
+                serta dibacakan pembaca layar lewat `aria-describedby`. */}
+            <Tooltip delay={300}>
+              <Button
+                aria-label={id.ppob.quickAccess.saldoUnavailableReason}
+                isIconOnly
+                size="sm"
+                variant="tertiary"
+              >
+                <Info />
+              </Button>
+              <Tooltip.Content>{error.message}</Tooltip.Content>
+            </Tooltip>
+          </>
         ) : (
           <span className="text-sm font-semibold tabular-nums">
             {formatRupiah(data?.saldo ?? 0)}
@@ -30,16 +46,17 @@ export function SaldoBar() {
       </div>
       <div className="flex items-center gap-2">
         <Button
-          aria-label={id.common.reload}
+          aria-label={id.reloadLabel.saldo}
           isIconOnly
+          isPending={isFetching}
           size="sm"
           variant="tertiary"
           onPress={() => refetch()}
         >
-          <RefreshCw />
+          {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
         </Button>
         <Button
-          aria-label="Riwayat transaksi"
+          aria-label={id.ppob.quickAccess.historyLabel}
           isIconOnly
           size="sm"
           variant="tertiary"

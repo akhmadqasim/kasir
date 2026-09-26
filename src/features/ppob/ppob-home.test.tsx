@@ -8,7 +8,6 @@ import { TestNavbar } from "@/test-utils/test-navbar"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import type { User } from "@/features/auth/types"
 import { setUnauthorizedHandler } from "@/lib/api/client"
-import { id } from "@/i18n/id"
 import { PLN_ROW } from "./history-fixture"
 import { PpobHome } from "./components/ppob-home"
 
@@ -230,7 +229,10 @@ describe("ppob home when the Mitra upstream itself is failing", () => {
 
     renderHome()
 
-    expect(await screen.findByText(id.ppob.notConfigured)).toBeInTheDocument()
+    // The server's own reason, not a blanket "belum dikonfigurasi": the
+    // credentials here are fine, the upstream session is what expired.
+    expect(await screen.findByText("Saldo tidak dapat dimuat")).toBeInTheDocument()
+    expect(screen.getByText("Sesi Mitra expired. Silakan coba lagi.")).toBeInTheDocument()
     // The rest of the page is still there — the failure is scoped to the
     // saldo card, not a blank screen.
     expect(screen.getByRole("button", { name: "Pulsa" })).toBeInTheDocument()

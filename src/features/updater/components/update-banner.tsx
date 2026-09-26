@@ -141,7 +141,7 @@ export function UpdateBanner() {
                 variant="secondary"
                 onPress={() => download.mutate()}
               >
-                {t.updater.retry}
+                {t.common.retry}
               </PendingButton>
             </div>
           </Alert.Content>

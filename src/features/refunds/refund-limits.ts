@@ -1,19 +1,35 @@
+import { id } from "@/i18n/id"
+
 /**
- * Reading the remaining refundable quantity back out of a rejected refund.
+ * How much of each sold line may still be returned.
  *
- * `create_refund` caps each line at `quantity - already_refunded`, but **nothing
- * the frontend can call exposes that remainder**: `get_transaction_detail` returns
- * raw `transaction_items` rows with no refund tally, `list_refunds` cannot be
- * filtered by transaction, and `get_refund_detail` needs a refund id the cashier
- * does not have. Until the backend adds a `refunded_quantity` (or
- * `refundable_quantity`) field to the transaction detail items, the only place the
- * number exists on this side is inside the validation error itself.
+ * `GET /transactions/:id` reports `refunded_quantity` per line, summed from the
+ * earlier refunds of the sale, so the form offers `quantity - refunded_quantity`
+ * as the maximum from the start — the same remainder `create_refund` enforces.
  *
- * So we parse it and feed it back into the form: the cashier gets the real cap on
- * the input instead of an error they can only guess their way out of. This can
- * only ever *lower* the offered maximum, never raise it, so a stale or
- * mis-attributed reading cannot produce an over-refund.
+ * The rejection parser below stays as a second line of defence: another till can
+ * refund the same sale between loading the form and submitting it, and then the
+ * number in the server's error is fresher than the one the form loaded. Feeding
+ * it back can only ever *lower* the offered maximum, never raise it, so a stale
+ * or mis-attributed reading cannot produce an over-refund.
  */
+
+/** A sold line's purchased units and the units earlier refunds took back. */
+export interface RefundableLine {
+  quantity: number
+  refunded_quantity: number
+}
+
+/** Units of the line that may still be returned; never negative. */
+export function remainingRefundableQuantity(line: RefundableLine): number {
+  const refunded = Number.isFinite(line.refunded_quantity) ? line.refunded_quantity : 0
+  return Math.max(line.quantity - Math.max(refunded, 0), 0)
+}
+
+/** Whether any line of the sale has already come back, even partly. */
+export function hasRefundedLines(lines: readonly RefundableLine[]): boolean {
+  return lines.some((line) => line.refunded_quantity > 0)
+}
 
 const REMAINING_QUANTITY_PATTERN = /melebihi sisa yang bisa di-refund \((\d+)\) untuk (.+)$/
 
@@ -42,7 +58,7 @@ export function parseRemainingQuantityError(
 /** Message that tells the cashier what to do, not just that something failed. */
 export function remainingQuantityMessage(limit: RemainingQuantityLimit): string {
   if (limit.remaining === 0) {
-    return `${limit.productName} sudah diretur seluruhnya, tidak ada sisa yang bisa dikembalikan.`
+    return id.refund.nothingLeftToReturn(limit.productName)
   }
-  return `Sisa ${limit.productName} yang bisa diretur tinggal ${limit.remaining}. Jumlahnya sudah disesuaikan.`
+  return id.refund.remainingAdjusted(limit.productName, limit.remaining)
 }

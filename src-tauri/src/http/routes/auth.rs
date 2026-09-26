@@ -38,7 +38,9 @@ pub fn session() -> Router<AppState> {
 ///
 /// The order of operations is deliberate. The backoff is consulted *before* the
 /// PIN is checked, so a locked-out attacker never gets bcrypt run on their
-/// behalf: the lock is cheap to enforce and expensive to ignore.
+/// behalf: the lock is cheap to enforce and expensive to ignore. The attempt is
+/// charged in that same step and refunded on success, so parallel requests
+/// cannot all slip past the check before any of them has failed.
 async fn login(
     State(state): State<AppState>,
     client: ClientInfo,
@@ -47,7 +49,7 @@ async fn login(
     let keys = throttle_keys(&input.username, client.address.as_deref());
     let attempted_at = Instant::now();
 
-    if let Some(wait) = state.throttle.retry_after(&keys, attempted_at) {
+    if let Err(wait) = state.throttle.begin_attempt(&keys, attempted_at) {
         let seconds = wait.as_secs().max(1);
         return Err(ApiError::rate_limited(
             format!("Terlalu banyak percobaan login. Coba lagi dalam {seconds} detik."),
@@ -55,10 +57,13 @@ async fn login(
         ));
     }
 
+    // Any outcome but success keeps the charge `begin_attempt` made. A wrong
+    // PIN also restarts the lock from now, so the time bcrypt took to say no
+    // is not deducted from it.
     let user = match services::auth::login(&state.db, input).await {
         Ok(user) => user,
         Err(AppError::Auth(message)) => {
-            state.throttle.record_failure(&keys, attempted_at);
+            state.throttle.settle_failure(&keys, Instant::now());
             return Err(ApiError::unauthorized(message));
         }
         Err(other) => return Err(other.into()),
@@ -66,11 +71,10 @@ async fn login(
 
     state.throttle.record_success(&keys);
 
-    let minutes = session::timeout_minutes(&state.db).await?;
     let issued = session::issue(
         &state.db,
         user.id,
-        minutes,
+        session::TIMEOUT_MINUTES,
         client.user_agent,
         client.address,
         Utc::now(),

@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Card, Chip } from "@heroui/react"
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react"
 
+import { formatPercent } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /**
@@ -71,10 +72,7 @@ export function StatCard({
   const badge = hasDelta ? (
     <Chip color={isUp ? "success" : "danger"} size="sm" variant="soft">
       {isUp ? <TrendingUpIcon className="size-3" /> : <TrendingDownIcon className="size-3" />}
-      <Chip.Label>
-        {isUp ? "+" : ""}
-        {delta.toFixed(1)}%
-      </Chip.Label>
+      <Chip.Label>{`${isUp ? "+" : ""}${formatPercent(delta)}%`}</Chip.Label>
     </Chip>
   ) : note ? (
     <Chip size="sm">{note}</Chip>
@@ -94,9 +92,11 @@ export function StatCard({
         ) : null}
       </Card.Header>
       <Card.Content>
-        <p className={cn("text-2xl font-semibold tracking-tight tabular-nums", TONE_CLASS[tone])}>
+        {/* `div`, bukan `p`: `value` boleh berupa `Skeleton`, dan `Skeleton` adalah
+            `div` yang tidak sah di dalam `p`. */}
+        <div className={cn("text-2xl font-semibold tracking-tight tabular-nums", TONE_CLASS[tone])}>
           {value}
-        </p>
+        </div>
         {children}
       </Card.Content>
       {footer ? <Card.Footer>{footer}</Card.Footer> : null}

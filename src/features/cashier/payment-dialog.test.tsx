@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 const toastWarning = vi.fn()
@@ -12,11 +12,13 @@ vi.mock("@/lib/toast", () => ({
   },
 }))
 
-import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { installApiMock, installDeferredApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore } from "@/stores/cart-store"
+import { queryKeys } from "@/lib/api/query-keys"
+import { SETTINGS } from "@/test-utils/settings-fixture"
 import { PaymentDialog } from "./components/payment/payment-dialog"
 import type { CartItem, TransactionResult } from "./types"
 
@@ -76,6 +78,26 @@ function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
   )
 }
 
+/** Mounted closed, then opened — the way the cashier page uses it. */
+function renderClosedThenOpen() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const ui = (open: boolean) => (
+    <QueryClientProvider client={client}>
+      <PaymentDialog open={open} onOpenChange={() => {}} onSuccess={() => {}} />
+    </QueryClientProvider>
+  )
+  const view = render(ui(false))
+  return {
+    ...view,
+    /** Resolves once `GET /settings/sales` has landed in the cache. */
+    settingsLoaded: () =>
+      waitFor(() => expect(client.getQueryData(queryKeys.settings.sales)).toBeDefined()),
+    open: () => view.rerender(ui(true)),
+  }
+}
+
 /**
  * Penjaga scan membaca `event.timeStamp` dari `onKeyDown` (bukan `onChange`
  * seperti sebelum `RupiahField`: `TextField` HeroUI hanya meneruskan
@@ -109,6 +131,7 @@ let api: ApiMock
 
 beforeEach(() => {
   api = installApiMock({
+    "GET /settings/sales": SETTINGS.sales,
     "POST /transactions": CHECKOUT_RESULT,
   })
   toastWarning.mockReset()
@@ -131,6 +154,37 @@ describe("payment dialog", () => {
     expect(screen.getByText("Rp 6.000")).toBeInTheDocument()
   })
 
+  it("opens a kasir on the default method from Pengaturan, pre-filled and focused", async () => {
+    installApiMock({
+      "GET /settings/sales": { ...SETTINGS.sales, default_payment_method: "qris" },
+    })
+    const { open, settingsLoaded } = renderClosedThenOpen()
+    await settingsLoaded()
+
+    open()
+
+    const qris = await screen.findByLabelText("Nominal QRIS")
+    expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /QRIS/ })).toHaveAttribute("aria-pressed", "true")
+    await waitFor(() => expect(qris).toHaveFocus())
+
+    // The shortcuts still work from there: A goes back to cash.
+    fireEvent.keyDown(qris, { key: "a" })
+    await waitFor(() => expect(screen.getByLabelText("Nominal Tunai")).toHaveFocus())
+  })
+
+  it("falls back to cash when the default is not a method the dialog offers", async () => {
+    installApiMock({
+      "GET /settings/sales": { ...SETTINGS.sales, default_payment_method: "cek" },
+    })
+    const { open, settingsLoaded } = renderClosedThenOpen()
+    await settingsLoaded()
+
+    open()
+
+    expect(await screen.findByLabelText("Nominal Tunai")).toBeInTheDocument()
+  })
+
   it("has no on-screen keypad — the till is a PC with a keyboard", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
@@ -146,8 +200,8 @@ describe("payment dialog", () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
 
-    expect(screen.getByRole("button", { name: "5k" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "100k" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^5k, Rp\s5\.000$/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^100k, Rp\s100\.000$/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Uang Pas" })).toBeInTheDocument()
   })
 
@@ -211,6 +265,10 @@ describe("payment dialog", () => {
     fireEvent.change(field, { target: { value: "1000" } })
 
     expect(screen.getByRole("button", { name: "Bayar" })).toBeDisabled()
+    // The shortfall is named, not shown as a red "Kembalian Rp 0".
+    expect(await screen.findByText("Kurang")).toBeInTheDocument()
+    expect(screen.getByText("Rp 5.000")).toBeInTheDocument()
+    expect(screen.queryByText("Kembalian")).not.toBeInTheDocument()
   })
 
   it("keeps the active method derived from the selection", async () => {
@@ -261,7 +319,7 @@ describe("payment dialog", () => {
     await screen.findByLabelText("Nominal Transfer")
     expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
     // The "A" in "BCA" must not switch Tunai back on.
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "Bank" }), { key: "a" })
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Bank Transfer" }), { key: "a" })
     expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
   })
 
@@ -284,6 +342,34 @@ describe("payment dialog", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })
 
+  it("keeps the dialog open, with its close button off, while the sale is being booked", async () => {
+    // The server has not answered yet.
+    api.route("POST /transactions", () => new Promise(() => {}))
+    const onOpenChange = vi.fn()
+    renderDialog(onOpenChange)
+    const field = await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.change(field, { target: { value: "50000" } })
+    fireEvent.click(screen.getByRole("button", { name: "Bayar" }))
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+
+    const close = screen.getByRole("button", { name: "Close" })
+    await waitFor(() => expect(close).toBeDisabled())
+    fireEvent.keyDown(field, { key: "Escape" })
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it("names each bank field after its method when a sale is split", async () => {
+    renderDialog()
+    await screen.findByLabelText("Nominal Tunai")
+
+    fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Debit/ }))
+
+    expect(await screen.findByRole("combobox", { name: "Bank Transfer" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Bank Debit" })).toBeInTheDocument()
+  })
+
   it("lets a transfer through without a bank; the bank is optional", async () => {
     renderDialog()
     await screen.findByLabelText("Nominal Tunai")
@@ -299,7 +385,7 @@ describe("payment dialog", () => {
     await screen.findByLabelText("Nominal Tunai")
     fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
 
-    const bankField = await screen.findByRole("combobox", { name: "Bank" })
+    const bankField = await screen.findByRole("combobox", { name: "Bank Transfer" })
     bankField.focus()
     fireEvent.click(await screen.findByRole("option", { name: "BCA" }))
 
@@ -316,7 +402,7 @@ describe("payment dialog", () => {
     await screen.findByLabelText("Nominal Tunai")
     fireEvent.click(screen.getByRole("button", { name: /Transfer/ }))
 
-    const bankField = await screen.findByRole("combobox", { name: "Bank" })
+    const bankField = await screen.findByRole("combobox", { name: "Bank Transfer" })
     fireEvent.change(bankField, { target: { value: "BPR Toko Sebelah" } })
 
     expect(bankField).toHaveValue("BPR Toko Sebelah")
@@ -398,6 +484,63 @@ describe("payment dialog", () => {
 
     expect(screen.queryByText(/masih kurang/)).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Bayar" })).toBeEnabled()
+  })
+
+  // The PPOB page mounts the dialog already open. It used to settle on cash
+  // for good when `GET /settings/sales` had not answered yet.
+  it("switches to the default from Pengaturan once it arrives, if nothing was chosen yet", async () => {
+    const { release } = installDeferredApiMock(
+      "GET /settings/sales",
+      { ...SETTINGS.sales, default_payment_method: "qris" },
+      { "POST /transactions": CHECKOUT_RESULT },
+    )
+    renderDialog()
+    expect(await screen.findByLabelText("Nominal Tunai")).toBeInTheDocument()
+
+    release()
+
+    const qris = await screen.findByLabelText("Nominal QRIS")
+    expect(screen.queryByLabelText("Nominal Tunai")).not.toBeInTheDocument()
+    await waitFor(() => expect(qris).toHaveFocus())
+  })
+
+  it("keeps what the cashier already started when the default arrives late", async () => {
+    const { release } = installDeferredApiMock(
+      "GET /settings/sales",
+      { ...SETTINGS.sales, default_payment_method: "qris" },
+      { "POST /transactions": CHECKOUT_RESULT },
+    )
+    renderDialog()
+    const cash = await screen.findByLabelText("Nominal Tunai")
+    fireEvent.change(cash, { target: { value: "10000" } })
+
+    release()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+    expect(screen.getByLabelText("Nominal Tunai")).toHaveValue("10.000")
+    expect(screen.queryByLabelText("Nominal QRIS")).not.toBeInTheDocument()
+  })
+
+  // The Favorit tiles show stock and are only observed while the shortcut tabs
+  // are on screen; a sale must leave them stale so they reload when shown.
+  it("marks the cashier's shortcut tiles stale after a sale", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    client.setQueryData(queryKeys.products.popular(30), [])
+    render(
+      <QueryClientProvider client={client}>
+        <PaymentDialog open onOpenChange={() => {}} onSuccess={() => {}} />
+      </QueryClientProvider>,
+    )
+    const field = await screen.findByLabelText("Nominal Tunai")
+    fireEvent.change(field, { target: { value: "50000" } })
+    pressEnter(field, 3000)
+
+    await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.products.popular(30))?.isInvalidated).toBe(true),
+    )
   })
 })
 

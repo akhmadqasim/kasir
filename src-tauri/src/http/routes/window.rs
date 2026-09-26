@@ -37,15 +37,15 @@ pub fn session() -> Router<AppState> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ZoomResponse {
-    pub factor: f64,
+struct ZoomResponse {
+    factor: f64,
     /// Whether `PUT` from this caller would do anything.
-    pub available: bool,
+    available: bool,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SetZoomInput {
-    pub factor: f64,
+struct SetZoomInput {
+    factor: f64,
 }
 
 fn is_the_till_window(state: &AppState, client: &ClientInfo) -> bool {

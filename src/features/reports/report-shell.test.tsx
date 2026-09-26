@@ -1,6 +1,6 @@
 import type { ComponentType } from "react"
-import { beforeEach, describe, expect, it } from "vitest"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Table } from "@heroui/react"
 
@@ -8,7 +8,7 @@ import { installApiMock, type ApiRoutes } from "@/test-utils/api-mock"
 import { StatCard } from "@/components/stat-card"
 import { formatRupiah } from "@/lib/format"
 
-import { ReportPage, ReportTable } from "./components/report-shell"
+import { ReportPage, ReportTable, StatSkeleton } from "./components/report-shell"
 import { CashFlowsPage } from "./components/cash-flows-page"
 import { CurrentStockPage } from "./components/current-stock-page"
 import { LossesPage } from "./components/losses-page"
@@ -107,10 +107,13 @@ const REPORT_ROUTES: ApiRoutes = {
     ],
     totalCount: 2,
   },
-  "GET /reports/payment-methods": [
-    { paymentMethod: "cash", transactionCount: 2, totalAmount: 100000, percentage: 66.7 },
-    { paymentMethod: "qris", transactionCount: 1, totalAmount: 50000, percentage: 33.3 },
-  ],
+  "GET /reports/payment-methods": {
+    rows: [
+      { paymentMethod: "cash", transactionCount: 2, totalAmount: 100000, percentage: 66.7 },
+      { paymentMethod: "qris", transactionCount: 1, totalAmount: 50000, percentage: 33.3 },
+    ],
+    totalTransactions: 3,
+  },
   "GET /reports/products/sales": [
     {
       productId: 1,
@@ -212,15 +215,17 @@ const REPORT_PAGES: ReportCase[] = [
   { Page: SalesDailyPage, title: "Penjualan per Hari", columns: 5, dataRows: 1 },
   { Page: SalesMonthlyPage, title: "Penjualan per Bulan", columns: 5, dataRows: 1 },
   { Page: SalesPeriodPage, title: "Penjualan per Periode", columns: 5, dataRows: 1 },
-  // Tujuh kolom lama plus kolom Retur dan Bersih; dua struk, satu di antaranya diretur.
-  { Page: SalesReceiptPage, title: "Penjualan per Struk", columns: 9, dataRows: 2 },
+  // Kasir di bawah tanggal, item di bawah total, plus Retur dan Bersih; dua struk, satu diretur.
+  { Page: SalesReceiptPage, title: "Penjualan per Struk", columns: 7, dataRows: 2 },
   // Dua metode pembayaran plus baris total di kakinya.
   { Page: PaymentMethodsPage, title: "Jenis Pembayaran", columns: 4, dataRows: 3 },
   { Page: ProductSalesPage, title: "Penjualan Produk", columns: 7, dataRows: 1 },
   { Page: PopularProductsPage, title: "Produk Populer", columns: 5, dataRows: 1 },
   { Page: ReturnsPage, title: "Retur Produk", columns: 7, dataRows: 1 },
-  { Page: CurrentStockPage, title: "Stok Saat Ini", columns: 9, dataRows: 1 },
-  { Page: LossesPage, title: "Laporan Kerugian", columns: 9, dataRows: 1 },
+  // Barcode di bawah nama produk, satuan di sel Stok.
+  { Page: CurrentStockPage, title: "Stok Saat Ini", columns: 7, dataRows: 1 },
+  // Catatan di bawah nama produk, kasir di bawah tanggal.
+  { Page: LossesPage, title: "Laporan Kerugian", columns: 7, dataRows: 1 },
   { Page: CashFlowsPage, title: "Uang Masuk / Keluar", columns: 5, dataRows: 1 },
 ]
 
@@ -291,8 +296,58 @@ describe("kerangka laporan", () => {
         {[]}
       </ReportTable>,
     )
-    expect(screen.getByText("Error: koneksi database putus")).toBeInTheDocument()
+    // Judul yang bisa dibaca manusia, pesan dari `ApiError` di bawahnya.
+    expect(screen.getByRole("alert")).toHaveTextContent("Gagal memuat laporan")
+    expect(screen.getByText("koneksi database putus")).toBeInTheDocument()
     expect(screen.queryByText("Belum ada data")).not.toBeInTheDocument()
+  })
+
+  it("kerangka angka kartu tetap HTML sah di dalam StatCard", () => {
+    const { container } = render(<StatCard label="Total" value={<StatSkeleton />} />)
+    // `div` di dalam `p` adalah HTML tidak sah; kerangkanya harus `span`, supaya
+    // tetap sah apa pun elemen yang dipakai `StatCard` untuk membungkus angkanya.
+    expect(container.querySelector("p div")).toBeNull()
+    expect(container.querySelector("span.h-8.w-28")).not.toBeNull()
+  })
+
+  it("keadaan gagal punya tombol untuk mencoba lagi", () => {
+    const onRetry = vi.fn()
+    render(
+      <ReportTable
+        label="Uji"
+        columnCount={1}
+        columns={<Table.Column isRowHeader>A</Table.Column>}
+        isLoading={false}
+        error={new Error("server mati")}
+        onRetry={onRetry}
+      >
+        {[]}
+      </ReportTable>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Coba lagi/ }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it("tombol coba lagi tidak bisa ditekan berulang selama laporannya dimuat ulang", () => {
+    const onRetry = vi.fn()
+    render(
+      <ReportTable
+        label="Uji"
+        columnCount={1}
+        columns={<Table.Column isRowHeader>A</Table.Column>}
+        isLoading={false}
+        error={new Error("server mati")}
+        onRetry={onRetry}
+        isRetrying
+      >
+        {[]}
+      </ReportTable>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Coba lagi/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Coba lagi/ }))
+    expect(onRetry).not.toHaveBeenCalled()
   })
 
   it.each(REPORT_PAGES)(
@@ -325,14 +380,45 @@ describe("kerangka laporan", () => {
  * screens render them as numbers a shopkeeper can read rather than as a bar
  * pointing the wrong way or a loss printed in green.
  */
+describe("Jenis Pembayaran: baris total", () => {
+  it("jumlah transaksinya dari server, jadi penjualan split terhitung sekali", async () => {
+    installApiMock({
+      ...REPORT_ROUTES,
+      "GET /reports/payment-methods": {
+        rows: [
+          { paymentMethod: "cash", transactionCount: 1, totalAmount: 60000, percentage: 60 },
+          { paymentMethod: "qris", transactionCount: 1, totalAmount: 40000, percentage: 40 },
+        ],
+        totalTransactions: 1,
+      },
+    })
+
+    renderWithQuery(<PaymentMethodsPage />)
+
+    const grid = screen.getByRole("grid", { name: "Jenis Pembayaran" })
+    const totalRow = await waitFor(() => {
+      const row = within(grid)
+        .getAllByRole("row")
+        .find((r) => within(r).queryByRole("rowheader")?.textContent === "Total")
+      expect(row).toBeDefined()
+      return row as HTMLElement
+    })
+    expect(within(totalRow).getByText("1")).toBeInTheDocument()
+    expect(within(totalRow).queryByText("2")).not.toBeInTheDocument()
+  })
+})
+
 describe("angka bersih yang negatif", () => {
   it("Jenis Pembayaran: baris tanpa transaksi dan bernilai negatif tetap tampil", async () => {
     installApiMock({
       ...REPORT_ROUTES,
-      "GET /reports/payment-methods": [
-        { paymentMethod: "cash", transactionCount: 3, totalAmount: 150000, percentage: 125 },
-        { paymentMethod: "qris", transactionCount: 0, totalAmount: -30000, percentage: -25 },
-      ],
+      "GET /reports/payment-methods": {
+        rows: [
+          { paymentMethod: "cash", transactionCount: 3, totalAmount: 150000, percentage: 125 },
+          { paymentMethod: "qris", transactionCount: 0, totalAmount: -30000, percentage: -25 },
+        ],
+        totalTransactions: 3,
+      },
     })
 
     renderWithQuery(<PaymentMethodsPage />)
@@ -341,7 +427,8 @@ describe("angka bersih yang negatif", () => {
     // finding it at all is the proof the negative amount rendered.
     expect(await screen.findAllByText(rupiahText(-30000))).not.toHaveLength(0)
     // Once in the card's note chip, once in the table row.
-    expect(await screen.findAllByText("-25.0%")).toHaveLength(2)
+    // Persentase ditulis gaya Indonesia (`formatPercent`), jadi -25 tanpa ",0".
+    expect(await screen.findAllByText("-25%")).toHaveLength(2)
     // The bar is a HeroUI `Meter`; React Aria clamps its value to the 0–100
     // range, so a negative share never becomes a negative `width`, which is an
     // invalid CSS declaration the browser drops silently.
@@ -375,5 +462,65 @@ describe("angka bersih yang negatif", () => {
 
     expect(await screen.findByText("-2")).toBeInTheDocument()
     expect(screen.getByText(rupiahText(-6000))).toHaveClass("text-danger")
+  })
+})
+
+describe("Stok Saat Ini: stok menipis", () => {
+  it("produk tanpa batas minimum yang habis ikut dihitung dan ditandai, sama seperti filter backend", async () => {
+    installApiMock({
+      ...REPORT_ROUTES,
+      "GET /reports/stock/current": {
+        items: [
+          {
+            productId: 1,
+            barcode: null,
+            productName: "Kerupuk",
+            categoryName: null,
+            stock: 0,
+            minStock: 0,
+            unit: "pcs",
+            buyPrice: 1000,
+            sellPrice: 1500,
+            stockValue: 0,
+          },
+          {
+            productId: 2,
+            barcode: null,
+            productName: "Beras",
+            categoryName: null,
+            stock: 10,
+            minStock: 0,
+            unit: "kg",
+            buyPrice: 12000,
+            sellPrice: 14000,
+            stockValue: 120000,
+          },
+        ],
+        totalCount: 2,
+      },
+    })
+
+    renderWithQuery(<CurrentStockPage />)
+
+    expect(await screen.findByText(", habis")).toBeInTheDocument()
+    expect(screen.queryByText(", menipis")).not.toBeInTheDocument()
+    const card = screen.getByText("Produk Stok Menipis").closest("[data-slot='card']")
+    expect(card).not.toBeNull()
+    expect(card).toHaveTextContent(/^Produk Stok Menipis1$/)
+  })
+})
+
+describe("Penjualan per Hari: tanggal", () => {
+  it("menulis hari yang dikirim backend, dibaca sebagai hari lokal", async () => {
+    renderWithQuery(<SalesDailyPage />)
+
+    const grid = screen.getByRole("grid", { name: "Penjualan per Hari" })
+    const label = new Intl.DateTimeFormat("id-ID", {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(2026, 8, 1))
+    expect(await within(grid).findByRole("rowheader", { name: label })).toBeInTheDocument()
   })
 })

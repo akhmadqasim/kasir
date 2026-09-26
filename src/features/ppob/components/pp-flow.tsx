@@ -1,28 +1,24 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Alert, Breadcrumbs, Button, Card, Input, Label, Skeleton, TextField } from "@heroui/react"
+import { Breadcrumbs, Button, Card } from "@heroui/react"
+import { CreditCard } from "lucide-react"
 
 import { SubpageHeader } from "@/components/layout/subpage-header"
 import { NoData } from "@/components/no-data"
-import { PendingButton } from "@/components/pending-button"
-import { RupiahField } from "@/components/rupiah-field"
-import { SearchInput } from "@/components/search-input"
-import { StatusBadge } from "@/components/status-badge"
-import type { SummaryItem } from "@/components/summary-list"
-import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
 import { usePpobMenu, usePpSubMenu, usePpobMarkup, usePaymentPointInquiry } from "../hooks"
 import { resolvePpobSellPrice } from "../pricing"
-import type { InquiryResult, PpSearchGroupRef, PpobMenuGroup, PpSubMenuItem } from "../types"
+import type { PpSearchGroupRef, PpobMenuGroup, PpSubMenuItem } from "../types"
+import { useInquiryResult } from "./quick-access/use-inquiry-result"
 import { PpobCheckout } from "./checkout/ppob-checkout"
 import { usePpobCheckout } from "./checkout/use-ppob-checkout"
 import { ConfirmCard } from "./quick-access/confirm-card"
-import { markupItem } from "./quick-access/markup-item"
 import { FlowColumns } from "./flow-columns"
-import { PaymentPointIcon } from "./payment-point-icon"
-import { TileButton } from "./tile-button"
-import { TileGrid } from "./tile-grid"
+import { buildPpConfirmItems } from "./pp/pp-confirm-items"
+import { PpCodeStep } from "./pp/pp-code-step"
+import { PpGroupStep } from "./pp/pp-group-step"
+import { PpMerchantStep } from "./pp/pp-merchant-step"
 
 /** What `ppob-home.tsx`'s search result hands this route to skip the group step. */
 interface PpFlowPreselect {
@@ -35,33 +31,7 @@ function groupFromPreselect(group: PpSearchGroupRef): PpobMenuGroup {
   return { id: group.id, group: group.name, imageUrl: null, pathIcon: null }
 }
 
-/**
- * "Periode" is not a field on `InquiryResult` — only a handful of billers
- * (postpaid subscriptions) carry one, buried in whatever shape the upstream
- * answered with. Read defensively from the raw response and say nothing when
- * it is not there, the same way the admin fee row disappears for a biller
- * that does not charge one.
- */
-function extractPeriodLabel(rawData: InquiryResult["rawData"] | undefined): string | null {
-  if (!rawData) return null
-  const nested = rawData.data
-  const sources = [
-    rawData,
-    typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>) : null,
-  ]
-
-  for (const source of sources) {
-    if (!source) continue
-    for (const key of ["period", "periode"]) {
-      const value = source[key]
-      if (typeof value === "string" && value.trim()) return value
-      if (typeof value === "number") return String(value)
-    }
-  }
-
-  return null
-}
-
+/** Payment Point: kategori → biller → kode pembayaran → konfirmasi, lalu bayar di tempat. */
 export function PpFlow() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -74,15 +44,11 @@ export function PpFlow() {
   const [merchantSearch, setMerchantSearch] = useState("")
   const [paymentCode, setPaymentCode] = useState("")
   const [amount, setAmount] = useState<number | null>(null)
-  const [inquiryResult, setInquiryResult] = useState<InquiryResult | null>(null)
+  const { result: inquiryResult, reset: resetInquiry, accept: acceptInquiry } = useInquiryResult()
 
-  const { data: groups, isLoading: groupsLoading } = usePpobMenu()
-  const {
-    data: subMenuItems,
-    isLoading: subMenuLoading,
-    isError: subMenuIsError,
-    error: subMenuError,
-  } = usePpSubMenu(selectedGroup?.id ?? 0)
+  const groupsQuery = usePpobMenu()
+  const subMenuQuery = usePpSubMenu(selectedGroup?.id ?? 0)
+  const subMenuItems = subMenuQuery.data
   const { getMarkupConfig, customPrices } = usePpobMarkup()
   const paymentPointInquiry = usePaymentPointInquiry()
   const checkout = usePpobCheckout()
@@ -100,18 +66,9 @@ export function PpFlow() {
   if (!itemApplied && preselect?.preselectItemId !== undefined && subMenuItems) {
     setItemApplied(true)
     const match = subMenuItems.find((item) => item.id === preselect.preselectItemId)
-    if (match) setSelectedMerchant(match)
+    // A biller under disruption stays on the merchant step, where its tile is disabled.
+    if (match && !match.isTrouble) setSelectedMerchant(match)
   }
-
-  const filteredMerchants = useMemo(() => {
-    if (!subMenuItems) return []
-    if (!merchantSearch) return subMenuItems
-    const q = merchantSearch.toLowerCase()
-    return subMenuItems.filter(
-      (item) =>
-        item.merchant.toLowerCase().includes(q) || item.description.toLowerCase().includes(q),
-    )
-  }, [subMenuItems, merchantSearch])
 
   const goToGroups = () => {
     setSelectedGroup(null)
@@ -119,14 +76,14 @@ export function PpFlow() {
     setMerchantSearch("")
     setPaymentCode("")
     setAmount(null)
-    setInquiryResult(null)
+    resetInquiry()
   }
 
   const goToMerchants = () => {
     setSelectedMerchant(null)
     setPaymentCode("")
     setAmount(null)
-    setInquiryResult(null)
+    resetInquiry()
   }
 
   const handleBack = () => {
@@ -151,7 +108,7 @@ export function PpFlow() {
   const canInquiry = !!selectedMerchant && codeReady && amountReady
 
   const handleInquiry = () => {
-    if (!selectedMerchant || !canInquiry) return
+    if (!selectedMerchant || !canInquiry || paymentPointInquiry.isPending) return
     paymentPointInquiry.mutate(
       {
         customerId: trimmedCode,
@@ -160,8 +117,8 @@ export function PpFlow() {
         ...(selectedMerchant.inputAmt ? { amount: amount ?? 0 } : {}),
       },
       {
-        onSuccess: (result) => setInquiryResult(result),
-        onError: (err) => toast.error(`Inquiry gagal: ${err.message}`),
+        onSuccess: acceptInquiry(),
+        onError: (err) => toast.error(id.ppob.billCheckFailed(err.message)),
       },
     )
   }
@@ -178,7 +135,6 @@ export function PpFlow() {
         customPrices,
       })
     : 0
-  const period = extractPeriodLabel(inquiryResult?.rawData)
 
   const handleConfirm = () => {
     if (!inquiryResult || !selectedMerchant) return
@@ -194,25 +150,16 @@ export function PpFlow() {
     })
   }
 
-  const confirmItems: SummaryItem[] | null =
+  const confirmItems =
     selectedMerchant && inquiryResult
-      ? [
-          { label: id.ppob.selectGroup, value: selectedGroup?.group ?? "-" },
-          { label: id.ppob.selectMerchant, value: selectedMerchant.merchant },
-          {
-            label: selectedMerchant.label || id.ppob.paymentCode,
-            value: trimmedCode,
-            tone: "mono",
-          },
-          { label: "Nama", value: inquiryResult.customerName ?? "-" },
-          ...(period ? [{ label: id.ppob.period, value: period }] : []),
-          { label: "Tagihan", value: formatRupiah(inquiryResult.amount) },
-          ...(inquiryResult.adminFee > 0
-            ? [{ label: "Admin", value: formatRupiah(inquiryResult.adminFee) }]
-            : []),
-          ...(sellPrice > vendorCost ? [markupItem(sellPrice, vendorCost)] : []),
-          { label: "Total Bayar", value: formatRupiah(sellPrice), tone: "strong" },
-        ]
+      ? buildPpConfirmItems({
+          groupName: selectedGroup?.group,
+          merchant: selectedMerchant,
+          paymentCode: trimmedCode,
+          inquiry: inquiryResult,
+          vendorCost,
+          sellPrice,
+        })
       : null
 
   return (
@@ -242,136 +189,64 @@ export function PpFlow() {
               items={confirmItems}
               title={id.ppob.confirm}
             />
-          ) : groups ? (
+          ) : groupsQuery.data ? (
             <Card>
               <Card.Content>
-                <NoData title="Pilih produk untuk melihat konfirmasi" />
+                <NoData
+                  icon={<CreditCard />}
+                  title={
+                    selectedMerchant
+                      ? "Cek tagihan untuk melihat detail"
+                      : "Pilih biller untuk melihat konfirmasi"
+                  }
+                />
               </Card.Content>
             </Card>
           ) : null
         }
       >
-        {/* Step 1: Group Selection */}
-        {!selectedGroup &&
-          (groupsLoading ? (
-            <TileGrid>
-              {Array.from({ length: 9 }).map((_, i) => (
-                <Skeleton key={i} className="h-24" />
-              ))}
-            </TileGrid>
-          ) : (
-            <TileGrid>
-              {groups?.map((group) => (
-                <TileButton
-                  key={group.id}
-                  icon={<PaymentPointIcon className="size-8" pathIcon={group.pathIcon} />}
-                  label={group.group}
-                  onPress={() => setSelectedGroup(group)}
-                />
-              ))}
-            </TileGrid>
-          ))}
-
-        {/* Step 2: Merchant Selection */}
-        {selectedGroup && !selectedMerchant && (
-          <>
-            <SearchInput
-              aria-label={id.ppob.searchMerchant}
-              className="max-w-sm"
-              placeholder={id.ppob.searchMerchant}
-              value={merchantSearch}
-              onChange={setMerchantSearch}
-            />
-
-            {subMenuLoading ? (
-              <TileGrid>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24" />
-                ))}
-              </TileGrid>
-            ) : subMenuIsError ? (
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Description>
-                    {subMenuError?.message ?? "Gagal memuat daftar merchant"}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : filteredMerchants.length === 0 ? (
-              <NoData title={id.ppob.merchantNotFound} />
-            ) : (
-              // Merchant yang bermasalah tetap terlihat, ditandai `StatusBadge`
-              // "Gangguan" di bawah namanya, tapi ubinnya tidak bisa ditekan.
-              <TileGrid>
-                {filteredMerchants.map((item) => (
-                  <TileButton
-                    key={item.id}
-                    badge={
-                      item.isTrouble ? (
-                        <StatusBadge size="sm" status="warning">
-                          {id.ppob.trouble}
-                        </StatusBadge>
-                      ) : undefined
-                    }
-                    description={item.isTrouble ? undefined : item.description || undefined}
-                    icon={<PaymentPointIcon className="size-8" pathIcon={item.pathIcon} />}
-                    isDisabled={!!item.isTrouble}
-                    label={item.merchant}
-                    onPress={() => setSelectedMerchant(item)}
-                  />
-                ))}
-              </TileGrid>
-            )}
-          </>
+        {!selectedGroup && (
+          <PpGroupStep
+            error={groupsQuery.error}
+            groups={groupsQuery.data}
+            isLoading={groupsQuery.isLoading}
+            isRetrying={groupsQuery.isFetching}
+            onRetry={() => void groupsQuery.refetch()}
+            onSelect={setSelectedGroup}
+          />
         )}
 
-        {/* Step 3: Payment Code Input */}
+        {selectedGroup && !selectedMerchant && (
+          <PpMerchantStep
+            error={subMenuQuery.error}
+            isLoading={subMenuQuery.isLoading}
+            isRetrying={subMenuQuery.isFetching}
+            merchants={subMenuItems}
+            search={merchantSearch}
+            onRetry={() => void subMenuQuery.refetch()}
+            onSearchChange={setMerchantSearch}
+            onSelect={setSelectedMerchant}
+          />
+        )}
+
         {selectedMerchant && (
-          <Card>
-            <Card.Header>
-              <Card.Title>{selectedMerchant.merchant}</Card.Title>
-              {selectedMerchant.description && (
-                <Card.Description>{selectedMerchant.description}</Card.Description>
-              )}
-            </Card.Header>
-            <Card.Content className="gap-4">
-              <TextField
-                fullWidth
-                value={paymentCode}
-                variant="secondary"
-                onChange={(value) => {
-                  setPaymentCode(value)
-                  setInquiryResult(null)
-                }}
-              >
-                <Label>{selectedMerchant.label || id.ppob.paymentCode}</Label>
-                <Input className="tabular-nums" placeholder={id.ppob.paymentCodePlaceholder} />
-              </TextField>
-
-              {selectedMerchant.inputAmt ? (
-                <RupiahField
-                  label={id.ppob.nominal}
-                  value={amount}
-                  onChange={(value) => {
-                    setAmount(value)
-                    setInquiryResult(null)
-                  }}
-                />
-              ) : null}
-
-              {!inquiryResult && (
-                <PendingButton
-                  fullWidth
-                  isDisabled={!canInquiry}
-                  isPending={paymentPointInquiry.isPending}
-                  onPress={handleInquiry}
-                >
-                  Cek Tagihan
-                </PendingButton>
-              )}
-            </Card.Content>
-          </Card>
+          <PpCodeStep
+            amount={amount}
+            canInquiry={canInquiry}
+            hasInquiry={!!inquiryResult}
+            isInquiring={paymentPointInquiry.isPending}
+            merchant={selectedMerchant}
+            paymentCode={paymentCode}
+            onAmountChange={(value) => {
+              setAmount(value)
+              resetInquiry()
+            }}
+            onInquiry={handleInquiry}
+            onPaymentCodeChange={(value) => {
+              setPaymentCode(value)
+              resetInquiry()
+            }}
+          />
         )}
       </FlowColumns>
 

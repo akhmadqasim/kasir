@@ -1,5 +1,6 @@
 //! Fixtures and tests for the PPOB struk formatter.
 
+use super::provider_text::{detect_label_width, parse_logical_lines};
 use super::*;
 use crate::printing::receipt::LineSize;
 
@@ -665,22 +666,6 @@ fn bill_detail_that_follows_no_blank_line_stays_above_the_totals() {
     assert_eq!(rows.len(), rule + 4);
 }
 
-/// A slip with no key/value line at all — payment point writes `Nilai
-/// 316350` — is all table and has no closing prose to move.
-#[test]
-fn a_slip_with_no_labelled_line_is_all_body() {
-    let (body, footer) = split_body_footer(
-        vec![
-            "--Detail Tagihan 1--".to_string(),
-            "Nilai   316350".to_string(),
-        ],
-        32,
-    );
-
-    assert_eq!(body.len(), 2);
-    assert!(footer.is_empty());
-}
-
 /// An item stored before migration 023 has no provider text at all.
 #[test]
 fn without_provider_text_the_captured_fields_are_printed_instead() {
@@ -729,34 +714,9 @@ fn group_token_leaves_a_non_numeric_serial_alone() {
     assert_eq!(group_token("12345678", 16), vec!["1234-5678"]);
 }
 
-/// Only the `STROOM/TOKEN` pair and the rows continuing it leave the body.
-#[test]
-fn without_token_lines_drops_the_pair_and_its_continuation_only() {
-    let body = vec![
-        "RP STROOM/TOKEN : Rp 18.181,00".to_string(),
-        "STROOM/TOKEN    : 1111 2222 3333".to_string(),
-        "                   4444 5555".to_string(),
-        "ADMIN BANK      : Rp 3.500".to_string(),
-    ];
-
-    assert_eq!(
-        without_token_lines(body, 32),
-        vec![
-            "RP STROOM/TOKEN : Rp 18.181,00",
-            "ADMIN BANK      : Rp 3.500"
-        ]
-    );
-}
-
-#[test]
-fn a_blank_or_empty_provider_text_yields_no_lines() {
-    assert!(provider_lines("").is_empty());
-    assert!(provider_lines("\r\n\r\n   \r\n").is_empty());
-}
-
 // -----------------------------------------------------------------------
 // Pulsa/data: Mitra's own "Cetak Struk" layout, used whenever there is no
-// `provider_receipt_text` to print instead. See `format_pulsa_receipt`.
+// `provider_receipt_text` to print instead. See `pulsa::format_pulsa_receipt`.
 // -----------------------------------------------------------------------
 
 /// The whole struk, in the order Mitra's own screen shows it, reconstructed
@@ -948,178 +908,6 @@ fn a_pulsa_line_with_a_provider_receipt_text_still_prints_it_verbatim() {
     assert!(!text.contains("Nomor Invoice"));
 }
 
-// -----------------------------------------------------------------------
-// The re-flow helpers, in isolation: parsing the provider's own line
-// breaks back into one logical field, and laying each one out again for
-// our own paper. See `reflow_provider_lines`'s doc for why the two steps
-// are split (join first, `split_body_footer`/`without_token_lines` run
-// unchanged, only then wrap for the paper).
-// -----------------------------------------------------------------------
-
-#[test]
-fn match_label_line_accepts_the_mitra_shapes() {
-    assert_eq!(
-        match_label_line("NO REF          : 11002500AAA1A1"),
-        Some(("NO REF", "11002500AAA1A1", 16))
-    );
-    assert_eq!(
-        match_label_line("RP STROOM/TOKEN : Rp 18.181,00"),
-        Some(("RP STROOM/TOKEN", "Rp 18.181,00", 16))
-    );
-    assert_eq!(
-        match_label_line("PBJT-TL         : Rp 1.819,00"),
-        Some(("PBJT-TL", "Rp 1.819,00", 16))
-    );
-    assert_eq!(
-        match_label_line("BL/TH          : SEP26"),
-        Some(("BL/TH", "SEP26", 15))
-    );
-    // A label with no space before its colon at all - the label class
-    // allows it even though none of this module's ALL-CAPS fixtures do it.
-    assert_eq!(match_label_line("TOTAL:100"), Some(("TOTAL", "100", 5)));
-}
-
-#[test]
-fn match_label_line_only_eats_one_space_after_the_colon() {
-    // The provider's own `\s?` -- at most one space consumed after the
-    // colon, so a second one (never seen in a real fixture, but nothing
-    // stops one) stays part of the value rather than being trimmed away.
-    assert_eq!(match_label_line("NAMA :  BUDI"), Some(("NAMA", " BUDI", 5)));
-}
-
-#[test]
-fn match_label_line_accepts_any_case_but_rejects_prose_and_bracketed_lines() {
-    // PDAM/BPJS/payment point's own Title-case keys join the column: each
-    // provider pads most labels and leaves a few unpadded, and the owner's
-    // first complaint was colons that wander -- see `match_label_line`'s doc.
-    assert_eq!(
-        match_label_line("Nama PDAM          : Kota Samarinda"),
-        Some(("Nama PDAM", "Kota Samarinda", 19))
-    );
-    assert_eq!(
-        match_label_line("Nama Peserta      : AHMAD FAUZI NUGROHO"),
-        Some(("Nama Peserta", "AHMAD FAUZI NUGROHO", 18))
-    );
-    // A footer sentence that happens to end in a colon is far longer than any
-    // label; the length cap keeps it prose.
-    assert_eq!(
-        match_label_line("Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :"),
-        None
-    );
-    // The trace stamp's first colon sits inside a timestamp, not after a
-    // label -- `[` as the first character rules it out before the colon
-    // position is even considered.
-    assert_eq!(
-        match_label_line("[I001IGR1-(10/09/2026 12:45:39)-CA]"),
-        None
-    );
-    // The pipe-delimited footer: upper-case `MKM` alone would pass, but the
-    // `|` and the lower-case prose after it do not.
-    let mkm_line =
-        "MKM|\"Informasi Hubungi Call Center 123 Atau Hub PLN Terdekat :\"|Download PLN Mobile";
-    assert_eq!(match_label_line(mkm_line), None);
-    // No colon at all.
-    assert_eq!(match_label_line("Nilai   316350"), None);
-}
-
-#[test]
-fn parse_logical_lines_joins_continuations_with_no_separator() {
-    let lines = vec![
-        "NAMA            : BUDI SANTOSA W".to_string(),
-        "                  IJAYA".to_string(),
-    ];
-    let logical = parse_logical_lines(&lines);
-
-    assert_eq!(logical.len(), 1);
-    match &logical[0] {
-        LogicalLine::Labelled {
-            label,
-            value,
-            column,
-        } => {
-            assert_eq!(label, "NAMA");
-            assert_eq!(value, "BUDI SANTOSA WIJAYA");
-            assert_eq!(*column, 16);
-        }
-        _ => panic!("expected a labelled line"),
-    }
-}
-
-#[test]
-fn parse_logical_lines_joins_three_continuations_in_a_row() {
-    let lines = vec![
-        "NO REF         : 11002500AAA1A11".to_string(),
-        "                  11AA111111A1AA1".to_string(),
-        "                  11".to_string(),
-    ];
-    let logical = parse_logical_lines(&lines);
-
-    assert_eq!(logical.len(), 1);
-    match &logical[0] {
-        LogicalLine::Labelled { value, .. } => {
-            assert_eq!(value, "11002500AAA1A1111AA111111A1AA111");
-        }
-        _ => panic!("expected a labelled line"),
-    }
-}
-
-#[test]
-fn parse_logical_lines_joins_unlabelled_continuations_too() {
-    let lines = vec![
-        "Informasi Hubungi Call Center 12".to_string(),
-        "                  3 Atau hubungi PLN TerdekatDownl".to_string(),
-        "                  oad PLN Mobile".to_string(),
-    ];
-    let logical = parse_logical_lines(&lines);
-
-    assert_eq!(logical.len(), 1);
-    match &logical[0] {
-        LogicalLine::Text(text) => assert_eq!(
-            text,
-            "Informasi Hubungi Call Center 123 Atau hubungi PLN TerdekatDownload PLN Mobile"
-        ),
-        _ => panic!("expected a text line"),
-    }
-}
-
-/// A continuation-shaped line with nothing above it to continue -- the block
-/// opens mid-wrap, or the line above it was blank -- is not dropped; it
-/// starts a logical line of its own instead.
-#[test]
-fn parse_logical_lines_keeps_a_continuation_with_no_line_to_join() {
-    let lines = vec!["                  orphaned".to_string()];
-    let logical = parse_logical_lines(&lines);
-
-    assert_eq!(logical.len(), 1);
-    match &logical[0] {
-        LogicalLine::Text(text) => assert_eq!(text, "orphaned"),
-        _ => panic!("expected a text line"),
-    }
-}
-
-#[test]
-fn parse_logical_lines_keeps_blanks_as_their_own_entries() {
-    let lines = vec![
-        "IDPEL          : 231000000002".to_string(),
-        String::new(),
-        "NAMA           : PT.CONTOH SEJA H".to_string(),
-    ];
-    let logical = parse_logical_lines(&lines);
-
-    assert_eq!(logical.len(), 3);
-    assert!(matches!(logical[1], LogicalLine::Blank));
-}
-
-#[test]
-fn detect_label_width_is_zero_with_no_labelled_lines() {
-    let logical = parse_logical_lines(&provider_lines(
-        "Periode 09-2026
-Nilai   255300
-",
-    ));
-    assert_eq!(detect_label_width(&logical, 32), 0);
-}
-
 /// The colon column each provider *meant* is the widest one it padded to;
 /// the unpadded stragglers are moved out to it, so every colon lines up.
 #[test]
@@ -1174,59 +962,6 @@ fn detect_label_width_is_the_widest_column_in_the_block() {
 
     let logical = parse_logical_lines(&provider_lines(PLN_PREPAID_TEXT));
     assert_eq!(detect_label_width(&logical, 32), 16);
-}
-
-#[test]
-fn wrap_text_line_leaves_a_fitting_line_untouched() {
-    // Three internal spaces, preserved: word-wrapping this would collapse
-    // them to one, and it already fits -- so it never goes near a wrap.
-    assert_eq!(wrap_text_line("Nilai   316350", 32), vec!["Nilai   316350"]);
-}
-
-#[test]
-fn wrap_text_line_word_wraps_a_line_that_does_not_fit() {
-    assert_eq!(
-        wrap_text_line("Nama Peserta      : AHMAD FAUZI NUGROHO", 32),
-        vec!["Nama Peserta : AHMAD FAUZI", "NUGROHO"]
-    );
-}
-
-#[test]
-fn wrap_text_line_splits_the_mkm_shape_regardless_of_length() {
-    // Short enough to fit on one line unsplit, but the pipe format is a
-    // delimiter, not prose, so it still comes apart into its parts.
-    assert_eq!(
-        wrap_text_line("MKM|\"a\"|b", 32),
-        vec!["a".to_string(), "b".to_string()]
-    );
-}
-
-#[test]
-fn wrap_labelled_line_fits_on_one_line_when_it_can() {
-    assert_eq!(
-        wrap_labelled_line("IDPEL", "231000000002", 15, 32),
-        vec!["IDPEL          : 231000000002"]
-    );
-}
-
-#[test]
-fn wrap_labelled_line_word_wraps_a_value_with_spaces() {
-    assert_eq!(
-        wrap_labelled_line("NAMA", "BUDI SANTOSA WIJAYA", 16, 32),
-        vec!["NAMA            : BUDI SANTOSA", "                  WIJAYA"]
-    );
-}
-
-#[test]
-fn wrap_labelled_line_character_chunks_a_spaceless_value() {
-    assert_eq!(
-        wrap_labelled_line("NO REF", "11002500AAA1A1111AA111AA1111AA11", 16, 32),
-        vec![
-            "NO REF          : 11002500AAA1A1",
-            "                  111AA111AA1111",
-            "                  AA11",
-        ]
-    );
 }
 
 #[test]

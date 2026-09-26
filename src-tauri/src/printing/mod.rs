@@ -1,4 +1,5 @@
 pub mod escpos;
+pub mod layout;
 pub mod ppob_receipt;
 #[cfg(windows)]
 pub mod raster;

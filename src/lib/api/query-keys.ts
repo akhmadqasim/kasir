@@ -78,10 +78,8 @@ export const queryKeys = {
     listAll: ["transactions", "list"] as const,
     list: (params: ListTransactionsInput) => ["transactions", "list", params] as const,
     detail: (transactionId: number) => ["transactions", "detail", transactionId] as const,
-    receipt: (transactionId: number) => ["transactions", "receipt", transactionId] as const,
     receiptLines: (transactionId: number, paperWidth: number | null) =>
       ["transactions", "receipt-lines", transactionId, paperWidth] as const,
-    nextReceiptNumber: ["transactions", "next-receipt-number"] as const,
   },
 
   refunds: {
@@ -136,7 +134,14 @@ export const queryKeys = {
   settings: {
     all: ["settings"] as const,
     store: ["settings", "store"] as const,
+    /**
+     * `GET /store/public` for the login screen. Nested under `store`, so every
+     * invalidation of the store (name edit, logo upload) refreshes it too.
+     */
+    storePublic: ["settings", "store", "public"] as const,
     app: ["settings", "app"] as const,
+    /** `GET /settings/sales` — the slice a kasir session may read. */
+    sales: ["settings", "sales"] as const,
     database: ["settings", "database"] as const,
   },
 
@@ -183,9 +188,6 @@ export const queryKeys = {
     transferChannels: ["ppob", "catalog", "transfer-channels"] as const,
     voucherGroups: ["ppob", "catalog", "voucher-groups"] as const,
     history: (range: ReportRange) => ["ppob", "history", range] as const,
-    historyDetail: (trxId: string) => ["ppob", "history", "detail", trxId] as const,
-    historyReceipt: (trxId: string, sellPrice: number) =>
-      ["ppob", "history", "receipt", trxId, sellPrice] as const,
     markup: ["ppob", "markup"] as const,
     mutasi: (range: ReportRange) => ["ppob", "mutasi", range] as const,
     notificationsAll: ["ppob", "notifications"] as const,

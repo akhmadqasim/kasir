@@ -6,6 +6,7 @@ import {
   subnetLabel,
   type ProbeResult,
 } from "@kasir/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -50,6 +51,7 @@ type TestState =
  * spinner that could equally mean the app has hung.
  */
 export default function ServerSetupScreen(): JSX.Element {
+  const queryClient = useQueryClient();
   const currentOrigin = useSessionStore((state) => state.serverOrigin);
   const setServerOrigin = useSessionStore((state) => state.setServerOrigin);
   const setChangingServer = useSessionStore((state) => state.setChangingServer);
@@ -68,7 +70,8 @@ export default function ServerSetupScreen(): JSX.Element {
   const subnet = useMemo(() => (ownIp ? subnetLabel(ownIp) : null), [ownIp]);
 
   const runTest = async (candidate: string) => {
-    const origin = normalizeServerOrigin(candidate);
+    // The Port field also covers an address typed without one.
+    const origin = normalizeServerOrigin(candidate, portValid ? portNumber : DEFAULT_SERVER_PORT);
     if (!origin) {
       hapticWarning();
       setTest({ kind: "fail", message: id.server.invalidUrl });
@@ -94,6 +97,8 @@ export default function ServerSetupScreen(): JSX.Element {
   const save = () => {
     if (test.kind !== "ok") return;
     discovery.cancel();
+    // Another server's ids mean other products and categories; nothing cached may carry over.
+    if (test.origin !== currentOrigin) queryClient.removeQueries();
     setServerOrigin(test.origin);
   };
 

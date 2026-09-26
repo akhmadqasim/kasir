@@ -71,6 +71,16 @@ pub struct PaymentMethodRow {
     pub percentage: f64,
 }
 
+/// The payment-method report. `total_transactions` is the number of distinct
+/// sales in the period — not the sum of the rows' counts, which counts a split
+/// sale once per method it was paid with.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMethodReport {
+    pub rows: Vec<PaymentMethodRow>,
+    pub total_transactions: i64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductSalesRow {

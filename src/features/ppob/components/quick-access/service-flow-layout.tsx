@@ -32,7 +32,7 @@ export function ServiceFlowLayout({
   wideLayout,
   confirmItems,
   onConfirm,
-  confirmLabel = "Tambah ke Keranjang",
+  confirmLabel = id.ppob.quickAccess.addToCart,
   placeholderIcon,
   placeholderText,
   children,

@@ -1,378 +1,118 @@
 import { useState, useCallback, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
-import { Eye, Printer, RotateCcw, X } from "lucide-react"
+import { ReceiptText, RefreshCw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
-import { Button, Skeleton, Table, ToggleButton, ToggleButtonGroup, Tooltip } from "@heroui/react"
+import { Button, Spinner } from "@heroui/react"
 
-import { toast } from "@/lib/toast"
+import { NavbarActions } from "@/components/layout/app-navbar"
+import { LoadError } from "@/components/load-error"
 import { NoData } from "@/components/no-data"
-import { OptionSelect } from "@/components/option-select"
-import { SearchInput } from "@/components/search-input"
-import { StatusBadge } from "@/components/status-badge"
 import { TablePagination } from "@/components/table-pagination"
-import { DateRangePicker } from "@/components/date-range-picker"
-import { getTodayRange, type DateRange } from "@/lib/date-range"
 import { useApiQuery } from "@/hooks/use-api"
-import { listTransactions } from "@/lib/api/transactions"
-import { printReceipt } from "@/lib/api/printers"
-import { queryKeys } from "@/lib/api/query-keys"
 import { useDebounce } from "@/hooks/use-debounce"
-import { formatDateTime, formatRupiah, toLocalDateString } from "@/lib/format"
-import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
+import { listTransactions } from "@/lib/api/transactions"
+import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
-import { refundBlockedReason } from "../refund-window"
+import {
+  defaultTransactionFilters,
+  hasActiveFilters,
+  transactionListParams,
+  type TransactionFilters,
+} from "../transaction-filters"
+import type { PaginatedTransactions, TransactionListItem } from "../types"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
-import type { ListTransactionsInput, PaginatedTransactions, TransactionListItem } from "../types"
-
-/** Nilai sentinel `Select`: React Aria memakai `null` untuk "tidak ada pilihan". */
-const ALL = "all"
-
-/**
- * Sumber transaksi yang ditampilkan. Bawaannya `sales`: tagihan yang dibayar
- * dari halaman PPOB memang transaksi juga, tapi bukan penjualan barang, jadi
- * ia tidak ikut riwayat ini kecuali kasir sengaja beralih.
- */
-type ChannelFilter = "sales" | "ppob" | typeof ALL
-
-const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
-  { key: "sales", label: id.transactions.channelSales },
-  { key: "ppob", label: id.transactions.channelPpob },
-  { key: ALL, label: id.transactions.channelAll },
-]
-
-const PAYMENT_METHOD_FILTERS = [
-  { key: ALL, label: id.transactions.allMethods },
-  { key: "cash", label: id.payment.cash },
-  { key: "qris", label: id.payment.qris },
-  { key: "debit", label: id.payment.debit },
-  { key: "ewallet", label: id.payment.ewallet },
-  { key: "transfer", label: id.payment.transfer },
-  { key: "mixed", label: id.payment.mixed },
-] as const
-
-const STATUS_FILTERS = [
-  { key: ALL, label: id.transactions.allStatus },
-  { key: "completed", label: id.transactions.completed },
-  { key: "pending_ppob", label: id.transactions.pendingPpob },
-  { key: "ppob_failed", label: id.transactions.ppobFailed },
-  { key: "refunded", label: id.transactions.refunded },
-  { key: "partial_refund", label: id.transactions.partialRefund },
-  { key: "deleted", label: id.transactions.deleted },
-] as const
-
-const COLUMN_COUNT = 9
-
-/**
- * The refund entry point for one row.
- *
- * A disabled button swallows pointer events, so the tooltip has to hang off a
- * wrapper: without it the cashier sees a dead button and no reason for it.
- * HeroUI's `Tooltip.Trigger` renders that wrapper as `div[role=button]
- * [tabindex=0]`, which is what finally makes the reason reachable by keyboard —
- * the old `<span>` wrapper was invisible to anyone not using a mouse.
- */
-function RefundActionButton({
-  blockedReason,
-  onPress,
-}: {
-  blockedReason: string | null
-  onPress: () => void
-}) {
-  const button = (
-    <Button
-      aria-label={blockedReason ?? id.refund.title}
-      isDisabled={blockedReason !== null}
-      isIconOnly
-      size="sm"
-      variant="tertiary"
-      onPress={onPress}
-    >
-      <RotateCcw />
-    </Button>
-  )
-
-  if (!blockedReason) return button
-
-  return (
-    <Tooltip>
-      <Tooltip.Trigger className="inline-flex">{button}</Tooltip.Trigger>
-      <Tooltip.Content>{blockedReason}</Tooltip.Content>
-    </Tooltip>
-  )
-}
-
-function getTransactionDescription(txn: TransactionListItem): string {
-  if (txn.deleted_reason?.trim()) {
-    return `Alasan hapus: ${txn.deleted_reason.trim()}`
-  }
-
-  if (txn.notes?.trim()) {
-    return txn.notes.trim()
-  }
-
-  if (txn.ppob_message?.trim()) {
-    return txn.ppob_message.trim()
-  }
-
-  return "—"
-}
+import { TransactionFilterBar } from "./transaction-filter-bar"
+import { TransactionsTable } from "./transactions-table"
 
 export function TransactionsPage() {
-  const navigate = useNavigate()
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState("")
-  const debouncedSearch = useDebounce(search, 300)
-  const [paymentMethod, setPaymentMethod] = useState("")
-  const [status, setStatus] = useState("")
-  const [channel, setChannel] = useState<ChannelFilter>("sales")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(getTodayRange)
+  const [filters, setFilters] = useState(defaultTransactionFilters)
+  const debouncedSearch = useDebounce(filters.search, 300)
   const [detailTxn, setDetailTxn] = useState<TransactionListItem | null>(null)
 
-  const queryParams = useMemo<ListTransactionsInput>(
-    () => ({
-      page,
-      per_page: 50,
-      search: debouncedSearch || undefined,
-      payment_method: paymentMethod || undefined,
-      status: status || undefined,
-      channel: channel === ALL ? undefined : channel,
-      date_from: dateRange?.from ? toLocalDateString(dateRange.from) : undefined,
-      date_to: dateRange?.to ? toLocalDateString(dateRange.to) : undefined,
-    }),
-    [page, debouncedSearch, paymentMethod, status, channel, dateRange],
+  const queryParams = useMemo(
+    () => transactionListParams(filters, debouncedSearch, page),
+    [filters, debouncedSearch, page],
   )
 
-  const { data, isLoading, error } = useApiQuery<PaginatedTransactions>(
+  const { data, isLoading, isFetching, error, refetch } = useApiQuery<PaginatedTransactions>(
     queryKeys.transactions.list(queryParams),
     () => listTransactions(queryParams),
     { placeholderData: keepPreviousData },
   )
 
-  // Printing happens on the server: the thermal printer is plugged into the till
-  // the server runs on, so this produces paper there whichever device pressed it.
-  const handlePrint = useCallback(async (transactionId: number) => {
-    try {
-      await printReceipt(transactionId)
-      toast.success("Struk dicetak")
-    } catch (e) {
-      toast.error(`Gagal cetak: ${e instanceof Error ? e.message : e}`)
-    }
-  }, [])
-
-  const resetFilters = useCallback(() => {
-    setSearch("")
-    setPaymentMethod("")
-    setStatus("")
-    setChannel("sales")
-    setDateRange(getTodayRange())
+  // Any filter change starts over at the first page.
+  const updateFilters = useCallback((patch: Partial<TransactionFilters>) => {
+    setFilters((prev) => ({ ...prev, ...patch }))
     setPage(1)
   }, [])
 
-  const today = toLocalDateString(new Date())
-  const hasFilters =
-    channel !== "sales" ||
-    search ||
-    paymentMethod ||
-    status ||
-    (dateRange?.from && toLocalDateString(dateRange.from) !== today) ||
-    (dateRange?.to && toLocalDateString(dateRange.to) !== today)
+  const resetFilters = useCallback(() => {
+    setFilters(defaultTransactionFilters())
+    setPage(1)
+  }, [])
 
-  const transactions = data?.data ?? []
+  const hasFilters = hasActiveFilters(filters)
 
   const renderEmptyState = () =>
     error ? (
-      <NoData title={`Error: ${error.message}`} tone="danger" />
+      <LoadError
+        isRetrying={isFetching}
+        title={id.loadFailed.transactions}
+        onRetry={() => refetch()}
+      >
+        {error.message}
+      </LoadError>
+    ) : hasFilters ? (
+      <NoData
+        action={
+          <Button size="sm" variant="secondary" onPress={resetFilters}>
+            <X />
+            {id.common.clearFilters}
+          </Button>
+        }
+        icon={<ReceiptText />}
+        title={id.noMatch.transactions}
+      >
+        Coba ubah kata kunci, filter, atau rentang tanggalnya.
+      </NoData>
     ) : (
-      <NoData title={id.transactions.noTransactions} />
+      <NoData icon={<ReceiptText />} title={id.transactions.noTransactions}>
+        Transaksi hari ini akan muncul di sini setelah ada penjualan.
+      </NoData>
     )
 
   return (
     // DESIGN.md §5.1
     <div className="flex h-full flex-col gap-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Radiogroup, bukan Select: tiga pilihan yang selalu terlihat, dan
-            kasir langsung tahu sedang melihat penjualan atau tagihan PPOB. */}
-        <ToggleButtonGroup
-          aria-label={id.transactions.channelFilter}
-          disallowEmptySelection
-          selectedKeys={[channel]}
-          selectionMode="single"
-          onSelectionChange={(keys) => {
-            const [next] = [...keys]
-            if (!next) return
-            setChannel(String(next) as ChannelFilter)
-            setPage(1)
-          }}
+      {/* Muat ulang di navbar — DESIGN.md §5.1. Spinner-nya juga satu-satunya
+          tanda bahwa filter baru sedang dimuat: `keepPreviousData` membiarkan
+          baris lama tetap tampil sampai hasilnya datang. */}
+      <NavbarActions>
+        <Button
+          aria-label={id.common.reload}
+          isIconOnly
+          isPending={isFetching}
+          size="sm"
+          variant="tertiary"
+          onPress={() => refetch()}
         >
-          {CHANNEL_FILTERS.map((option) => (
-            <ToggleButton key={option.key} id={option.key}>
-              {option.label}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
+          {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
+        </Button>
+      </NavbarActions>
 
-        <SearchInput
-          aria-label={id.transactions.searchPlaceholder}
-          placeholder={id.transactions.searchPlaceholder}
-          className="w-64"
-          value={search}
-          onChange={(value) => {
-            setSearch(value)
-            setPage(1)
-          }}
+      <TransactionFilterBar
+        filters={filters}
+        onChange={updateFilters}
+        onReset={hasFilters ? resetFilters : undefined}
+      />
+
+      <div className="min-h-0 flex-1">
+        <TransactionsTable
+          isLoading={isLoading}
+          renderEmptyState={renderEmptyState}
+          transactions={data?.data ?? []}
+          onOpenDetail={setDetailTxn}
         />
-
-        <OptionSelect
-          aria-label={id.transactions.allMethods}
-          className="w-48"
-          placeholder={id.transactions.allMethods}
-          options={PAYMENT_METHOD_FILTERS}
-          value={paymentMethod || ALL}
-          onChange={(key) => {
-            setPaymentMethod(key === ALL || key === null ? "" : key)
-            setPage(1)
-          }}
-        />
-
-        <OptionSelect
-          aria-label={id.transactions.allStatus}
-          className="w-48"
-          placeholder={id.transactions.allStatus}
-          options={STATUS_FILTERS}
-          value={status || ALL}
-          onChange={(key) => {
-            setStatus(key === ALL || key === null ? "" : key)
-            setPage(1)
-          }}
-        />
-
-        {hasFilters && (
-          <Button size="sm" variant="tertiary" onPress={resetFilters}>
-            <X />
-            {id.transactions.resetFilter}
-          </Button>
-        )}
-
-        <div className="ml-auto">
-          <DateRangePicker
-            value={dateRange}
-            onChange={(range) => {
-              setDateRange(range)
-              setPage(1)
-            }}
-            align="start"
-          />
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="min-h-0 flex-1 overflow-auto">
-        <Table variant="secondary">
-          <Table.ScrollContainer>
-            <Table.Content
-              aria-label={id.transactions.title}
-              className="min-w-[1180px] tabular-nums"
-            >
-              <Table.Header>
-                <Table.Column isRowHeader>{id.transactions.receiptNumber}</Table.Column>
-                <Table.Column>{id.transactions.cashier}</Table.Column>
-                <Table.Column>{id.transactions.date}</Table.Column>
-                <Table.Column className="text-center">{id.transactions.items}</Table.Column>
-                <Table.Column>{id.transactions.paymentMethod}</Table.Column>
-                <Table.Column>{id.transactions.description}</Table.Column>
-                <Table.Column>{id.transactions.status}</Table.Column>
-                <Table.Column className="text-right">{id.transactions.totalAmount}</Table.Column>
-                <Table.Column className="w-24 text-right">
-                  <span className="sr-only">Aksi</span>
-                </Table.Column>
-              </Table.Header>
-              <Table.Body renderEmptyState={renderEmptyState}>
-                {isLoading
-                  ? Array.from({ length: 5 }).map((_, rowIndex) => (
-                      <Table.Row key={`skeleton-${rowIndex}`} id={`skeleton-${rowIndex}`}>
-                        {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
-                          <Table.Cell key={cellIndex}>
-                            <Skeleton className="h-5 w-full" />
-                          </Table.Cell>
-                        ))}
-                      </Table.Row>
-                    ))
-                  : transactions.map((txn) => (
-                      <Table.Row
-                        key={txn.id}
-                        id={txn.id}
-                        className={txn.status === "deleted" ? "opacity-50" : undefined}
-                        textValue={txn.receipt_number}
-                        onAction={() => setDetailTxn(txn)}
-                      >
-                        <Table.Cell className="font-mono">
-                          <div className="space-y-1">
-                            <p>{txn.receipt_number}</p>
-                            {txn.ppob_message && (
-                              <p className="max-w-48 truncate text-xs text-muted">
-                                {txn.ppob_message}
-                              </p>
-                            )}
-                          </div>
-                        </Table.Cell>
-                        <Table.Cell>{txn.cashier_name}</Table.Cell>
-                        <Table.Cell>{formatDateTime(txn.created_at)}</Table.Cell>
-                        <Table.Cell className="text-center">{txn.item_count}</Table.Cell>
-                        {/* Teks, bukan `Chip`: lencana disimpan untuk kolom Status. */}
-                        <Table.Cell>{paymentMethodLabel(txn.payment_method)}</Table.Cell>
-                        <Table.Cell className="max-w-64 whitespace-normal">
-                          <p className="break-words text-muted">{getTransactionDescription(txn)}</p>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <StatusBadge status={transactionStatusVariant(txn.status)}>
-                            {transactionStatusLabel(txn.status)}
-                          </StatusBadge>
-                        </Table.Cell>
-                        <Table.Cell className="text-right font-medium">
-                          {formatRupiah(txn.total_amount)}
-                        </Table.Cell>
-                        <Table.Cell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              aria-label={id.transactions.detail}
-                              isIconOnly
-                              size="sm"
-                              variant="tertiary"
-                              onPress={() => setDetailTxn(txn)}
-                            >
-                              <Eye />
-                            </Button>
-                            {!txn.has_ppob &&
-                              txn.status !== "refunded" &&
-                              txn.status !== "deleted" && (
-                                <RefundActionButton
-                                  blockedReason={refundBlockedReason(txn.created_at)}
-                                  onPress={() => navigate(`/refund/${txn.id}`)}
-                                />
-                              )}
-                            <Button
-                              aria-label={id.transactions.printReceipt}
-                              isDisabled={
-                                txn.has_ppob &&
-                                txn.status !== "completed" &&
-                                txn.status !== "deleted"
-                              }
-                              isIconOnly
-                              size="sm"
-                              variant="tertiary"
-                              onPress={() => handlePrint(txn.id)}
-                            >
-                              <Printer />
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-              </Table.Body>
-            </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
       </div>
 
       <TablePagination page={page} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />

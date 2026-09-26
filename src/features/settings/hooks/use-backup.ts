@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query"
 
+import { id } from "@/i18n/id"
 import { useApiMutation } from "@/hooks/use-api"
 import { createBackup } from "@/lib/api/backups"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -19,7 +20,7 @@ export function useCreateBackupMutation() {
 
   return useApiMutation<BackupInfo, void>(createBackup, {
     onSuccess: (info) => {
-      toast.success(`Backup berhasil: ${info.filename} (${formatFileSize(info.size_bytes)})`)
+      toast.success(id.backup.created(info.filename, formatFileSize(info.size_bytes)))
       queryClient.invalidateQueries({ queryKey: queryKeys.backups.all })
     },
     onError: (error) => toast.error(error.message),
