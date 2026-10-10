@@ -211,8 +211,46 @@ fn push_pair(lines: &mut Vec<ReceiptTextLine>, left: &str, right: &str, cpl: usi
     if one_line.chars().count() <= cpl {
         lines.push(ReceiptTextLine::plain(one_line));
     } else {
-        lines.push(ReceiptTextLine::plain(left.to_string()));
-        lines.push(ReceiptTextLine::plain(two_col_text("", right, cpl)));
+        // Each side wraps on its own, so a name longer than the paper goes
+        // over two rows instead of off the edge.
+        lines.extend(
+            fit_or_wrap(left, cpl)
+                .into_iter()
+                .map(ReceiptTextLine::plain),
+        );
+        lines.extend(
+            fit_or_wrap(right, cpl)
+                .into_iter()
+                .map(|row| ReceiptTextLine::plain(right_align(&row, cpl))),
+        );
+    }
+}
+
+/// `text` pushed against the right edge of a `cpl`-wide line.
+fn right_align(text: &str, cpl: usize) -> String {
+    let pad = cpl.saturating_sub(text.chars().count());
+    format!("{}{}", " ".repeat(pad), text)
+}
+
+/// A label with an amount at the right edge. A label too long to share the
+/// line with its amount (a bank name typed in full) is word-wrapped, and the
+/// amount goes on the label's last row.
+fn push_amount(lines: &mut Vec<ReceiptTextLine>, label: &str, amount: &str, cpl: usize) {
+    let one_line = two_col_text(label, amount, cpl);
+    if one_line.chars().count() <= cpl {
+        lines.push(ReceiptTextLine::plain(one_line));
+        return;
+    }
+    let label_width = cpl.saturating_sub(amount.chars().count() + 1).max(1);
+    let mut rows = wrap_words(label, label_width);
+    let last = rows.pop().unwrap_or_default();
+    lines.extend(rows.into_iter().map(ReceiptTextLine::plain));
+    let last_line = two_col_text(&last, amount, cpl);
+    if last_line.chars().count() <= cpl {
+        lines.push(ReceiptTextLine::plain(last_line));
+    } else {
+        lines.push(ReceiptTextLine::plain(last));
+        lines.push(ReceiptTextLine::plain(right_align(amount, cpl)));
     }
 }
 
@@ -291,27 +329,35 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
         &format_rupiah(data.original_total_amount),
         cpl,
     )));
-    if data.payment_breakdown.len() > 1 {
+    // Change only ever comes out of cash. Checkout drops a cash leg that paid
+    // nothing (a transfer covered the bill and the customer's cash went
+    // straight back), leaving one non-cash leg with change on the sale. That
+    // case prints like a split: each leg at what its method actually took,
+    // then Dibayar and Kembali — the legs add up to the TOTAL, and Dibayar
+    // minus Kembali does too.
+    let print_legs = data.payment_breakdown.len() > 1
+        || (data.payment_method != "cash"
+            && data.change_amount > 0.0
+            && !data.payment_breakdown.is_empty());
+    if print_legs {
         for split in &data.payment_breakdown {
             let method_label =
                 payment_method_label_with_bank(&split.payment_method, split.bank_name.as_deref());
-            lines.push(ReceiptTextLine::plain(two_col_text(
-                &method_label,
-                &format_rupiah(split.amount),
-                cpl,
-            )));
+            push_amount(&mut lines, &method_label, &format_rupiah(split.amount), cpl);
         }
         if data.change_amount > 0.0 {
-            lines.push(ReceiptTextLine::plain(two_col_text(
+            push_amount(
+                &mut lines,
                 "Dibayar",
                 &format_rupiah(data.payment_amount),
                 cpl,
-            )));
-            lines.push(ReceiptTextLine::plain(two_col_text(
+            );
+            push_amount(
+                &mut lines,
                 "Kembali",
                 &format_rupiah(data.change_amount),
                 cpl,
-            )));
+            );
         }
     } else {
         let method_label = payment_method_label_with_bank(
@@ -320,17 +366,19 @@ pub fn format_receipt_text(data: &ReceiptData, paper_width_mm: u8) -> Vec<Receip
                 .first()
                 .and_then(|split| split.bank_name.as_deref()),
         );
-        lines.push(ReceiptTextLine::plain(two_col_text(
+        push_amount(
+            &mut lines,
             &method_label,
             &format_rupiah(data.payment_amount),
             cpl,
-        )));
+        );
         if data.payment_method == "cash" && data.change_amount > 0.0 {
-            lines.push(ReceiptTextLine::plain(two_col_text(
+            push_amount(
+                &mut lines,
                 "Kembali",
                 &format_rupiah(data.change_amount),
                 cpl,
-            )));
+            );
         }
     }
 

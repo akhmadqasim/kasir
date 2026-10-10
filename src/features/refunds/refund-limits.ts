@@ -3,31 +3,32 @@ import { id } from "@/i18n/id"
 /**
  * How much of each sold line may still be returned.
  *
- * `GET /transactions/:id` reports `refunded_quantity` per line, summed from the
- * earlier refunds of the sale, so the form offers `quantity - refunded_quantity`
- * as the maximum from the start — the same remainder `create_refund` enforces.
+ * `GET /transactions/:id` reports `refundable` and `refundable_quantity` per
+ * line, so the server owns the refund rule and the form only reads it.
  *
  * The rejection parser below stays as a second line of defence: another till can
  * refund the same sale between loading the form and submitting it, and then the
  * number in the server's error is fresher than the one the form loaded. Feeding
- * it back can only ever *lower* the offered maximum, never raise it, so a stale
- * or mis-attributed reading cannot produce an over-refund.
+ * it back can only ever *lower* the offered maximum, never raise it.
  */
 
-/** A sold line's purchased units and the units earlier refunds took back. */
-export interface RefundableLine {
-  quantity: number
-  refunded_quantity: number
+/** Units of the line that may still be returned; never negative. */
+export function remainingRefundableQuantity(line: { refundable_quantity: number }): number {
+  return Number.isFinite(line.refundable_quantity) ? Math.max(line.refundable_quantity, 0) : 0
 }
 
-/** Units of the line that may still be returned; never negative. */
-export function remainingRefundableQuantity(line: RefundableLine): number {
-  const refunded = Number.isFinite(line.refunded_quantity) ? line.refunded_quantity : 0
-  return Math.max(line.quantity - Math.max(refunded, 0), 0)
+/** Whether a sold line can come back on a refund at all, as the server says. */
+export function isRefundableLine(line: { refundable: boolean }): boolean {
+  return line.refundable
+}
+
+/** A failed PPOB line: money only, refunded whole, no condition to pick. */
+export function isPpobRefundLine(line: { product_id: number | null }): boolean {
+  return line.product_id === null
 }
 
 /** Whether any line of the sale has already come back, even partly. */
-export function hasRefundedLines(lines: readonly RefundableLine[]): boolean {
+export function hasRefundedLines(lines: readonly { refunded_quantity: number }[]): boolean {
   return lines.some((line) => line.refunded_quantity > 0)
 }
 

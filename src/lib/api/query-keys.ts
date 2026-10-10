@@ -78,6 +78,8 @@ export const queryKeys = {
     listAll: ["transactions", "list"] as const,
     list: (params: ListTransactionsInput) => ["transactions", "list", params] as const,
     detail: (transactionId: number) => ["transactions", "detail", transactionId] as const,
+    /** Under `all`, so anything that settles a PPOB line refreshes the indicator too. */
+    ppobAttention: ["transactions", "ppob-attention"] as const,
     receiptLines: (transactionId: number, paperWidth: number | null) =>
       ["transactions", "receipt-lines", transactionId, paperWidth] as const,
   },

@@ -164,6 +164,8 @@ const REPORT_ROUTES: ApiRoutes = {
       },
     ],
     totalCount: 1,
+    totalStockValue: 20000,
+    lowStockCount: 1,
   },
   "GET /reports/losses": {
     totalWriteoffs: 1,
@@ -497,6 +499,8 @@ describe("Stok Saat Ini: stok menipis", () => {
           },
         ],
         totalCount: 2,
+        totalStockValue: 120000,
+        lowStockCount: 1,
       },
     })
 
@@ -507,6 +511,41 @@ describe("Stok Saat Ini: stok menipis", () => {
     const card = screen.getByText("Produk Stok Menipis").closest("[data-slot='card']")
     expect(card).not.toBeNull()
     expect(card).toHaveTextContent(/^Produk Stok Menipis1$/)
+  })
+})
+
+describe("Stok Saat Ini: kartu ringkasan", () => {
+  it("memakai total dari backend, bukan menjumlah baris yang terpotong", async () => {
+    installApiMock({
+      ...REPORT_ROUTES,
+      "GET /reports/stock/current": {
+        items: [
+          {
+            productId: 1,
+            barcode: null,
+            productName: "Beras",
+            categoryName: null,
+            stock: 10,
+            minStock: 0,
+            unit: "kg",
+            buyPrice: 12000,
+            sellPrice: 14000,
+            stockValue: 120000,
+          },
+        ],
+        totalCount: 800,
+        totalStockValue: 9_500_000,
+        lowStockCount: 37,
+      },
+    })
+
+    renderWithQuery(<CurrentStockPage />)
+
+    expect(await screen.findByText("Beras")).toBeInTheDocument()
+    const lowCard = screen.getByText("Produk Stok Menipis").closest("[data-slot='card']")
+    expect(lowCard).toHaveTextContent(/^Produk Stok Menipis37$/)
+    const valueCard = screen.getByText("Total Nilai Stok").closest("[data-slot='card']")
+    expect(valueCard).toHaveTextContent(rupiahText(9_500_000))
   })
 })
 

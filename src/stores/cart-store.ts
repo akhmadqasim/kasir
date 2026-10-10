@@ -1,27 +1,98 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { createIdempotencyKey } from "@/lib/api/client"
+import type { CartItem } from "@/features/cashier/types"
 import { migrateCartState, type HeldCart, type PersistedCart } from "./cart-persistence"
 import {
   computeCartTotals,
   discountAmount,
+  normalizeDiscount,
   type CartTotals,
   type DiscountEntry,
 } from "./cart-totals"
 
-export { migrateCartState, type HeldCart } from "./cart-persistence"
+export { heldCartTotal, migrateCartState, type HeldCart } from "./cart-persistence"
+
+/** What the catalogue says about a product right now. */
+export interface LiveProduct {
+  id: number
+  sell_price: number
+  stock: number
+  unit: string
+}
+
+/** A cart line whose price moved between being added and now. */
+export interface PriceChange {
+  name: string
+  from: number
+  to: number
+}
+
+/**
+ * Goods lines repriced from the catalogue. Stock and unit follow quietly; a
+ * price that moved is reported, because it changes the total the cashier
+ * quoted. PPOB lines and products missing from `live` are left alone.
+ */
+export function refreshGoodsLines(
+  items: CartItem[],
+  live: ReadonlyMap<number, LiveProduct>,
+): { items: CartItem[]; changes: PriceChange[] } {
+  const changes: PriceChange[] = []
+  let touched = false
+  const next = items.map((item) => {
+    const product =
+      item.is_ppob || item.product_id === undefined ? undefined : live.get(item.product_id)
+    if (!product) return item
+    if (
+      product.sell_price === item.product_price &&
+      product.stock === item.stock &&
+      product.unit === item.unit
+    ) {
+      return item
+    }
+    if (product.sell_price !== item.product_price) {
+      changes.push({ name: item.product_name, from: item.product_price, to: product.sell_price })
+    }
+    touched = true
+    return { ...item, product_price: product.sell_price, stock: product.stock, unit: product.unit }
+  })
+  return { items: touched ? next : items, changes }
+}
 
 /** Guards against a barcode landing in a quantity field */
 export const MAX_CART_QUANTITY = 9999
 
+/**
+ * The automatic name of the next held cart: the first "Pelanggan N", counting
+ * up from the number of carts waiting, that no waiting cart carries yet. Two
+ * customers called the same in the F9 list could be recalled by mistake.
+ */
+export function nextHoldLabel(heldCarts: readonly Pick<HeldCart, "label">[]): string {
+  const taken = new Set(heldCarts.map((cart) => cart.label))
+  let number = heldCarts.length + 1
+  while (taken.has(`Pelanggan ${number}`)) number++
+  return `Pelanggan ${number}`
+}
+
 interface CartStore extends PersistedCart {
-  addItem: (product: {
-    id: number
-    name: string
-    sell_price: number
-    stock: number
-    unit: string
-  }) => void
+  /**
+   * Adds one of `product`. A new line takes its price, stock and unit. A line
+   * already in the cart is repriced from `product` only when `fresh` is set
+   * (a network barcode lookup, the answer `notePricedByLookup` records);
+   * otherwise only its quantity goes up, because a shortcut tile or a search
+   * row may come from the query cache and carry an older price. Returns the
+   * price change when an existing line was repriced.
+   */
+  addItem: (
+    product: {
+      id: number
+      name: string
+      sell_price: number
+      stock: number
+      unit: string
+    },
+    options?: { fresh?: boolean },
+  ) => PriceChange | null
   addPpobItem: (item: {
     name: string
     price: number
@@ -38,7 +109,12 @@ interface CartStore extends PersistedCart {
   removeItem: (cartId: string) => void
   updateQuantity: (cartId: string, qty: number) => void
   updatePrice: (cartId: string, price: number) => void
+  /** Saved clamped: a percentage to 100, a fixed amount to the line's total. */
   setItemDiscount: (cartId: string, discount: DiscountEntry | null) => void
+  /**
+   * A percentage is saved clamped to 100; a fixed amount is saved as typed and
+   * capped only when totals are computed, so it grows into a cart that grows.
+   */
   setTransactionDiscount: (discount: DiscountEntry | null) => void
   clearDiscounts: () => void
   getItemDiscountAmount: (cartId: string) => number
@@ -50,8 +126,28 @@ interface CartStore extends PersistedCart {
   getTotal: () => number
   clear: () => void
   holdCart: (label?: string) => void
-  recallCart: (holdId: string) => void
+  /**
+   * Swaps the held cart in. A non-empty active cart is held in its place, under
+   * the next free automatic name (`nextHoldLabel`); returns that name, or `null`
+   * when nothing was parked.
+   */
+  recallCart: (holdId: string) => string | null
   removeHeldCart: (holdId: string) => void
+  /**
+   * Reprices the active cart's goods lines — and with `includeHeld` every held
+   * cart's — from the catalogue, and returns the price changes in the active cart.
+   */
+  applyLiveProducts: (
+    live: ReadonlyMap<number, LiveProduct>,
+    options?: { includeHeld?: boolean },
+  ) => PriceChange[]
+  /**
+   * Hands the till to `userId` at login. A cart left by a *different* user —
+   * their session expired, or the app was closed mid-sale — is emptied, so
+   * the next cashier cannot ring it up as their own; the same user logging
+   * back in keeps it. Returns whether the till changed hands.
+   */
+  claimFor: (userId: number) => boolean
   /** Mints {@link PersistedCart.checkoutKey} on the first checkout attempt and returns it. */
   getCheckoutKey: () => string
 }
@@ -71,7 +167,6 @@ function snapshotCart(
     items: [...items],
     itemDiscounts: { ...itemDiscounts },
     transactionDiscount,
-    total: computeCartTotals(items, itemDiscounts, transactionDiscount).total,
     heldAt: Date.now(),
   }
 }
@@ -85,20 +180,28 @@ export const useCartStore = create<CartStore>()(
       itemDiscounts: {},
       transactionDiscount: null,
       checkoutKey: null,
+      ownerId: null,
 
-      addItem: (product) => {
+      addItem: (product, options) => {
         const { items } = get()
         const existing = items.find((item) => !item.is_ppob && item.product_id === product.id)
 
         if (existing) {
-          // Move to top and increment quantity
-          const updated = {
+          // Move to top and increment quantity. Only a fresh lookup is the
+          // catalogue of the moment, so only then do its price, stock and unit
+          // replace the line's: a cached tile or search row could roll a newer
+          // price back to an old one. The background check reprices the rest.
+          const bumped = {
             ...existing,
             quantity: Math.min(existing.quantity + 1, MAX_CART_QUANTITY),
           }
+          const { items: refreshed, changes } = options?.fresh
+            ? refreshGoodsLines([bumped], new Map([[product.id, product]]))
+            : { items: [bumped], changes: [] }
           set({
-            items: [updated, ...items.filter((item) => item.cart_id !== existing.cart_id)],
+            items: [refreshed[0], ...items.filter((item) => item.cart_id !== existing.cart_id)],
           })
+          return changes[0] ?? null
         } else {
           // Prepend new item at top
           set({
@@ -115,6 +218,7 @@ export const useCartStore = create<CartStore>()(
               ...items,
             ],
           })
+          return null
         }
       },
 
@@ -150,10 +254,15 @@ export const useCartStore = create<CartStore>()(
       removeItem: (cartId) => {
         const { itemDiscounts } = get()
         const { [cartId]: _removed, ...restDiscounts } = itemDiscounts
-        set({
-          items: get().items.filter((item) => item.cart_id !== cartId),
-          itemDiscounts: restDiscounts,
-        })
+        const items = get().items.filter((item) => item.cart_id !== cartId)
+        // Removing the last line empties the cart just like `clear()` does: the
+        // next customer must not inherit this one's discount, nor its checkout
+        // key (a reused key would replay this sale instead of ringing up theirs).
+        if (items.length === 0) {
+          get().clear()
+          return
+        }
+        set({ items, itemDiscounts: restDiscounts })
       },
 
       updateQuantity: (cartId, qty) => {
@@ -181,20 +290,27 @@ export const useCartStore = create<CartStore>()(
         })
       },
 
+      // A fixed amount is saved clamped, not only capped when totals are
+      // computed: kept whole, 50.000 off a 10.000 line would make that line
+      // free once its quantity went up.
       setItemDiscount: (cartId, discount) => {
-        const { itemDiscounts } = get()
-        if (!discount || discount.value <= 0) {
+        const { items, itemDiscounts } = get()
+        const item = items.find((i) => i.cart_id === cartId)
+        const base = item ? item.product_price * item.quantity : Infinity
+        const saved = normalizeDiscount(discount, base).entry
+        if (!saved) {
           const { [cartId]: _removed, ...rest } = itemDiscounts
           set({ itemDiscounts: rest })
         } else {
-          set({ itemDiscounts: { ...itemDiscounts, [cartId]: discount } })
+          set({ itemDiscounts: { ...itemDiscounts, [cartId]: saved } })
         }
       },
 
+      // Unlike a line discount, the cart discount keeps a fixed amount whole:
+      // 10.000 typed on an 8.000 cart must become 10.000 off once more items
+      // are scanned. `computeCartTotals` caps it to what the cart can take.
       setTransactionDiscount: (discount) => {
-        set({
-          transactionDiscount: discount && discount.value > 0 ? discount : null,
-        })
+        set({ transactionDiscount: normalizeDiscount(discount, Infinity).entry })
       },
 
       clearDiscounts: () => {
@@ -277,7 +393,7 @@ export const useCartStore = create<CartStore>()(
         const state = get()
         if (state.items.length === 0) return
 
-        const autoLabel = label?.trim() || `Pelanggan ${state.heldCarts.length + 1}`
+        const autoLabel = label?.trim() || nextHoldLabel(state.heldCarts)
 
         set({
           heldCarts: [...state.heldCarts, snapshotCart(state, `hold-${Date.now()}`, autoLabel)],
@@ -293,35 +409,53 @@ export const useCartStore = create<CartStore>()(
         const state = get()
         const { heldCarts } = state
         const held = heldCarts.find((c) => c.id === holdId)
-        if (!held) return
+        if (!held) return null
 
-        // Held carts persisted before discounts were scoped have no discounts
-        const heldItemDiscounts = held.itemDiscounts ?? {}
-        const heldTransactionDiscount = held.transactionDiscount ?? null
+        const remaining = heldCarts.filter((c) => c.id !== holdId)
+        // A non-empty active cart is held first, under a name no other waiting
+        // cart carries, or the F9 list shows two of the same.
+        const parkedLabel = state.items.length > 0 ? nextHoldLabel(remaining) : null
+        set({
+          heldCarts: parkedLabel
+            ? [...remaining, snapshotCart(state, `hold-${Date.now()}`, parkedLabel)]
+            : remaining,
+          items: held.items,
+          // Held carts persisted before discounts were scoped have no discounts.
+          itemDiscounts: held.itemDiscounts ?? {},
+          transactionDiscount: held.transactionDiscount ?? null,
+          // A different customer's cart starts its own checkout attempt.
+          checkoutKey: null,
+        })
+        return parkedLabel
+      },
 
-        // If current cart has items, hold them first
-        if (state.items.length > 0) {
-          set({
-            heldCarts: [
-              ...heldCarts.filter((c) => c.id !== holdId),
-              snapshotCart(state, `hold-${Date.now()}`, "Keranjang Aktif"),
-            ],
-            items: held.items,
-            itemDiscounts: heldItemDiscounts,
-            transactionDiscount: heldTransactionDiscount,
-            checkoutKey: null,
+      applyLiveProducts: (live, { includeHeld = false } = {}) => {
+        const state = get()
+        const active = refreshGoodsLines(state.items, live)
+        const update: Partial<PersistedCart> = {}
+        if (active.items !== state.items) update.items = active.items
+        if (includeHeld) {
+          let heldTouched = false
+          const heldCarts = state.heldCarts.map((cart) => {
+            const { items } = refreshGoodsLines(cart.items, live)
+            if (items === cart.items) return cart
+            heldTouched = true
+            return { ...cart, items }
           })
-        } else {
-          set({
-            heldCarts: heldCarts.filter((c) => c.id !== holdId),
-            items: held.items,
-            itemDiscounts: heldItemDiscounts,
-            transactionDiscount: heldTransactionDiscount,
-            // Recalling swaps in a different customer's cart, so it starts its
-            // own attempt rather than inheriting the outgoing one's key.
-            checkoutKey: null,
-          })
+          if (heldTouched) update.heldCarts = heldCarts
         }
+        if (update.items || update.heldCarts) set(update)
+        return active.changes
+      },
+
+      claimFor: (userId) => {
+        const { ownerId } = get()
+        const changedHands = ownerId !== null && ownerId !== userId
+        // Held carts stay: they are customers still waiting at the counter,
+        // which logout leaves in place too.
+        if (changedHands) get().clear()
+        set({ ownerId: userId })
+        return changedHands
       },
 
       removeHeldCart: (holdId: string) => {
@@ -343,6 +477,7 @@ export const useCartStore = create<CartStore>()(
         // checkout is precisely the case the key exists for: the cart comes
         // back, and so does the key that stops it being rung up twice.
         checkoutKey: state.checkoutKey,
+        ownerId: state.ownerId,
       }),
       migrate: migrateCartState,
       // `migrate` only runs when the stored version differs from `version`, so a

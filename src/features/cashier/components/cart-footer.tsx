@@ -3,6 +3,7 @@ import { Button, Description } from "@heroui/react"
 import { ArrowDownUp, DoorClosed, PauseCircle, Percent } from "lucide-react"
 
 import { SummaryList } from "@/components/summary-list"
+import { id } from "@/i18n/id"
 import { formatRupiah } from "../utils"
 import { ShortcutKey } from "./shortcut-key"
 
@@ -10,6 +11,11 @@ interface CartFooterProps {
   total: number
   subtotal: number
   totalDiscount: number
+  /**
+   * What a fixed cart discount larger than the cart really takes off, or
+   * `null` when it applies whole.
+   */
+  discountCappedTo?: number | null
   hasItems: boolean
   /** Shift-bound actions (Uang, Tutup) only exist while a shift is open. */
   hasShift: boolean
@@ -27,6 +33,7 @@ export function CartFooter({
   total,
   subtotal,
   totalDiscount,
+  discountCappedTo = null,
   hasItems,
   hasShift,
   payBlockedReason,
@@ -47,6 +54,11 @@ export function CartFooter({
             { label: "Diskon", value: `-${formatRupiah(totalDiscount)}`, tone: "danger" },
           ]}
         />
+      )}
+      {hasItems && discountCappedTo !== null && (
+        <Description className="text-warning">
+          {id.cashier.transactionDiscountCapped(formatRupiah(discountCappedTo))}
+        </Description>
       )}
       {/* Total keranjang dibaca kasir dan pelanggan dari jarak, jadi ia satu
           tingkat di atas angka KPI — DESIGN.md §3.4. */}

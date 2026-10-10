@@ -202,6 +202,7 @@ pub async fn seed_ppob_sale(
     line.ppob_status = Set(Some(ppob_status.to_string()));
     line.ppob_message = Set(None);
     line.ppob_serial_number = Set(None);
+    line.ppob_advice = Set(None);
     line.update(conn).await.expect("set ppob status")
 }
 

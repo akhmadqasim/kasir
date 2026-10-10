@@ -49,9 +49,9 @@ describe("id phrase builders", () => {
   })
 
   it("mentions the parked cart only when a recall replaced a non-empty one", () => {
-    expect(id.cashier.cartRecalled("Bu Ani", false)).toBe("Bu Ani dilanjutkan")
-    expect(id.cashier.cartRecalled("Bu Ani", true)).toBe(
-      'Bu Ani dilanjutkan. Keranjang sebelumnya disimpan sebagai "Keranjang Aktif".',
+    expect(id.cashier.cartRecalled("Bu Ani", null)).toBe("Bu Ani dilanjutkan")
+    expect(id.cashier.cartRecalled("Bu Ani", "Pelanggan 2")).toBe(
+      'Bu Ani dilanjutkan. Keranjang sebelumnya disimpan sebagai "Pelanggan 2".',
     )
     expect(id.cashier.heldCartDeleted(undefined)).toBe("Transaksi tersimpan dihapus")
   })

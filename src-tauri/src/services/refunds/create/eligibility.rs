@@ -1,11 +1,13 @@
 //! Whether a refund may happen at all: a well-formed request, against a sale
 //! that is neither voided nor already fully refunded, inside the seven-day
-//! window.
+//! window — unless it is a pure refund (no exchange) of failed PPOB top-ups
+//! only, which has no window at all.
 
 use sea_orm::{ConnectionTrait, EntityTrait};
 
-use crate::domain::refunds::CreateRefundInput;
-use crate::entity::transactions;
+use crate::domain::refunds::{CreateRefundInput, RefundItemInput};
+use crate::entity::{transaction_items, transactions};
+use crate::services::transactions::is_failed_ppob_line;
 use crate::utils::time::TIMESTAMP_FORMAT;
 use crate::utils::AppError;
 
@@ -63,17 +65,34 @@ pub(super) async fn load_refundable_transaction<C: ConnectionTrait>(
         ));
     }
 
-    check_refund_window(&transaction)?;
-
     Ok(transaction)
 }
 
-/// The seven-day limit.
+/// The seven-day limit, for every request except a pure refund of failed PPOB
+/// top-ups.
+///
+/// A failed top-up is exempt. It was never delivered, so its money is owed for
+/// as long as it stays unpaid, and the line can sit `uncertain` (Mitra ADVICE,
+/// a lost answer) for days before the reconcile loop or a person marks it
+/// failed. Counting from the sale would then refuse the refund the moment it
+/// first became possible: the customer paid, got no token and no money back.
+/// Goods keep the window, also when they come back alongside such a line. So
+/// does an exchange (`is_exchange`), even one whose only returned line is a
+/// failed top-up: new goods go out, which is what the window limits.
 ///
 /// A missing timestamp cannot be shown to fall inside the window, and the old
 /// code skipped the check entirely for those rows, so treat it as
 /// non-refundable rather than unlimited.
-fn check_refund_window(transaction: &transactions::Model) -> Result<(), AppError> {
+pub(super) fn check_refund_window(
+    transaction: &transactions::Model,
+    txn_items: &[transaction_items::Model],
+    requested: &[RefundItemInput],
+    is_exchange: bool,
+) -> Result<(), AppError> {
+    if !is_exchange && only_failed_ppob_lines(txn_items, requested) {
+        return Ok(());
+    }
+
     let created_at = transaction.created_at.as_deref().ok_or_else(|| {
         AppError::Validation("Transaksi tanpa tanggal tidak bisa di-refund".into())
     })?;
@@ -95,6 +114,20 @@ fn check_refund_window(transaction: &transactions::Model) -> Result<(), AppError
     }
 
     Ok(())
+}
+
+/// Every requested line is a PPOB line of this sale whose top-up failed. An
+/// unknown line id is not exempt; `RefundTally::claim` rejects it anyway.
+fn only_failed_ppob_lines(
+    txn_items: &[transaction_items::Model],
+    requested: &[RefundItemInput],
+) -> bool {
+    !requested.is_empty()
+        && requested.iter().all(|wanted| {
+            txn_items
+                .iter()
+                .any(|item| item.id == wanted.transaction_item_id && is_failed_ppob_line(item))
+        })
 }
 
 #[cfg(test)]
@@ -260,5 +293,125 @@ mod tests {
             }
             other => panic!("Expected Validation error, got: {:?}", other),
         }
+    }
+
+    /// A sale eight days old with a goods line and a pulsa line whose top-up
+    /// only now ended `failed`.
+    async fn old_mixed_sale(
+        conn: &sea_orm::DatabaseConnection,
+    ) -> (
+        transactions::Model,
+        crate::entity::transaction_items::Model,
+        crate::entity::transaction_items::Model,
+    ) {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+        let product = insert_product(conn, "Gula 1kg", 8_000.0, 10_000.0, 20).await;
+        let old_date = format_ts(chrono::Utc::now() - chrono::Duration::days(8));
+        let txn = insert_transaction(conn, 1, 22_000.0, "completed", &old_date).await;
+        let goods = insert_transaction_item(
+            conn,
+            txn.id,
+            Some(product.id),
+            "Gula 1kg",
+            10_000.0,
+            8_000.0,
+            1,
+        )
+        .await;
+        let pulsa =
+            insert_transaction_item(conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1).await;
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transaction_items SET ppob_status = 'failed' WHERE id = $1",
+            vec![pulsa.id.into()],
+        ))
+        .await
+        .expect("fail the top-up");
+        (txn, goods, pulsa)
+    }
+
+    /// The line sat `uncertain` for days and was marked failed on day 8: the
+    /// customer paid and got no token, so the money still goes back.
+    #[tokio::test]
+    async fn a_failed_ppob_line_is_refundable_past_seven_days() {
+        let conn = setup().await;
+        let (txn, _, pulsa) = old_mixed_sale(&conn).await;
+
+        let result = create(&conn, &actor(), refund_one(txn.id, pulsa.id))
+            .await
+            .expect("a failed top-up has no refund window");
+
+        assert_eq!(result.refund.total_refund_amount, 12_000.0);
+    }
+
+    /// The exemption is for the failed top-up only: goods past the window stay
+    /// refused, also when they ride along with such a line.
+    #[tokio::test]
+    async fn goods_past_seven_days_stay_refused_next_to_a_failed_ppob_line() {
+        let conn = setup().await;
+        let (txn, goods, pulsa) = old_mixed_sale(&conn).await;
+
+        for items in [
+            vec![line(goods.id, 1, "good")],
+            vec![line(goods.id, 1, "good"), line(pulsa.id, 1, "good")],
+        ] {
+            match create(&conn, &actor(), refund_of(txn.id, items)).await {
+                Err(AppError::Validation(msg)) => assert!(msg.contains("7"), "got: {msg}"),
+                other => panic!("Expected the 7-day error, got: {:?}", other),
+            }
+        }
+    }
+
+    /// The exemption is for a pure refund. Exchanging a failed top-up for
+    /// goods sends new goods out, so it keeps the seven-day window.
+    #[tokio::test]
+    async fn exchanging_a_failed_ppob_line_past_seven_days_is_refused() {
+        use crate::domain::refunds::ExchangeItemInput;
+
+        let conn = setup().await;
+        let (txn, _, pulsa) = old_mixed_sale(&conn).await;
+        let replacement = insert_product(&conn, "Kopi Sachet", 1_000.0, 1_500.0, 50).await;
+
+        let mut input = refund_one(txn.id, pulsa.id);
+        input.exchange_items = Some(vec![ExchangeItemInput {
+            product_id: replacement.id,
+            quantity: 2,
+        }]);
+
+        match create(&conn, &actor(), input).await {
+            Err(AppError::Validation(msg)) => assert!(msg.contains("7"), "got: {msg}"),
+            other => panic!("Expected the 7-day error, got: {:?}", other),
+        }
+        assert_eq!(stock_of(&conn, replacement.id).await, 50);
+
+        // An empty exchange list is still a pure refund.
+        let mut input = refund_one(txn.id, pulsa.id);
+        input.exchange_items = Some(vec![]);
+        create(&conn, &actor(), input)
+            .await
+            .expect("an empty exchange list is a plain refund");
+    }
+
+    /// A PPOB line that is not (yet) failed gets no exemption either.
+    #[tokio::test]
+    async fn an_old_uncertain_ppob_line_is_still_refused() {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+        let conn = setup().await;
+        let (txn, _, pulsa) = old_mixed_sale(&conn).await;
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transaction_items SET ppob_status = 'uncertain' WHERE id = $1",
+            vec![pulsa.id.into()],
+        ))
+        .await
+        .expect("back to uncertain");
+
+        let result = create(&conn, &actor(), refund_one(txn.id, pulsa.id)).await;
+        assert!(
+            matches!(result, Err(AppError::Validation(_))),
+            "got {result:?}"
+        );
     }
 }

@@ -13,6 +13,7 @@ vi.mock("@/lib/toast", () => ({
 }))
 
 import { installApiMock, installDeferredApiMock, type ApiMock } from "@/test-utils/api-mock"
+import { id } from "@/i18n/id"
 import type { User } from "@/features/auth/types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
@@ -212,7 +213,7 @@ describe("payment dialog", () => {
     scanIntoField(field, "8991234567890")
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalled())
-    expect(toastWarning.mock.lastCall![0]).toMatch(/Barcode terbaca di kolom nominal/)
+    expect(toastWarning.mock.lastCall![0]).toBe(id.cashier.scanIgnoredInField)
     expect(api.callsFor("POST /transactions")).toHaveLength(0)
     // Nominal barcode dibuang, kasir tidak boleh menagih angka itu.
     expect(field).toHaveValue("")
@@ -633,6 +634,28 @@ describe("PIN Mitra untuk transaksi PPOB", () => {
     fireEvent.keyDown(pinField, { key: "Enter" })
 
     await waitFor(() => expect(api.lastCall("POST /transactions")).toBeDefined())
+  })
+
+  it("tidak membayar dengan PIN dari barcode yang terscan ke kolom PIN", async () => {
+    useCartStore.setState({ items: [PPOB_LINE] })
+    renderDialog()
+
+    fireEvent.change(await screen.findByLabelText("Nominal Tunai"), {
+      target: { value: "12000" },
+    })
+    const pinField = await screen.findByLabelText("PIN Mitra")
+    // Scanner: 13 digits in one burst (maxLength keeps six), then Enter.
+    const barcode = "8991234567890"
+    for (let index = 0; index < barcode.length; index++) {
+      typeDigit(pinField, barcode.slice(0, Math.min(index + 1, 6)), 1000 + index * 10)
+    }
+    pressEnter(pinField, 1000 + barcode.length * 10 + 20)
+
+    expect(toastWarning).toHaveBeenCalledWith(
+      "Barcode terbaca di kolom PIN — scan diabaikan. Ketik PIN Mitra lagi.",
+    )
+    expect(pinField).toHaveValue("")
+    expect(api.callsFor("POST /transactions")).toHaveLength(0)
   })
 
   it("mengosongkan PIN saat dialog ditutup", async () => {

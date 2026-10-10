@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { toast } from "@/lib/toast"
 import { id } from "@/i18n/id"
+import { hasApiErrorCode } from "@/lib/api/client"
 import { AuthScreen } from "@/components/auth-card"
 import { useCompleteOnboarding } from "../hooks/use-onboarding"
 import { StoreInfoForm } from "./store-info-form"
@@ -12,10 +11,8 @@ export function OnboardingPage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [storeData, setStoreData] = useState<SetupStoreInput | null>(null)
   const [adminData, setAdminData] = useState<SetupAdminInput | null>(null)
-  const navigate = useNavigate()
+  // Navigates to login itself, on success and on "already set up" (409).
   const completeMutation = useCompleteOnboarding()
-
-  const t = id.onboarding
 
   const handleStoreNext = (data: SetupStoreInput) => {
     setStoreData(data)
@@ -23,19 +20,16 @@ export function OnboardingPage() {
   }
 
   const handleAdminSubmit = (data: SetupAdminInput) => {
-    if (!storeData) return
+    if (!storeData || completeMutation.isPending) return
     setAdminData(data)
-
-    completeMutation.mutate(
-      { store: storeData, admin: data },
-      {
-        onSuccess: () => {
-          toast.success(t.success)
-          navigate("/login")
-        },
-      },
-    )
+    completeMutation.mutate({ store: storeData, admin: data })
   }
+
+  // A 409 is on its way to the login screen (see `useCompleteOnboarding`),
+  // not an error to fix in the form.
+  const { error } = completeMutation
+  const submitError =
+    error && !hasApiErrorCode(error, "conflict") ? error.message || id.common.error : null
 
   return (
     <AuthScreen>
@@ -53,9 +47,7 @@ export function OnboardingPage() {
           }}
           isLoading={completeMutation.isPending}
           initialData={adminData}
-          submitError={
-            completeMutation.isError ? completeMutation.error.message || id.common.error : null
-          }
+          submitError={submitError}
         />
       )}
     </AuthScreen>

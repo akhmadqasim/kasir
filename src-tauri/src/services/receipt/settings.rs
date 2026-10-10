@@ -8,6 +8,7 @@ use crate::domain::receipt::{
 use crate::entity::store_info;
 use crate::printing::receipt::PrintMode;
 use crate::services::settings::{get_store_info, merge_additional_info, require_store_info};
+use crate::utils::text::ensure_printable_len;
 use crate::utils::AppError;
 
 /// Get printer settings from store_info.additional_info JSON
@@ -71,6 +72,13 @@ pub async fn update_printer_settings(
     db: &DatabaseConnection,
     input: UpdatePrinterSettingsInput,
 ) -> Result<(), AppError> {
+    ensure_printable_len(input.footer_text.as_deref(), "Teks footer struk")?;
+    // An empty name clears the choice; anything else must be a listed queue.
+    if let Some(id) = input.printer_id.as_deref().filter(|id| !id.is_empty()) {
+        let listed = super::printer::list_printers().await?;
+        crate::printing::ensure_listed_printer(id, listed.iter().map(|p| p.id.as_str()))
+            .map_err(AppError::Validation)?;
+    }
     merge_additional_info(db, |info| {
         if let Some(id) = &input.printer_id {
             info["printer_id"] = serde_json::json!(id);

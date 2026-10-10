@@ -5,6 +5,8 @@
 // plugged into the till the server runs on. What lives here is the on-screen
 // preview, drawn from the same lines the server sends to the printer, and the
 // PNG rendering of those lines.
+export { AutoPrintStatus } from "./components/auto-print-status"
 export { ReceiptPreview } from "./components/receipt-preview"
+export { useReceiptPrint, type AutoPrintState } from "./hooks/use-receipt-print"
 export { receiptColumns, renderReceiptPng } from "./utils/receipt-png"
 export type { ReceiptLine } from "./types"

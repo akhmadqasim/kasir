@@ -18,7 +18,6 @@ const STORE: StoreInfo = {
   phone: null,
   email: null,
   logo_path: "store/logo.png",
-  additional_info: null,
   created_at: "2026-01-01 00:00:00",
   updated_at: "2026-09-13 10:00:00",
 }

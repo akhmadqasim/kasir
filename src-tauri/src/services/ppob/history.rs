@@ -8,7 +8,9 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::domain::ppob::{HistoryPaymentItem, MutasiItem};
-use crate::services::ppob::auth::get_mitra_request_context;
+use crate::services::ppob::auth::{
+    get_mitra_request_context, get_mitra_request_context_with, LoginPolicy,
+};
 use crate::services::ppob::client::MitraClient;
 use crate::services::ppob::parsers::{get_num_field, get_str_field};
 use crate::services::ppob::session_cache::{SessionCache, Ticket};
@@ -37,7 +39,7 @@ fn history_rows<'a>(result: &'a Value, keys: &[&str]) -> Vec<&'a serde_json::Map
 }
 
 /// One row of `history-payment`, read with every spelling Mitra has used.
-fn parse_history_item(obj: &serde_json::Map<String, Value>) -> HistoryPaymentItem {
+pub(crate) fn parse_history_item(obj: &serde_json::Map<String, Value>) -> HistoryPaymentItem {
     HistoryPaymentItem {
         trx_id: get_str_field(obj, &["trxid", "trx_id", "trxId", "id", "transaction_id"]),
         inquiry_id: get_str_field(obj, &["inquiry_id", "inquiryId", "ref_id", "advice_id"]),
@@ -151,7 +153,40 @@ pub async fn list(
 ) -> Result<Vec<HistoryPaymentItem>, AppError> {
     // Taken before the first upstream request; see [`remember_details`].
     let ticket = DETAIL_CACHE.ticket();
-    let client = get_mitra_request_context(db, mitra).await?;
+    let items: Vec<HistoryPaymentItem> = payment_rows(
+        db,
+        mitra,
+        start_date,
+        end_date,
+        LoginPolicy::AllowPasswordLogin,
+    )
+    .await?
+    .iter()
+    .map(parse_history_item)
+    .collect();
+
+    // The table the cashier is looking at is where the next print comes
+    // from; remembering its settled rows now saves [`detail`] a second fetch
+    // of the same list a moment later. A transaction still in flight may
+    // change its mind, so only a settled one is worth remembering.
+    remember_details(ticket, &items);
+
+    Ok(items)
+}
+
+/// The raw rows of `history-payment` between two `YYYY-MM-DD` dates, every
+/// field Mitra sent kept — the reconciler of uncertain PPOB lines reads keys
+/// (`advice_id`, `uid`, `receipt_text`) the parsed item drops or merges.
+/// `policy` says whether a missing session may be opened with the password;
+/// the background reconciler passes [`LoginPolicy::StoredSessionOnly`].
+pub(crate) async fn payment_rows(
+    db: &DatabaseConnection,
+    mitra: &Arc<Mutex<MitraClient>>,
+    start_date: String,
+    end_date: String,
+    policy: LoginPolicy,
+) -> Result<Vec<serde_json::Map<String, Value>>, AppError> {
+    let client = get_mitra_request_context_with(db, mitra, policy).await?;
     let result = client
         .post(
             "history-payment",
@@ -162,18 +197,90 @@ pub async fn list(
         )
         .await?;
 
-    let items: Vec<HistoryPaymentItem> = history_rows(&result, PAYMENT_ROW_KEYS)
-        .into_iter()
-        .map(parse_history_item)
-        .collect();
+    Ok(take_history_rows(result, PAYMENT_ROW_KEYS))
+}
 
-    // The table the cashier is looking at is where the next print comes
-    // from; remembering its settled rows now saves [`detail`] a second fetch
-    // of the same list a moment later. A transaction still in flight may
-    // change its mind, so only a settled one is worth remembering.
-    remember_details(ticket, &items);
+/// [`history_rows`], taking the rows out of `result` instead of copying them.
+fn take_history_rows(mut result: Value, keys: &[&str]) -> Vec<serde_json::Map<String, Value>> {
+    let rows = match keys.iter().find(|key| result.get(**key).is_some()) {
+        Some(key) => result.get_mut(*key).map(Value::take),
+        None => result
+            .as_object_mut()
+            .and_then(|obj| obj.values_mut().find(|v| v.is_array()))
+            .map(Value::take),
+    };
+    match rows {
+        Some(Value::Array(rows)) => rows
+            .into_iter()
+            .filter_map(|row| match row {
+                Value::Object(obj) => Some(obj),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
 
-    Ok(items)
+/// The `source` a stored struk blob carries when it is a history row rather
+/// than a payment response. See [`history_receipt_blob`].
+pub(crate) const HISTORY_BLOB_SOURCE: &str = "mitra_history";
+
+/// A history row as it is kept in `ppob_receipts` when a line is settled from
+/// the history: wrapped and labelled, because a history row means something
+/// else by `amount` (the total, admin fee included) than a payment response
+/// does (the bill), and the struk reader has to know which one it holds.
+pub(crate) fn history_receipt_blob(row: &serde_json::Map<String, Value>) -> String {
+    json!({ "source": HISTORY_BLOB_SOURCE, "history_row": row }).to_string()
+}
+
+/// The history row inside a blob written by [`history_receipt_blob`].
+pub(crate) fn history_row_of_blob(raw: &Value) -> Option<&serde_json::Map<String, Value>> {
+    (raw.get("source").and_then(Value::as_str) == Some(HISTORY_BLOB_SOURCE))
+        .then(|| raw.get("history_row").and_then(Value::as_object))
+        .flatten()
+}
+
+/// Mitra's own `payment_code` on a history row, taken apart:
+/// `L{customer}-{kind}-{yymmddHHMMSS}`. The letter names the service (`L`
+/// PLN, `P` pulsa, …), `kind` is `1` prepaid / `2` postpaid for PLN and the
+/// product id for pulsa, and the stamp is when Mitra took the payment, WIB
+/// (`L231000000002-2-260911101150` sits on a row `created_at`
+/// `2026-09-11 10:11:50`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PaymentCode {
+    pub prefix: String,
+    pub customer: String,
+    pub kind: String,
+    /// WIB, as written.
+    pub stamped_at: chrono::NaiveDateTime,
+}
+
+impl PaymentCode {
+    pub(crate) fn parse(code: &str) -> Option<Self> {
+        let mut parts = code.trim().rsplitn(3, '-');
+        let stamp = parts.next()?;
+        let kind = parts.next()?;
+        let head = parts.next()?;
+        if stamp.len() != 12 || !stamp.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let stamped_at = chrono::NaiveDateTime::parse_from_str(stamp, "%y%m%d%H%M%S").ok()?;
+        let digits_from = head.find(|c: char| c.is_ascii_digit())?;
+        let (prefix, customer) = head.split_at(digits_from);
+        if !prefix.chars().all(|c| c.is_ascii_alphabetic())
+            || customer.is_empty()
+            || !customer.chars().all(|c| c.is_ascii_digit())
+            || kind.is_empty()
+        {
+            return None;
+        }
+        Some(Self {
+            prefix: prefix.to_string(),
+            customer: customer.to_string(),
+            kind: kind.to_string(),
+            stamped_at,
+        })
+    }
 }
 
 /// How far back [`detail`] looks for a transaction.
@@ -235,15 +342,54 @@ fn remember_details(ticket: Ticket, items: &[HistoryPaymentItem]) {
     });
 }
 
-/// Mitra's own words for a transaction that went through — the same set the
-/// history table's `normalizeStatus` reads as `sukses`, so a row offered a
-/// "Cetak Struk" button is one this side will print.
+/// What one of Mitra's status words says about a transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StatusWord {
+    /// It went through.
+    Success,
+    /// It did not go through, or its money went back.
+    Failed,
+    /// Sent, result still open.
+    Pending,
+    Other,
+}
+
+/// One status word (or a whole `status` value), any case. The success words
+/// are the set the history table's `normalizeStatus` reads as `sukses`, so a
+/// row offered a "Cetak Struk" button is one this side will print.
+pub(crate) fn classify_status_word(word: &str) -> StatusWord {
+    match word.trim().to_lowercase().as_str() {
+        "sukses" | "success" | "berhasil" | "done" | "completed" => StatusWord::Success,
+        "gagal" | "failed" | "fail" | "ditolak" | "rejected" | "batal" | "dibatalkan"
+        | "cancel" | "canceled" | "cancelled" | "refund" | "refunded" => StatusWord::Failed,
+        "advice" | "pending" | "suspect" | "proses" | "diproses" | "process" | "processing"
+        | "menunggu" => StatusWord::Pending,
+        _ => StatusWord::Other,
+    }
+}
+
+/// The row's status is a success word ([`classify_status_word`]).
 pub fn is_success(item: &HistoryPaymentItem) -> bool {
-    item.status.as_deref().is_some_and(|status| {
-        matches!(
-            status.trim().to_lowercase().as_str(),
-            "sukses" | "success" | "berhasil" | "done" | "completed"
-        )
+    item.status
+        .as_deref()
+        .is_some_and(|status| classify_status_word(status) == StatusWord::Success)
+}
+
+/// Our service key for a service name from either side: our own keys, or
+/// Mitra's capitals-and-spaces names (`PLN`, `PAYMENT POINT`, `E-Money`).
+/// `None` for a name we have not seen.
+pub(crate) fn service_key(raw: &str) -> Option<&'static str> {
+    let name = raw.trim().to_lowercase().replace(['_', '-'], " ");
+    Some(match name.as_str() {
+        "pln" | "listrik" | "pln prepaid" | "pln postpaid" => "pln",
+        "pulsa" => "pulsa",
+        "data" | "paket data" => "data",
+        "pdam" => "pdam",
+        "pp" | "payment point" => "pp",
+        "emoney" | "e money" => "emoney",
+        "transfer" | "transfer uang" => "transfer",
+        other if other.starts_with("bpjs") => "bpjs",
+        _ => return None,
     })
 }
 
@@ -344,7 +490,7 @@ impl DayRange {
 /// The calendar day a vendor timestamp starts with: `DD-MM-YYYY` or
 /// `DD/MM/YYYY` (the Mitra app's own) or `YYYY-MM-DD` (ISO), each optionally
 /// followed by a time.
-fn vendor_day(value: &str) -> Option<NaiveDate> {
+pub(crate) fn vendor_day(value: &str) -> Option<NaiveDate> {
     let date = value.trim().split([' ', 'T']).next()?;
     let parts: Vec<&str> = date.split(['-', '/']).collect();
     let [a, b, c] = parts.as_slice() else {
@@ -543,6 +689,81 @@ mod tests {
         remember_details(ticket, &[settled("TRX-AKUN-LAMA")]);
 
         assert!(cached_detail("TRX-AKUN-LAMA").is_none());
+    }
+
+    /// The rows taken out by value are the rows [`history_rows`] borrows.
+    #[test]
+    fn taken_rows_match_borrowed_rows() {
+        for result in [
+            json!({ "data": [{ "trxid": "1" }, 7, { "trxid": "2" }] }),
+            json!({ "message": "OK", "whatever": [{ "trxid": "3" }] }),
+            json!({ "data": null, "list": [{ "trxid": "4" }] }),
+            json!({ "message": "OK" }),
+        ] {
+            let borrowed: Vec<_> = history_rows(&result, PAYMENT_ROW_KEYS)
+                .into_iter()
+                .cloned()
+                .collect();
+            assert_eq!(take_history_rows(result, PAYMENT_ROW_KEYS), borrowed);
+        }
+    }
+
+    #[test]
+    fn status_words_are_classified_in_any_case() {
+        assert_eq!(classify_status_word(" SUKSES "), StatusWord::Success);
+        assert_eq!(classify_status_word("Gagal"), StatusWord::Failed);
+        assert_eq!(classify_status_word("refunded"), StatusWord::Failed);
+        assert_eq!(classify_status_word("ADVICE"), StatusWord::Pending);
+        assert_eq!(classify_status_word("transaksi gagal"), StatusWord::Other);
+    }
+
+    #[test]
+    fn service_names_map_to_our_keys() {
+        assert_eq!(service_key("PLN"), Some("pln"));
+        assert_eq!(service_key("PAKET DATA"), Some("data"));
+        assert_eq!(service_key("PAYMENT POINT"), Some("pp"));
+        assert_eq!(service_key("payment_point"), Some("pp"));
+        assert_eq!(service_key("E-Money"), Some("emoney"));
+        assert_eq!(service_key("BPJS Kesehatan"), Some("bpjs"));
+        assert_eq!(service_key("TIKET"), None);
+    }
+
+    #[test]
+    fn a_payment_code_is_taken_apart() {
+        let code = PaymentCode::parse("L14300000001-1-260910124538").unwrap();
+        assert_eq!(code.prefix, "L");
+        assert_eq!(code.customer, "14300000001");
+        assert_eq!(code.kind, "1");
+        assert_eq!(
+            code.stamped_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2026-09-10 12:45:38"
+        );
+        let pulsa = PaymentCode::parse("P081348172197-861-260327091340").unwrap();
+        assert_eq!(pulsa.customer, "081348172197");
+        assert_eq!(pulsa.kind, "861");
+
+        for bad in [
+            "",
+            "123000858",
+            "L14300000001-1",
+            "L14300000001-1-2609101245",
+            "L14300000001-1-261340124538",
+            "L-1-260910124538",
+            "LX1430A-1-260910124538",
+        ] {
+            assert!(PaymentCode::parse(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_history_blob_round_trips_and_a_payment_blob_is_not_one() {
+        let row = json!({ "trxid": "1", "amount": 23500 })
+            .as_object()
+            .unwrap()
+            .clone();
+        let blob: Value = serde_json::from_str(&history_receipt_blob(&row)).unwrap();
+        assert_eq!(history_row_of_blob(&blob), Some(&row));
+        assert!(history_row_of_blob(&json!({ "amount": 23500 })).is_none());
     }
 
     #[test]

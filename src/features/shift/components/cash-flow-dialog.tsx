@@ -12,6 +12,7 @@ import {
 import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle } from "lucide-react"
 
 import { PendingButton } from "@/components/pending-button"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
 import { id } from "@/i18n/id"
 import { formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
@@ -66,6 +67,13 @@ function CashFlowForm({ isSubmitting, onSubmittingChange, onClose }: CashFlowFor
   const [description, setDescription] = useState("")
   const activeShift = useShiftStore((s) => s.activeShift)
   const typeLabelId = useId()
+  // F1 focuses the amount field: unguarded, the next item scanned would be
+  // booked as cash in, the barcode as the amount, by the scan's own Enter.
+  const scanGuard = useScanBurstGuard({
+    value: amount,
+    onRestore: setAmount,
+    message: id.shift.scanIgnoredInAmount,
+  })
 
   const numericAmount = Number(amount) || 0
   const canSubmit = numericAmount > 0 && !isSubmitting
@@ -154,7 +162,12 @@ function CashFlowForm({ isSubmitting, onSubmittingChange, onClose }: CashFlowFor
           onChange={(value) => setAmount(toDigits(value))}
         >
           <Label>{id.shift.cashFlow.amount}</Label>
-          <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
+          <Input
+            className="text-right tabular-nums"
+            inputMode="numeric"
+            placeholder="0"
+            onKeyDown={scanGuard.handleKeyDown}
+          />
         </TextField>
 
         <TextField

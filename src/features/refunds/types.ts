@@ -65,7 +65,8 @@ export interface RefundItemModel {
   id: number
   refund_id: number
   transaction_item_id: number
-  product_id: number
+  /** `null` for a refunded PPOB line whose top-up failed: money only, no stock. */
+  product_id: number | null
   quantity: number
   subtotal: number
   condition: string | null

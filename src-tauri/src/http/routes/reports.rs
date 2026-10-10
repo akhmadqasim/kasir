@@ -12,9 +12,10 @@
 
 use axum::extract::State;
 use axum::routing::get;
-use axum::Router;
+use axum::{Extension, Router};
 use serde::Deserialize;
 
+use crate::domain::actor::Actor;
 use crate::domain::reports::{
     CashFlowReportSummary, CurrentStockReport, DailySalesRow, LossSummary, MonthlySalesRow,
     PaymentMethodReport, PeriodSalesSummary, PopularProductRow, ProductSalesRow, ReceiptReport,
@@ -189,11 +190,13 @@ async fn losses(
     ))
 }
 
+/// Scoped to the actor's own shifts unless they are an admin.
 async fn cash_flows(
     State(state): State<AppState>,
+    Extension(actor): Extension<Actor>,
     Query(range): Query<DateRange>,
 ) -> ApiResult<axum::Json<CashFlowReportSummary>> {
     Ok(axum::Json(
-        services::reports::cash_flows(&state.db, range.start_date, range.end_date).await?,
+        services::reports::cash_flows(&state.db, &actor, range.start_date, range.end_date).await?,
     ))
 }

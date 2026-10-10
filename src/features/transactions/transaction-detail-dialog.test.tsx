@@ -40,6 +40,10 @@ const LISTED: TransactionListItem = {
   item_count: 1,
   notes: null,
   created_at: "2026-09-05 03:00:00",
+  has_refundable_goods: false,
+  has_refundable_failed_ppob: false,
+  ppob_service_type: null,
+  ppob_advice: null,
   has_ppob: true,
   ppob_status: "failed",
   ppob_message: "Provider timeout",
@@ -94,9 +98,14 @@ const DETAIL: TransactionDetail = {
       ppob_serial_number: null,
       created_at: "2026-09-05 03:00:00",
       refunded_quantity: 0,
+      refundable: true,
+      refundable_quantity: 1,
+      ppob_manual_fail_opens_at: null,
     },
   ],
   cashier_name: "Kasir Satu",
+  has_refundable_goods: true,
+  has_refundable_failed_ppob: true,
   has_ppob: true,
   ppob_status: "failed",
   ppob_message: "Provider timeout",
@@ -212,11 +221,41 @@ describe("transaksi campuran barang + PPOB", () => {
     expect(screen.getAllByRole("button", { name: /Refund/ }).length).toBeGreaterThan(0)
   })
 
-  it("tidak menawarkan refund kalau semua barisnya PPOB", async () => {
+  it("tidak menawarkan refund lagi setelah semua barangnya kembali", async () => {
+    // The failed pulsa already went back too; the sale is `partial_refund`.
+    api.route("GET /transactions/*", {
+      ...DETAIL,
+      transaction: { ...DETAIL.transaction, status: "partial_refund" },
+      has_refundable_goods: false,
+      has_refundable_failed_ppob: false,
+      items: [
+        { ...DETAIL.items[0], refunded_quantity: 1, refundable_quantity: 0 },
+        { ...RICE_LINE, quantity: 2, refunded_quantity: 2, refundable_quantity: 0 },
+      ],
+    })
     renderDialog()
 
     await screen.findByRole("button", { name: /Coba Ulang PPOB/ })
     expect(screen.queryAllByRole("button", { name: /Refund/ })).toHaveLength(0)
+  })
+
+  it("menawarkan refund untuk PPOB yang gagal", async () => {
+    renderDialog()
+
+    await screen.findByRole("button", { name: /Coba Ulang PPOB/ })
+    expect(screen.getAllByRole("button", { name: /Refund/ }).length).toBeGreaterThan(0)
+  })
+
+  it("menawarkan refund untuk top-up gagal yang dibeli di halaman PPOB", async () => {
+    // The server refunds a failed line whatever the channel; the button must not hide it.
+    api.route("GET /transactions/*", {
+      ...DETAIL,
+      transaction: { ...DETAIL.transaction, channel: "ppob" },
+    })
+    renderDialog()
+
+    await screen.findByRole("button", { name: /Coba Ulang PPOB/ })
+    expect(screen.getAllByRole("button", { name: /Refund/ }).length).toBeGreaterThan(0)
   })
 
   it("me-retry baris PPOB kedua yang gagal meski baris pertama berhasil", async () => {
@@ -307,5 +346,94 @@ describe("detail transaksi yang gagal dimuat", () => {
     fireEvent.click(screen.getByRole("button", { name: "Coba lagi" }))
 
     expect(await screen.findByRole("button", { name: /Coba Ulang PPOB/ })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Mitra answered `pln/payment` with ADVICE: the payment went to PLN, the token
+ * comes later. The line is `uncertain` with `ppob_advice` set — it must read as
+ * waiting, offer "Cek status", and offer neither a retry nor a refund.
+ */
+const ADVICE_DETAIL: TransactionDetail = {
+  ...DETAIL,
+  has_refundable_goods: false,
+  ppob_status: "uncertain",
+  ppob_message: "Menunggu konfirmasi biller (ADVICE)",
+  items: [
+    {
+      ...DETAIL.items[0],
+      product_name: "Token PLN 20.000",
+      service_type: "pln",
+      service_ref: "14203938783",
+      ppob_status: "uncertain",
+      ppob_message: "Menunggu konfirmasi biller (ADVICE)",
+      ppob_advice: '{"advice_id":"eyJpdiI6IkEifQ=="}',
+      refundable: false,
+      refundable_quantity: 0,
+    },
+  ],
+}
+
+describe("PPOB yang dijawab ADVICE", () => {
+  it("tampil menunggu konfirmasi PLN, tanpa coba ulang dan tanpa refund", async () => {
+    api.route("GET /transactions/*", ADVICE_DETAIL)
+    renderDialog()
+
+    expect(await screen.findByText("Menunggu Konfirmasi PLN")).toBeInTheDocument()
+    expect(screen.getByText("Menunggu konfirmasi PLN")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Cek status/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Coba Ulang PPOB/ })).not.toBeInTheDocument()
+    expect(screen.queryAllByRole("button", { name: /Refund/ })).toHaveLength(0)
+    expect(screen.queryByText("Gagal")).not.toBeInTheDocument()
+  })
+
+  it("Cek status menanyakan riwayat Mitra untuk baris itu", async () => {
+    api.route("GET /transactions/*", ADVICE_DETAIL)
+    api.route("POST /transaction-items/*/ppob/check", {
+      status: "success",
+      message: "Berhasil menurut riwayat Mitra. Struk bisa dicetak.",
+    })
+    renderDialog()
+
+    fireEvent.click(await screen.findByRole("button", { name: /Cek status/ }))
+
+    await waitFor(() =>
+      expect(api.callsFor("POST /transaction-items/*/ppob/check")).toHaveLength(1),
+    )
+    expect(api.lastCall("POST /transaction-items/*/ppob/check")?.path).toBe(
+      "/transaction-items/10/ppob/check",
+    )
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Berhasil menurut riwayat Mitra. Struk bisa dicetak.",
+      ),
+    )
+  })
+
+  it("hasil yang belum pasti hanya diberitahukan, baris tetap menunggu", async () => {
+    api.route("GET /transactions/*", ADVICE_DETAIL)
+    api.route("POST /transaction-items/*/ppob/check", {
+      status: "uncertain",
+      message: "Belum ada hasil pasti: belum ada di riwayat Mitra. Coba cek lagi nanti.",
+    })
+    renderDialog()
+
+    fireEvent.click(await screen.findByRole("button", { name: /Cek status/ }))
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(screen.getByText("Menunggu Konfirmasi PLN")).toBeInTheDocument()
+  })
+
+  it("baris belum pasti biasa tetap berlabel Perlu Dicek dan bisa dicek", async () => {
+    api.route("GET /transactions/*", {
+      ...ADVICE_DETAIL,
+      items: [{ ...ADVICE_DETAIL.items[0], ppob_advice: null, ppob_message: "timeout" }],
+    })
+    renderDialog()
+
+    expect(await screen.findByText("Perlu Dicek")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Cek status/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Coba Ulang PPOB/ })).not.toBeInTheDocument()
   })
 })

@@ -8,19 +8,25 @@
 
 #[cfg(test)]
 pub(crate) mod fixtures;
+#[cfg(test)]
+mod flow_tests;
 
 pub mod admin;
 pub mod checkout;
 mod ppob_fulfillment;
+mod ppob_reconcile;
 mod ppob_recovery;
 pub mod queries;
 
 pub use admin::{update_payment_method, void};
-pub use checkout::checkout;
+pub use checkout::{checkout, sale_result, IdempotencyClaim};
+pub use ppob_reconcile::{check_ppob_status, run_ppob_reconciler, PpobCheckResult};
 pub use ppob_recovery::{
     mark_interrupted_ppob_uncertain, resolve_uncertain_ppob, retry_ppob_fulfillment,
 };
 pub use queries::{detail, list, next_receipt_number};
+
+use std::collections::HashMap;
 
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 
@@ -46,12 +52,40 @@ const MIXED_PAYMENT_METHOD: &str = "mixed";
 const PPOB_STATUS_PENDING: &str = "pending";
 const PPOB_STATUS_PROCESSING: &str = "processing";
 pub(crate) const PPOB_STATUS_SUCCESS: &str = "success";
-const PPOB_STATUS_FAILED: &str = "failed";
+pub(crate) const PPOB_STATUS_FAILED: &str = "failed";
 /// The provider call went out but its answer never arrived (timeout, dropped
-/// connection, garbled body), or the app stopped while it was in flight. The
-/// money may be spent, so the line is neither retried nor refunded until a
-/// person checks the Mitra history and marks it success or failed.
+/// connection, garbled body), Mitra answered `ADVICE` (the biller has the
+/// payment, the result comes later — `ppob_advice` is set), or the app stopped
+/// while it was in flight. The money may be spent, so the line is neither
+/// retried nor refunded until `ppob_reconcile` finds it in the Mitra history or
+/// a person marks it success or failed.
 const PPOB_STATUS_UNCERTAIN: &str = "uncertain";
+
+/// Whether a sold line can come back on a refund: goods always, and a PPOB
+/// line only once its top-up `failed` — it was never delivered, so its money
+/// goes back. A delivered line, or one still in flight or `uncertain`, cannot.
+pub(crate) fn is_refundable_line(item: &transaction_items::Model) -> bool {
+    item.product_id.is_some() || item.ppob_status.as_deref() == Some(PPOB_STATUS_FAILED)
+}
+
+/// A PPOB line whose top-up `failed`: never delivered, so its money is owed
+/// back to the customer.
+pub(crate) fn is_failed_ppob_line(item: &transaction_items::Model) -> bool {
+    item.product_id.is_none() && item.ppob_status.as_deref() == Some(PPOB_STATUS_FAILED)
+}
+
+/// Units of a sold line a new refund may still take back, given the
+/// already-refunded tally from `refunds::refunded_quantities`. Zero for a line
+/// that cannot come back at all.
+pub(crate) fn refundable_quantity(
+    item: &transaction_items::Model,
+    refunded: &HashMap<i64, i64>,
+) -> i64 {
+    if !is_refundable_line(item) {
+        return 0;
+    }
+    (item.quantity - refunded.get(&item.id).copied().unwrap_or(0)).max(0)
+}
 
 /// The store's `allow_negative_stock` setting; permissive when the store row
 /// is missing. Read by checkout and by the exchange half of a refund.
@@ -116,20 +150,4 @@ fn payment_breakdown_from(
             amount: split.amount,
         })
         .collect()
-}
-
-fn summarize_ppob_items(
-    items: &[transaction_items::Model],
-) -> (bool, Option<String>, Option<String>, Option<String>) {
-    let ppob_item = items.iter().find(|item| item.service_type.is_some());
-
-    match ppob_item {
-        Some(item) => (
-            true,
-            item.ppob_status.clone(),
-            item.ppob_message.clone(),
-            item.ppob_serial_number.clone(),
-        ),
-        None => (false, None, None, None),
-    }
 }

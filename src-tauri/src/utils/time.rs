@@ -8,7 +8,9 @@
 //! boundary instead of wrapping the column in `date(created_at,'localtime')`,
 //! which would defeat the date indexes.
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{
+    DateTime, Datelike, Duration, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
+};
 
 use crate::utils::AppError;
 
@@ -18,6 +20,25 @@ pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 /// `at` in the stored timestamp shape.
 pub fn format_ts(at: DateTime<Utc>) -> String {
     at.format(TIMESTAMP_FORMAT).to_string()
+}
+
+/// WIB (Asia/Jakarta) in seconds east of UTC: a fixed UTC+7 with no daylight
+/// saving. Mitra reports every timestamp in it.
+pub const WIB_OFFSET_SECS: i32 = 7 * 3600;
+
+/// The WIB zone, for chrono.
+pub fn wib() -> FixedOffset {
+    FixedOffset::east_opt(WIB_OFFSET_SECS).expect("UTC+7 is a valid offset")
+}
+
+/// A WIB wall-clock time as a UTC instant.
+pub fn wib_to_utc(wib: NaiveDateTime) -> DateTime<Utc> {
+    (wib - Duration::seconds(i64::from(WIB_OFFSET_SECS))).and_utc()
+}
+
+/// A UTC instant on the WIB wall clock.
+pub fn utc_to_wib(at: DateTime<Utc>) -> DateTime<FixedOffset> {
+    at.with_timezone(&wib())
 }
 
 /// The current instant in the stored timestamp shape. Always UTC: every reader
@@ -99,6 +120,16 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(format_ts(at), "2026-09-05 12:34:56");
+    }
+
+    #[test]
+    fn wib_is_a_fixed_seven_hours_ahead_of_utc() {
+        let utc = NaiveDateTime::parse_from_str("2026-09-12 23:44:34", TIMESTAMP_FORMAT)
+            .unwrap()
+            .and_utc();
+        let wib = utc_to_wib(utc);
+        assert_eq!(wib.format("%d-%m-%Y %H:%M").to_string(), "13-09-2026 06:44");
+        assert_eq!(wib_to_utc(wib.naive_local()), utc);
     }
 
     #[test]

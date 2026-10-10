@@ -123,6 +123,10 @@ export interface CurrentStockRow {
 export interface CurrentStockReport {
   items: CurrentStockRow[]
   totalCount: number
+  /** Stock value (cost × stock) of every matching product, not only `items`. */
+  totalStockValue: number
+  /** Matching products running low, counted over all of them, not only `items`. */
+  lowStockCount: number
 }
 
 // Laporan Kerugian

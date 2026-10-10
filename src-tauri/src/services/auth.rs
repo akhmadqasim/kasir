@@ -2,8 +2,10 @@
 
 use std::sync::OnceLock;
 
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -11,7 +13,7 @@ use crate::domain::auth::{
     pin_has_valid_format, CreateUserInput, LoginInput, ToggleUserActiveInput, UpdateUserInput,
 };
 use crate::domain::Actor;
-use crate::entity::users;
+use crate::entity::{sessions, users};
 use crate::services::guard;
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
@@ -131,6 +133,57 @@ pub(crate) async fn require_user(
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("User tidak ditemukan".into()))
+}
+
+/// Give `user_id` a new PIN and end the sessions the old one opened: all of
+/// them, or all but `keep_session` (the `sessions.id` of the request making the
+/// change). The one place `pin_hash` is written after the account is created;
+/// checking the PIN's format is the caller's, in its own wording.
+///
+/// A PIN change is the moment a PIN that may have leaked stops working, and a
+/// session minted with the old PIN is that PIN still working. Deleting the rows
+/// is the whole revocation: the next request on any of those cookies resolves
+/// to nothing.
+///
+/// Takes the PIN already hashed ([`hash_pin`]), not the PIN: bcrypt takes a
+/// quarter of a second, and the pool has one connection, so hashing inside an
+/// open transaction would hold every other request for that long. Hash first,
+/// then `begin()`.
+///
+/// `replaces` is the hash the caller verified the old PIN against, when it
+/// verified one ("Ganti PIN"). The write then only lands while that is still
+/// the stored hash: the check and the bcrypt hash take long enough for an
+/// admin's reset to land in between, and the stale change would silently undo
+/// it. Nothing is written then, and the caller is told to reload.
+pub(crate) async fn set_pin(
+    txn: &DatabaseTransaction,
+    user_id: i64,
+    pin_hash: String,
+    replaces: Option<&str>,
+    keep_session: Option<&str>,
+) -> Result<(), AppError> {
+    let mut update = users::Entity::update_many()
+        .col_expr(users::Column::PinHash, Expr::value(pin_hash))
+        .col_expr(users::Column::UpdatedAt, Expr::value(now_ts()))
+        .filter(users::Column::Id.eq(user_id));
+    if let Some(old_hash) = replaces {
+        update = update.filter(users::Column::PinHash.eq(old_hash));
+    }
+    let updated = update.exec(txn).await?;
+
+    if replaces.is_some() && updated.rows_affected == 0 {
+        return Err(AppError::Validation(
+            "PIN akun ini baru saja diubah di tempat lain. Muat ulang halaman lalu coba lagi."
+                .into(),
+        ));
+    }
+
+    let mut revoke = sessions::Entity::delete_many().filter(sessions::Column::UserId.eq(user_id));
+    if let Some(keep) = keep_session {
+        revoke = revoke.filter(sessions::Column::Id.ne(keep));
+    }
+    revoke.exec(txn).await?;
+    Ok(())
 }
 
 /// The account behind the actor, provided it is still active.
@@ -260,11 +313,25 @@ pub async fn update_user(
 
     if let Some(new_pin) = &input.new_pin {
         validate_pin(new_pin)?;
-        active.pin_hash = Set(hash_pin(new_pin).await?);
     }
 
     active.updated_at = Set(Some(now_ts()));
-    let updated = active.update(db).await?;
+
+    let Some(new_pin) = &input.new_pin else {
+        return Ok(active.update(db).await?);
+    };
+
+    // A reset PIN ends every session the account holds: an admin resets a PIN
+    // because the old one got out, and a browser logged in with it would
+    // otherwise keep working for up to a month. An admin resetting their own
+    // PIN here is logged out too; "Ganti PIN" is the path that keeps the
+    // current session.
+    // Hashed before `begin()`, so the one pool connection stays free meanwhile.
+    let pin_hash = hash_pin(new_pin).await?;
+    let txn = db.begin().await?;
+    set_pin(&txn, input.user_id, pin_hash, None, None).await?;
+    let updated = active.update(&txn).await?;
+    txn.commit().await?;
     Ok(updated)
 }
 
@@ -315,6 +382,44 @@ mod tests {
         .insert(db)
         .await
         .expect("user insert");
+    }
+
+    /// "Ganti PIN" checked the old PIN against hash A; an admin's reset to B
+    /// landed before its write. The stale change must not overwrite B.
+    #[tokio::test]
+    async fn a_stale_pin_change_does_not_undo_an_admins_reset() {
+        use sea_orm::TransactionTrait;
+
+        let db = setup_test_db().await;
+        insert_user_with_pin(&db, "kasir1", "1234").await;
+        let user = users::Entity::find()
+            .filter(users::Column::Username.eq("kasir1"))
+            .one(&db)
+            .await
+            .expect("query")
+            .expect("user");
+        let checked_against = user.pin_hash.clone();
+
+        let reset = db.begin().await.expect("begin");
+        set_pin(&reset, user.id, "hash-dari-admin".into(), None, None)
+            .await
+            .expect("admin reset");
+        reset.commit().await.expect("commit");
+
+        let stale = db.begin().await.expect("begin");
+        let result = set_pin(
+            &stale,
+            user.id,
+            "hash-basi".into(),
+            Some(&checked_against),
+            Some("sesi"),
+        )
+        .await;
+        drop(stale);
+        assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
+
+        let stored = require_user(&db, user.id).await.expect("user").pin_hash;
+        assert_eq!(stored, "hash-dari-admin");
     }
 
     #[tokio::test]
@@ -430,6 +535,93 @@ mod tests {
             .await
             .expect("keeping the admin role is fine");
         assert_eq!(saved.role, "admin");
+    }
+
+    /// bcrypt runs before the transaction opens. The pool has one connection,
+    /// so a hash inside the transaction held every other request for as long
+    /// as the hash took.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_pin_reset_does_not_hold_the_connection_while_hashing() {
+        let db = setup_test_db().await;
+        let kasir = crate::test_support::insert_user(&db, "kasir1", "Kasir Satu", "kasir").await;
+        let started = Instant::now();
+        hash_pin("0000").await.expect("hash");
+        let one_hash = started.elapsed();
+
+        let reset = tokio::spawn({
+            let db = db.clone();
+            async move {
+                let input = UpdateUserInput {
+                    user_id: kasir.id,
+                    username: None,
+                    full_name: None,
+                    role: None,
+                    new_pin: Some("4321".into()),
+                };
+                update_user(&db, &Actor::new(1, "admin"), input).await
+            }
+        });
+        // Long enough for the reset to reach its hash, well short of one hash.
+        tokio::time::sleep(one_hash / 10).await;
+
+        let started = Instant::now();
+        users::Entity::find_by_id(1)
+            .one(&db)
+            .await
+            .expect("query")
+            .expect("admin");
+        let waited = started.elapsed();
+
+        assert!(
+            waited * 3 < one_hash,
+            "a query waited {waited:?} on a PIN reset (one hash takes {one_hash:?})"
+        );
+        let saved = reset.await.expect("join").expect("reset");
+        assert!(bcrypt::verify("4321", &saved.pin_hash).expect("verify"));
+    }
+
+    /// An admin resets a PIN because the old one got out. Every browser that
+    /// logged in with it has to lose its session there and then; an edit that
+    /// leaves the PIN alone logs nobody out.
+    #[tokio::test]
+    async fn an_admin_pin_reset_ends_every_session_of_that_user() {
+        let db = setup_test_db().await;
+        let kasir = crate::test_support::insert_user(&db, "kasir1", "Kasir Satu", "kasir").await;
+        let admin = Actor::new(1, "admin");
+        let now = chrono::Utc::now();
+        let issue = |user_id: i64| crate::http::session::issue(&db, user_id, 60, None, None, now);
+        let till = issue(kasir.id).await.expect("issue").token;
+        let phone = issue(kasir.id).await.expect("issue").token;
+        let admins_own = issue(1).await.expect("issue").token;
+        let live = |token: String| {
+            let db = &db;
+            async move {
+                crate::http::session::resolve(db, &token, now)
+                    .await
+                    .expect("resolve")
+                    .is_some()
+            }
+        };
+        let edit = |new_pin: Option<&str>| UpdateUserInput {
+            user_id: kasir.id,
+            username: None,
+            full_name: Some("Kasir Satu".into()),
+            role: None,
+            new_pin: new_pin.map(Into::into),
+        };
+
+        update_user(&db, &admin, edit(None)).await.expect("rename");
+        assert!(
+            live(till.clone()).await,
+            "an edit without a PIN keeps sessions"
+        );
+
+        update_user(&db, &admin, edit(Some("4321")))
+            .await
+            .expect("reset");
+        assert!(!live(till).await);
+        assert!(!live(phone).await);
+        assert!(live(admins_own).await, "other accounts are untouched");
     }
 
     /// A deactivated account is not a login, and must not be a distinguishable

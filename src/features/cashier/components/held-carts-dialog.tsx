@@ -1,10 +1,12 @@
-import { useState, type KeyboardEvent, type MouseEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { PlayCircle, Trash2 } from "lucide-react"
 import { Button, Description, Label, ListBox, Modal } from "@heroui/react"
 
 import { id } from "@/i18n/id"
 import { formatDateTime } from "@/lib/format"
-import type { HeldCart } from "@/stores/cart-store"
+import { SCANNER_MAX_ENTER_DELAY_MS, createShortcutScanFilter } from "@/lib/scanner-burst"
+import { toast } from "@/lib/toast"
+import { heldCartTotal, type HeldCart } from "@/stores/cart-store"
 import { formatRupiah } from "../utils"
 
 interface HeldCartsDialogProps {
@@ -51,6 +53,10 @@ function HeldCartItems({ held }: { held: HeldCart }) {
  * sorotan yang berpindah hanya merender daftar ini, bukan seluruh panel
  * keranjang. Yang ditangani sendiri hanya dua tombol yang tidak dikenal
  * listbox: angka 1–9 memanggil langsung, Delete menghapus yang disorot.
+ *
+ * A digit recalls only when it stands alone: a scanner is a keyboard, and the
+ * next item scanned while this list is open types a barcode, then Enter. Its
+ * first digit must not swap the customer's cart.
  *
  * `selectionBehavior="replace"` membuat panah ikut memindahkan pilihan,
  * sehingga "yang disorot" adalah satu kunci yang bisa dibaca tombol Hapus dan
@@ -101,6 +107,21 @@ function HeldCartsList({
   onRemove,
 }: Pick<HeldCartsDialogProps, "heldCarts" | "onRecall" | "onRemove">) {
   const [pickedId, setPickedId] = useState<string | null>(null)
+  // One recall per opening: the dialog keeps receiving keys while it animates
+  // shut, and the rest of a scan or a second Enter must not swap carts again.
+  const recalledRef = useRef(false)
+  // An Enter straight after a digit closes a burst and must not open the
+  // highlighted row either, scan or not.
+  const [isScanEnter] = useState(() => createShortcutScanFilter({ swallowEnterAfterDigit: true }))
+  const digitRecallTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(digitRecallTimerRef.current), [])
+
+  const recall = (holdId: string) => {
+    clearTimeout(digitRecallTimerRef.current)
+    if (recalledRef.current) return
+    recalledRef.current = true
+    onRecall(holdId)
+  }
   // Turunan, bukan state tersinkron: keranjang yang baru dihapus tidak bisa
   // tetap tersorot, dan sebelum ada yang dipilih sorotan ada di baris pertama.
   const highlightedId = heldCarts.some((held) => held.id === pickedId)
@@ -117,13 +138,37 @@ function HeldCartsList({
     onRemove(highlightedId)
   }
 
-  // Fase capture supaya angka tidak sempat menjadi typeahead listbox.
+  // Capture phase, so a digit never becomes listbox typeahead and a swallowed
+  // Enter never reaches the row's `onAction`.
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    const index = Number(event.key)
-    if (index >= 1 && index <= heldCarts.length) {
+    const swallow = () => {
       event.preventDefault()
       event.stopPropagation()
-      onRecall(heldCarts[index - 1].id)
+    }
+    if (recalledRef.current) {
+      swallow()
+      return
+    }
+    if (/^\d$/.test(event.key)) {
+      swallow()
+      // A second digit inside the burst makes it a scan (or a two-digit number
+      // no row has): the first digit's recall is called off, and none follows.
+      clearTimeout(digitRecallTimerRef.current)
+      isScanEnter(event, (burst) => {
+        const index = Number(event.key)
+        if (burst.digits.length === 1 && index >= 1 && index <= heldCarts.length) {
+          // A scanner sends its next key well within this wait; a hand does not.
+          const holdId = heldCarts[index - 1].id
+          digitRecallTimerRef.current = setTimeout(() => recall(holdId), SCANNER_MAX_ENTER_DELAY_MS)
+        }
+      })
+      return
+    }
+    // Any other key right behind a digit makes that digit part of something
+    // else, not a shortcut.
+    clearTimeout(digitRecallTimerRef.current)
+    if (event.key === "Enter") {
+      if (isScanEnter(event)) toast.warning(id.cashier.scanIgnoredInHeldCarts)
       return
     }
     if (event.key === "Delete") {
@@ -143,7 +188,7 @@ function HeldCartsList({
     const target = event.target as HTMLElement
     if (target.closest("button")) return
     const key = target.closest("[data-key]")?.getAttribute("data-key")
-    if (key) onRecall(key)
+    if (key) recall(key)
   }
 
   return (
@@ -159,7 +204,7 @@ function HeldCartsList({
             selectedKeys={highlightedId ? new Set([highlightedId]) : new Set()}
             selectionBehavior="replace"
             selectionMode="single"
-            onAction={(key) => onRecall(String(key))}
+            onAction={(key) => recall(String(key))}
             onSelectionChange={(keys) => {
               const [next] = [...keys]
               if (typeof next === "string") setPickedId(next)
@@ -187,7 +232,7 @@ function HeldCartsList({
                   <HeldCartItems held={held} />
                 </div>
                 <span className="w-24 shrink-0 self-center text-right text-sm font-medium tabular-nums">
-                  {formatRupiah(held.total)}
+                  {formatRupiah(heldCartTotal(held))}
                 </span>
                 {/* Tombol per baris untuk yang memakai tetikus; papan ketik tetap
                     punya Enter/Delete. React Aria menghentikan perambatan tekanan
@@ -199,7 +244,7 @@ function HeldCartsList({
                     aria-label={`Buka ${held.label}`}
                     size="sm"
                     variant="secondary"
-                    onPress={() => onRecall(held.id)}
+                    onPress={() => recall(held.id)}
                   >
                     Buka
                   </Button>

@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type Ref } from "react"
-import { FieldError, Input, Label, TextField } from "@heroui/react"
+import { Description, FieldError, Input, Label, TextField } from "@heroui/react"
 
 import { formatNumber } from "@/lib/format"
 
@@ -22,6 +22,8 @@ interface RupiahFieldProps {
   isRequired?: boolean
   /** A validation message from the form, shown under the field when set. */
   errorMessage?: string
+  /** A warning under the field (an amount that was cut down, say); not an error. */
+  warning?: string
   className?: string
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
   onFocus?: () => void
@@ -73,6 +75,7 @@ export function RupiahField({
   isDisabled,
   isRequired,
   errorMessage,
+  warning,
   className,
   onKeyDown,
   onFocus,
@@ -109,6 +112,9 @@ export function RupiahField({
         onKeyDown={onKeyDown}
       />
       {errorMessage ? <FieldError>{errorMessage}</FieldError> : null}
+      {!errorMessage && warning ? (
+        <Description className="text-warning">{warning}</Description>
+      ) : null}
     </TextField>
   )
 }

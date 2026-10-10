@@ -11,6 +11,8 @@ interface RefundActionToggleProps {
   value: ActionType
   onChange: (value: ActionType) => void
   isDisabled?: boolean
+  /** Why the exchange option is closed (the seven-day window), or `null`. */
+  exchangeDisabledReason?: string | null
 }
 
 /**
@@ -18,7 +20,12 @@ interface RefundActionToggleProps {
  * sentuh — bukan `Select` yang harus dibuka dulu. React Aria merendernya
  * sebagai radiogroup.
  */
-export function RefundActionToggle({ value, onChange, isDisabled }: RefundActionToggleProps) {
+export function RefundActionToggle({
+  value,
+  onChange,
+  isDisabled,
+  exchangeDisabledReason = null,
+}: RefundActionToggleProps) {
   return (
     <div className="flex flex-col gap-2">
       <Label id={ACTION_LABEL_ID}>{id.refund.actionType}</Label>
@@ -38,12 +45,17 @@ export function RefundActionToggle({ value, onChange, isDisabled }: RefundAction
           <Banknote />
           {id.refund.actionRefund}
         </ToggleButton>
-        <ToggleButton className="flex-1 sm:flex-none" id="exchange">
+        <ToggleButton
+          className="flex-1 sm:flex-none"
+          id="exchange"
+          isDisabled={exchangeDisabledReason !== null}
+        >
           <ToggleButtonGroup.Separator />
           <ArrowLeftRight />
           {id.refund.actionExchange}
         </ToggleButton>
       </ToggleButtonGroup>
+      {exchangeDisabledReason && <p className="text-xs text-muted">{exchangeDisabledReason}</p>}
     </div>
   )
 }

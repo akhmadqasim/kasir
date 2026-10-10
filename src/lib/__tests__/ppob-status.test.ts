@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest"
 import {
+  PPOB_IN_FLIGHT_POLL_MS,
   PPOB_STATUS_CONFIG,
+  hasPpobLineInFlight,
+  isPpobAwaitingBiller,
   isPpobInFlight,
   isPpobRetryable,
   isPpobUncertain,
+  ppobLineStatusConfig,
+  ppobLines,
+  ppobRowBadge,
+  ppobSalePollInterval,
   ppobStatusConfig,
 } from "../ppob-status"
 
@@ -73,5 +80,77 @@ describe("isPpobUncertain", () => {
     expect(isPpobRetryable("uncertain")).toBe(false)
     expect(isPpobInFlight("uncertain")).toBe(false)
     expect(isPpobUncertain("failed")).toBe(false)
+  })
+})
+
+describe("ADVICE (menunggu konfirmasi biller)", () => {
+  const advice = { ppob_status: "uncertain", ppob_advice: "{}", service_type: "pln" }
+
+  it("is an uncertain line with Mitra's ADVICE reference kept", () => {
+    expect(isPpobAwaitingBiller(advice)).toBe(true)
+    expect(isPpobAwaitingBiller({ ...advice, ppob_advice: null })).toBe(false)
+    expect(isPpobAwaitingBiller({ ...advice, ppob_advice: undefined })).toBe(false)
+    // Settled lines keep the reference, but no longer wait.
+    expect(isPpobAwaitingBiller({ ...advice, ppob_status: "success" })).toBe(false)
+    expect(isPpobAwaitingBiller({ ...advice, ppob_status: "failed" })).toBe(false)
+  })
+
+  it("reads as waiting on PLN, never as failed", () => {
+    expect(ppobLineStatusConfig(advice)).toEqual({
+      label: "Menunggu Konfirmasi PLN",
+      variant: "warning",
+      inFlight: false,
+    })
+    expect(ppobLineStatusConfig({ ...advice, service_type: "pdam" })?.label).toBe(
+      "Menunggu Konfirmasi",
+    )
+    expect(ppobLineStatusConfig({ ...advice, ppob_advice: null })?.label).toBe("Perlu Dicek")
+    expect(ppobLineStatusConfig({ ppob_status: "failed" })?.label).toBe("Gagal")
+  })
+
+  it("is neither retryable nor in flight", () => {
+    expect(isPpobRetryable(advice.ppob_status)).toBe(false)
+    expect(isPpobInFlight(advice.ppob_status)).toBe(false)
+  })
+})
+
+describe("ppobRowBadge", () => {
+  const row = (ppob_status: string | null, extra: object = {}) => ({
+    has_ppob: true,
+    ppob_status,
+    ppob_advice: null,
+    service_type: "pulsa",
+    ...extra,
+  })
+
+  it("marks only the exceptions, and names them as PPOB", () => {
+    expect(ppobRowBadge(row("success"))).toBeNull()
+    expect(ppobRowBadge({ ...row("failed"), has_ppob: false })).toBeNull()
+    expect(ppobRowBadge(row("failed"))).toEqual({ label: "PPOB gagal", variant: "error" })
+    expect(ppobRowBadge(row("uncertain"))).toEqual({
+      label: "PPOB perlu dicek",
+      variant: "warning",
+    })
+    expect(ppobRowBadge(row("pending"))?.label).toBe("PPOB menunggu")
+  })
+
+  it("reads an ADVICE line as waiting on PLN", () => {
+    expect(ppobRowBadge(row("uncertain", { ppob_advice: "{}", service_type: "pln" }))).toEqual({
+      label: "Menunggu Konfirmasi PLN",
+      variant: "warning",
+    })
+  })
+})
+
+describe("sale polling", () => {
+  it("polls only while a line is pending or processing", () => {
+    const line = (ppob_status: string | null) => ({ ppob_status })
+    expect(ppobSalePollInterval([])).toBe(false)
+    expect(ppobSalePollInterval([line("success"), line("pending")])).toBe(PPOB_IN_FLIGHT_POLL_MS)
+    expect(ppobSalePollInterval([line(null)])).toBe(PPOB_IN_FLIGHT_POLL_MS)
+    expect(ppobSalePollInterval([line("success"), line("uncertain")])).toBe(false)
+    expect(ppobSalePollInterval([line("success"), line("failed")])).toBe(false)
+    expect(hasPpobLineInFlight([line("processing")])).toBe(true)
+    expect(ppobLines([{ service_type: "pln" }, { service_type: null }])).toHaveLength(1)
   })
 })

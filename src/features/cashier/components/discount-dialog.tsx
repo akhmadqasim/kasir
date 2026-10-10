@@ -6,17 +6,13 @@ import { id } from "@/i18n/id"
 import { OptionSelect } from "@/components/option-select"
 import { SummaryList } from "@/components/summary-list"
 import { useCartStore } from "@/stores/cart-store"
+import { normalizeDiscount } from "@/stores/cart-totals"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
 import { DISCOUNT_TYPES, formatRupiah } from "../utils"
 
 interface DiscountDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-function parseDiscount(raw: string, type: "fixed" | "percentage"): number {
-  const num = Number(raw) || 0
-  if (type === "percentage") return Math.min(Math.max(num, 0), 100)
-  return Math.max(num, 0)
 }
 
 export function DiscountDialog({ open, onOpenChange }: DiscountDialogProps) {
@@ -38,29 +34,53 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
   const setTransactionDiscount = useCartStore((s) => s.setTransactionDiscount)
   const getCartTotals = useCartStore((s) => s.getCartTotals)
 
+  const { subtotal, itemDiscountsTotal, totalDiscount, total: finalTotal } = getCartTotals()
+  // A fixed discount is capped, when totals are computed, at what is left
+  // after the per-item ones. The store keeps the typed amount whole.
+  const discountBase = Math.max(subtotal - itemDiscountsTotal, 0)
+
   const [txnDiscType, setTxnDiscType] = useState<"fixed" | "percentage">(
     transactionDiscount?.type ?? "fixed",
   )
-  const [txnRaw, setTxnRaw] = useState(transactionDiscount ? String(transactionDiscount.value) : "")
-  // Set when the last keystroke asked for more than 100%. The hint shows only
-  // then: the Body already has its one sentence (DESIGN.md §5.7), and a
-  // standing "Maksimal 100%" under the field would be a second one.
-  const [wasClamped, setWasClamped] = useState(false)
+  // The field shows the discount as it applies: a fixed amount saved before
+  // the cart shrank reads as the cut-down amount, not the one typed back then.
+  const [txnRaw, setTxnRaw] = useState(() =>
+    transactionDiscount
+      ? String(normalizeDiscount(transactionDiscount, discountBase).entry?.value ?? 0)
+      : "",
+  )
+  // Which limit the last value ran into, if any. The hint shows only then: the
+  // Body already has its one sentence (DESIGN.md §5.7).
+  const [clampedTo, setClampedTo] = useState<"percentage" | "fixed" | null>(() =>
+    transactionDiscount && normalizeDiscount(transactionDiscount, discountBase).capped
+      ? transactionDiscount.type
+      : null,
+  )
 
-  const { subtotal, itemDiscountsTotal, totalDiscount, total: finalTotal } = getCartTotals()
-  // The store caps a fixed discount at what is left after the per-item ones.
-  const discountBase = Math.max(subtotal - itemDiscountsTotal, 0)
-  const isFixedOverBase = txnDiscType === "fixed" && Number(txnRaw || 0) > discountBase
+  // F2 focuses this field, so the next item scanned before the dialog is
+  // closed types its barcode here: kept, it would be a discount as large as
+  // the purchase. The field saves as it is typed, through `commit`, which
+  // holds a typed digit's save until it cannot be a scan.
+  const scanGuard = useScanBurstGuard({
+    value: { raw: txnRaw, clampedTo },
+    onRestore: (before) => {
+      setTxnRaw(before.raw)
+      setClampedTo(before.clampedTo)
+    },
+    message: id.cashier.scanIgnoredInField,
+  })
 
   const handleTxnChange = (value: string) => {
     const digits = value.replace(/[^\d]/g, "")
-    const parsed = parseDiscount(digits, txnDiscType)
-    // A percentage above 100 is clamped by `parseDiscount`; the field shows the
-    // clamped value too, so it never reads "150" while 100% is applied.
-    const cleaned = txnDiscType === "percentage" && digits !== "" ? String(parsed) : digits
-    setWasClamped(txnDiscType === "percentage" && Number(digits) > 100)
-    setTxnRaw(cleaned)
-    setTransactionDiscount(parsed > 0 ? { type: txnDiscType, value: parsed } : null)
+    const typed = { type: txnDiscType, value: Number(digits) }
+    // The field shows the limit it ran into: it never reads "150" while 100%
+    // applies, nor 50.000 while 20.000 comes off. The store keeps a fixed
+    // amount whole, so it applies in full once the cart grows into it.
+    const { entry, capped } = normalizeDiscount(typed, discountBase)
+    const shown = txnDiscType === "fixed" && !capped ? digits : String(entry?.value ?? 0)
+    setClampedTo(capped ? txnDiscType : null)
+    setTxnRaw(digits === "" ? "" : shown)
+    scanGuard.commit(() => setTransactionDiscount(typed))
   }
 
   const formatTxnDisplay = (raw: string): string => {
@@ -71,15 +91,17 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
   }
 
   const handleToggleType = (newType: "fixed" | "percentage") => {
+    scanGuard.cancel()
     setTxnDiscType(newType)
     setTxnRaw("")
-    setWasClamped(false)
+    setClampedTo(null)
     setTransactionDiscount(null)
   }
 
   const handleReset = () => {
+    scanGuard.cancel()
     setTxnRaw("")
-    setWasClamped(false)
+    setClampedTo(null)
     setTransactionDiscount(null)
   }
 
@@ -118,16 +140,17 @@ function DiscountDialogBody({ onOpenChange }: { onOpenChange: (open: boolean) =>
               inputMode="numeric"
               placeholder="0"
               onKeyDown={(e) => {
+                if (scanGuard.handleKeyDown(e)) return
                 if (e.key === "Enter") onOpenChange(false)
               }}
             />
-            {wasClamped ? (
-              <Description className="text-warning">Maksimal 100%</Description>
-            ) : isFixedOverBase ? (
+            {clampedTo && (
               <Description className="text-warning">
-                Melebihi belanja — dipotong jadi {formatRupiah(discountBase)}
+                {clampedTo === "percentage"
+                  ? "Maksimal 100%"
+                  : id.cashier.discountCapped(formatRupiah(discountBase))}
               </Description>
-            ) : null}
+            )}
           </TextField>
         </div>
 

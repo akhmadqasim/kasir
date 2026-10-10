@@ -17,52 +17,47 @@ pub use queries::{detail, list};
 
 use std::collections::HashMap;
 
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect};
 
 use crate::entity::{refund_items, refunds, transaction_items};
 use crate::utils::AppError;
 
 /// Units of each sold line (keyed by `transaction_items.id`) that earlier
 /// refunds of `transaction_id` already took back. Lines never returned are
-/// absent. This is the tally [`create`] checks a new refund against, and what
-/// the transaction detail reports per line so the refund form can cap each
-/// quantity at what is actually left.
+/// absent. A new refund is checked against this tally.
 pub async fn refunded_quantities<C: ConnectionTrait>(
     db: &C,
     transaction_id: i64,
 ) -> Result<HashMap<i64, i64>, AppError> {
-    let refund_ids: Vec<i64> = refunds::Entity::find()
-        .filter(refunds::Column::TransactionId.eq(transaction_id))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|refund| refund.id)
-        .collect();
-
-    let mut refunded = HashMap::new();
-    if refund_ids.is_empty() {
-        return Ok(refunded);
-    }
-
-    let returned_lines = refund_items::Entity::find()
-        .filter(refund_items::Column::RefundId.is_in(refund_ids))
-        .all(db)
-        .await?;
-    for line in returned_lines {
-        *refunded.entry(line.transaction_item_id).or_insert(0) += line.quantity;
-    }
-
-    Ok(refunded)
+    refunded_quantities_for(db, &[transaction_id]).await
 }
 
-/// Rupiah to hand back for `quantity` units of a sold line.
-///
-/// This is the money that actually changed hands, not the list price:
-/// `transaction_items.net_subtotal` already has the line's own discount and its
-/// share of the transaction-level discount taken off (see migration 018), so a
-/// single unit is worth `net_subtotal / quantity`. Refunding at
-/// `product_price * quantity` instead handed the customer back every discount
-/// they were given, at the shop's expense, on every single return.
+/// [`refunded_quantities`] for several sales in one query.
+pub async fn refunded_quantities_for<C: ConnectionTrait>(
+    db: &C,
+    transaction_ids: &[i64],
+) -> Result<HashMap<i64, i64>, AppError> {
+    if transaction_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows: Vec<(i64, i64)> = refund_items::Entity::find()
+        .select_only()
+        .column(refund_items::Column::TransactionItemId)
+        .column_as(refund_items::Column::Quantity.sum(), "quantity")
+        .inner_join(refunds::Entity)
+        .filter(refunds::Column::TransactionId.is_in(transaction_ids.iter().copied()))
+        .group_by(refund_items::Column::TransactionItemId)
+        .into_tuple()
+        .all(db)
+        .await?;
+
+    Ok(rows.into_iter().collect())
+}
+
+/// Rupiah to hand back for `quantity` units of a sold line: the money that
+/// changed hands, `net_subtotal / quantity` per unit, so every discount given
+/// on the line stays given.
 fn refund_amount_for(txn_item: &transaction_items::Model, quantity: i64) -> f64 {
     if txn_item.quantity <= 0 {
         return 0.0;

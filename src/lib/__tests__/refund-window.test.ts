@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { REFUND_MAX_DAYS, refundBlockedReason, refundWindowState } from "../refund-window"
+import {
+  REFUND_MAX_DAYS,
+  isLineInsideRefundWindow,
+  refundActionBlockedReason,
+  refundBlockedReason,
+  refundWindowState,
+} from "../refund-window"
 
 // Backend timestamps are UTC without a zone marker; `parseBackendDate` pins them.
 const SOLD_AT = "2026-09-01 10:00:00"
@@ -53,5 +59,52 @@ describe("refundBlockedReason", () => {
 
   it("explains a missing date separately", () => {
     expect(refundBlockedReason(null)).toContain("tanpa tanggal")
+  })
+})
+
+describe("a failed PPOB top-up has no refund window", () => {
+  const owed = { product_id: null, refundable_quantity: 1 }
+  const goods = { product_id: 4, refundable_quantity: 1 }
+
+  it("lets only that line through once the window has passed", () => {
+    const late = at(8 * DAY)
+    expect(isLineInsideRefundWindow(owed, SOLD_AT, late)).toBe(true)
+    expect(isLineInsideRefundWindow({ ...owed, refundable_quantity: 0 }, SOLD_AT, late)).toBe(false)
+    expect(isLineInsideRefundWindow(goods, SOLD_AT, late)).toBe(false)
+    expect(isLineInsideRefundWindow(goods, SOLD_AT, at(DAY))).toBe(true)
+  })
+})
+
+describe("refundActionBlockedReason", () => {
+  const owed = { hasRefundableFailedPpob: true }
+  const none = { hasRefundableFailedPpob: false }
+
+  it("lets a pure refund of a failed top-up past the window", () => {
+    expect(
+      refundActionBlockedReason(SOLD_AT, { ...owed, action: "refund" }, at(8 * DAY)),
+    ).toBeNull()
+  })
+
+  // Mirrors `check_refund_window`: an exchange sends new goods out, so a failed
+  // top-up does not lift the window for it.
+  it("keeps an exchange inside the window even when a failed top-up is owed", () => {
+    const reason = refundActionBlockedReason(SOLD_AT, { ...owed, action: "exchange" }, at(8 * DAY))
+    expect(reason).toContain("7 hari")
+    expect(reason).toContain("tukar barang")
+  })
+
+  it("leaves an exchange open inside the window", () => {
+    expect(refundActionBlockedReason(SOLD_AT, { ...owed, action: "exchange" }, at(DAY))).toBeNull()
+  })
+
+  it("falls back to the plain window when no top-up is owed", () => {
+    for (const action of ["refund", "exchange"] as const) {
+      expect(refundActionBlockedReason(SOLD_AT, { ...none, action }, at(8 * DAY))).toBe(
+        refundBlockedReason(SOLD_AT, at(8 * DAY)),
+      )
+    }
+    expect(refundActionBlockedReason(null, { ...owed, action: "exchange" })).toContain(
+      "tanpa tanggal",
+    )
   })
 })

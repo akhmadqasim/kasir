@@ -1,13 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 
 import { installApiMock } from "@/test-utils/api-mock"
 import { pressKey } from "@/test-utils/keyboard"
+import { toast } from "@/lib/toast"
 import { useShiftStore } from "@/features/shift/hooks/use-shift-store"
 import { useCartStore, type HeldCart } from "@/stores/cart-store"
 import { CartPanel } from "./components/cart-panel"
 import type { CartItem } from "./types"
+import { formatRupiah } from "./utils"
+
+/** The over-limit hint, with the spacing Testing Library normalises text to. */
+function cappedHint(amount: number) {
+  return `Melebihi belanja — dipotong jadi ${formatRupiah(amount)}`.replace(/\s+/g, " ")
+}
 
 function cartItem(overrides: Partial<CartItem> = {}): CartItem {
   return {
@@ -29,7 +36,6 @@ function heldCart(overrides: Partial<HeldCart> = {}): HeldCart {
     items: [cartItem()],
     itemDiscounts: {},
     transactionDiscount: null,
-    total: 6000,
     heldAt: Date.parse("2026-09-05T01:00:00Z"),
     ...overrides,
   }
@@ -161,6 +167,24 @@ describe("cart panel", () => {
     expect(useCartStore.getState().transactionDiscount).toEqual({ type: "percentage", value: 100 })
   })
 
+  it("shows a fixed discount cut down to the purchase, with the hint", async () => {
+    // 2 × 3.000 = 6.000 to discount; 50.000 is shown as the 6.000 that applies
+    // now, and saved whole so it applies in full once the cart grows.
+    resetStore({ items: [cartItem()] })
+    renderPanel()
+
+    pressFunctionKey("F2")
+    const dialog = await screen.findByRole("dialog")
+    const field = within(dialog).getByRole("textbox", { name: "Nilai diskon" })
+
+    fireEvent.change(field, { target: { value: "50000" } })
+
+    expect(field).toHaveValue("6.000")
+    expect(within(dialog).getByText(cappedHint(6000))).toBeInTheDocument()
+    expect(useCartStore.getState().transactionDiscount).toEqual({ type: "fixed", value: 50000 })
+    expect(useCartStore.getState().getTransactionDiscountAmount()).toBe(6000)
+  })
+
   it("ignores F2 while a page dialog covers the panel", () => {
     resetStore({ items: [cartItem()] })
     renderPanel({ shortcutsDisabled: true })
@@ -245,7 +269,48 @@ describe("cart panel", () => {
 
     pressKey("2")
 
-    expect(recallCart).toHaveBeenCalledWith("hold-2")
+    // A lone digit recalls once nothing follows it the way a scanner would.
+    await waitFor(() => expect(recallCart).toHaveBeenCalledWith("hold-2"))
+    // The Enter of someone confirming while the dialog animates shut is not a
+    // second recall.
+    pressKey("Enter")
+    pressKey("1")
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(recallCart).toHaveBeenCalledTimes(1)
+  })
+
+  // The scanner is a keyboard: the next item scanned while F9 is open types
+  // its barcode into the list. Its first digit used to recall that row, its
+  // other digits and its Enter could recall again.
+  it("never recalls a cart from a barcode scanned into the list", async () => {
+    const recallCart = vi.fn()
+    const warning = vi.spyOn(toast, "warning").mockImplementation(() => {})
+    resetStore({
+      heldCarts: [heldCart(), heldCart({ id: "hold-2", label: "Pelanggan 2" })],
+    })
+    useCartStore.setState({ recallCart })
+    renderPanel()
+
+    await openHeldCartsDialog()
+    const row = document.activeElement as HTMLElement
+    const fireAt = (key: string, timeStamp: number) => {
+      const event = createEvent.keyDown(row, { key })
+      Object.defineProperty(event, "timeStamp", { value: timeStamp })
+      fireEvent(row, event)
+      return event
+    }
+    // "1" and "2" lead the barcode: both are row numbers on their own.
+    const barcode = "1234567890128"
+    for (let i = 0; i < barcode.length; i++) fireAt(barcode[i], 1000 + i * 10)
+    const enter = fireAt("Enter", 1000 + barcode.length * 10 + 20)
+    fireEvent.keyUp(row, { key: "Enter" })
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(warning).toHaveBeenCalledTimes(1)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(recallCart).not.toHaveBeenCalled()
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Transaksi Tersimpan")
+    warning.mockRestore()
   })
 
   it("deletes the highlighted cart with Delete", async () => {
@@ -318,5 +383,96 @@ describe("cart panel", () => {
 
     pressFunctionKey("F10")
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("opens payment on F4", () => {
+    const onPay = vi.fn()
+    resetStore({ items: [cartItem()] })
+    renderPanel({ onPay })
+
+    pressFunctionKey("F4")
+
+    expect(onPay).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not open payment on F4 while one of its own dialogs is open", async () => {
+    const onPay = vi.fn()
+    resetStore({ items: [cartItem()] })
+    renderPanel({ onPay })
+
+    pressFunctionKey("F2")
+    await screen.findByRole("dialog")
+    pressFunctionKey("F4")
+
+    expect(onPay).not.toHaveBeenCalled()
+  })
+
+  it("does not open payment on F4 while a page dialog covers the panel", () => {
+    const onPay = vi.fn()
+    resetStore({ items: [cartItem()] })
+    renderPanel({ onPay, shortcutsDisabled: true })
+
+    pressFunctionKey("F4")
+
+    expect(onPay).not.toHaveBeenCalled()
+  })
+
+  it("removes a line without the trash button taking focus", () => {
+    resetStore({ items: [cartItem(), cartItem({ cart_id: "line-2", product_name: "Beras 5kg" })] })
+    render(<input aria-label="Kolom scan" />)
+    renderPanel()
+    const scanField = screen.getByRole("textbox", { name: "Kolom scan" })
+    scanField.focus()
+
+    const trash = screen.getByRole("button", { name: "Hapus Indomie Goreng" })
+    // The browser focuses a pressed button between mousedown and click;
+    // `preventFocusOnPress` has React Aria put focus straight back.
+    fireEvent.mouseDown(trash, { button: 0 })
+    trash.focus()
+    expect(scanField).toHaveFocus()
+    fireEvent.click(trash)
+
+    expect(useCartStore.getState().items.map((item) => item.cart_id)).toEqual(["line-2"])
+    expect(scanField).toHaveFocus()
+  })
+
+  it("saves a nominal transaction discount whole, capped only in the totals", async () => {
+    resetStore({ items: [cartItem()] })
+    renderPanel()
+
+    pressFunctionKey("F2")
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Nilai diskon" }), {
+      target: { value: "50000" },
+    })
+
+    // 2 × 3.000 = 6.000 in the cart: 6.000 comes off for now.
+    expect(useCartStore.getState().transactionDiscount).toEqual({ type: "fixed", value: 50000 })
+    expect(useCartStore.getState().getCartTotals().total).toBe(0)
+  })
+
+  // A cart discount typed early (10.000 on an 8.000 cart) must not stay 8.000
+  // after more is scanned. The footer says when it is cut down for now.
+  it("shows a footer hint while the cart discount is larger than the cart", () => {
+    resetStore({
+      items: [cartItem({ quantity: 2, product_price: 4000 })],
+      transactionDiscount: { type: "fixed", value: 10000 },
+    })
+    const { unmount } = renderPanel()
+
+    const hint = `Diskon dipotong jadi ${formatRupiah(8000)} (melebihi belanja)`.replace(
+      /\s+/g,
+      " ",
+    )
+    expect(screen.getByText(hint)).toBeInTheDocument()
+    unmount()
+
+    resetStore({
+      items: [cartItem({ quantity: 4, product_price: 4000 })],
+      transactionDiscount: { type: "fixed", value: 10000 },
+    })
+    renderPanel()
+    expect(screen.queryByText(/Diskon dipotong jadi/)).not.toBeInTheDocument()
+    expect(useCartStore.getState().getTransactionDiscountAmount()).toBe(10000)
   })
 })

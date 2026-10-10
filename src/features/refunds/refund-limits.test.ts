@@ -1,39 +1,28 @@
 import { describe, expect, it } from "vitest"
 import {
   hasRefundedLines,
+  isRefundableLine,
   parseRemainingQuantityError,
   remainingQuantityMessage,
   remainingRefundableQuantity,
 } from "./refund-limits"
 
 describe("remainingRefundableQuantity", () => {
-  it("offers the whole line when nothing came back yet", () => {
-    expect(remainingRefundableQuantity({ quantity: 3, refunded_quantity: 0 })).toBe(3)
-  })
-
-  it("takes earlier refunds off the purchased quantity", () => {
-    expect(remainingRefundableQuantity({ quantity: 3, refunded_quantity: 2 })).toBe(1)
-  })
-
-  it("is zero for a line returned in full", () => {
-    expect(remainingRefundableQuantity({ quantity: 2, refunded_quantity: 2 })).toBe(0)
+  it("reads the server's remainder for the line", () => {
+    expect(remainingRefundableQuantity({ refundable_quantity: 3 })).toBe(3)
+    expect(remainingRefundableQuantity({ refundable_quantity: 0 })).toBe(0)
   })
 
   it("never goes negative on inconsistent data", () => {
-    expect(remainingRefundableQuantity({ quantity: 1, refunded_quantity: 4 })).toBe(0)
-    expect(remainingRefundableQuantity({ quantity: 2, refunded_quantity: -1 })).toBe(2)
+    expect(remainingRefundableQuantity({ refundable_quantity: -1 })).toBe(0)
+    expect(remainingRefundableQuantity({ refundable_quantity: Number.NaN })).toBe(0)
   })
 })
 
 describe("hasRefundedLines", () => {
   it("is true once any line has come back", () => {
-    expect(
-      hasRefundedLines([
-        { quantity: 2, refunded_quantity: 0 },
-        { quantity: 1, refunded_quantity: 1 },
-      ]),
-    ).toBe(true)
-    expect(hasRefundedLines([{ quantity: 2, refunded_quantity: 0 }])).toBe(false)
+    expect(hasRefundedLines([{ refunded_quantity: 0 }, { refunded_quantity: 1 }])).toBe(true)
+    expect(hasRefundedLines([{ refunded_quantity: 0 }])).toBe(false)
     expect(hasRefundedLines([])).toBe(false)
   })
 })
@@ -83,5 +72,12 @@ describe("remainingQuantityMessage", () => {
     expect(remainingQuantityMessage({ remaining: 0, productName: "Beras" })).toContain(
       "sudah diretur seluruhnya",
     )
+  })
+})
+
+describe("isRefundableLine", () => {
+  it("follows the server's `refundable` flag", () => {
+    expect(isRefundableLine({ refundable: true })).toBe(true)
+    expect(isRefundableLine({ refundable: false })).toBe(false)
   })
 })

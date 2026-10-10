@@ -64,13 +64,18 @@ impl FromRequestParts<AppState> for ClientInfo {
     }
 }
 
-/// `X-Forwarded-For`'s leftmost entry, but only when a proxy is trusted.
+/// `X-Forwarded-For`'s rightmost entry, but only when a proxy is trusted.
+///
+/// The rightmost entry is the one the trusted proxy added; anything to its
+/// left was sent by the client and can be forged.
 fn forwarded_address(config: &ServerConfig, headers: &HeaderMap) -> Option<String> {
     if !config.trust_proxy {
         return None;
     }
     header_str(headers, "x-forwarded-for")
-        .and_then(first_csv_entry)
+        .and_then(|value| value.rsplit(',').next())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
         .map(str::to_owned)
 }
 
@@ -97,7 +102,23 @@ mod tests {
         assert_eq!(forwarded_address(&plain(), &headers), None);
         assert_eq!(
             forwarded_address(&behind_nginx(), &headers),
-            Some("203.0.113.7".to_string())
+            Some("10.0.0.1".to_string())
+        );
+    }
+
+    /// A client-sent `X-Forwarded-For: 127.0.0.1` must not make a LAN caller
+    /// look like the till: nginx appends the real peer on the right.
+    #[test]
+    fn a_forged_leftmost_entry_is_ignored() {
+        let forged = headers(&[("x-forwarded-for", "127.0.0.1, 192.168.1.20")]);
+        assert_eq!(
+            forwarded_address(&behind_nginx(), &forged),
+            Some("192.168.1.20".to_string())
+        );
+        let single = headers(&[("x-forwarded-for", "192.168.1.20")]);
+        assert_eq!(
+            forwarded_address(&behind_nginx(), &single),
+            Some("192.168.1.20".to_string())
         );
     }
 

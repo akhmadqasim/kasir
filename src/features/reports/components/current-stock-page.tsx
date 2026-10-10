@@ -39,13 +39,9 @@ export function CurrentStockPage() {
 
   const { data, isLoading, isFetching, error, refetch } = useCurrentStock(debouncedSearch, filter)
 
-  const totals = data?.items.reduce(
-    (acc, r) => ({
-      lowStock: acc.lowStock + (isLowStock(r) ? 1 : 0),
-      value: acc.value + r.stockValue,
-    }),
-    { lowStock: 0, value: 0 },
-  )
+  // Computed by the backend over every matching product: summed here, the
+  // cards only saw the rows sent and came out short when the list was cut.
+  const totals = data && { lowStock: data.lowStockCount, value: data.totalStockValue }
   const query = debouncedSearch.trim()
   // The empty state names what narrowed the list: the search text, or the
   // low-stock filter (an empty "Stok Menipis" list is good news, not a miss).
@@ -76,7 +72,7 @@ export function CurrentStockPage() {
         </>
       }
     >
-      {(isLoading || (totals && data)) && (
+      {(isLoading || totals) && (
         <div className="grid gap-4 sm:grid-cols-3">
           <StatCard
             label={id.reports.stat.totalProducts}
@@ -94,8 +90,8 @@ export function CurrentStockPage() {
         </div>
       )}
 
-      {/* Backend membatasi jumlah baris. Kartu di atas dihitung dari baris yang
-          terkirim saja, jadi katakan apa adanya saat daftarnya terpotong. */}
+      {/* The backend caps the table's rows; the cards above still cover every
+          product, but the table does not, so say when the list was cut. */}
       {data && (
         <TruncationNotice shown={data.items.length} total={data.totalCount} noun="produk">
           {id.reports.truncatedStockHint}

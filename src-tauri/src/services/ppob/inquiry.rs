@@ -242,6 +242,20 @@ pub struct BpjsInquiryInput {
     pub period: String,
 }
 
+/// Mitra's "Inquiry Gagal" verdict, which the BPJS inquiry answers by trying
+/// once more with the fallback phone number. The same body on an HTTP 5xx or a
+/// gateway timeout comes back `UpstreamUncertain` (see
+/// `client::classify_post_response`); for an inquiry that changes nothing — it
+/// spends no money — so both variants qualify.
+fn is_failed_inquiry(err: &AppError) -> bool {
+    match err {
+        AppError::Upstream(message) | AppError::UpstreamUncertain(message) => {
+            message.contains("Inquiry Gagal")
+        }
+        _ => false,
+    }
+}
+
 pub async fn bpjs(
     db: &DatabaseConnection,
     mitra: &Arc<Mutex<MitraClient>>,
@@ -295,8 +309,8 @@ pub async fn bpjs(
         .await
     {
         Ok(result) => result,
-        Err(AppError::Upstream(message))
-            if message.contains("Inquiry Gagal")
+        Err(ref err)
+            if is_failed_inquiry(err)
                 && !fallback_phone_number.is_empty()
                 && fallback_phone_number != primary_phone_number =>
         {
@@ -491,6 +505,24 @@ pub async fn emoney(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A 5xx carrying "Inquiry Gagal" is `UpstreamUncertain`; the BPJS
+    /// fallback must still fire for it.
+    #[test]
+    fn a_failed_inquiry_is_recognised_whatever_the_http_status() {
+        assert!(is_failed_inquiry(&AppError::Upstream(
+            "Mitra: Inquiry Gagal".into()
+        )));
+        assert!(is_failed_inquiry(&AppError::UpstreamUncertain(
+            "Mitra: Inquiry Gagal".into()
+        )));
+        assert!(!is_failed_inquiry(&AppError::UpstreamUncertain(
+            "Mitra: Saldo tidak cukup".into()
+        )));
+        assert!(!is_failed_inquiry(&AppError::Internal(
+            "Inquiry Gagal".into()
+        )));
+    }
 
     #[test]
     fn resolve_pp_amount_prefers_the_providers_own_amount() {

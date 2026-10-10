@@ -7,15 +7,11 @@ import { OptionSelect } from "@/components/option-select"
 import { RupiahField } from "@/components/rupiah-field"
 import { SummaryList } from "@/components/summary-list"
 import { isEmptyNumberFieldValue } from "@/lib/number-field"
-import { toast } from "@/lib/toast"
 import { MAX_CART_QUANTITY, useCartStore } from "@/stores/cart-store"
-import {
-  EMPTY_AMOUNT_ENTRY_TIMING,
-  isScannerBurstEntry,
-  trackAmountEntry,
-} from "../payment-behavior"
+import { discountAmount, normalizeDiscount } from "@/stores/cart-totals"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
 import type { CartItem } from "../types"
-import { DISCOUNT_TYPES, formatRupiah, getQuantityWarning } from "../utils"
+import { DISCOUNT_TYPES, formatRupiah, getQuantityWarning, isPpobBelowCost } from "../utils"
 
 interface CartItemEditDialogProps {
   open: boolean
@@ -37,8 +33,6 @@ interface CartItemEditDialogProps {
 function submitOnEnter(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key === "Enter") e.currentTarget.form?.requestSubmit()
 }
-
-const EMPTY_QTY_ENTRY = { digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING }
 
 export function CartItemEditDialog({ open, onOpenChange, item }: CartItemEditDialogProps) {
   if (!item) return null
@@ -70,73 +64,90 @@ function CartItemEditBody({
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
 
   const disc = itemDiscounts[item.cart_id]
+  const savedLineTotal = item.product_price * item.quantity
   // Jumlah valid terakhir — dipakai untuk total dan peringatan. Batasnya
   // (1..MAX_CART_QUANTITY, kelipatan 1) sudah dijaga oleh `minValue`/`maxValue`/
   // `step` pada `NumberField` di bawah; state ini cuma menyaring nilai
   // kosong/NaN yang muncul saat kolomnya sedang dikosongkan.
   const [qty, setQty] = useState(item.quantity)
   const [discType, setDiscType] = useState<"fixed" | "percentage">(disc?.type ?? "fixed")
-  const [discValue, setDiscValue] = useState<number | null>(disc?.value ?? null)
+  // A fixed amount is shown as it applies, never above the line's total, and
+  // flagged when it was cut down to it. Only the store clamps what is saved.
+  const [discValue, setDiscValue] = useState<number | null>(() =>
+    disc ? (normalizeDiscount(disc, savedLineTotal).entry?.value ?? 0) : null,
+  )
+  const [discCapped, setDiscCapped] = useState(
+    () => disc?.type === "fixed" && normalizeDiscount(disc, savedLineTotal).capped,
+  )
   const qtyInputRef = useRef<HTMLInputElement>(null)
-  const qtyEntryRef = useRef(EMPTY_QTY_ENTRY)
 
   const lineTotal = item.product_price * qty
   const quantityWarning = getQuantityWarning(item, qty)
   const rawDisc = discValue ?? 0
-  const discAmount =
-    discType === "percentage"
-      ? Math.round((lineTotal * Math.min(rawDisc, 100)) / 100)
-      : Math.min(rawDisc, lineTotal)
+  const appliedDisc = normalizeDiscount({ type: discType, value: rawDisc }, lineTotal).entry
+  const discAmount = appliedDisc ? discountAmount(lineTotal, appliedDisc) : 0
   const finalTotal = Math.max(0, lineTotal - discAmount)
+  const belowCost = isPpobBelowCost(item, finalTotal)
+
+  /** Keeps a fixed discount within `total`, and flags it when it had to be cut. */
+  const applyFixedDiscount = (value: number | null, total: number) => {
+    const { entry, capped } = normalizeDiscount({ type: "fixed", value: value ?? 0 }, total)
+    setDiscValue(capped ? (entry?.value ?? 0) : value)
+    setDiscCapped(capped)
+  }
 
   const handleQtyChange = (value: number | undefined) => {
     if (isEmptyNumberFieldValue(value)) return
     setQty(value)
+    // A lower quantity shrinks the line under a fixed discount set for more.
+    if (discType === "fixed" && discValue != null && discValue > item.product_price * value) {
+      applyFixedDiscount(discValue, item.product_price * value)
+    }
   }
 
-  // Barcode yang discan ke kolom jumlah (kasir memindai barang berikutnya
-  // sebelum dialog ini ditutup) akan dijepit ke MAX_CART_QUANTITY lalu
-  // tersimpan oleh Enter scanner — penjaga yang sama dengan dialog Pembayaran.
-  // Digitnya dicatat dari keydown sendiri: saat Enter sampai di sini,
-  // NumberField sudah meng-commit dan kolomnya sudah berisi "9,999".
+  // A barcode scanned into the quantity would be clamped to MAX_CART_QUANTITY
+  // and saved by its Enter; into a discount, cut down to the whole line.
+  const qtyScanGuard = useScanBurstGuard({
+    value: qty,
+    onRestore: setQty,
+    message: id.cashier.scanIgnoredInField,
+  })
   const handleQtyKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") {
-      if (!/^\d$/.test(e.key)) return
-      const previous = qtyEntryRef.current
-      const timing = trackAmountEntry(previous, e.timeStamp)
-      const digits = timing.startedAt === previous.startedAt ? previous.digits + e.key : e.key
-      qtyEntryRef.current = { digits, ...timing }
-      return
-    }
-    const { digits, ...timing } = qtyEntryRef.current
-    qtyEntryRef.current = EMPTY_QTY_ENTRY
-    if (isScannerBurstEntry({ amount: digits, ...timing, submittedAt: e.timeStamp })) {
-      e.preventDefault()
-      setQty(item.quantity)
-      toast.warning(id.cashier.scanIgnoredInQuantity)
-      return
-    }
+    if (qtyScanGuard.handleKeyDown(e)) return
+    submitOnEnter(e)
+  }
+
+  const discountScanGuard = useScanBurstGuard({
+    value: { discValue, discCapped },
+    onRestore: (before) => {
+      setDiscValue(before.discValue)
+      setDiscCapped(before.discCapped)
+    },
+    message: id.cashier.scanIgnoredInField,
+  })
+  const handleDiscountKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (discountScanGuard.handleKeyDown(e)) return
     submitOnEnter(e)
   }
 
   const handleTypeChange = (newType: "fixed" | "percentage") => {
     setDiscType(newType)
     setDiscValue(null)
+    setDiscCapped(false)
   }
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    // The server refuses a PPOB line below cost; the hint says why.
+    if (belowCost) return
 
     if (!item.is_ppob) {
       updateQuantity(item.cart_id, qty)
     }
 
-    // Persen dijepit ke 100 di sini juga, bukan cuma di `discAmount`:
-    // `setItemDiscount` sendiri tidak memvalidasi batas atas, jadi ini satu-
-    // satunya penjaga kalau nilainya datang dari diskon lama yang sudah lewat
-    // 100 tanpa sempat diketik ulang di kolom ini.
-    const savedDisc = discType === "percentage" ? Math.min(rawDisc, 100) : rawDisc
-    setItemDiscount(item.cart_id, savedDisc > 0 ? { type: discType, value: savedDisc } : null)
+    // Clamped by `setItemDiscount` (a percentage to 100, a fixed amount to the
+    // line total), against the quantity saved just above.
+    setItemDiscount(item.cart_id, { type: discType, value: rawDisc })
 
     onOpenChange(false)
   }
@@ -144,6 +155,7 @@ function CartItemEditBody({
   const handleReset = () => {
     setDiscType("fixed")
     setDiscValue(null)
+    setDiscCapped(false)
     setItemDiscount(item.cart_id, null)
   }
 
@@ -214,8 +226,9 @@ function CartItemEditBody({
               label="Nilai diskon"
               placeholder="0"
               value={discValue}
-              onChange={setDiscValue}
-              onKeyDown={submitOnEnter}
+              warning={discCapped ? id.cashier.discountCapped(formatRupiah(lineTotal)) : undefined}
+              onChange={(value) => applyFixedDiscount(value, lineTotal)}
+              onKeyDown={handleDiscountKeyDown}
             />
           ) : (
             <NumberField
@@ -232,13 +245,19 @@ function CartItemEditBody({
                 <NumberField.Input
                   className="text-right tabular-nums"
                   placeholder="0"
-                  onKeyDown={submitOnEnter}
+                  onKeyDown={handleDiscountKeyDown}
                 />
                 <NumberField.IncrementButton aria-label="Tambah persen diskon" />
               </NumberField.Group>
             </NumberField>
           )}
         </div>
+
+        {belowCost && item.buy_price != null && (
+          <p className="text-sm text-danger" role="alert">
+            {id.cashier.ppobBelowCostHint(formatRupiah(item.buy_price))}
+          </p>
+        )}
 
         <SummaryList
           items={[
@@ -263,7 +282,9 @@ function CartItemEditBody({
             Reset Diskon
           </Button>
         )}
-        <Button type="submit">Simpan</Button>
+        <Button isDisabled={belowCost} type="submit">
+          Simpan
+        </Button>
       </Modal.Footer>
     </Form>
   )

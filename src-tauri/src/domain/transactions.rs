@@ -101,10 +101,25 @@ pub struct TransactionListItem {
     pub item_count: i64,
     pub notes: Option<String>,
     pub created_at: Option<String>,
+    /// Whether any line still has units a refund may take back. A mixed cart
+    /// whose goods all came back stays `partial_refund`, so the status cannot
+    /// say it.
+    pub has_refundable_goods: bool,
+    /// A failed PPOB line still has money to give back. That refund has no
+    /// seven-day window (see `refunds::create::eligibility`), so the history
+    /// keeps offering it after goods stopped being returnable.
+    pub has_refundable_failed_ppob: bool,
     pub has_ppob: bool,
+    /// The PPOB line that most needs a person — `uncertain` first, then
+    /// `failed`, then one still in flight — so a cart with several lines shows
+    /// the one to act on, not merely the first.
     pub ppob_status: Option<String>,
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,
+    /// That same line's `service_type` and `ppob_advice`, so the badge can say
+    /// "Menunggu Konfirmasi PLN" for an ADVICE line instead of "Perlu Dicek".
+    pub ppob_service_type: Option<String>,
+    pub ppob_advice: Option<String>,
     pub deleted_at: Option<String>,
     pub deleted_reason: Option<String>,
     pub payment_breakdown: Vec<PaymentSplit>,
@@ -120,14 +135,20 @@ pub struct PaginatedTransactions {
 }
 
 /// A sold line as the detail view returns it: the row itself, flattened, plus
-/// how much of it earlier refunds already took back. The refund form caps each
-/// line at `quantity - refunded_quantity`, the same remainder `create_refund`
-/// enforces.
+/// its refund state. `refundable` says whether the line can come back at all
+/// (goods, or a failed PPOB top-up); `refundable_quantity` is what is left of
+/// it, the same cap `create_refund` enforces.
 #[derive(Debug, Serialize)]
 pub struct TransactionDetailItem {
     #[serde(flatten)]
     pub item: transaction_items::Model,
     pub refunded_quantity: i64,
+    pub refundable: bool,
+    pub refundable_quantity: i64,
+    /// UTC `YYYY-MM-DD HH:MM:SS` from which an admin may mark this `uncertain`
+    /// ADVICE line failed by hand (`ppob_recovery::advice_fail_opens_at`).
+    /// `None` when no wait applies: not ADVICE, or not `uncertain`.
+    pub ppob_manual_fail_opens_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,7 +156,12 @@ pub struct TransactionDetail {
     pub transaction: transactions::Model,
     pub items: Vec<TransactionDetailItem>,
     pub cashier_name: String,
+    /// Same as `TransactionListItem::has_refundable_goods`.
+    pub has_refundable_goods: bool,
+    /// Same as `TransactionListItem::has_refundable_failed_ppob`.
+    pub has_refundable_failed_ppob: bool,
     pub has_ppob: bool,
+    /// The most urgent PPOB line, picked as `TransactionListItem::ppob_status`.
     pub ppob_status: Option<String>,
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,

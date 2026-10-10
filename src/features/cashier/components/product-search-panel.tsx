@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
-import type { KeyboardEvent } from "react"
+import type { KeyboardEvent, RefObject } from "react"
 import { InputGroup, Kbd, ScrollShadow, Separator } from "@heroui/react"
 import { Search } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -13,6 +13,8 @@ import { queryKeys } from "@/lib/api/query-keys"
 import type { PaginatedProducts, Product, ShortcutProduct } from "@/features/products/types"
 import { useCartStore } from "@/stores/cart-store"
 import { id } from "@/i18n/id"
+import { notePricedByLookup, priceChangeMessage } from "../cart-price-refresh"
+import { useDeferredFocus } from "../hooks/use-deferred-focus"
 import { useScanField } from "../hooks/use-scan-field"
 import {
   getProductSearchEnterAction,
@@ -28,7 +30,11 @@ import { ProductSearchResults } from "./product-search-results"
 const SEARCH_PAGE_SIZE = 50
 
 interface ProductSearchPanelProps {
-  focusKey?: number
+  /**
+   * The scan field's ref, owned by a parent that focuses it on request and
+   * steers stray keystrokes into it. Without one the panel keeps its own.
+   */
+  inputRef?: RefObject<HTMLInputElement | null>
 }
 
 /**
@@ -51,13 +57,14 @@ interface ProductSearchPanelProps {
  * atas/bawah yang memindahkan baris aktif tanpa memindahkan fokus. Persis yang
  * dulu dikerjakan `cmdk`.
  *
- * `memo`: satu-satunya prop-nya `focusKey`, sedangkan `CashierPage` mengubah
- * state-nya setiap dialog dibuka atau ditutup — pembayaran, struk sukses, buka
- * kasir. Tanpa ini 30 ubin produk dirender ulang tepat saat dialog sukses
- * beranimasi masuk; dengan ini commit pembukaannya turun hampir separuh.
+ * `memo`: its one prop is `inputRef`, a ref that never changes, while
+ * `CashierPage` changes its state whenever a dialog opens or closes — payment,
+ * the success receipt, opening the till. Without it, 30 product tiles re-render
+ * just as the success dialog animates in; with it, that commit takes about
+ * half as long.
  */
 export const ProductSearchPanel = memo(function ProductSearchPanel({
-  focusKey = 0,
+  inputRef,
 }: ProductSearchPanelProps) {
   const [pickedProductValue, setPickedProductValue] = useState<string | undefined>()
   const resetPicked = useCallback(() => setPickedProductValue(undefined), [])
@@ -67,18 +74,19 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     searchNow,
     handleSearchQueryChange,
     clearSearch,
-    clearSubmittedSearch,
+    restoreQuery,
     readCurrentQuery,
     readInputTiming,
   } = useScanField(resetPicked)
-  const searchInputRef = useRef<HTMLInputElement>(null)
+  const ownInputRef = useRef<HTMLInputElement>(null)
+  const searchInputRef = inputRef ?? ownInputRef
   const addItem = useCartStore((s) => s.addItem)
   const queryClient = useQueryClient()
   const listboxId = useId()
 
   useEffect(() => {
     searchInputRef.current?.focus()
-  }, [])
+  }, [searchInputRef])
 
   const searchParams = useMemo(
     () => ({ query: debouncedQuery, per_page: SEARCH_PAGE_SIZE }),
@@ -119,16 +127,7 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     [rankedSearchResults, selectedProductValue],
   )
 
-  const focusInput = useCallback(() => {
-    setTimeout(() => {
-      searchInputRef.current?.focus()
-    }, 50)
-  }, [])
-
-  useEffect(() => {
-    if (focusKey === 0) return
-    focusInput()
-  }, [focusKey, focusInput])
+  const focusInput = useDeferredFocus(searchInputRef)
 
   // Deliberately the narrowest key in the file. This fires on every item added
   // to the cart, and invalidating all of `["products"]` here would refetch the
@@ -146,8 +145,14 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
   )
 
   const addToCart = useCallback(
-    (product: Product | ShortcutProduct, isManualSearch: boolean) => {
-      addItem(product)
+    (product: Product | ShortcutProduct, isManualSearch: boolean, fresh = false) => {
+      // A line already in the cart takes the price only from a fresh barcode
+      // lookup; tiles and search rows may be cached. A price that moved is
+      // said the way the background repricing says it.
+      const priceChange = addItem(product, { fresh })
+      if (priceChange) {
+        toast.warning(priceChangeMessage([priceChange]))
+      }
       if (product.stock <= 0) {
         toast.warning(id.cashier.outOfStock(product.name))
       }
@@ -177,14 +182,34 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
     setPickedProductValue(String(rankedSearchResults[next].id))
   }
 
-  /** Enter on a digit run: the exact barcode lookup first, the list search after. */
+  /**
+   * Enter on a digit run: the exact barcode lookup first, the list search after.
+   *
+   * The field is emptied before the lookup is awaited, not after: a scan that
+   * starts while the lookup is pending then types into an empty field and
+   * stays a barcode of its own, instead of landing on the tail of this one
+   * and being looked up as one long number that matches nothing.
+   */
   const lookupBarcode = async (query: string) => {
-    const submitted = readCurrentQuery()
+    // Timed now: the field is about to be emptied, and the next scan may type
+    // into it while the lookup is pending.
+    const isLikelyScannerInput = isLikelyBarcodeScannerInput({
+      submittedAt: Date.now(),
+      ...readInputTiming(),
+      query,
+    })
+    // Whether the list search already answered this exact query, as rendered
+    // when Enter was pressed.
+    const searchAnswered = debouncedQuery.trim() === query && searchResults !== undefined
+    clearSearch()
+
     try {
       const product = await getProductByBarcode(query)
       if (product) {
-        addToCart(product, false)
-        clearSubmittedSearch(submitted)
+        addToCart(product, false, true)
+        // Only this fresh answer lets the background check skip the line;
+        // search results and tiles may come from the query cache.
+        notePricedByLookup(product.id, product.sell_price)
         focusInput()
         return
       }
@@ -192,34 +217,24 @@ export const ProductSearchPanel = memo(function ProductSearchPanel({
       // Fall through to barcode not found feedback
     }
 
-    const isLikelyScannerInput = isLikelyBarcodeScannerInput({
-      submittedAt: Date.now(),
-      ...readInputTiming(),
-      query,
-    })
-
-    // A whole barcode that misses really is missing, so say so and clear the
-    // field — leaving it filled would let the next scan land on the tail of
-    // this one. A digit run of any other length may be the *tail* of a
-    // barcode read off a worn label, which only the list search resolves;
-    // toasting there would abort that search. The length test matters because
-    // the timing heuristic fires on hand-typed input too: any pause over 50ms
-    // restarts the window at the last keystroke.
+    // Only a whole barcode that misses is missing. Any other digit run may be
+    // the tail of a worn label's barcode, which only the list search resolves.
     if (isLikelyScannerInput && isWholeBarcodeQuery(query)) {
       toast.error(id.cashier.barcodeNotFound(query))
-      clearSubmittedSearch(submitted)
       focusInput()
       return
     }
 
-    if (debouncedQuery.trim() !== query || searchResults === undefined) {
+    // The list search gets the digits back in the field — unless the next
+    // scan is already typing there, which wins.
+    if (!searchAnswered && readCurrentQuery() === "") {
+      restoreQuery(query)
       searchNow(query)
       focusInput()
       return
     }
 
     toast.error(id.cashier.barcodeNotFound(query))
-    clearSubmittedSearch(submitted)
     focusInput()
   }
 

@@ -2,19 +2,21 @@
 //!
 //! Public by necessity: it runs before any account exists, so there is nobody to
 //! authenticate as. What keeps it from being an open door is the service, which
-//! returns the existing store untouched once one is there — a second POST cannot
-//! mint a second admin.
+//! writes nothing once the store exists — a second POST cannot mint a second
+//! admin. Such a POST gets a 409 and no store data at all: anyone on the LAN can
+//! send it, and the store row holds the PPOB credentials.
 
 use axum::extract::State;
 use axum::routing::{get, post};
 use axum::Router;
 
 use crate::domain::onboarding::CompleteOnboardingInput;
-use crate::entity::store_info;
-use crate::http::error::ApiResult;
+use crate::domain::settings::StoreInfo;
+use crate::http::error::{ApiError, ApiResult};
 use crate::http::extract::Json;
 use crate::http::AppState;
 use crate::services;
+use crate::services::onboarding::Onboarding;
 
 pub fn public() -> Router<AppState> {
     Router::new()
@@ -32,8 +34,9 @@ async fn status(State(state): State<AppState>) -> ApiResult<axum::Json<bool>> {
 async fn complete(
     State(state): State<AppState>,
     Json(input): Json<CompleteOnboardingInput>,
-) -> ApiResult<axum::Json<store_info::Model>> {
-    Ok(axum::Json(
-        services::onboarding::complete(&state.db, input).await?,
-    ))
+) -> ApiResult<axum::Json<StoreInfo>> {
+    match services::onboarding::complete(&state.db, input).await? {
+        Onboarding::Created(store) => Ok(axum::Json(store)),
+        Onboarding::AlreadyDone => Err(ApiError::conflict("Toko sudah diatur sebelumnya")),
+    }
 }

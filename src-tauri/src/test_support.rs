@@ -215,6 +215,9 @@ pub async fn insert_transaction_item_spec(
         ppob_status: Set(None),
         ppob_message: Set(None),
         ppob_serial_number: Set(None),
+        ppob_advice: Set(None),
+        ppob_last_attempt_at: Set(None),
+        ppob_history_trx_id: Set(None),
         created_at: Set(Some(now_ts())),
     }
     .insert(conn)
@@ -300,7 +303,7 @@ pub async fn insert_refund_item(
         id: NotSet,
         refund_id: Set(refund_id),
         transaction_item_id: Set(transaction_item_id),
-        product_id: Set(product_id),
+        product_id: Set(Some(product_id)),
         quantity: Set(quantity),
         subtotal: Set(subtotal),
         condition: Set(Some("good".to_string())),
@@ -320,12 +323,20 @@ pub async fn insert_exchange_item(
     product_price: f64,
     quantity: i64,
 ) -> exchange_items::Model {
+    // Snapshot the cost as `refunds::create` does.
+    let buy_price = <products::Entity as sea_orm::EntityTrait>::find_by_id(product_id)
+        .one(conn)
+        .await
+        .expect("product query")
+        .map(|product| product.buy_price);
+
     exchange_items::ActiveModel {
         id: NotSet,
         refund_id: Set(refund_id),
         product_id: Set(product_id),
         product_name: Set(product_name.to_string()),
         product_price: Set(product_price),
+        buy_price: Set(buy_price),
         quantity: Set(quantity),
         subtotal: Set(product_price * quantity as f64),
         created_at: Set(Some(now_ts())),

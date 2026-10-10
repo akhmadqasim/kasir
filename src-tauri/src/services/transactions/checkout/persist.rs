@@ -4,7 +4,7 @@
 use sea_orm::{ActiveModelTrait, ActiveValue::NotSet, ConnectionTrait, DbBackend, Set, Statement};
 
 use super::cart::ResolvedItem;
-use super::discounts::{prorated_line_nets, validate_discounts};
+use super::discounts::{prorated_line_nets, validate_discounts, MONEY_EPSILON};
 use super::payment::calculate_payment;
 use crate::domain::transactions::{CheckoutTransactionInput, TransactionResult};
 use crate::domain::Actor;
@@ -28,6 +28,8 @@ pub(super) async fn persist_transaction<C: ConnectionTrait>(
     let transaction_discount = input.transaction_discount.unwrap_or(0.0);
     // Reject tampered/over-range discounts BEFORE persisting anything.
     validate_discounts(resolved_items, transaction_discount)?;
+    let line_nets = prorated_line_nets(resolved_items, transaction_discount);
+    reject_ppob_lines_below_cost(resolved_items, &line_nets)?;
     let item_discounts_total: f64 = resolved_items.iter().map(|item| item.item_discount).sum();
     let discount_amount = item_discounts_total + transaction_discount;
     let total_amount = (subtotal_amount - discount_amount).max(0.0);
@@ -61,7 +63,6 @@ pub(super) async fn persist_transaction<C: ConnectionTrait>(
     .insert(db)
     .await?;
 
-    let line_nets = prorated_line_nets(resolved_items, transaction_discount);
     let mut items = Vec::with_capacity(resolved_items.len());
 
     for (item, net_subtotal) in resolved_items.iter().zip(line_nets) {
@@ -90,6 +91,29 @@ pub(super) async fn persist_transaction<C: ConnectionTrait>(
         items,
         payment_breakdown: payment.splits,
     })
+}
+
+/// A PPOB line is never sold below its cost. `resolve_ppob_line` checks the
+/// line's own discount; this checks what the line actually brings in once the
+/// cart discount has taken its share, because that share is a loss too.
+fn reject_ppob_lines_below_cost(
+    resolved_items: &[ResolvedItem],
+    line_nets: &[f64],
+) -> Result<(), AppError> {
+    for (item, net) in resolved_items.iter().zip(line_nets) {
+        if item.service_type.is_none() {
+            continue;
+        }
+        if let Some(buy_price) = item.buy_price {
+            if *net < buy_price - MONEY_EPSILON {
+                return Err(AppError::Validation(format!(
+                    "Diskon membuat harga jual '{}' di bawah harga modal",
+                    item.product_name
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// One sold line, with name and price snapshotted. A PPOB line starts out
@@ -124,6 +148,9 @@ async fn insert_line<C: ConnectionTrait>(
         ppob_status: Set(is_ppob.then(|| PPOB_STATUS_PENDING.to_string())),
         ppob_message: Set(None),
         ppob_serial_number: Set(None),
+        ppob_advice: Set(None),
+        ppob_last_attempt_at: Set(None),
+        ppob_history_trx_id: Set(None),
         created_at: Set(Some(now.to_string())),
     }
     .insert(db)

@@ -64,6 +64,15 @@ export type ProductQuickFilter =
   | "no_barcode"
   | "needs_review"
 
+/** `GET /products/lookup`: what the cart reprices a line from. */
+export interface ProductLookup {
+  id: number
+  sell_price: number
+  stock: number
+  unit: string
+  is_active: boolean
+}
+
 export interface SearchProductsParams {
   query?: string
   category_id?: number | null
@@ -74,15 +83,25 @@ export interface SearchProductsParams {
   sort_order?: "asc" | "desc"
 }
 
+/**
+ * One import row. Every field but `name` and `sell_price` is optional: an
+ * absent field leaves a matched product's value as it is, and takes the
+ * default (0, "pcs", no category) on a new one. `stock`, when present, is a
+ * stock-take: it replaces the matched product's stock outright.
+ */
 export interface BulkProductInput {
   barcode?: string | null
   name: string
   category_name?: string | null
-  buy_price: number
+  buy_price?: number
   sell_price: number
   margin?: number
-  stock: number
+  stock?: number
   unit?: string
+  /** 1-based data-row number in the file, as the preview shows it. The backend
+   *  names rows by it in its errors; nameless rows are dropped before sending,
+   *  so the array index would not match the file. */
+  row_number?: number
 }
 
 export interface BulkImportResult {

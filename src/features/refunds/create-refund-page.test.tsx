@@ -53,6 +53,9 @@ const SOLD_ITEM: TransactionDetailItem = {
   ppob_serial_number: null,
   created_at: "2026-09-05 03:00:00",
   refunded_quantity: 0,
+  refundable: true,
+  refundable_quantity: 2,
+  ppob_manual_fail_opens_at: null,
 }
 
 const DETAIL: TransactionDetail = {
@@ -77,6 +80,8 @@ const DETAIL: TransactionDetail = {
   },
   items: [SOLD_ITEM],
   cashier_name: "Ahmad",
+  has_refundable_goods: true,
+  has_refundable_failed_ppob: false,
   has_ppob: false,
   ppob_status: null,
   ppob_message: null,
@@ -227,7 +232,14 @@ describe("barang yang sudah pernah diretur", () => {
     ...DETAIL,
     transaction: { ...DETAIL.transaction, status: "partial_refund" },
     items: [
-      { ...SOLD_ITEM, quantity: 3, subtotal: 45000, net_subtotal: 45000, refunded_quantity: 2 },
+      {
+        ...SOLD_ITEM,
+        quantity: 3,
+        subtotal: 45000,
+        net_subtotal: 45000,
+        refunded_quantity: 2,
+        refundable_quantity: 1,
+      },
       {
         ...SOLD_ITEM,
         id: 12,
@@ -237,6 +249,7 @@ describe("barang yang sudah pernah diretur", () => {
         subtotal: 15000,
         net_subtotal: 15000,
         refunded_quantity: 1,
+        refundable_quantity: 0,
       },
     ],
   }

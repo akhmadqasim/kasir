@@ -73,9 +73,56 @@ export function isPpobRetryable(status: string | null | undefined): boolean {
   return status === "failed"
 }
 
-/** A line whose outcome nobody knows yet; only a person can settle it. */
+/**
+ * A line whose outcome nobody knows yet. "Cek status" looks it up in the Mitra
+ * history; failing that, a person settles it by hand. Never retried or refunded
+ * meanwhile.
+ */
 export function isPpobUncertain(status: string | null | undefined): boolean {
   return status === "uncertain"
+}
+
+/** The fields of a sold line that decide how its PPOB status reads. */
+export interface PpobLineStatus {
+  ppob_status: string | null
+  ppob_advice?: string | null
+  service_type?: string | null
+}
+
+/** The PPOB lines of a sale (goods have no `service_type`). */
+export function ppobLines<T extends { service_type?: string | null }>(
+  items: readonly T[] | undefined,
+): T[] {
+  return (items ?? []).filter((item) => item.service_type)
+}
+
+/**
+ * A sale's PPOB lines are not all final yet. Before the detail first loads the
+ * checkout result already says `pending`, so a line with no status counts too.
+ */
+export function hasPpobLineInFlight(items: readonly PpobLineStatus[]): boolean {
+  return items.some((item) => isPpobInFlight(item.ppob_status ?? "pending"))
+}
+
+/**
+ * Mitra answered `ADVICE`: the payment went to the biller and the result
+ * (the PLN token, usually) comes later. Still `uncertain` underneath, but it
+ * reads as waiting, not as a problem — the money is most likely spent.
+ */
+export function isPpobAwaitingBiller(line: PpobLineStatus): boolean {
+  return isPpobUncertain(line.ppob_status) && line.ppob_advice != null
+}
+
+/** The badge for one line: like `ppobStatusConfig`, with ADVICE told apart. */
+export function ppobLineStatusConfig(line: PpobLineStatus): PpobStatusConfig | null {
+  if (isPpobAwaitingBiller(line)) {
+    return {
+      label: line.service_type === "pln" ? "Menunggu Konfirmasi PLN" : "Menunggu Konfirmasi",
+      variant: "warning",
+      inFlight: false,
+    }
+  }
+  return ppobStatusConfig(line.ppob_status)
 }
 
 /**
@@ -89,4 +136,32 @@ export function isPpobPrintable(status: string | null | undefined): boolean {
 /** Whether to show the spinner: a provider call has not reported back yet. */
 export function isPpobInFlight(status: string | null | undefined): boolean {
   return ppobStatusConfig(status)?.inFlight ?? false
+}
+
+/**
+ * The history row's PPOB badge, for the line that most needs a person (the
+ * server picks it). A delivered top-up gets none — badges are for exceptions,
+ * DESIGN.md §5.4 — and the generic labels say "PPOB" so "Gagal" next to
+ * "Selesai" is not read as the sale failing.
+ */
+export function ppobRowBadge(
+  row: PpobLineStatus & { has_ppob: boolean },
+): { label: string; variant: StatusVariant } | null {
+  if (!row.has_ppob || row.ppob_status === "success") return null
+  const config = ppobLineStatusConfig(row)
+  if (!config) return null
+  const label = isPpobAwaitingBiller(row) ? config.label : `PPOB ${config.label.toLowerCase()}`
+  return { label, variant: config.variant }
+}
+
+/** How often a sale is polled while a PPOB call is in flight. */
+export const PPOB_IN_FLIGHT_POLL_MS = 1500
+
+/**
+ * The detail poll interval for a sale: fast while a PPOB line is pending or
+ * processing, `false` otherwise. An uncertain line is not polled; the
+ * reconciler first looks at it after 10 minutes.
+ */
+export function ppobSalePollInterval(items: readonly PpobLineStatus[]): number | false {
+  return hasPpobLineInFlight(items) ? PPOB_IN_FLIGHT_POLL_MS : false
 }

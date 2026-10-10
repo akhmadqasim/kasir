@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { apiFailure, installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import { stubLoadedImages } from "@/test-utils/loaded-image"
+import { useShiftStore } from "@/features/shift"
+import { useAuthStore } from "./hooks/use-auth-store"
+import { useCartStore } from "@/stores/cart-store"
 import { LoginPage } from "./components/login-page"
 
 function renderLoginPage() {
@@ -196,5 +199,64 @@ describe("login page store header", () => {
       ),
     )
     now.mockRestore()
+  })
+})
+
+/**
+ * A session that expires leaves the cart (in localStorage) and the shift
+ * behind; the login that follows decides whether they stay.
+ */
+describe("login hands over the till", () => {
+  const leftCart = {
+    items: [
+      {
+        cart_id: "product-7",
+        product_id: 7,
+        product_name: "Beras 5kg",
+        product_price: 68000,
+        quantity: 1,
+        stock: 10,
+        unit: "pcs",
+      },
+    ],
+    transactionDiscount: { type: "fixed" as const, value: 1000 },
+    checkoutKey: "kunci-lama",
+  }
+
+  // The login screen only shows once the session is gone, the cached user with it.
+  beforeEach(() => {
+    useAuthStore.setState({ user: null })
+  })
+
+  async function logInAsKasir1() {
+    renderLoginPage()
+    fireEvent.change(screen.getByLabelText("Nama Pengguna"), { target: { value: "kasir1" } })
+    const pin = screen.getByLabelText("PIN")
+    fireEvent.change(pin, { target: { value: "1234" } })
+    fireEvent.keyDown(pin, { key: "Enter" })
+    await vi.waitFor(() => expect(useCartStore.getState().ownerId).toBe(1))
+  }
+
+  it("empties the cart and the shift another cashier left behind", async () => {
+    useCartStore.setState({ ...leftCart, ownerId: 2 })
+    useShiftStore.setState({ activeShift: { id: 9 } as never })
+
+    await logInAsKasir1()
+
+    expect(useCartStore.getState().items).toEqual([])
+    expect(useCartStore.getState().transactionDiscount).toBeNull()
+    expect(useCartStore.getState().checkoutKey).toBeNull()
+    expect(useShiftStore.getState().activeShift).toBeNull()
+  })
+
+  it("keeps the cart for the same cashier logging back in after an expiry", async () => {
+    useCartStore.setState({ ...leftCart, ownerId: 1 })
+    useShiftStore.setState({ activeShift: { id: 9 } as never })
+
+    await logInAsKasir1()
+
+    expect(useCartStore.getState().items).toHaveLength(1)
+    expect(useCartStore.getState().checkoutKey).toBe("kunci-lama")
+    expect(useShiftStore.getState().activeShift).toEqual({ id: 9 })
   })
 })

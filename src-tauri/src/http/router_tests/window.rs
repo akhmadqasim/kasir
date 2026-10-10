@@ -167,6 +167,17 @@ async fn the_till_window_zooms_itself_and_a_lan_client_cannot() {
     assert_eq!(malformed.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// PNG signature plus IHDR: what the size check reads.
+fn png_header(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend_from_slice(&13u32.to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&width.to_be_bytes());
+    bytes.extend_from_slice(&height.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes
+}
+
 #[tokio::test]
 async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
     let db = setup_test_db().await;
@@ -204,7 +215,7 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
             )
             .header(header::COOKIE, cookie(&token))
             .header(header::CONTENT_TYPE, multipart_content_type())
-            .body(multipart_file("file", "icon.png", b"png-bytes"))
+            .body(multipart_file("file", "icon.png", &png_header(256, 256)))
             .expect("request"),
         )
         .await
@@ -226,8 +237,29 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
     assert_eq!(reset.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         *painted.lock().expect("lock"),
-        vec![Some(b"png-bytes".to_vec()), None]
+        vec![Some(png_header(256, 256)), None]
     );
+
+    // A tiny PNG claiming huge dimensions is refused before decoding.
+    let oversized = router(&state)
+        .oneshot(
+            from_address(
+                same_origin(Method::POST, "/api/window/icon"),
+                [127, 0, 0, 1],
+            )
+            .header(header::COOKIE, cookie(&token))
+            .header(header::CONTENT_TYPE, multipart_content_type())
+            .body(multipart_file(
+                "file",
+                "icon.png",
+                &png_header(23_170, 23_170),
+            ))
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(oversized.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(painted.lock().expect("lock").len(), 2);
 
     // A tablet on the LAN must not repaint the desktop window's taskbar entry.
     let refused = router(&state)
@@ -238,7 +270,7 @@ async fn the_till_window_paints_its_own_icon_and_a_lan_client_cannot() {
             )
             .header(header::COOKIE, cookie(&token))
             .header(header::CONTENT_TYPE, multipart_content_type())
-            .body(multipart_file("file", "icon.png", b"png-bytes"))
+            .body(multipart_file("file", "icon.png", &png_header(256, 256)))
             .expect("request"),
         )
         .await

@@ -44,16 +44,34 @@ async fn require_shift(db: &DatabaseConnection, shift_id: i64) -> Result<shifts:
         .ok_or_else(|| AppError::NotFound("Shift tidak ditemukan".into()))
 }
 
+/// The most a drawer amount may be. Anything above it is a slip, most likely
+/// a barcode (13 digits) scanned into the amount field.
+const MAX_DRAWER_AMOUNT: f64 = 1_000_000_000.0;
+
+/// A drawer amount is a finite rupiah figure from zero up to
+/// [`MAX_DRAWER_AMOUNT`]; JSON can still carry `-5000` or, via `1e400`, infinity.
+fn validate_drawer_amount(amount: Option<f64>, label: &str) -> Result<(), AppError> {
+    match amount {
+        Some(value) if !value.is_finite() || value < 0.0 => {
+            Err(AppError::Validation(format!("{label} tidak boleh negatif")))
+        }
+        Some(value) if value > MAX_DRAWER_AMOUNT => Err(AppError::Validation(format!(
+            "{label} terlalu besar (maksimal Rp 1.000.000.000)"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 /// Open a shift for the actor, or hand back the one they already have open.
 pub async fn open(
     db: &DatabaseConnection,
     actor: &Actor,
     input: OpenShiftInput,
 ) -> Result<ShiftResponse, AppError> {
-    // Serialises the look-then-insert below. Without it two opens in flight at
-    // once (a double click, or the same cashier on two devices) both found no
-    // open shift and both inserted one; sales then landed on whichever the
-    // lookup happened to return, and the other stayed open for good.
+    validate_drawer_amount(input.opening_cash, "Modal awal")?;
+
+    // Serialises the look-then-insert below, so two opens in flight at once
+    // (a double click, two devices) start only one shift.
     static OPENING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _opening = OPENING.lock().await;
 
@@ -67,12 +85,9 @@ pub async fn open(
     Ok(ShiftResponse::from_model(&result, name))
 }
 
-/// Insert a new open shift for the actor.
-///
-/// The mutex in [`open`] only serialises this process. Migration 026's partial
-/// UNIQUE index is what actually holds the one-open-shift rule, and a write
-/// that trips it (another process on the same database got there first) is
-/// reported as the rule it is, not as a raw `UNIQUE constraint failed`.
+/// Insert a new open shift for the actor. Migration 026's partial UNIQUE index
+/// holds the one-open-shift rule across processes; tripping it is reported as
+/// that rule, not as a raw constraint error.
 async fn insert_open_shift(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -135,6 +150,8 @@ pub async fn close(
     actor: &Actor,
     input: CloseShiftInput,
 ) -> Result<ShiftSummaryResponse, AppError> {
+    validate_drawer_amount(input.closing_cash, "Saldo aktual")?;
+
     let shift = require_shift(db, input.shift_id).await?;
 
     ensure_shift_owner(
@@ -143,19 +160,27 @@ pub async fn close(
         "Hanya admin atau pemilik shift yang dapat menutup shift ini.",
     )?;
 
-    if shift.status == "closed" {
+    // The status check lives in the UPDATE, so of two closes racing on the
+    // same shift only one matches an open row.
+    let closed = shifts::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE shifts SET status = 'closed', closed_at = $1, closing_cash = $2, notes = $3
+             WHERE id = $4 AND status = 'open'
+             RETURNING *",
+            vec![
+                now_ts().into(),
+                input.closing_cash.into(),
+                input.notes.into(),
+                shift.id.into(),
+            ],
+        ))
+        .one(db)
+        .await?;
+
+    let Some(updated_shift) = closed else {
         return Err(AppError::Validation("Shift sudah ditutup".into()));
-    }
-
-    let now = now_ts();
-
-    let mut active_shift: shifts::ActiveModel = shift.into();
-    active_shift.status = Set("closed".to_string());
-    active_shift.closed_at = Set(Some(now));
-    active_shift.closing_cash = Set(input.closing_cash);
-    active_shift.notes = Set(input.notes);
-    let updated_shift = active_shift.update(db).await?;
-
+    };
     build_summary(db, &updated_shift).await
 }
 
@@ -332,35 +357,71 @@ pub async fn create_cash_flow(
     if input.amount <= 0.0 {
         return Err(AppError::Validation("Nominal harus lebih dari 0".into()));
     }
+    validate_drawer_amount(Some(input.amount), "Nominal")?;
     if input.description.trim().is_empty() {
         return Err(AppError::Validation("Keterangan tidak boleh kosong".into()));
     }
 
-    // Verify shift is open
+    // `insert_flow_if_open` enforces the open status.
     let shift = require_shift(db, input.shift_id).await?;
-
-    if shift.status != "open" {
-        return Err(AppError::Validation("Shift sudah ditutup".into()));
-    }
-
     ensure_shift_owner(
         actor,
         &shift,
         "Hanya admin atau pemilik shift yang dapat mencatat arus kas di shift ini.",
     )?;
 
-    let flow = cash_flows::ActiveModel {
-        id: NotSet,
-        shift_id: Set(input.shift_id),
-        user_id: Set(actor.user_id),
-        flow_type: Set(input.flow_type),
-        amount: Set(input.amount),
-        description: Set(input.description.trim().to_string()),
-        created_at: NotSet,
-    };
-
-    let result = flow.insert(db).await?;
+    let result = insert_flow_if_open(db, actor.user_id, &input).await?;
     Ok(CashFlowResponse::from(result))
+}
+
+/// Insert the movement, but only while its shift is still open. The check is
+/// part of the INSERT, so a close racing this write cannot let cash be booked
+/// to a drawer that was already counted.
+async fn insert_flow_if_open(
+    db: &DatabaseConnection,
+    user_id: i64,
+    input: &CreateCashFlowInput,
+) -> Result<cash_flows::Model, AppError> {
+    cash_flows::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO cash_flows (shift_id, user_id, type, amount, description)
+             SELECT $1, $2, $3, $4, $5
+             WHERE EXISTS (SELECT 1 FROM shifts WHERE id = $1 AND status = 'open')
+             RETURNING *",
+            vec![
+                input.shift_id.into(),
+                user_id.into(),
+                input.flow_type.clone().into(),
+                input.amount.into(),
+                input.description.trim().to_string().into(),
+            ],
+        ))
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::Validation("Shift sudah ditutup".into()))
+}
+
+/// Delete the movement, but only while its shift is still open; same race as
+/// [`insert_flow_if_open`].
+async fn delete_flow_if_open(db: &DatabaseConnection, cash_flow_id: i64) -> Result<(), AppError> {
+    let deleted = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "DELETE FROM cash_flows
+             WHERE id = $1
+               AND EXISTS (SELECT 1 FROM shifts s
+                           WHERE s.id = cash_flows.shift_id AND s.status = 'open')",
+            vec![cash_flow_id.into()],
+        ))
+        .await?;
+
+    if deleted.rows_affected() == 0 {
+        return Err(AppError::Validation(
+            "Arus kas hanya bisa dihapus saat shift masih terbuka".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// The cash moved in and out of a shift's drawer, newest first. Same rule as
@@ -398,24 +459,14 @@ pub async fn delete_cash_flow(
         .await?
         .ok_or(AppError::NotFound("Arus kas tidak ditemukan".into()))?;
 
-    let shift = require_shift(db, flow.shift_id).await?;
-
-    if shift.status != "open" {
-        return Err(AppError::Validation(
-            "Arus kas hanya bisa dihapus saat shift masih terbuka".into(),
-        ));
-    }
-
+    // `delete_flow_if_open` enforces the open status.
     if !actor.is_admin() && flow.user_id != actor.user_id {
         return Err(AppError::Forbidden(
             "Hanya admin atau pembuat entri yang dapat menghapus arus kas ini.".into(),
         ));
     }
 
-    let active: cash_flows::ActiveModel = flow.into();
-    active.delete(db).await?;
-
-    Ok(())
+    delete_flow_if_open(db, flow.id).await
 }
 
 #[cfg(test)]
@@ -655,6 +706,103 @@ mod tests {
         );
     }
 
+    /// Two closes in flight at once (a double click, or the owner and an admin)
+    /// used to both pass the status check and both write, the second silently
+    /// replacing the first one's count. Exactly one may succeed now, and the
+    /// stored count is the winner's.
+    #[tokio::test]
+    async fn concurrent_closes_let_only_one_through() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let shift = open_shift_for(&conn, &actor).await;
+        let close_with = |cash: f64| {
+            close(
+                &conn,
+                &actor,
+                CloseShiftInput {
+                    shift_id: shift.id,
+                    closing_cash: Some(cash),
+                    notes: None,
+                },
+            )
+        };
+
+        let (first, second) = tokio::join!(close_with(100_000.0), close_with(250_000.0));
+
+        let winner = match (first, second) {
+            (Ok(won), Err(AppError::Validation(_))) | (Err(AppError::Validation(_)), Ok(won)) => {
+                won
+            }
+            other => panic!("expected one close and one refusal, got {other:?}"),
+        };
+        let stored = shifts::Entity::find_by_id(shift.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(stored.status, "closed");
+        assert_eq!(stored.closing_cash, winner.shift.closing_cash);
+        assert_eq!(stored.closed_at, winner.shift.closed_at);
+    }
+
+    /// A drawer cannot hold less than nothing, at the start or at the end.
+    #[tokio::test]
+    async fn a_negative_drawer_amount_is_refused() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+
+        let opened = open(
+            &conn,
+            &actor,
+            OpenShiftInput {
+                opening_cash: Some(-1.0),
+            },
+        )
+        .await;
+        assert!(matches!(opened, Err(AppError::Validation(_))));
+        assert!(
+            find_open_shift(&conn, &actor)
+                .await
+                .expect("query")
+                .is_none(),
+            "nothing was opened"
+        );
+
+        let shift = open_shift_for(&conn, &actor).await;
+        for bad in [-5_000.0, f64::INFINITY] {
+            let closed = close(
+                &conn,
+                &actor,
+                CloseShiftInput {
+                    shift_id: shift.id,
+                    closing_cash: Some(bad),
+                    notes: None,
+                },
+            )
+            .await;
+            assert!(matches!(closed, Err(AppError::Validation(_))), "{bad}");
+        }
+        assert!(
+            find_open_shift(&conn, &actor)
+                .await
+                .expect("query")
+                .is_some(),
+            "a refused close leaves the shift open"
+        );
+
+        close(
+            &conn,
+            &actor,
+            CloseShiftInput {
+                shift_id: shift.id,
+                closing_cash: Some(0.0),
+                notes: None,
+            },
+        )
+        .await
+        .expect("an empty drawer is a valid count");
+    }
+
     /// Reading a shift's figures follows the same rule as closing it.
     #[tokio::test]
     async fn a_cashier_cannot_read_another_cashiers_shift() {
@@ -678,6 +826,95 @@ mod tests {
         list_cash_flows(&conn, &Actor::new(1, "admin"), shift.id)
             .await
             .expect("an admin reads");
+    }
+
+    /// A close that lands between the open check and the write: the write
+    /// itself must refuse a shift that is no longer open.
+    #[tokio::test]
+    async fn a_cash_flow_write_refuses_a_shift_closed_after_the_check() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let shift = open_shift_for(&conn, &actor).await;
+        let flow_input = || CreateCashFlowInput {
+            shift_id: shift.id,
+            flow_type: "out".into(),
+            amount: 5_000.0,
+            description: "Beli kantong plastik".into(),
+        };
+        let flow = create_cash_flow(&conn, &actor, flow_input())
+            .await
+            .expect("cash flow recorded");
+        close(
+            &conn,
+            &actor,
+            CloseShiftInput {
+                shift_id: shift.id,
+                closing_cash: Some(0.0),
+                notes: None,
+            },
+        )
+        .await
+        .expect("shift closes");
+
+        let inserted = insert_flow_if_open(&conn, actor.user_id, &flow_input()).await;
+        assert!(matches!(inserted, Err(AppError::Validation(_))));
+        let deleted = delete_flow_if_open(&conn, flow.id).await;
+        assert!(matches!(deleted, Err(AppError::Validation(_))));
+        assert_eq!(
+            cash_flows::Entity::find()
+                .all(&conn)
+                .await
+                .expect("query")
+                .len(),
+            1,
+            "the counted drawer keeps exactly its one movement"
+        );
+    }
+
+    /// A scanned barcode (13 digits) landing in an amount field is refused.
+    #[tokio::test]
+    async fn an_absurd_drawer_amount_is_refused() {
+        let conn = setup_test_db().await;
+        let actor = Actor::new(1, "admin");
+        let barcode = 8_991_002_101_234.0;
+
+        let opened = open(
+            &conn,
+            &actor,
+            OpenShiftInput {
+                opening_cash: Some(barcode),
+            },
+        )
+        .await;
+        assert!(matches!(opened, Err(AppError::Validation(_))));
+
+        let shift = open_shift_for(&conn, &actor).await;
+        for amount in [barcode, f64::NAN] {
+            let booked = create_cash_flow(
+                &conn,
+                &actor,
+                CreateCashFlowInput {
+                    shift_id: shift.id,
+                    flow_type: "in".into(),
+                    amount,
+                    description: "Tambah modal".into(),
+                },
+            )
+            .await;
+            assert!(matches!(booked, Err(AppError::Validation(_))), "{amount}");
+        }
+        create_cash_flow(
+            &conn,
+            &actor,
+            CreateCashFlowInput {
+                shift_id: shift.id,
+                flow_type: "in".into(),
+                amount: 1_000_000_000.0,
+                description: "Tambah modal".into(),
+            },
+        )
+        .await
+        .expect("the bound itself is allowed");
     }
 
     #[tokio::test]

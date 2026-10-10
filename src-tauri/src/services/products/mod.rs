@@ -2,11 +2,16 @@
 
 mod crud;
 mod import;
+mod lookup;
 mod search;
 mod shortcuts;
 
+#[cfg(test)]
+mod edge_tests;
+
 pub use crud::{create, delete, update};
 pub use import::{bulk_create, import_template_csv, IMPORT_TEMPLATE_FILENAME};
+pub use lookup::{lookup, parse_lookup_ids};
 pub use search::{get_by_barcode, search, LOW_STOCK_SQL};
 pub use shortcuts::{popular, toggle_pin, track_selection};
 

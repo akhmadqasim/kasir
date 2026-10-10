@@ -41,7 +41,6 @@ const STORE: StoreInfo = {
   phone: "081200000000",
   email: null,
   logo_path: null,
-  additional_info: null,
   created_at: null,
   updated_at: null,
 }

@@ -16,16 +16,22 @@ use crate::entity;
 use crate::http::{session, AppState, ServerConfig};
 use crate::utils::time::now_ts;
 
+mod accounts;
 mod backups;
+mod catalogue;
 mod checkout;
+mod checkout_edge;
 mod csrf;
 mod login_backoff;
 mod logs;
 mod ppob;
 mod printing;
 mod products;
+mod receipt_totals;
+mod refund_flows;
 mod refunds;
 mod reports;
+mod role_matrix;
 mod sessions;
 mod settings;
 mod shifts;
@@ -35,6 +41,7 @@ mod surface;
 mod updates;
 mod users;
 mod window;
+mod writeoff_rules;
 
 /// The authority every test request claims, on both the `Host` and `Origin`
 /// sides, so same-origin is the default and a mismatch is deliberate.

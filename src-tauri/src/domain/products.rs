@@ -1,5 +1,6 @@
 //! Product search, CRUD and bulk-import types.
 
+use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 
 use crate::entity::products;
@@ -67,16 +68,25 @@ pub struct UpdateProductInput {
     pub min_stock: Option<i64>,
 }
 
+/// One import row. Every field but `name` and `sell_price` is optional, and
+/// absent means "the file does not say": a matched product keeps its current
+/// value, a new one gets the default (0, `pcs`, no category).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BulkProductInput {
     pub barcode: Option<String>,
     pub name: String,
     pub category_name: Option<String>,
-    pub buy_price: f64,
+    pub buy_price: Option<f64>,
     pub sell_price: f64,
     pub margin: Option<f64>,
-    pub stock: i64,
+    /// A stock-take: replaces the matched product's stock outright.
+    pub stock: Option<i64>,
     pub unit: Option<String>,
+    /// The row's 1-based data-row number in the file, as the import preview
+    /// shows it. The client drops nameless rows before sending, so the array
+    /// index no longer matches the file; absent means "use the index".
+    #[serde(default)]
+    pub row_number: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -93,4 +103,15 @@ pub struct ShortcutProduct {
     pub product: products::Model,
     pub is_pinned: bool,
     pub select_count: i64,
+}
+
+/// What the cart reprices a line from: the catalogue's price, stock and unit
+/// of the moment. See `GET /api/products/lookup`.
+#[derive(Debug, Serialize, FromQueryResult)]
+pub struct ProductLookup {
+    pub id: i64,
+    pub sell_price: f64,
+    pub stock: i64,
+    pub unit: String,
+    pub is_active: bool,
 }

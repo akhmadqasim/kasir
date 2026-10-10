@@ -323,6 +323,29 @@ Riwayat top-up saldo.
 
 ---
 
+## Body pembelian vs kontrak (APK 8.21.1)
+
+| Endpoint | Wajib di kontrak | Yang kita kirim |
+|---|---|---|
+| `pln/payment` | `inquiry_id`, `customer_id`, `product_code` | + `payment_code`, `flag_id`, `pin`. `product_code` = `id` baris `pln/get-denom` (token); pascabayar tidak punya denom, jadi tanpa `product_code` |
+| `pdam`/`bpjs`/`pp`/`emoney`/`transfer-uang` `/payment` | `inquiry_id` | + `customer_id`, `product_code`, `payment_code`, `pin` bila ada; BPJS + `phone_number`, `amount`, `type` |
+| `pulsa/v2/topup` | `phone_number`, `product_code` | + `product_id`, `type`, `pin` |
+
+## Klasifikasi jawaban pembelian (`client.rs::classify_purchase_answer`)
+
+- **Sukses**: `message` = `OK` dan tidak ada `status`/`trx_status` (root atau wrapper)
+  selain kata sukses (`sukses`, `success`, `berhasil`, `done`, `completed`).
+- **ADVICE (uncertain, tidak bisa diulang)**: OK dengan status pending/proses/suspect/advice,
+  atau body non-OK berisi kata `ADVICE`, `PENDING`, `SUSPECT`, `proses`/`diproses`,
+  `menunggu`, kode `rc`/`errorCode` `68`, atau `advice_id` di mana pun.
+- **Gagal (boleh diulang)** hanya untuk penolakan jelas: token mati, `errorCode` `VL…`,
+  `errors` per field, HTTP 401/403/404/405/422/429, atau frasa saldo tidak cukup, PIN
+  salah, nomor tidak valid/tidak terdaftar, inputan tidak sesuai, inquiry gagal/expired,
+  produk tidak tersedia/sedang gangguan, cut off. Tidak pernah pada HTTP 5xx/408.
+- **Uncertain**: semua jawaban lain, termasuk OK dengan status `GAGAL`.
+
+---
+
 ## Notes
 
 - Semua endpoint POST, body JSON

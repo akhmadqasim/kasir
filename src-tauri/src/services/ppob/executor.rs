@@ -2,14 +2,14 @@ use std::fmt;
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::domain::auth::pin_has_valid_format;
 use crate::domain::ppob::PaymentResult;
 use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::{MitraClient, MitraRequestContext};
-use crate::services::ppob::parsers::{extract_f64, extract_optional_string};
+use crate::services::ppob::parsers::{find_f64, find_string};
 use crate::utils::AppError;
 
 /// Everything a PPOB fulfilment call needs, including the cashier's Mitra
@@ -103,15 +103,23 @@ pub async fn execute_fulfillment_request(
 
 /// An error from before the purchase request was sent. The session lookup may
 /// POST `get-menu-saldo`, and a timeout there comes back as
-/// [`AppError::UpstreamUncertain`] — but that request only reads the balance,
-/// so no money can have moved. Passed on as uncertain it would leave the line
-/// waiting to be settled by hand instead of simply retryable.
+/// [`AppError::UpstreamUncertain`] or a possibly-sent
+/// [`AppError::UpstreamUnreachable`] — but that request only reads the
+/// balance, so no money can have moved. Passed on as uncertain it would leave
+/// the line waiting to be settled by hand instead of simply retryable.
 fn nothing_spent_yet(error: AppError) -> AppError {
     match error {
         AppError::UpstreamUncertain(message) => AppError::Upstream(message),
+        AppError::UpstreamUnreachable { message, .. } => AppError::UpstreamUnreachable {
+            message,
+            maybe_sent: false,
+        },
         other => other,
     }
 }
+
+/// The direct pulsa/data top-up, which needs no inquiry.
+const TOPUP_PATH: &str = "pulsa/v2/topup";
 
 /// The payment endpoint for a service paid against an earlier inquiry.
 fn confirm_endpoint(service_type: &str) -> Option<&'static str> {
@@ -130,6 +138,16 @@ async fn execute_direct_topup(
     client: &MitraRequestContext,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
+    let body = topup_body(request)?;
+    let result = client.post(TOPUP_PATH, body).await?;
+    Ok(topup_result(request, result))
+}
+
+/// `pulsa/v2/topup`'s body. The contract (`PulsaTopupRequest`) requires
+/// `phone_number` and `product_code` (the `plu` from `pulsa/v2/get-details`);
+/// `product_id` and `type` are ours, kept because live top-ups have gone
+/// through with them, and `pin` rides along whenever the cashier typed one.
+fn topup_body(request: &PpobFulfillmentRequest) -> Result<Value, AppError> {
     let customer_id = request
         .customer_id
         .clone()
@@ -151,22 +169,25 @@ async fn execute_direct_topup(
     if !request.pin.is_empty() {
         body["pin"] = json!(request.pin);
     }
+    Ok(body)
+}
 
-    let result = client.post("pulsa/v2/topup", body).await?;
-    let history_payment = &result["history_payment"];
-
-    Ok(PaymentResult {
+/// A settled top-up answer, read off whichever wrapper Mitra used
+/// (`history_payment` so far). The serial a pulsa buyer is told is the
+/// provider's `no_ref`/SN.
+fn topup_result(request: &PpobFulfillmentRequest, result: Value) -> PaymentResult {
+    PaymentResult {
         success: true,
         service_type: request.service_type.clone(),
-        customer_id: customer_id.clone(),
-        amount: extract_f64(history_payment, &["amount"]),
+        customer_id: request.customer_id.clone().unwrap_or_default(),
+        amount: find_f64(&result, &["amount"]),
         admin_fee: 0.0,
-        total: extract_f64(history_payment, &["amount"]),
-        product_name: extract_optional_string(history_payment, &["plu_desc", "description"]),
+        total: find_f64(&result, &["amount"]),
+        product_name: find_string(&result, &["plu_desc", "description", "product_name"]),
         customer_name: None,
-        serial_number: extract_optional_string(history_payment, &["no_ref", "token_number"]),
+        serial_number: find_string(&result, &["no_ref", "serial_number", "sn", "token_number"]),
         receipt_data: result,
-    })
+    }
 }
 
 async fn execute_confirm_payment(
@@ -174,6 +195,22 @@ async fn execute_confirm_payment(
     endpoint: &str,
     request: &PpobFulfillmentRequest,
 ) -> Result<PaymentResult, AppError> {
+    let body = confirm_body(request)?;
+    let result = client.post(endpoint, body).await?;
+    Ok(confirm_result(request, result))
+}
+
+/// The body of a `*/payment` call against an earlier inquiry.
+///
+/// Against the APK 8.21.1 contract: `PlnPaymentRequest` requires
+/// `inquiry_id`, `customer_id` and `product_code` (for a token, the chosen
+/// `pln/get-denom` row, which the cart line carries since this change);
+/// `GenericPaymentRequest` (pdam, bpjs, pp, emoney, transfer-uang) requires
+/// only `inquiry_id`, with `customer_id`, `product_code`, `payment_code` and
+/// `pin` optional. `flag_id` (PLN), and `phone_number`/`amount`/`type`
+/// (BPJS) are not in the contract; they stay because Mitra has needed them
+/// (commit e85fe55 for `flag_id`) and an extra field costs nothing.
+fn confirm_body(request: &PpobFulfillmentRequest) -> Result<Value, AppError> {
     let inquiry_id = request
         .inquiry_id
         .clone()
@@ -206,21 +243,25 @@ async fn execute_confirm_payment(
             body["type"] = json!(bpjs_type);
         }
     }
+    Ok(body)
+}
 
-    let result = client.post(endpoint, body).await?;
-
-    Ok(PaymentResult {
+/// A settled `*/payment` answer. The contract nests it under `data`; live
+/// answers have come flat. Both are read. A PLN prepaid token is
+/// `token_number`, so it is looked for before any other serial.
+fn confirm_result(request: &PpobFulfillmentRequest, result: Value) -> PaymentResult {
+    PaymentResult {
         success: true,
         service_type: request.service_type.clone(),
         customer_id: request.customer_id.clone().unwrap_or_default(),
-        amount: extract_f64(&result, &["amount", "total_amount"]),
-        admin_fee: extract_f64(&result, &["admin_fee", "admin"]),
-        total: extract_f64(&result, &["total", "total_payment"]),
-        product_name: extract_optional_string(&result, &["product_name"]),
-        customer_name: extract_optional_string(&result, &["customer_name", "nama_pelanggan"]),
-        serial_number: extract_optional_string(&result, &["serial_number", "token", "sn"]),
+        amount: find_f64(&result, &["amount", "total_amount"]),
+        admin_fee: find_f64(&result, &["admin_fee", "admin"]),
+        total: find_f64(&result, &["total", "total_payment", "total_amount"]),
+        product_name: find_string(&result, &["product_name"]),
+        customer_name: find_string(&result, &["customer_name", "nama_pelanggan"]),
+        serial_number: find_string(&result, &["token_number", "serial_number", "token", "sn"]),
         receipt_data: result,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -239,6 +280,32 @@ mod tests {
             nothing_spent_yet(AppError::Validation("x".into())),
             AppError::Validation(_)
         ));
+        // A balance lookup that timed out after sending is still no purchase:
+        // the transport failure stays one, but no longer "maybe sent".
+        match nothing_spent_yet(AppError::UpstreamUnreachable {
+            message: "timed out".into(),
+            maybe_sent: true,
+        }) {
+            AppError::UpstreamUnreachable {
+                message,
+                maybe_sent: false,
+            } => assert_eq!(message, "timed out"),
+            other => panic!("expected an unsent UpstreamUnreachable, got {other:?}"),
+        }
+    }
+
+    /// The client reads a purchase answer more strictly (ADVICE, uncertain)
+    /// only on a purchase path, so every endpoint that spends money must be
+    /// one.
+    #[test]
+    fn every_purchase_endpoint_is_a_purchase_path() {
+        use crate::services::ppob::client::is_purchase_path;
+
+        assert!(is_purchase_path(TOPUP_PATH));
+        for service in ["pln", "pdam", "bpjs", "pp", "transfer", "emoney"] {
+            let endpoint = confirm_endpoint(service).expect(service);
+            assert!(is_purchase_path(endpoint), "{endpoint}");
+        }
     }
 
     #[test]
@@ -302,5 +369,165 @@ mod tests {
         let printed = format!("{request:?}");
         assert!(!printed.contains("654321"), "printed: {printed}");
         assert!(printed.contains("<redacted>"));
+    }
+
+    fn request(service_type: &str) -> PpobFulfillmentRequest {
+        PpobFulfillmentRequest {
+            service_type: service_type.to_string(),
+            customer_id: Some("14300000001".to_string()),
+            inquiry_id: Some("INQ-1".to_string()),
+            product_id: None,
+            product_code: None,
+            payment_code: None,
+            flag_id: None,
+            phone_number: None,
+            amount: None,
+            pin: "123456".to_string(),
+        }
+    }
+
+    /// What the store sent on its three PLN token sales was missing the one
+    /// field `PlnPaymentRequest` names besides the ids: `product_code`, the
+    /// denomination picked from `pln/get-denom`. A token line now carries it.
+    #[test]
+    fn a_pln_token_payment_sends_every_field_the_contract_requires() {
+        let mut pln = request("pln");
+        pln.product_id = Some(17);
+        pln.product_code = Some("17".to_string());
+        pln.payment_code = Some("14300000001".to_string());
+        pln.flag_id = Some("0".to_string());
+
+        let body = confirm_body(&pln).expect("body");
+        // `device_id` is added by the client on every POST.
+        for field in ["inquiry_id", "customer_id", "product_code"] {
+            assert!(body[field].is_string(), "missing {field}: {body}");
+        }
+        assert_eq!(body["product_code"], "17");
+        assert_eq!(body["inquiry_id"], "INQ-1");
+        assert_eq!(body["customer_id"], "14300000001");
+        assert_eq!(body["payment_code"], "14300000001");
+        assert_eq!(body["flag_id"], "0");
+        assert_eq!(body["pin"], "123456");
+        // Not in `PlnPaymentRequest`, so not sent.
+        assert!(body.get("product_id").is_none(), "{body}");
+        assert!(body.get("amount").is_none(), "{body}");
+    }
+
+    /// `GenericPaymentRequest` (pdam, bpjs, pp, emoney, transfer-uang)
+    /// requires `inquiry_id` only; every optional field the line has goes too.
+    #[test]
+    fn a_generic_payment_sends_the_inquiry_and_what_the_line_carries() {
+        let mut pdam = request("pdam");
+        pdam.product_id = Some(168);
+        pdam.payment_code = Some("123000858".to_string());
+        let body = confirm_body(&pdam).expect("pdam");
+        assert_eq!(body["inquiry_id"], "INQ-1");
+        assert_eq!(body["customer_id"], "14300000001");
+        assert_eq!(body["payment_code"], "123000858");
+        assert!(body.get("product_id").is_none());
+
+        let mut bpjs = request("bpjs");
+        bpjs.product_code = Some("BPJSKES".to_string());
+        bpjs.phone_number = Some("00".to_string());
+        bpjs.amount = Some(150_000.0);
+        let body = confirm_body(&bpjs).expect("bpjs");
+        assert_eq!(body["product_code"], "BPJSKES");
+        assert_eq!(body["type"], "BPJSKES");
+        assert_eq!(body["phone_number"], "00");
+        assert_eq!(body["amount"], 150_000.0);
+
+        let mut emoney = request("emoney");
+        emoney.product_code = Some("20000.00".to_string());
+        assert_eq!(
+            confirm_body(&emoney).expect("emoney")["product_code"],
+            "20000.00"
+        );
+
+        let mut no_inquiry = request("pp");
+        no_inquiry.inquiry_id = None;
+        assert!(matches!(
+            confirm_body(&no_inquiry),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    /// `PulsaTopupRequest` requires `phone_number` and `product_code`.
+    #[test]
+    fn a_topup_sends_the_number_and_the_plu() {
+        let mut pulsa = request("pulsa");
+        pulsa.customer_id = Some("081234567890".to_string());
+        pulsa.product_id = Some(979);
+        pulsa.product_code = Some("223316077".to_string());
+        let body = topup_body(&pulsa).expect("body");
+        assert_eq!(body["phone_number"], "081234567890");
+        assert_eq!(body["product_code"], "223316077");
+        assert_eq!(body["product_id"], 979);
+        assert_eq!(body["pin"], "123456");
+
+        pulsa.product_code = None;
+        assert!(matches!(topup_body(&pulsa), Err(AppError::Validation(_))));
+    }
+
+    /// A PLN token is `token_number`, and the contract puts it under `data`:
+    /// it must end up as the line's serial, ahead of any other field.
+    #[test]
+    fn a_pln_token_number_becomes_the_serial_wherever_it_sits() {
+        let nested = json!({
+            "message": "OK",
+            "data": {
+                "trx_id": "50151852",
+                "serial_number": "",
+                "token_number": "4617 5400 1832 5962 7611",
+                "amount": 23500,
+                "admin_fee": 3500,
+                "customer_name": "BUDI SANTOSA",
+                "status": "SUKSES"
+            }
+        });
+        let paid = confirm_result(&request("pln"), nested);
+        assert_eq!(
+            paid.serial_number.as_deref(),
+            Some("4617 5400 1832 5962 7611")
+        );
+        assert_eq!(paid.amount, 23_500.0);
+        assert_eq!(paid.admin_fee, 3_500.0);
+        assert_eq!(paid.customer_name.as_deref(), Some("BUDI SANTOSA"));
+
+        let flat = json!({
+            "message": "OK",
+            "serial_number": "SN-OLD",
+            "token_number": "1111 2222 3333 4444 5555"
+        });
+        assert_eq!(
+            confirm_result(&request("pln"), flat)
+                .serial_number
+                .as_deref(),
+            Some("1111 2222 3333 4444 5555")
+        );
+
+        let pdam = json!({ "message": "OK", "sn": "PDAM-9" });
+        assert_eq!(
+            confirm_result(&request("pdam"), pdam)
+                .serial_number
+                .as_deref(),
+            Some("PDAM-9")
+        );
+    }
+
+    #[test]
+    fn a_topup_serial_is_its_reference_number() {
+        let result = json!({
+            "message": "OK",
+            "history_payment": {
+                "no_ref": "REF-9",
+                "amount": "50600.00",
+                "plu_desc": "TELKOMSEL 50.000",
+                "status": "SUKSES"
+            }
+        });
+        let paid = topup_result(&request("pulsa"), result);
+        assert_eq!(paid.serial_number.as_deref(), Some("REF-9"));
+        assert_eq!(paid.amount, 50_600.0);
+        assert_eq!(paid.product_name.as_deref(), Some("TELKOMSEL 50.000"));
     }
 }

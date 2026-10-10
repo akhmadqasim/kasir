@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import {
   MAX_CART_QUANTITY,
+  heldCartTotal,
   migrateCartState,
   useCartStore,
   type HeldCart,
@@ -41,6 +42,7 @@ beforeEach(() => {
     itemDiscounts: {},
     transactionDiscount: null,
     checkoutKey: null,
+    ownerId: null,
   })
 })
 
@@ -95,6 +97,28 @@ describe("addItem", () => {
   it("generates cart_id from product id", () => {
     store().addItem(makeProduct({ id: 42 }))
     expect(store().items[0].cart_id).toBe("product-42")
+  })
+
+  // A shortcut tile or a search row may come from the query cache: adding it
+  // again must not roll a line's newer price back to the cached one.
+  it("only bumps the quantity of an existing line from data that is not fresh", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3500, stock: 40 }))
+
+    const change = store().addItem(makeProduct({ id: 1, sell_price: 3000, stock: 90 }))
+
+    expect(change).toBeNull()
+    expect(store().items[0]).toMatchObject({ product_price: 3500, stock: 40, quantity: 2 })
+  })
+
+  it("reprices an existing line from a fresh barcode lookup and reports the change", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3000 }))
+
+    const change = store().addItem(makeProduct({ id: 1, sell_price: 3500, stock: 7 }), {
+      fresh: true,
+    })
+
+    expect(change).toEqual({ name: "Indomie Goreng", from: 3000, to: 3500 })
+    expect(store().items[0]).toMatchObject({ product_price: 3500, stock: 7, quantity: 2 })
   })
 })
 
@@ -186,6 +210,32 @@ describe("removeItem", () => {
 
     store().removeItem("product-1")
     expect(store().itemDiscounts["product-1"]).toBeUndefined()
+  })
+
+  it("ends the cart like clear() when the last line is removed", () => {
+    store().addItem(makeProduct({ id: 1 }))
+    store().setTransactionDiscount({ type: "percentage", value: 50 })
+    const key = store().getCheckoutKey()
+
+    store().removeItem("product-1")
+
+    expect(store().transactionDiscount).toBeNull()
+    expect(store().checkoutKey).toBeNull()
+    store().addItem(makeProduct({ id: 2 }))
+    expect(store().getCartTotals().total).toBe(3000)
+    expect(store().getCheckoutKey()).not.toBe(key)
+  })
+
+  it("keeps the transaction discount and key while lines remain", () => {
+    store().addItem(makeProduct({ id: 1 }))
+    store().addItem(makeProduct({ id: 2 }))
+    store().setTransactionDiscount({ type: "fixed", value: 500 })
+    const key = store().getCheckoutKey()
+
+    store().removeItem("product-1")
+
+    expect(store().transactionDiscount).toEqual({ type: "fixed", value: 500 })
+    expect(store().checkoutKey).toBe(key)
   })
 })
 
@@ -350,6 +400,17 @@ describe("setItemDiscount", () => {
 
     expect(store().itemDiscounts["product-1"]).toBeUndefined()
   })
+
+  it("saves a fixed amount clamped to the line total, a percentage to 100", () => {
+    store().addItem(makeProduct({ sell_price: 1000 }))
+    store().updateQuantity("product-1", 3)
+
+    store().setItemDiscount("product-1", { type: "fixed", value: 50000 })
+    expect(store().itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 3000 })
+
+    store().setItemDiscount("product-1", { type: "percentage", value: 150 })
+    expect(store().itemDiscounts["product-1"]).toEqual({ type: "percentage", value: 100 })
+  })
 })
 
 describe("getItemDiscountAmount", () => {
@@ -394,11 +455,48 @@ describe("getItemDiscountAmount", () => {
 
 describe("setTransactionDiscount", () => {
   it("sets a transaction-level discount", () => {
+    store().addItem(makeProduct({ sell_price: 10000 }))
     store().setTransactionDiscount({ type: "fixed", value: 5000 })
     expect(store().transactionDiscount).toEqual({ type: "fixed", value: 5000 })
   })
 
+  it("saves a fixed amount whole and caps it only in the totals", () => {
+    store().addItem(makeProduct({ sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 2000 })
+    store().setTransactionDiscount({ type: "fixed", value: 50000 })
+    expect(store().transactionDiscount).toEqual({ type: "fixed", value: 50000 })
+    expect(store().getTransactionDiscountAmount()).toBe(8000)
+  })
+
+  // Entered early, a cart discount larger than the cart grows into the cart
+  // as more is scanned instead of staying at the old subtotal.
+  it("applies an early fixed cart discount in full once the cart grows", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 8000 }))
+    store().setTransactionDiscount({ type: "fixed", value: 10000 })
+    expect(store().getTransactionDiscountAmount()).toBe(8000)
+
+    store().addItem(makeProduct({ id: 2, name: "Teh Botol", sell_price: 5000 }))
+
+    expect(store().getTransactionDiscountAmount()).toBe(10000)
+    expect(store().getTotal()).toBe(3000)
+  })
+
+  // Line discounts stay clamped when saved: 50.000 off a 10.000 line must not
+  // make the line free once its quantity goes up.
+  it("still saves a fixed line discount clamped to the line", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 10000 }))
+    store().setItemDiscount("product-1", { type: "fixed", value: 50000 })
+    expect(store().itemDiscounts["product-1"]).toEqual({ type: "fixed", value: 10000 })
+  })
+
+  it("saves a percentage clamped to 100", () => {
+    store().addItem(makeProduct({ sell_price: 10000 }))
+    store().setTransactionDiscount({ type: "percentage", value: 150 })
+    expect(store().transactionDiscount).toEqual({ type: "percentage", value: 100 })
+  })
+
   it("clears discount when value is 0", () => {
+    store().addItem(makeProduct({ sell_price: 10000 }))
     store().setTransactionDiscount({ type: "fixed", value: 5000 })
     store().setTransactionDiscount({ type: "fixed", value: 0 })
     expect(store().transactionDiscount).toBeNull()
@@ -635,7 +733,7 @@ describe("holdCart", () => {
     expect(store().heldCarts).toHaveLength(1)
     expect(store().heldCarts[0].label).toBe("Pelanggan A")
     expect(store().heldCarts[0].items).toHaveLength(2)
-    expect(store().heldCarts[0].total).toBe(8000) // 3000 + 5000
+    expect(heldCartTotal(store().heldCarts[0])).toBe(8000) // 3000 + 5000
   })
 
   it("auto-generates label if none provided", () => {
@@ -691,7 +789,7 @@ describe("recallCart", () => {
 
     // The previously active cart is now held
     expect(store().heldCarts).toHaveLength(1)
-    expect(store().heldCarts[0].label).toBe("Keranjang Aktif")
+    expect(store().heldCarts[0].label).toBe("Pelanggan 1")
     expect(store().heldCarts[0].items[0].product_name).toBe("Active Item")
   })
 
@@ -772,7 +870,7 @@ describe("discount scoping between carts", () => {
 
     store().holdCart("Pelanggan 1")
 
-    expect(store().heldCarts[0].total).toBe(5000)
+    expect(heldCartTotal(store().heldCarts[0])).toBe(5000)
   })
 
   it("restores the discounts of the recalled cart", () => {
@@ -807,7 +905,7 @@ describe("discount scoping between carts", () => {
     // Cart 2 kept its own fixed discount while held
     const swapped = store().heldCarts[0]
     expect(swapped.transactionDiscount).toEqual({ type: "fixed", value: 2000 })
-    expect(swapped.total).toBe(18000)
+    expect(heldCartTotal(swapped)).toBe(18000)
   })
 
   it("keeps held cart discounts when the active cart is cleared", () => {
@@ -834,7 +932,6 @@ describe("discount scoping between carts", () => {
           id: held.id,
           label: held.label,
           items: held.items,
-          total: held.total,
           heldAt: held.heldAt,
         } as HeldCart,
       ],
@@ -952,6 +1049,94 @@ describe("persisted cart migration", () => {
     )
 
     expect(migrated.heldCarts[0].items.map((i) => i.cart_id)).toEqual(["product-2"])
+  })
+
+  it("recomputes a held cart's total and prunes discounts of dropped PPOB rows", () => {
+    const migrated = migrateCartState(
+      {
+        items: [],
+        heldCarts: [
+          {
+            id: "hold-1",
+            label: "Pak Budi",
+            items: [
+              { cart_id: "ppob-1", product_price: 50000, quantity: 1, is_ppob: true },
+              { cart_id: "product-2", product_price: 10000, quantity: 2 },
+            ],
+            itemDiscounts: {
+              "ppob-1": { type: "fixed", value: 1000 },
+              "product-2": { type: "fixed", value: 2000 },
+            },
+            transactionDiscount: null,
+            total: 67000,
+            heldAt: 0,
+          },
+        ],
+      },
+      1,
+    )
+
+    const [held] = migrated.heldCarts
+    expect(held.itemDiscounts).toEqual({ "product-2": { type: "fixed", value: 2000 } })
+    expect(heldCartTotal(held)).toBe(18000)
+    // The stored total of an older save is dropped, not trusted.
+    expect(held).not.toHaveProperty("total")
+  })
+
+  it("drops a held cart that held only PPOB rows", () => {
+    const migrated = migrateCartState(
+      {
+        items: [],
+        heldCarts: [
+          {
+            id: "hold-1",
+            label: "Pak Budi",
+            items: [{ cart_id: "ppob-1", product_price: 50000, quantity: 1, is_ppob: true }],
+            itemDiscounts: {},
+            transactionDiscount: null,
+            total: 50000,
+            heldAt: 0,
+          },
+        ],
+      },
+      1,
+    )
+
+    expect(migrated.heldCarts).toEqual([])
+  })
+
+  it("prunes active-cart discounts of dropped PPOB rows", () => {
+    const migrated = migrateCartState(
+      {
+        items: [
+          { cart_id: "product-1", product_price: 1000, quantity: 1 },
+          { cart_id: "ppob-1", product_price: 5000, quantity: 1, is_ppob: true },
+        ],
+        itemDiscounts: { "ppob-1": { type: "fixed", value: 100 } },
+        transactionDiscount: { type: "fixed", value: 200 },
+        checkoutKey: "kunci",
+      },
+      1,
+    )
+
+    expect(migrated.itemDiscounts).toEqual({})
+    expect(migrated.transactionDiscount).toEqual({ type: "fixed", value: 200 })
+    expect(migrated.checkoutKey).toBe("kunci")
+  })
+
+  it("ends an active cart that held only PPOB rows", () => {
+    const migrated = migrateCartState(
+      {
+        items: [{ cart_id: "ppob-1", product_price: 5000, quantity: 1, is_ppob: true }],
+        transactionDiscount: { type: "fixed", value: 200 },
+        checkoutKey: "kunci",
+      },
+      1,
+    )
+
+    expect(migrated.items).toEqual([])
+    expect(migrated.transactionDiscount).toBeNull()
+    expect(migrated.checkoutKey).toBeNull()
   })
 
   it("discards pre-v1 global discounts that used to leak between carts", () => {
@@ -1121,5 +1306,105 @@ describe("checkout key", () => {
   it("defaults to no key for carts persisted before it existed", () => {
     expect(migrateCartState({ items: [] }, 1).checkoutKey).toBeNull()
     expect(migrateCartState(undefined, 0).checkoutKey).toBeNull()
+  })
+})
+
+// =====================================================================
+// claimFor (cart ownership across logins)
+// =====================================================================
+
+describe("claimFor", () => {
+  it("empties a cart another user left behind, keeping held carts", () => {
+    store().claimFor(1)
+    store().addItem(makeProduct({ id: 1 }))
+    store().holdCart("Pelanggan A")
+    store().addItem(makeProduct({ id: 2 }))
+    store().setTransactionDiscount({ type: "fixed", value: 500 })
+
+    expect(store().claimFor(2)).toBe(true)
+
+    expect(store().items).toEqual([])
+    expect(store().transactionDiscount).toBeNull()
+    expect(store().heldCarts).toHaveLength(1)
+    expect(store().ownerId).toBe(2)
+  })
+
+  it("keeps the cart when the same user logs back in", () => {
+    store().claimFor(1)
+    store().addItem(makeProduct({ id: 1 }))
+
+    expect(store().claimFor(1)).toBe(false)
+    expect(store().items).toHaveLength(1)
+  })
+
+  it("adopts a cart saved before its owner was recorded", () => {
+    store().addItem(makeProduct({ id: 1 }))
+
+    expect(store().claimFor(3)).toBe(false)
+    expect(store().items).toHaveLength(1)
+    expect(store().ownerId).toBe(3)
+  })
+})
+
+// =====================================================================
+// applyLiveProducts (repricing from the catalogue)
+// =====================================================================
+
+describe("applyLiveProducts", () => {
+  const live = (rows: Array<{ id: number; sell_price: number; stock?: number; unit?: string }>) =>
+    new Map(rows.map((row) => [row.id, { stock: 100, unit: "pcs", ...row }]))
+
+  it("reprices goods lines and reports the price changes", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3000 }))
+    store().addItem(makeProduct({ id: 2, name: "Gula", sell_price: 15000 }))
+
+    const changes = store().applyLiveProducts(live([{ id: 1, sell_price: 3500, stock: 7 }]))
+
+    expect(changes).toEqual([{ name: "Indomie Goreng", from: 3000, to: 3500 }])
+    const line = store().items.find((item) => item.product_id === 1)!
+    expect(line.product_price).toBe(3500)
+    expect(line.stock).toBe(7)
+    expect(store().items.find((item) => item.product_id === 2)!.product_price).toBe(15000)
+  })
+
+  it("updates stock quietly when the price is unchanged", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3000, stock: 100 }))
+
+    const changes = store().applyLiveProducts(live([{ id: 1, sell_price: 3000, stock: 4 }]))
+
+    expect(changes).toEqual([])
+    expect(store().items[0].stock).toBe(4)
+  })
+
+  it("leaves PPOB lines alone", () => {
+    store().addPpobItem({ name: "Pulsa", price: 10000, service_type: "pulsa", service_ref: "0812" })
+    const before = store().items
+
+    store().applyLiveProducts(live([{ id: 1, sell_price: 1 }]))
+
+    expect(store().items).toBe(before)
+  })
+
+  it("reprices held carts, and so their totals, when asked to", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3000 }))
+    store().holdCart("Pelanggan A")
+
+    const changes = store().applyLiveProducts(live([{ id: 1, sell_price: 4000 }]), {
+      includeHeld: true,
+    })
+
+    expect(changes).toEqual([])
+    expect(store().heldCarts[0].items[0].product_price).toBe(4000)
+    expect(heldCartTotal(store().heldCarts[0])).toBe(4000)
+  })
+
+  it("leaves held carts alone unless asked", () => {
+    store().addItem(makeProduct({ id: 1, sell_price: 3000 }))
+    store().holdCart("Pelanggan A")
+    const before = store().heldCarts
+
+    store().applyLiveProducts(live([{ id: 1, sell_price: 4000 }]))
+
+    expect(store().heldCarts).toBe(before)
   })
 })

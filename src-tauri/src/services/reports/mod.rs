@@ -7,6 +7,8 @@
 //! boundaries and the row cap — lives here.
 
 #[cfg(test)]
+mod edge_tests;
+#[cfg(test)]
 pub(crate) mod fixtures;
 
 mod cash_flows;
@@ -135,7 +137,13 @@ mod tests {
                 &losses(&conn, ok.clone(), bad.clone()).await
             ));
             assert!(is_invalid_date(
-                &cash_flows(&conn, ok.clone(), bad.clone()).await
+                &cash_flows(
+                    &conn,
+                    &crate::domain::actor::Actor::new(1, "admin"),
+                    ok.clone(),
+                    bad.clone()
+                )
+                .await
             ));
             // The start date is checked just as strictly as the end date.
             assert!(is_invalid_date(

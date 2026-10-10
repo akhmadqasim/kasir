@@ -75,6 +75,10 @@ export function CartItemRow({ item, onRemove, onEdit, hasDiscount }: CartItemRow
           // Row actions that destroy are `danger-soft` (DESIGN.md §5.4): a solid
           // red button on every line shouts louder than the total.
           variant="danger-soft"
+          // Pressing it must not take focus from the scan field: once the row
+          // is gone, React Aria would hand focus to the next row's trash
+          // button, and a scanner's Enter would delete that line as well.
+          preventFocusOnPress
           onPress={() => onRemove(item.cart_id)}
         >
           <Trash2 />

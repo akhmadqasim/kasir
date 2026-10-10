@@ -11,7 +11,8 @@ import { useAuthStore } from "@/features/auth"
 import { formatDateTime } from "@/lib/format"
 import { transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { id } from "@/i18n/id"
-import { isPpobRetryable } from "@/lib/ppob-status"
+import { isPpobRetryable, ppobLines } from "@/lib/ppob-status"
+import { usePpobCheck } from "../hooks/use-ppob-check"
 import type { TransactionDetail, TransactionItem, TransactionListItem } from "../types"
 import { EditPaymentMethodDialog } from "./edit-payment-method-dialog"
 import { PpobResolveDialog, type PpobResolveTarget } from "./ppob-resolve-dialog"
@@ -43,6 +44,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
   // Outlives the resolve dialog's open state on purpose — see `PpobResolveDialog`.
   const [resolveTarget, setResolveTarget] = useState<PpobResolveTarget | null>(null)
   const closeSubDialog = () => setSubDialog(null)
+  const { check: checkPpob, checkingId: checkingPpobId } = usePpobCheck()
 
   const {
     data: detail,
@@ -58,7 +60,7 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
 
   // Every PPOB line, not just the first: one cart can hold two PPOB purchases,
   // and the second one failing must still be visible and retryable.
-  const ppobItems = detail?.items.filter((item) => item.service_type) ?? []
+  const ppobItems = ppobLines(detail?.items)
   const ppobRetryableItems = ppobItems.filter((item) => isPpobRetryable(item.ppob_status))
 
   const openResolve = (item: TransactionItem, success: boolean) => {
@@ -140,6 +142,9 @@ export function TransactionDetailDialog({ transaction, onClose }: TransactionDet
                   <TransactionExtraInfo
                     detail={detail}
                     ppobItems={ppobItems}
+                    checkingPpobId={checkingPpobId}
+                    isAdmin={isAdmin}
+                    onCheckPpob={(item) => void checkPpob(item.id)}
                     onResolvePpob={openResolve}
                   />
                 </Modal.Body>

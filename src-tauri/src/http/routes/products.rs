@@ -13,8 +13,8 @@ use axum::routing::{delete, get, post, put};
 use axum::Router;
 
 use crate::domain::products::{
-    BulkImportResult, BulkProductInput, CreateProductInput, PaginatedProducts, ProductSearchParams,
-    ShortcutProduct, UpdateProductInput,
+    BulkImportResult, BulkProductInput, CreateProductInput, PaginatedProducts, ProductLookup,
+    ProductSearchParams, ShortcutProduct, UpdateProductInput,
 };
 use crate::domain::Actor;
 use crate::entity::products;
@@ -27,6 +27,7 @@ pub fn session() -> Router<AppState> {
     Router::new()
         .route("/products", get(search))
         .route("/products/popular", get(popular))
+        .route("/products/lookup", get(lookup))
         .route("/products/import-template", get(import_template))
         .route("/products/barcode/{barcode}", get(by_barcode))
         .route("/products/{id}/select", post(track_selection))
@@ -56,6 +57,25 @@ async fn by_barcode(
 ) -> ApiResult<axum::Json<Option<products::Model>>> {
     Ok(axum::Json(
         services::products::get_by_barcode(&state.db, &barcode).await?,
+    ))
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct LookupParams {
+    /// Comma-separated product ids, `ids=1,2,3`.
+    #[serde(default)]
+    ids: String,
+}
+
+/// The current price, stock and unit of several products at once, for the
+/// cart to reprice its lines without one search per product.
+async fn lookup(
+    State(state): State<AppState>,
+    Query(params): Query<LookupParams>,
+) -> ApiResult<axum::Json<Vec<ProductLookup>>> {
+    let ids = services::products::parse_lookup_ids(&params.ids)?;
+    Ok(axum::Json(
+        services::products::lookup(&state.db, &ids).await?,
     ))
 }
 

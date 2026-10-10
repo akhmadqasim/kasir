@@ -114,8 +114,18 @@ const CHECKOUT_RESULT: TransactionResult = {
 /** What the detail says once the background fulfilment has reported back. */
 const FULFILLED_DETAIL: TransactionDetail = {
   transaction: TRANSACTION,
-  items: [{ ...plnLine("success", "1234-5678-9012-3456-7890"), refunded_quantity: 0 }],
+  items: [
+    {
+      ...plnLine("success", "1234-5678-9012-3456-7890"),
+      refunded_quantity: 0,
+      refundable: false,
+      refundable_quantity: 0,
+      ppob_manual_fail_opens_at: null,
+    },
+  ],
   cashier_name: KASIR.full_name,
+  has_refundable_goods: false,
+  has_refundable_failed_ppob: false,
   has_ppob: true,
   ppob_status: "success",
   ppob_message: null,

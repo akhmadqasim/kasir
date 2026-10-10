@@ -29,10 +29,27 @@ export interface TransactionListItem {
   item_count: number
   notes: string | null
   created_at: string | null
+  /**
+   * Some line still has units a refund may take back, as the server computes
+   * it. The status cannot say it: a mixed cart whose goods all came back stays
+   * `partial_refund`, because its PPOB line was not reversed.
+   */
+  has_refundable_goods: boolean
+  /**
+   * A failed PPOB line still has money to give back. That refund has no
+   * seven-day window, so the row keeps offering it after goods stopped.
+   */
+  has_refundable_failed_ppob: boolean
   has_ppob: boolean
+  /**
+   * The PPOB line that most needs a person (`uncertain`, then `failed`, then
+   * one in flight), not merely the first; the next two fields are that line's.
+   */
   ppob_status: string | null
   ppob_message: string | null
   ppob_serial_number: string | null
+  ppob_service_type: string | null
+  ppob_advice: string | null
   deleted_at: string | null
   deleted_reason: string | null
   payment_breakdown: PaymentSplit[]
@@ -82,6 +99,18 @@ export interface TransactionItem {
   ppob_message: string | null
   ppob_serial_number: string | null
   created_at: string | null
+  /**
+   * Mitra's references from an `ADVICE` answer, as JSON text. Set exactly when
+   * Mitra said the payment went to the biller and its result comes later
+   * (`{}` when the references are unknown); see migration 031.
+   */
+  ppob_advice?: string | null
+  /**
+   * When the last retry of this line went out (UTC, `YYYY-MM-DD HH:MM:SS`);
+   * `null` until a retry. With `created_at` it starts the 24-hour wait before
+   * an ADVICE line may be marked failed by hand (migration 032).
+   */
+  ppob_last_attempt_at?: string | null
 }
 
 export interface Transaction {
@@ -105,18 +134,30 @@ export interface Transaction {
 }
 
 /**
- * A sold line as `GET /transactions/:id` returns it: the row, plus how many of
- * its units earlier refunds already took back. `quantity - refunded_quantity` is
- * the remainder `create_refund` still accepts for the line.
+ * A sold line as `GET /transactions/:id` returns it: the row plus its refund
+ * state, computed by the server. `refundable` says whether the line can come
+ * back at all (goods, or a failed PPOB top-up); `refundable_quantity` is what is
+ * left of it, the cap `create_refund` enforces.
  */
 export interface TransactionDetailItem extends TransactionItem {
   refunded_quantity: number
+  refundable: boolean
+  refundable_quantity: number
+  /**
+   * When "Tandai Gagal" opens for an ADVICE line (UTC, `YYYY-MM-DD HH:MM:SS`),
+   * as the server computes it; `null` when there is no wait.
+   */
+  ppob_manual_fail_opens_at: string | null
 }
 
 export interface TransactionDetail {
   transaction: Transaction
   items: TransactionDetailItem[]
   cashier_name: string
+  /** Same as `TransactionListItem.has_refundable_goods`. */
+  has_refundable_goods: boolean
+  /** Same as `TransactionListItem.has_refundable_failed_ppob`. */
+  has_refundable_failed_ppob: boolean
   has_ppob: boolean
   ppob_status: string | null
   ppob_message: string | null

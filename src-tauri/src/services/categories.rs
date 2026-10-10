@@ -152,13 +152,21 @@ pub async fn update(
 /// by any route the UI offered. The deleted products are detached from it first
 /// so the delete can go through; they keep their name and price snapshots on
 /// `transaction_items`, and a category is not part of any history.
+///
+/// The check and the detach run in one transaction, and the detach touches
+/// INACTIVE products only. Checked outside it, a product saved into the
+/// category between the check and the update was silently moved to "no
+/// category"; now a live product can only block the delete, never lose its
+/// category to it.
 pub async fn delete(db: &DatabaseConnection, actor: &Actor, id: i64) -> Result<(), AppError> {
     guard::require_admin(actor)?;
+
+    let txn = db.begin().await?;
 
     let count = products::Entity::find()
         .filter(products::Column::CategoryId.eq(id))
         .filter(products::Column::IsActive.eq(true))
-        .count(db)
+        .count(&txn)
         .await?;
 
     if count > 0 {
@@ -168,14 +176,13 @@ pub async fn delete(db: &DatabaseConnection, actor: &Actor, id: i64) -> Result<(
         )));
     }
 
-    let txn = db.begin().await?;
-
     products::Entity::update_many()
         .col_expr(
             products::Column::CategoryId,
             Expr::value(Option::<i64>::None),
         )
         .filter(products::Column::CategoryId.eq(id))
+        .filter(products::Column::IsActive.eq(false))
         .exec(&txn)
         .await?;
 
@@ -274,6 +281,50 @@ mod tests {
             .expect("query")
             .expect("the row stays for history");
         assert_eq!(detached.category_id, None);
+    }
+
+    /// A refused delete leaves every product where it was: the live one keeps
+    /// its category, and the deleted one is not detached either, because the
+    /// check and the detach are one transaction.
+    #[tokio::test]
+    async fn a_refused_delete_detaches_nothing() {
+        let conn = setup_test_db().await;
+        let (category_id, live_id) = seed(&conn).await;
+        let gone = products::create(
+            &conn,
+            &admin(),
+            CreateProductInput {
+                barcode: None,
+                sku: None,
+                name: "Gula 1kg".to_string(),
+                category_id: Some(category_id),
+                buy_price: 14_000.0,
+                sell_price: 16_000.0,
+                margin: None,
+                stock: 1,
+                unit: "pcs".to_string(),
+                min_stock: None,
+            },
+        )
+        .await
+        .expect("product");
+        products::delete(&conn, &admin(), gone.id)
+            .await
+            .expect("soft delete");
+
+        assert!(matches!(
+            delete(&conn, &admin(), category_id).await,
+            Err(AppError::Validation(_))
+        ));
+
+        for id in [live_id, gone.id] {
+            let row = crate::entity::products::Entity::find_by_id(id)
+                .one(&conn)
+                .await
+                .expect("query")
+                .expect("row");
+            assert_eq!(row.category_id, Some(category_id), "product {}", id);
+        }
     }
 
     /// A duplicate name used to fall through to the UNIQUE constraint and reach

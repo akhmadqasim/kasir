@@ -54,6 +54,21 @@ describe("fixBarcodeLeadingZero", () => {
   it("tidak menambah nol bila check digit hasilnya tidak cocok", () => {
     expect(fixBarcodeLeadingZero("12345678901")).toBe("12345678901")
   })
+
+  it("mengembalikan nol EAN-8 yang dibuang (7 digit)", () => {
+    expect(fixBarcodeLeadingZero("1234565")).toBe("01234565")
+  })
+
+  it("tidak pernah menambah lebih dari satu nol pada kode internal pendek", () => {
+    // "00123457" passes the EAN-8 check digit, but "123457" is a shop code.
+    expect(fixBarcodeLeadingZero("123457")).toBe("123457")
+    // "000012345670" passes the UPC-A check digit.
+    expect(fixBarcodeLeadingZero("12345670")).toBe("12345670")
+  })
+
+  it("membiarkan 12 digit apa adanya, karena itu UPC-A yang sah", () => {
+    expect(fixBarcodeLeadingZero("123456789012")).toBe("123456789012")
+  })
 })
 
 describe("mapImportRows", () => {
@@ -65,17 +80,45 @@ describe("mapImportRows", () => {
       columnMap,
     )
     expect(skippedRowNumbers).toEqual([])
+    expect(products).toEqual([{ name: "Kopi Sachet", sell_price: 1500, stock: 10, row_number: 1 }])
+  })
+
+  it("hanya mengirim kolom yang dipetakan dan terisi", () => {
+    // A file of prices only must not send stock 0, cost 0, unit "pcs" — the
+    // backend would overwrite the matching product's data with those values.
+    const priceOnly = mapImportRows([["Gula", "16.000"]], { 0: "name", 1: "sell_price" })
+    expect(priceOnly.products).toEqual([{ name: "Gula", sell_price: 16000, row_number: 1 }])
+
+    const full = {
+      0: "name",
+      1: "barcode",
+      2: "category_name",
+      3: "buy_price",
+      4: "margin",
+      5: "sell_price",
+      6: "stock",
+      7: "unit",
+    } as const
+    const { products } = mapImportRows(
+      [
+        ["Beras", "8991234567890", "Sembako", "12.000", "10", "13.200", "0", "kg"],
+        ["Teh", "", " ", "", "", "3.000", "", ""],
+      ],
+      full,
+    )
     expect(products).toEqual([
       {
-        name: "Kopi Sachet",
-        barcode: undefined,
-        category_name: undefined,
-        buy_price: 0,
-        sell_price: 1500,
-        margin: 0,
-        stock: 10,
-        unit: "pcs",
+        name: "Beras",
+        barcode: "8991234567890",
+        category_name: "Sembako",
+        buy_price: 12000,
+        margin: 10,
+        sell_price: 13200,
+        stock: 0,
+        unit: "kg",
+        row_number: 1,
       },
+      { name: "Teh", sell_price: 3000, row_number: 2 },
     ])
   })
 
@@ -90,6 +133,8 @@ describe("mapImportRows", () => {
     )
     expect(products.map((p) => p.name)).toEqual(["Gula", "Teh"])
     expect(skippedRowNumbers).toEqual([2])
+    // Each product keeps its own data-row number, so backend errors match the preview.
+    expect(products.map((p) => p.row_number)).toEqual([1, 3])
   })
 })
 

@@ -1,4 +1,4 @@
-import { isScannerBurstEntry } from "./payment-behavior"
+import { SCANNER_MIN_DIGITS, isScannerBurst } from "@/lib/scanner-burst"
 
 export type ProductSearchEnterAction =
   | "ignore"
@@ -28,7 +28,8 @@ interface SearchableProduct {
 }
 
 export function isBarcodeScannerCandidate(query: string): boolean {
-  return /^\d{6,}$/.test(query.trim())
+  const trimmed = query.trim()
+  return trimmed.length >= SCANNER_MIN_DIGITS && /^\d+$/.test(trimmed)
 }
 
 /** Digit counts a real barcode has: EAN-8/UPC-E, UPC-A, EAN-13, ITF-14. */
@@ -53,12 +54,17 @@ export function isWholeBarcodeQuery(query: string): boolean {
   return /^\d+$/.test(trimmed) && WHOLE_BARCODE_LENGTHS.has(trimmed.length)
 }
 
-export function isLikelyBarcodeScannerInput({ query, ...timing }: BarcodeInputTiming): boolean {
-  const trimmedQuery = query.trim()
+export function isLikelyBarcodeScannerInput({
+  query,
+  startedAt,
+  lastInputAt,
+  submittedAt,
+}: BarcodeInputTiming): boolean {
+  const digits = query.trim()
 
   return (
-    isBarcodeScannerCandidate(trimmedQuery) &&
-    isScannerBurstEntry({ amount: trimmedQuery, ...timing })
+    isBarcodeScannerCandidate(digits) &&
+    isScannerBurst({ digits, startedAt, lastInputAt }, submittedAt)
   )
 }
 

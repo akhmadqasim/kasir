@@ -8,16 +8,18 @@ import { getTransactionDetail } from "@/lib/api/transactions"
 import { queryKeys } from "@/lib/api/query-keys"
 import { id } from "@/i18n/id"
 import { netAmountForQuantity } from "@/lib/line-amounts"
-import { refundBlockedReason } from "@/lib/refund-window"
-import type { TransactionDetail } from "@/features/transactions/types"
+import { isLineInsideRefundWindow, refundActionBlockedReason } from "@/lib/refund-window"
+import type { TransactionDetail, TransactionDetailItem } from "@/features/transactions/types"
 import {
   hasRefundedLines,
+  isRefundableLine,
   parseRemainingQuantityError,
   remainingQuantityMessage,
   remainingRefundableQuantity,
   type RemainingQuantityLimit,
 } from "../refund-limits"
 import type { Product } from "@/features/products/types"
+import { priceExchangeItems, type ExchangeLinePrice } from "../exchange-pricing"
 import type { CreateRefundInput, RefundCondition } from "../types"
 
 export type ActionType = "refund" | "exchange"
@@ -42,6 +44,9 @@ export interface ExchangeItem {
   quantity: number
   unit: string
 }
+
+/** A replacement with what it costs the customer, as the server will book it. */
+export type PricedExchangeItem = ExchangeItem & ExchangeLinePrice
 
 interface UseRefundFormOptions {
   transactionId: number | null
@@ -76,21 +81,33 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   )
 
   /**
-   * Lines a refund can actually touch.
+   * Lines a refund can actually touch: goods, and PPOB lines whose top-up failed.
    *
-   * `resolve_refund_line` rejects any line without a `product_id` — a PPOB top-up
-   * has no physical stock to give back — so listing them only let the cashier tick
-   * one and collect "'…' bukan produk fisik dan tidak bisa di-refund" from the
-   * server after filling in the whole form.
+   * `resolve_refund_line` rejects any other line without a `product_id` — a
+   * delivered (or still unsettled) top-up cannot come back — so listing them only
+   * let the cashier tick one and collect the server's refusal after filling in the
+   * whole form. A failed top-up was never delivered: its money goes back, whole.
    */
+  // Past the seven days only a failed top-up still owed can come back — it has
+  // no window (see `refund-window.ts`). When one is, the goods move to the
+  // set-aside list; when none is, the whole page is blocked (`blockedReason`)
+  // and the lines stay where they were.
+  const hasFailedPpobOwed = detail?.has_refundable_failed_ppob ?? false
+  const canReturnLine = useCallback(
+    (item: TransactionDetailItem) =>
+      isRefundableLine(item) &&
+      (!hasFailedPpobOwed || isLineInsideRefundWindow(item, detail?.transaction.created_at)),
+    [detail, hasFailedPpobOwed],
+  )
+
   const refundableItems = useMemo(
-    () => (detail?.items ?? []).filter((item) => item.product_id !== null),
-    [detail],
+    () => (detail?.items ?? []).filter(canReturnLine),
+    [detail, canReturnLine],
   )
 
   const nonRefundableItems = useMemo(
-    () => (detail?.items ?? []).filter((item) => item.product_id === null),
-    [detail],
+    () => (detail?.items ?? []).filter((item) => !canReturnLine(item)),
+    [detail, canReturnLine],
   )
 
   // Seed a state per line, but keep what the cashier already set: a background
@@ -216,9 +233,20 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     }, 0)
   }, [selectedItems, itemStates])
 
+  // A replacement of a product that is coming back is priced at what was paid
+  // for it, not at today's price — see `exchange-pricing.ts`.
+  const pricedExchangeItems = useMemo<PricedExchangeItem[]>(() => {
+    const returned = selectedItems.map((item) => ({
+      ...item,
+      returnedQuantity: itemStates[item.id]?.quantity ?? 0,
+    }))
+    const prices = priceExchangeItems(returned, exchangeItems)
+    return exchangeItems.map((item, index) => ({ ...item, ...prices[index] }))
+  }, [selectedItems, itemStates, exchangeItems])
+
   const totalExchange = useMemo(() => {
-    return exchangeItems.reduce((sum, item) => sum + item.sell_price * item.quantity, 0)
-  }, [exchangeItems])
+    return pricedExchangeItems.reduce((sum, item) => sum + item.subtotal, 0)
+  }, [pricedExchangeItems])
 
   const difference = totalRefund - totalExchange
 
@@ -230,8 +258,27 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
   const hasEarlierRefund =
     detail?.transaction.status === "partial_refund" || hasRefundedLines(refundableItems)
 
-  /** Why this sale cannot be refunded at all, or `null` when it can. */
-  const blockedReason = detail ? refundBlockedReason(detail.transaction.created_at) : null
+  /**
+   * Why an exchange of this sale is closed, or `null` when it is open. A
+   * failed top-up still owed lifts the window for a refund only: an exchange
+   * sends new goods out, so it keeps the seven days (`check_refund_window`).
+   */
+  const exchangeBlockedReason = detail
+    ? refundActionBlockedReason(detail.transaction.created_at, {
+        hasRefundableFailedPpob: hasFailedPpobOwed,
+        action: "exchange",
+      })
+    : null
+
+  /** Why the chosen action cannot go ahead for this sale, or `null` when it can. */
+  const blockedReason = !detail
+    ? null
+    : actionType === "exchange"
+      ? exchangeBlockedReason
+      : refundActionBlockedReason(detail.transaction.created_at, {
+          hasRefundableFailedPpob: hasFailedPpobOwed,
+          action: "refund",
+        })
 
   const handleSubmit = async () => {
     if (!transactionId || !userId || isSubmitting) return
@@ -310,6 +357,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     itemStates,
     actionType,
     exchangeItems,
+    pricedExchangeItems,
     reason,
     isSubmitting,
     // Computed
@@ -319,6 +367,7 @@ export function useRefundForm({ transactionId, userId, onSuccess }: UseRefundFor
     difference,
     hasEarlierRefund,
     blockedReason,
+    exchangeBlockedReason,
     // Actions
     setReason,
     setActionType,

@@ -47,15 +47,7 @@ async fn login(
     Json(input): Json<LoginInput>,
 ) -> ApiResult<Response> {
     let keys = throttle_keys(&input.username, client.address.as_deref());
-    let attempted_at = Instant::now();
-
-    if let Err(wait) = state.throttle.begin_attempt(&keys, attempted_at) {
-        let seconds = wait.as_secs().max(1);
-        return Err(ApiError::rate_limited(
-            format!("Terlalu banyak percobaan login. Coba lagi dalam {seconds} detik."),
-            seconds,
-        ));
-    }
+    begin_throttled_attempt(&state, &keys, "login")?;
 
     // Any outcome but success keeps the charge `begin_attempt` made. A wrong
     // PIN also restarts the lock from now, so the time bcrypt took to say no
@@ -115,14 +107,53 @@ async fn me(
 
 /// Change your own PIN. The current PIN is the proof of identity, so this needs
 /// no role — but it does need a session, which is what pins it to *your* account
-/// rather than one named in the payload.
+/// rather than one named in the payload. Your other sessions end with the old
+/// PIN; this one is kept.
+///
+/// Wrong current PINs back off exactly like wrong login PINs (same throttle,
+/// same order of operations), keyed on the account: otherwise anyone at an
+/// unattended, logged-in till could walk the PIN space through this form.
 async fn change_own_pin(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
+    Extension(SessionId(session_id)): Extension<SessionId>,
     Json(input): Json<ChangePinInput>,
 ) -> ApiResult<axum::http::StatusCode> {
-    services::settings::change_pin(&state.db, &actor, input).await?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
+    let keys = vec![throttle::pin_change_key(actor.user_id)];
+    begin_throttled_attempt(&state, &keys, "PIN")?;
+
+    match services::settings::change_pin(&state.db, &actor, &session_id, input).await {
+        Ok(()) => {
+            state.throttle.record_success(&keys);
+            Ok(axum::http::StatusCode::NO_CONTENT)
+        }
+        Err(error @ AppError::WrongCurrentPin) => {
+            state.throttle.settle_failure(&keys, Instant::now());
+            Err(error.into())
+        }
+        // A malformed new PIN is refused after the current PIN matched, so the
+        // guess was right: take the charge back.
+        Err(error @ AppError::Validation(_)) => {
+            state.throttle.record_success(&keys);
+            Err(error.into())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Charges one attempt against `keys`, or refuses with a 429 while they are
+/// locked out. `what` names the attempt in the message.
+fn begin_throttled_attempt(state: &AppState, keys: &[String], what: &str) -> ApiResult<()> {
+    state
+        .throttle
+        .begin_attempt(keys, Instant::now())
+        .map_err(|wait| {
+            let seconds = wait.as_secs().max(1);
+            ApiError::rate_limited(
+                format!("Terlalu banyak percobaan {what}. Coba lagi dalam {seconds} detik."),
+                seconds,
+            )
+        })
 }
 
 /// Both counters a login attempt is charged against.

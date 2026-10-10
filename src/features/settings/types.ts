@@ -119,7 +119,6 @@ export interface StoreInfo {
   phone: string | null
   email: string | null
   logo_path: string | null
-  additional_info: string | null
   created_at: string | null
   updated_at: string | null
 }

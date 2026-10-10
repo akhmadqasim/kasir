@@ -127,6 +127,64 @@ describe("ppob quick access", () => {
   })
 })
 
+/**
+ * With a fixed service the form never changes, so after an add it used to keep
+ * the confirm card up — and a second tap put the same inquiry in the cart
+ * twice, which pays the bill twice at checkout.
+ */
+describe("ppob quick access — fixed service", () => {
+  it("clears the confirm card after adding, so the line cannot be added twice", async () => {
+    installApiMock({
+      "GET /ppob/balance": { saldo: 1_500_000, username: "toko" },
+      "GET /ppob/catalog/pln/denominations": PLN_DENOMS,
+      "GET /settings/ppob/markup": {},
+      "POST /ppob/inquiries/pln": {
+        inquiryId: "INQ-PLN-1",
+        customerName: "BUDI SANTOSO",
+        customerId: "12345678901",
+        productName: null,
+        amount: 50_000,
+        adminFee: 2_500,
+        total: 52_500,
+        serviceType: "pln",
+        rawData: {},
+      },
+    })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <PpobQuickAccess initialService="pln" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.change(await screen.findByRole("textbox", { name: id.ppob.quickAccess.plnMeter }), {
+      target: { value: "12345678901" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /50\.000/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Cek Info Pelanggan" }))
+    await screen.findByText("BUDI SANTOSO")
+
+    fireEvent.click(screen.getByRole("button", { name: "Tambah ke Keranjang" }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Tambah ke Keranjang" })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText("BUDI SANTOSO")).not.toBeInTheDocument()
+    expect(useCartStore.getState().items).toHaveLength(1)
+    // `pln/payment` requires `product_code`: the chosen denomination travels on the line.
+    expect(useCartStore.getState().items[0]).toMatchObject({
+      ppob_product_id: 2,
+      ppob_product_code: "2",
+      ppob_inquiry_id: "INQ-PLN-1",
+      ppob_flag_id: "0",
+    })
+  })
+})
+
 describe("ppob quick access — markup", () => {
   it("opens a service form while the markup is still loading", async () => {
     installApiMock({

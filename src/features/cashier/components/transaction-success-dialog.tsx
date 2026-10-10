@@ -1,25 +1,26 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Button, Kbd, Modal, Spinner } from "@heroui/react"
-import { CircleCheck, Copy, Printer, TriangleAlert } from "lucide-react"
+import { CircleCheck, Clock, Copy, Printer } from "lucide-react"
 
-import { InfoPanel } from "@/components/info-panel"
 import { PendingButton } from "@/components/pending-button"
-import { ReceiptPreview, receiptColumns, renderReceiptPng } from "@/features/receipt"
+import {
+  AutoPrintStatus,
+  ReceiptPreview,
+  receiptColumns,
+  renderReceiptPng,
+  useReceiptPrint,
+} from "@/features/receipt"
+import { PpobLineResult } from "@/features/transactions/components/ppob-line-result"
+import { usePpobCheck } from "@/features/transactions/hooks/use-ppob-check"
+import { usePpobSaleProgress } from "@/features/transactions/hooks/use-ppob-sale-progress"
 import { id } from "@/i18n/id"
 import { useApiQuery } from "@/hooks/use-api"
-import { errorMessage } from "@/lib/api/client"
-import { printReceipt } from "@/lib/api/printers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { getSaleReceiptLines } from "@/lib/api/transactions"
-import { flashPress } from "@/lib/flash-press"
 import { toast } from "@/lib/toast"
-import {
-  EMPTY_AMOUNT_ENTRY_TIMING,
-  isScannerBurstEntry,
-  trackAmountEntry,
-} from "../payment-behavior"
-import { formatRupiah } from "../utils"
 import type { TransactionResult } from "../types"
+import { ChangeTotalPanel } from "./change-total-panel"
 
 /** Jeda sebelum dialog menutup sendiri setelah struk tercetak otomatis */
 const AUTO_CLOSE_DELAY_MS = 1500
@@ -41,15 +42,11 @@ interface TransactionSuccessDialogProps {
   onNewTransaction: () => void
 }
 
-type AutoPrintState =
-  | { status: "idle" }
-  | { status: "printing" }
-  | { status: "printed" }
-  | { status: "failed"; message: string }
-
 /**
- * Penjualan sudah tercatat; dialog ini hanya menampilkan hasilnya dari jawaban
- * checkout — tidak ada permintaan ke server saat terbuka, kecuali ke printer.
+ * The sale is already recorded; this dialog shows its result from the
+ * checkout answer. A cart with PPOB lines is the exception: checkout answers
+ * before the provider does, so the detail is fetched again until every PPOB
+ * line has a result — see `SuccessContent`.
  */
 export function TransactionSuccessDialog({
   open,
@@ -87,73 +84,29 @@ interface SuccessContentProps extends Omit<TransactionSuccessDialogProps, "open"
 }
 
 function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: SuccessContentProps) {
-  const [isPrinting, setIsPrinting] = useState(false)
-  const [autoPrintState, setAutoPrintState] = useState<AutoPrintState>({ status: "idle" })
-  // Satu kali per struk, juga saat StrictMode menjalankan efeknya dua kali.
-  const autoPrintStartedRef = useRef(false)
-  // Umur komponen, bukan umur satu jalannya efek: StrictMode menjalankan
-  // efek → cleanup → efek lagi, dan flag `cancelled` di closure jalan pertama
-  // membuat cetak yang sudah dilepas tidak pernah melaporkan hasilnya.
-  const unmountedRef = useRef(false)
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-
   const { transaction } = result
+  const queryClient = useQueryClient()
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // A timer left running would clear the next customer's cart.
+  useEffect(() => () => clearTimeout(closeTimerRef.current), [])
 
+  // A mixed cart: checkout answers before the provider does, so its PPOB lines
+  // come back `pending` and a background task chases them. A plain sale asks
+  // nothing.
+  const { lines, inFlight: ppobInFlight, uncertain: ppobUncertain } = usePpobSaleProgress(result)
+  const { check, checkingId } = usePpobCheck()
+
+  // The struk preview carries the token once a line succeeds: refresh it each
+  // time a line's status moves (not on the first render — it is loading anyway).
+  const statusKey = lines.map((line) => `${line.id}:${line.ppob_status}`).join(",")
+  const seenStatusKeyRef = useRef(statusKey)
   useEffect(() => {
-    unmountedRef.current = false
-    return () => {
-      unmountedRef.current = true
-      // Timer yang tidak dibatalkan akan menghapus keranjang pelanggan berikutnya
-      clearTimeout(closeTimerRef.current)
-    }
-  }, [])
-
-  // Cetak otomatis dimulai begitu dialog terbuka dan pengaturannya diketahui.
-  // Tidak ada `await` sebelum dialog bisa dipakai: permintaan cetaknya
-  // dilepas, dan hasilnya hanya mengubah satu baris keterangan.
-  useEffect(() => {
-    if (!autoPrint || autoPrintStartedRef.current) return
-    autoPrintStartedRef.current = true
-    setAutoPrintState({ status: "printing" })
-
-    printReceipt(transaction.id).then(
-      () => {
-        if (unmountedRef.current) return
-        setAutoPrintState({ status: "printed" })
-        closeTimerRef.current = setTimeout(onNewTransaction, AUTO_CLOSE_DELAY_MS)
-      },
-      (error: unknown) => {
-        if (unmountedRef.current) return
-        setAutoPrintState({ status: "failed", message: errorMessage(error) })
-      },
-    )
-  }, [autoPrint, onNewTransaction, transaction.id])
-
-  // `change_amount` alone decides whether there is money to hand back.
-  //
-  // A split whose non-cash legs already cover the total drops its cash leg: the
-  // sale is recorded as that single method with no cash entry at all, while the
-  // cash the customer put on the counter comes straight back as change. Gating
-  // this on "a cash entry exists" hid the whole amount from the cashier.
-  const changeAmount = transaction.change_amount
-
-  const handlePrint = async () => {
-    if (isPrinting) return
-    setIsPrinting(true)
-    try {
-      await printReceipt(transaction.id)
-      toast.success(id.print.printed)
-    } catch (error) {
-      const message = errorMessage(error)
-      if (message.includes("belum dikonfigurasi")) {
-        toast.error(id.print.printerNotSet)
-      } else {
-        toast.error(id.print.failed(message))
-      }
-    } finally {
-      setIsPrinting(false)
-    }
-  }
+    if (seenStatusKeyRef.current === statusKey) return
+    seenStatusKeyRef.current = statusKey
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.transactions.receiptLines(transaction.id, paperWidth ?? null),
+    })
+  }, [statusKey, queryClient, transaction.id, paperWidth])
 
   // Baris struk yang sama dengan pratinjau di kanan (query yang sama, jadi
   // satu permintaan) — untuk "Salin struk".
@@ -179,60 +132,25 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
     }
   }
 
-  // Enter mencetak dan C menyalin, dari mana pun fokusnya di dialog ini —
-  // tanpa harus mencari tombolnya dulu — dan Esc (bawaan Modal) membuka
-  // transaksi baru. Fase capture supaya tombol yang kebetulan sedang fokus
-  // tidak ikut ditekan.
-  const printRef = useRef(handlePrint)
-  printRef.current = handlePrint
-  const copyRef = useRef(handleCopy)
-  copyRef.current = handleCopy
-  // Tombolnya sendiri, supaya pintasan memantulkan kedipan "ditekan" di sana.
-  const printButtonRef = useRef<HTMLButtonElement>(null)
+  // Enter prints and C copies wherever the focus is; Esc (the Modal's own)
+  // starts a new sale. Auto-print starts once its settings are known and no
+  // PPOB call is in flight — printed earlier, a `pending` line has no token —
+  // and the dialog closes itself after the receipt is out, unless a PPOB line
+  // ended uncertain: then the cashier has to read that the token comes later.
   const copyButtonRef = useRef<HTMLButtonElement>(null)
-  // Scanner adalah keyboard: memindai barang pelanggan berikutnya sebelum
-  // dialog ini ditutup mengetik digit lalu Enter. Digitnya dicatat supaya
-  // Enter penutup semburan itu tidak mencetak ulang struk yang barusan.
-  const scanRef = useRef({ digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING })
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return
-      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
-        return
-      }
-      if (/^\d$/.test(event.key)) {
-        const previous = scanRef.current
-        const timing = trackAmountEntry(previous, event.timeStamp)
-        const digits =
-          timing.startedAt === previous.startedAt ? previous.digits + event.key : event.key
-        scanRef.current = { digits, ...timing }
-        return
-      }
-      if (event.key === "Enter") {
-        const { digits, ...timing } = scanRef.current
-        scanRef.current = { digits: "", ...EMPTY_AMOUNT_ENTRY_TIMING }
-        if (isScannerBurstEntry({ amount: digits, ...timing, submittedAt: event.timeStamp })) {
-          event.preventDefault()
-          event.stopPropagation()
-          toast.warning(id.cashier.scanIgnoredAfterSale)
-          return
-        }
-      }
-      const action =
-        event.key === "Enter"
-          ? { run: printRef.current, button: printButtonRef.current }
-          : event.key.toLowerCase() === "c"
-            ? { run: copyRef.current, button: copyButtonRef.current }
-            : null
-      if (!action) return
-      event.preventDefault()
-      event.stopPropagation()
-      flashPress(action.button)
-      void action.run()
-    }
-    window.addEventListener("keydown", onKeyDown, true)
-    return () => window.removeEventListener("keydown", onKeyDown, true)
-  }, [])
+  const {
+    isPrinting,
+    print: handlePrint,
+    autoPrintState,
+    printButtonRef,
+  } = useReceiptPrint(transaction.id, {
+    autoPrint: autoPrint && !ppobInFlight,
+    onAutoPrinted: () => {
+      if (ppobUncertain) return
+      closeTimerRef.current = setTimeout(onNewTransaction, AUTO_CLOSE_DELAY_MS)
+    },
+    shortcuts: { c: { run: handleCopy, buttonRef: copyButtonRef } },
+  })
 
   return (
     <>
@@ -254,55 +172,43 @@ function SuccessContent({ result, autoPrint, paperWidth, onNewTransaction }: Suc
         <div className="grid min-w-0 gap-6 md:grid-cols-2">
           {/* Kiri: yang bukan isi struk — total dan kembalian yang harus
               diserahkan (dibaca pelanggan dari seberang meja — peran "Total
-              keranjang" §3.4), nasib cetak otomatis, lalu kedua tombolnya di
-              dasar kolom. Status PPOB tidak diulang di sini — ia ada di struk
-              dan di Riwayat. */}
+              keranjang" §3.4), hasil PPOB bila ada, nasib cetak otomatis,
+              lalu tombolnya di dasar kolom. */}
           <div className="flex flex-col gap-4">
-            {/* Kembalian di paling atas: itu yang diserahkan sekarang dan
-                dibaca pelanggan dari seberang meja; total tinggal pengingat. */}
-            <InfoPanel className="flex flex-col gap-3">
-              {/* Selalu ada, juga "Rp 0" saat uangnya pas: baris yang
-                  kadang muncul kadang tidak membuat kasir mencari-cari. */}
-              <div className="flex items-start justify-between gap-4">
-                <p className="text-muted">{id.cashier.change}</p>
-                <p className="text-3xl font-semibold tracking-tight tabular-nums text-success">
-                  {formatRupiah(changeAmount)}
-                </p>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <p className="text-muted">Total</p>
-                {/* Sengaja kecil: total sudah dibayar, yang harus dikerjakan
-                    kasir sekarang adalah kembaliannya. */}
-                <p className="text-base font-medium tabular-nums text-muted">
-                  {formatRupiah(transaction.total_amount)}
-                </p>
-              </div>
-            </InfoPanel>
+            {/* `change_amount` alone decides whether there is money to hand
+                back: a split whose non-cash legs cover the total books no cash
+                entry, yet the cash on the counter still comes back as change. */}
+            <ChangeTotalPanel
+              changeAmount={transaction.change_amount}
+              totalAmount={transaction.total_amount}
+            />
+
+            {/* The same block as the result dialog on the PPOB page. */}
+            {lines.map((line) => (
+              <PpobLineResult
+                key={line.id}
+                checkingId={checkingId}
+                line={line}
+                onCheck={(itemId) => void check(itemId)}
+              />
+            ))}
 
             {/* Satu wilayah `status` yang selalu ada, supaya pembaca layar
-                mengumumkan setiap perubahan nasib cetak otomatis. */}
-            <div aria-live="polite" role="status">
-              {autoPrintState.status === "printing" && (
+                mengumumkan setiap perubahan nasib cetak otomatis dan PPOB. */}
+            <div aria-live="polite" className="flex flex-col gap-2" role="status">
+              {ppobInFlight && autoPrint && (
                 <p className="flex items-center gap-2">
                   <Spinner color="current" size="sm" />
-                  Struk sedang dicetak otomatis…
+                  {id.ppobFulfillment.cartPpobInFlight}
                 </p>
               )}
-              {autoPrintState.status === "printed" && (
-                <p className="flex items-center gap-2">
-                  <Printer aria-hidden="true" className="size-4 shrink-0" />
-                  Struk otomatis dicetak.
+              {ppobUncertain && (
+                <p className="flex items-center gap-2 font-medium text-warning">
+                  <Clock aria-hidden="true" className="size-4 shrink-0" />
+                  {id.ppobFulfillment.cartPpobTokenLater}
                 </p>
               )}
-              {autoPrintState.status === "failed" && (
-                <p className="flex items-start gap-2 text-danger">
-                  <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                  <span>
-                    Struk gagal dicetak otomatis: {autoPrintState.message}. Gunakan tombol
-                    &quot;Cetak struk&quot;.
-                  </span>
-                </p>
-              )}
+              <AutoPrintStatus state={autoPrintState} />
             </div>
 
             <div className="mt-auto flex flex-col gap-2">

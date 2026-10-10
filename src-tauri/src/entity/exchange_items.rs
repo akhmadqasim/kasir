@@ -10,6 +10,9 @@ pub struct Model {
     pub product_id: i64,
     pub product_name: String,
     pub product_price: f64,
+    /// The product's buy price when the exchange was made (migration 027), so
+    /// a later cost edit cannot rewrite the profit of a closed day.
+    pub buy_price: Option<f64>,
     pub quantity: i64,
     pub subtotal: f64,
     pub created_at: Option<String>,

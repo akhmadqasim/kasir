@@ -8,6 +8,9 @@ mod eligibility;
 mod exchange;
 mod returns;
 
+#[cfg(test)]
+mod edge_case_tests;
+
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
     DbBackend, EntityTrait, QueryFilter, Set, Statement, TransactionTrait,
@@ -20,8 +23,8 @@ use crate::services::document_number::next_refund_number;
 use crate::services::shifts::open_shift_id;
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
-use eligibility::{load_refundable_transaction, validate_input};
-use exchange::record_exchange;
+use eligibility::{check_refund_window, load_refundable_transaction, validate_input};
+use exchange::{record_exchange, ReturnedCredit};
 use returns::{record_returned_lines, RefundTally};
 
 /// Record a return, and the replacement goods when it is an exchange.
@@ -44,6 +47,11 @@ pub async fn create(
         .filter(transaction_items::Column::TransactionId.eq(input.transaction_id))
         .all(&txn)
         .await?;
+    let is_exchange = input
+        .exchange_items
+        .as_deref()
+        .is_some_and(|items| !items.is_empty());
+    check_refund_window(&transaction, &txn_items, &input.items, is_exchange)?;
     let mut tally = RefundTally::load(&txn, input.transaction_id).await?;
 
     let now = now_ts();
@@ -80,8 +88,9 @@ pub async fn create(
     .await?;
 
     let items = record_returned_lines(&txn, actor, &refund, &returned_lines, &now).await?;
+    let mut credit = ReturnedCredit::from_lines(&returned_lines);
     let (exchange_items, total_exchange_amount) =
-        record_exchange(&txn, refund.id, exchange_inputs, &now).await?;
+        record_exchange(&txn, refund.id, exchange_inputs, &mut credit, &now).await?;
 
     // Keep the updated model: the previous code updated a clone and dropped the
     // result, so every exchange reported total_exchange_amount 0 and

@@ -41,8 +41,9 @@ fn pln_line(product_name: &str, service_ref: &str, inquiry_id: &str) -> Transact
         buy_price: Some(20_000.0),
         service_type: Some("pln".to_string()),
         service_ref: Some(service_ref.to_string()),
-        ppob_product_id: None,
-        ppob_product_code: None,
+        // The `pln/get-denom` row the token was chosen from.
+        ppob_product_id: Some(17),
+        ppob_product_code: Some("17".to_string()),
         ppob_inquiry_id: Some(inquiry_id.to_string()),
         ppob_payment_code: Some("20000".to_string()),
         ppob_flag_id: Some("0".to_string()),
@@ -566,4 +567,294 @@ async fn an_unknown_channel_is_rejected() {
         0,
         "nothing may be written when the channel is refused"
     );
+}
+
+/// A refused PPOB cart writes nothing and never reaches the provider.
+async fn assert_ppob_cart_refused(items: Vec<TransactionItemInput>, expected: &str) {
+    let conn = setup_test_db().await;
+
+    let error = checkout_with_executor(
+        &conn,
+        &admin(),
+        with_pin(cash_checkout(items, 100_000.0), "123456"),
+        no_provider,
+    )
+    .await
+    .expect_err("the cart must be refused");
+
+    match error {
+        AppError::Validation(message) => assert!(
+            message.contains(expected),
+            "expected a message containing {expected:?}, got {message:?}"
+        ),
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+
+    assert_eq!(
+        transactions::Entity::find()
+            .count(&conn)
+            .await
+            .expect("count"),
+        0,
+        "nothing may be written when the cart is refused"
+    );
+}
+
+/// `pln/payment` requires `product_code`. A token line without its
+/// denomination is refused before Mitra is asked; postpaid (flag "1") has no
+/// denomination and passes.
+#[tokio::test]
+async fn a_pln_token_line_without_its_denomination_is_refused() {
+    assert_ppob_cart_refused(
+        vec![TransactionItemInput {
+            ppob_product_id: None,
+            ppob_product_code: None,
+            ..pln_line("Token PLN 20K", "14300000001", "INQ-1")
+        }],
+        "Nominal token PLN tidak tercatat",
+    )
+    .await;
+
+    let conn = setup_test_db().await;
+    checkout_with_executor(
+        &conn,
+        &admin(),
+        with_pin(
+            cash_checkout(
+                vec![TransactionItemInput {
+                    ppob_product_id: None,
+                    ppob_product_code: None,
+                    ppob_flag_id: Some("1".to_string()),
+                    ..pln_line("PLN Bayar", "231000000002", "INQ-2")
+                }],
+                100_000.0,
+            ),
+            "123456",
+        ),
+        no_provider,
+    )
+    .await
+    .expect("a postpaid line needs no denomination");
+}
+
+/// Fulfilment makes one supplier call per line, so a quantity of 3 charged the
+/// customer three times for one top-up.
+#[tokio::test]
+async fn a_ppob_line_must_be_a_single_unit() {
+    assert_ppob_cart_refused(
+        vec![TransactionItemInput {
+            quantity: 3,
+            ..pulsa_line()
+        }],
+        "Jumlah item PPOB harus 1",
+    )
+    .await;
+}
+
+/// The PPOB screen never sells below cost, but the price comes from the
+/// client; the server holds the line to the same rule, after its discount.
+#[tokio::test]
+async fn a_ppob_line_may_not_sell_below_cost() {
+    // Priced under the 10.000 buy price outright.
+    assert_ppob_cart_refused(
+        vec![TransactionItemInput {
+            product_price: Some(9_000.0),
+            ..pulsa_line()
+        }],
+        "di bawah harga modal",
+    )
+    .await;
+
+    // Priced above it, then discounted under it.
+    assert_ppob_cart_refused(
+        vec![TransactionItemInput {
+            item_discount: Some(2_500.0),
+            ..pulsa_line()
+        }],
+        "di bawah harga modal",
+    )
+    .await;
+}
+
+/// Selling at exactly cost is allowed; only below it is refused.
+#[tokio::test]
+async fn a_ppob_line_discounted_down_to_cost_is_accepted() {
+    let conn = setup_test_db().await;
+
+    let result = checkout_with_executor(
+        &conn,
+        &admin(),
+        with_pin(
+            cash_checkout(
+                vec![TransactionItemInput {
+                    item_discount: Some(2_000.0),
+                    ..pulsa_line()
+                }],
+                10_000.0,
+            ),
+            "123456",
+        ),
+        |request| async move { Ok(paid(&request, serde_json::json!({}), Some("SN-1"))) },
+    )
+    .await
+    .expect("a line sold at cost is allowed");
+
+    assert_eq!(result.transaction.total_amount, 10_000.0);
+}
+
+/// Under a cent below cost is float noise, not a loss: the line check uses the
+/// same tolerance as the check after the cart discount.
+#[tokio::test]
+async fn a_ppob_line_within_a_cent_of_cost_is_accepted() {
+    let conn = setup_test_db().await;
+
+    checkout_with_executor(
+        &conn,
+        &admin(),
+        with_pin(
+            cash_checkout(
+                vec![TransactionItemInput {
+                    item_discount: Some(2_000.005),
+                    ..pulsa_line()
+                }],
+                10_000.0,
+            ),
+            "123456",
+        ),
+        |request| async move { Ok(paid(&request, serde_json::json!({}), Some("SN-1"))) },
+    )
+    .await
+    .expect("a line within the tolerance of cost is allowed");
+}
+
+/// One inquiry on two lines made two payment calls for one bill.
+#[tokio::test]
+async fn the_same_ppob_inquiry_cannot_be_paid_twice_in_one_cart() {
+    assert_ppob_cart_refused(
+        vec![
+            pln_line("Token PLN", "123456", "INQ-DUP"),
+            pln_line("Token PLN", "123456", "INQ-DUP"),
+        ],
+        "lebih dari sekali",
+    )
+    .await;
+}
+
+/// An `in_progress` idempotency row, claimed with `nonce`.
+async fn claimed_key(conn: &DatabaseConnection, id: &str, nonce: &str) {
+    use crate::entity::idempotency_keys;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    idempotency_keys::ActiveModel {
+        id: Set(id.to_string()),
+        scope: Set("checkout".to_string()),
+        user_id: Set(1),
+        request_hash: Set("hash".to_string()),
+        status: Set("in_progress".to_string()),
+        response_body: Set(None),
+        created_at: Set("2026-10-10 10:05:00".to_string()),
+        expires_at: Set("2999-01-01 00:00:00".to_string()),
+        transaction_id: Set(None),
+        claim_nonce: Set(nonce.to_string()),
+    }
+    .insert(conn)
+    .await
+    .expect("claim key");
+}
+
+/// Attempt A went stale, a retry B released and re-claimed the same row, and
+/// then A finally commits. A must not link its sale onto B's claim (B would
+/// ring up a second one): A's sale is rolled back instead, and B's row stays
+/// unlinked for B.
+#[tokio::test]
+async fn a_stale_attempt_cannot_link_its_sale_to_a_retrys_claim() {
+    use crate::entity::idempotency_keys;
+
+    let conn = setup_test_db().await;
+    let rice = insert_product(&conn, "Beras 5kg", 65_000.0, 10).await;
+    claimed_key(&conn, "row-1", "retry-nonce").await;
+
+    let stale = IdempotencyClaim {
+        key_id: "row-1".into(),
+        nonce: "stale-nonce".into(),
+    };
+    let refused = ring_up(
+        &conn,
+        &admin(),
+        &cash_checkout(vec![product_line(rice.id, 1)], 65_000.0),
+        Some(&stale),
+    )
+    .await;
+    assert!(matches!(refused, Err(AppError::Validation(_))));
+    assert_eq!(
+        transactions::Entity::find()
+            .count(&conn)
+            .await
+            .expect("count"),
+        0,
+        "the stale attempt's sale is rolled back"
+    );
+    let stock = products::Entity::find_by_id(rice.id)
+        .one(&conn)
+        .await
+        .expect("query")
+        .expect("product")
+        .stock;
+    assert_eq!(stock, 10);
+
+    let own = IdempotencyClaim {
+        key_id: "row-1".into(),
+        nonce: "retry-nonce".into(),
+    };
+    let (sale, _, _) = ring_up(
+        &conn,
+        &admin(),
+        &cash_checkout(vec![product_line(rice.id, 1)], 65_000.0),
+        Some(&own),
+    )
+    .await
+    .expect("the retry's own claim links");
+    let row = idempotency_keys::Entity::find_by_id("row-1".to_string())
+        .one(&conn)
+        .await
+        .expect("query")
+        .expect("row");
+    assert_eq!(row.transaction_id, Some(sale.transaction.id));
+}
+
+/// Notes are printed on the receipt; an over-long one is refused before
+/// anything is written, so it can never blow up a raster print.
+#[tokio::test]
+async fn checkout_refuses_notes_longer_than_the_print_cap() {
+    let conn = setup_test_db().await;
+    let product = insert_product(&conn, "Beras", 15_000.0, 10).await;
+    let cap = crate::utils::text::MAX_PRINTED_TEXT_CHARS;
+    let with_notes = |notes: String| CheckoutTransactionInput {
+        notes: Some(notes),
+        ..cash_checkout(vec![product_line(product.id, 1)], 15_000.0)
+    };
+
+    let err = checkout_with_executor(
+        &conn,
+        &admin(),
+        with_notes("a".repeat(cap + 1)),
+        no_provider,
+    )
+    .await
+    .expect_err("over-long notes must be refused");
+    assert!(
+        matches!(&err, AppError::Validation(m) if m.starts_with("Catatan terlalu panjang")),
+        "{err:?}"
+    );
+    assert_eq!(
+        transactions::Entity::find()
+            .count(&conn)
+            .await
+            .expect("count"),
+        0
+    );
+
+    checkout_with_executor(&conn, &admin(), with_notes("a".repeat(cap)), no_provider)
+        .await
+        .expect("notes at the cap are fine");
 }

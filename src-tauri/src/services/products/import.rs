@@ -68,7 +68,9 @@ async fn resolve_category(
 
 /// Import a spreadsheet's worth of rows in one transaction. Rows that fail
 /// validation are counted and reported rather than aborting the batch; rows
-/// matched by barcode are updated instead of inserted.
+/// matched by barcode are updated instead of inserted, writing only the fields
+/// the row carries (see [`BulkProductInput`]). The same product twice in one
+/// file is reported and skipped from the second row on.
 pub async fn bulk_create(
     db: &DatabaseConnection,
     actor: &Actor,
@@ -83,9 +85,22 @@ pub async fn bulk_create(
     let mut skipped: i64 = 0;
     let mut errors: Vec<String> = Vec::new();
     let mut category_ids: HashMap<String, i64> = HashMap::new();
+    // Product identity (barcode, or name key on unbarcoded rows) → the row
+    // that already wrote it.
+    let mut written_rows: HashMap<String, usize> = HashMap::new();
+    // Product id → the row that already wrote it. The identity above keys a
+    // row by barcode or by name, so "Beras 5kg" with a barcode and "beras 5kg"
+    // without one pass it as two products while both land on the same row.
+    let mut written_products: HashMap<i64, usize> = HashMap::new();
+    // Name key → the first unbarcoded row that wrote a product under that
+    // name, and that product's barcode. Lets a barcoded row that misses by
+    // barcode still recognise the unbarcoded row above it that wrote the same
+    // product (the reverse order is caught by the name lookup below, through
+    // `written_products`).
+    let mut written_names: HashMap<String, (usize, Option<String>)> = HashMap::new();
 
     for (idx, input) in rows.iter().enumerate() {
-        let row_num = idx + 1;
+        let row_num = input.row_number.unwrap_or(idx + 1);
         let name = input.name.trim().to_string();
 
         if name.is_empty() {
@@ -96,22 +111,41 @@ pub async fn bulk_create(
         // The same price and stock rules `create` enforces. The importer used to
         // check only the sell price, so a spreadsheet could put negative buy
         // prices and negative stock into the catalogue through the one door that
-        // touches hundreds of rows at a time.
-        if let Err(e) =
-            validate_product_fields(&name, input.sell_price, input.buy_price, input.stock)
-        {
+        // touches hundreds of rows at a time. An absent field has nothing to
+        // check, so the (valid) zero stands in for it.
+        if let Err(e) = validate_product_fields(
+            &name,
+            input.sell_price,
+            input.buy_price.unwrap_or(0.0),
+            input.stock.unwrap_or(0),
+        ) {
             skipped += 1;
             errors.push(format!("Baris {}: {}", row_num, e));
+            continue;
+        }
+
+        let barcode = normalize_code(input.barcode.clone());
+        let name_key = categories::name_key(&name);
+        let barcode_missing = barcode.is_none();
+
+        let (identity, label) = match &barcode {
+            Some(bc) => (format!("barcode:{bc}"), format!("Barcode '{bc}'")),
+            None => (format!("name:{name_key}"), format!("Produk '{name}'")),
+        };
+        if let Some(&first_row) = written_rows.get(&identity) {
+            skipped += 1;
+            errors.push(format!(
+                "Baris {row_num}: {label} sudah ada di baris {first_row}, baris ini dilewati"
+            ));
             continue;
         }
 
         let unit = input
             .unit
             .as_deref()
-            .map(|u| u.trim())
+            .map(str::trim)
             .filter(|u| !u.is_empty())
-            .unwrap_or("pcs")
-            .to_string();
+            .map(str::to_string);
 
         let category_name = input
             .category_name
@@ -122,8 +156,6 @@ pub async fn bulk_create(
             Some(name) => Some(resolve_category(&txn, &mut category_ids, name).await?),
             None => None,
         };
-
-        let barcode = normalize_code(input.barcode.clone());
 
         // Find the product this row is about.
         //
@@ -173,27 +205,85 @@ pub async fn bulk_create(
             }
         };
 
-        let margin = input.margin.unwrap_or(0.0);
-        let now = now_ts();
+        // A barcoded row that matched nothing by barcode may still be a
+        // product an earlier unbarcoded row of this file created ("beras 5kg"
+        // on row 1, "Beras 5kg" with a barcode on row 2): a repeat, skipped
+        // like the reverse order is, not a second product. Only when the
+        // product written there has no barcode, or this one: an unbarcoded row
+        // that updated a product with another barcode says nothing about this
+        // barcode, and two barcodes under one name are two products.
+        let repeat_by_name = match (&barcode, &existing_product) {
+            (Some(bc), None) => written_names
+                .get(&name_key)
+                .filter(|(_, written_barcode)| {
+                    written_barcode.as_ref().is_none_or(|written| written == bc)
+                })
+                .map(|(first_row, _)| first_row),
+            _ => None,
+        };
+        if let Some(first_row) = repeat_by_name.or_else(|| {
+            existing_product
+                .as_ref()
+                .and_then(|existing| written_products.get(&existing.id))
+        }) {
+            skipped += 1;
+            errors.push(format!(
+                "Baris {row_num}: Produk '{name}' sudah ada di baris {first_row}, baris ini dilewati"
+            ));
+            continue;
+        }
 
-        if let Some(existing) = existing_product {
+        let now = now_ts();
+        // The barcode of the product this row writes.
+        let written_barcode = match &existing_product {
+            Some(existing) => existing.barcode.clone(),
+            None => barcode.clone(),
+        };
+
+        let written = if let Some(existing) = existing_product {
+            let product_id = existing.id;
+            let prices_change = existing.sell_price != input.sell_price
+                || input.buy_price.is_some_and(|buy| buy != existing.buy_price);
+            let had_margin = existing.margin != 0.0;
+
+            // Only what the row says is `Set`; everything else stays
+            // `Unchanged` and out of the UPDATE.
             let mut active: products::ActiveModel = existing.into();
             active.name = Set(name);
-            active.category_id = Set(category_id);
-            active.buy_price = Set(input.buy_price);
             active.sell_price = Set(input.sell_price);
-            active.margin = Set(margin);
-            active.stock = Set(input.stock);
-            active.unit = Set(unit);
+            if let Some(id) = category_id {
+                active.category_id = Set(Some(id));
+            }
+            if let Some(buy_price) = input.buy_price {
+                active.buy_price = Set(buy_price);
+            }
+            match input.margin {
+                Some(margin) => active.margin = Set(margin),
+                // The stored margin is the markup the product form last saved;
+                // after a price change it no longer matches the prices. Zero
+                // makes the form work it out from the prices again.
+                None if prices_change && had_margin => active.margin = Set(0.0),
+                None => {}
+            }
+            if let Some(stock) = input.stock {
+                active.stock = Set(stock);
+            }
+            if let Some(unit) = unit {
+                active.unit = Set(unit);
+            }
             // `is_active` is deliberately left alone: only live products are
             // matched above, so there is nothing to reactivate.
             active.updated_at = Set(Some(now));
 
             match active.update(&txn).await {
-                Ok(_) => updated += 1,
+                Ok(_) => {
+                    updated += 1;
+                    Some(product_id)
+                }
                 Err(e) => {
                     skipped += 1;
                     errors.push(row_write_failed(row_num, &e));
+                    None
                 }
             }
         } else {
@@ -203,11 +293,11 @@ pub async fn bulk_create(
                 sku: Set(None),
                 name: Set(name),
                 category_id: Set(category_id),
-                buy_price: Set(input.buy_price),
+                buy_price: Set(input.buy_price.unwrap_or(0.0)),
                 sell_price: Set(input.sell_price),
-                margin: Set(margin),
-                stock: Set(input.stock),
-                unit: Set(unit),
+                margin: Set(input.margin.unwrap_or(0.0)),
+                stock: Set(input.stock.unwrap_or(0)),
+                unit: Set(unit.unwrap_or_else(|| "pcs".to_string())),
                 min_stock: Set(Some(0)),
                 is_active: Set(true),
                 created_at: Set(Some(now.clone())),
@@ -215,11 +305,27 @@ pub async fn bulk_create(
             };
 
             match new_product.insert(&txn).await {
-                Ok(_) => imported += 1,
+                Ok(product) => {
+                    imported += 1;
+                    Some(product.id)
+                }
                 Err(e) => {
                     skipped += 1;
                     errors.push(row_write_failed(row_num, &e));
+                    None
                 }
+            }
+        };
+
+        if let Some(product_id) = written {
+            written_rows.insert(identity, row_num);
+            written_products.insert(product_id, row_num);
+            // Only unbarcoded rows: two rows with different barcodes under one
+            // name are two products, as they would be in the catalogue.
+            if barcode_missing {
+                written_names
+                    .entry(name_key)
+                    .or_insert((row_num, written_barcode));
             }
         }
     }
@@ -299,11 +405,12 @@ mod tests {
             barcode: barcode.map(str::to_string),
             name: name.to_string(),
             category_name: None,
-            buy_price: 10_000.0,
+            buy_price: Some(10_000.0),
             sell_price: 12_000.0,
             margin: None,
-            stock: 5,
+            stock: Some(5),
             unit: None,
+            row_number: None,
         }
     }
 
@@ -407,9 +514,9 @@ mod tests {
         let conn = setup_test_db().await;
 
         let mut negative_buy = import_row("Harga beli minus", None);
-        negative_buy.buy_price = -1.0;
+        negative_buy.buy_price = Some(-1.0);
         let mut negative_stock = import_row("Stok minus", None);
-        negative_stock.stock = -5;
+        negative_stock.stock = Some(-5);
         let mut free = import_row("Gratis", None);
         free.sell_price = 0.0;
 
@@ -458,5 +565,370 @@ mod tests {
             .expect("query")
             .expect("row");
         assert!(!still_deleted.is_active);
+    }
+
+    /// A row carrying only name, barcode and price.
+    fn price_only_row(name: &str, barcode: Option<&str>, sell_price: f64) -> BulkProductInput {
+        BulkProductInput {
+            barcode: barcode.map(str::to_string),
+            name: name.to_string(),
+            category_name: None,
+            buy_price: None,
+            sell_price,
+            margin: None,
+            stock: None,
+            unit: None,
+            row_number: None,
+        }
+    }
+
+    /// A price-only file used to reach the backend with zeros for every
+    /// unmapped column, and reset the stock, cost, margin, unit and category of
+    /// every product it matched.
+    #[tokio::test]
+    async fn a_price_only_import_changes_only_the_price() {
+        let conn = setup_test_db().await;
+        let category = crate::services::categories::create(
+            &conn,
+            &admin(),
+            crate::domain::categories::CreateCategoryInput {
+                name: "Sembako".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .expect("category");
+        let mut input = make_valid_input();
+        input.category_id = Some(category.id);
+        input.unit = "karung".to_string();
+        input.margin = Some(30.0);
+        let product = create(&conn, &admin(), input).await.expect("product");
+
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![price_only_row("Beras 5kg", Some("1234567890123"), 70_000.0)],
+        )
+        .await
+        .expect("import");
+        assert_eq!(result.updated, 1);
+
+        let after = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(after.sell_price, 70_000.0);
+        assert_eq!(after.stock, 100);
+        assert_eq!(after.buy_price, 50_000.0);
+        assert_eq!(after.unit, "karung");
+        assert_eq!(after.category_id, Some(category.id));
+        // The stored 30% no longer fits the new price, so it is cleared for
+        // the product form to recompute from the prices.
+        assert_eq!(after.margin, 0.0);
+    }
+
+    /// An unchanged price leaves a stored margin alone.
+    #[tokio::test]
+    async fn an_import_without_margin_keeps_it_when_the_prices_do_not_move() {
+        let conn = setup_test_db().await;
+        let mut input = make_valid_input();
+        input.margin = Some(30.0);
+        let product = create(&conn, &admin(), input).await.expect("product");
+
+        bulk_create(
+            &conn,
+            &admin(),
+            vec![price_only_row("Beras 5kg", Some("1234567890123"), 65_000.0)],
+        )
+        .await
+        .expect("import");
+
+        let after = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(after.margin, 30.0);
+    }
+
+    /// A new product from a sparse row takes the same defaults as before.
+    #[tokio::test]
+    async fn a_sparse_row_inserts_with_the_defaults() {
+        let conn = setup_test_db().await;
+
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![price_only_row("Kopi Sachet", None, 1_500.0)],
+        )
+        .await
+        .expect("import");
+        assert_eq!(result.imported, 1);
+
+        let row = products::Entity::find().one(&conn).await.unwrap().unwrap();
+        assert_eq!(row.buy_price, 0.0);
+        assert_eq!(row.margin, 0.0);
+        assert_eq!(row.stock, 0);
+        assert_eq!(row.unit, "pcs");
+        assert_eq!(row.category_id, None);
+    }
+
+    /// A stock column is a stock-take: it replaces the count outright.
+    #[tokio::test]
+    async fn a_stock_column_sets_the_stock_absolutely() {
+        let conn = setup_test_db().await;
+        let product = create(&conn, &admin(), make_valid_input())
+            .await
+            .expect("product");
+
+        let mut row = price_only_row("Beras 5kg", Some("1234567890123"), 65_000.0);
+        row.stock = Some(7);
+        bulk_create(&conn, &admin(), vec![row])
+            .await
+            .expect("import");
+
+        let after = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(after.stock, 7);
+    }
+
+    /// The second row with a barcode already imported from the same file used
+    /// to count as "updated" and overwrite the first.
+    #[tokio::test]
+    async fn a_barcode_repeated_in_one_file_is_skipped_and_reported() {
+        let conn = setup_test_db().await;
+        let first = import_row("Indomie Goreng", Some("8996001010013"));
+        let mut second = import_row("Indomie Goreng Jumbo", Some("8996001010013"));
+        second.sell_price = 99_000.0;
+
+        let result = bulk_create(&conn, &admin(), vec![first, second])
+            .await
+            .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.updated, 0);
+        assert_eq!(result.skipped, 1);
+        assert!(
+            result.errors[0].contains("Baris 2") && result.errors[0].contains("baris 1"),
+            "names both rows: {}",
+            result.errors[0]
+        );
+
+        let all = products::Entity::find().all(&conn).await.expect("query");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].name, "Indomie Goreng");
+        assert_eq!(all[0].sell_price, 12_000.0);
+    }
+
+    /// The client drops nameless rows before sending, so it passes each row's
+    /// own file row number. Errors name that row, not the array position.
+    #[tokio::test]
+    async fn errors_name_the_file_row_number_the_client_sent() {
+        let conn = setup_test_db().await;
+        let mut kopi = import_row("Kopi", None);
+        kopi.row_number = Some(1);
+        // File row 2 had no name and never reached the backend.
+        let mut teh = import_row("Teh", None);
+        teh.sell_price = 0.0;
+        teh.row_number = Some(3);
+
+        let result = bulk_create(&conn, &admin(), vec![kopi, teh])
+            .await
+            .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result.errors[0].starts_with("Baris 3:"),
+            "file row, not index: {}",
+            result.errors[0]
+        );
+    }
+
+    /// Same for unbarcoded rows, which are matched by name.
+    #[tokio::test]
+    async fn an_unbarcoded_name_repeated_in_one_file_is_skipped() {
+        let conn = setup_test_db().await;
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![
+                import_row("Beras Curah", None),
+                import_row("beras curah ", None),
+            ],
+        )
+        .await
+        .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.updated, 0);
+        assert_eq!(result.skipped, 1);
+    }
+
+    /// A barcoded row and an unbarcoded row of the same name are keyed apart
+    /// (barcode vs name), but the second finds the product the first wrote by
+    /// its name. It used to overwrite it; it is now skipped like any repeat.
+    #[tokio::test]
+    async fn a_barcoded_row_and_an_unbarcoded_row_of_one_product_write_it_once() {
+        let conn = setup_test_db().await;
+        let first = import_row("Beras 5kg", Some("8996001010099"));
+        let mut second = import_row("beras 5kg", None);
+        second.sell_price = 99_000.0;
+
+        let result = bulk_create(&conn, &admin(), vec![first, second])
+            .await
+            .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.updated, 0);
+        assert_eq!(result.skipped, 1);
+        assert!(
+            result.errors[0].contains("Baris 2") && result.errors[0].contains("baris 1"),
+            "names both rows: {}",
+            result.errors[0]
+        );
+        let all = products::Entity::find().all(&conn).await.expect("query");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].sell_price, 12_000.0);
+    }
+
+    /// The reverse order on an empty catalogue: the unbarcoded row creates the
+    /// product, and the barcoded row after it misses by barcode. It must find
+    /// the product by name among this import's writes, not insert a second one.
+    #[tokio::test]
+    async fn an_unbarcoded_row_and_then_a_barcoded_row_of_one_product_write_it_once() {
+        let conn = setup_test_db().await;
+        let first = import_row("beras 5kg", None);
+        let mut second = import_row("Beras 5kg", Some("8996001010099"));
+        second.sell_price = 99_000.0;
+
+        let result = bulk_create(&conn, &admin(), vec![first, second])
+            .await
+            .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.skipped, 1);
+        assert!(
+            result.errors[0].contains("Baris 2") && result.errors[0].contains("baris 1"),
+            "names both rows: {}",
+            result.errors[0]
+        );
+        let all = products::Entity::find().all(&conn).await.expect("query");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].sell_price, 12_000.0);
+    }
+
+    /// Two barcodes under one name are two products, as in the catalogue.
+    #[tokio::test]
+    async fn two_barcoded_rows_sharing_a_name_are_two_products() {
+        let conn = setup_test_db().await;
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![
+                import_row("Indomie Goreng", Some("8998866200301")),
+                import_row("Indomie Goreng", Some("8998866200318")),
+            ],
+        )
+        .await
+        .expect("import");
+
+        assert_eq!(result.imported, 2);
+        assert_eq!(result.skipped, 0);
+    }
+
+    /// The same the other way round, against a product already in the
+    /// catalogue: the unbarcoded row updates it by name, and the row with its
+    /// barcode later in the file must not write it a second time.
+    #[tokio::test]
+    async fn an_existing_product_named_and_then_scanned_in_one_file_is_written_once() {
+        let conn = setup_test_db().await;
+        bulk_create(
+            &conn,
+            &admin(),
+            vec![import_row("Gula 1kg", Some("8991002101036"))],
+        )
+        .await
+        .expect("seed");
+        let mut by_name = import_row("GULA 1KG", None);
+        by_name.sell_price = 15_000.0;
+        let mut by_barcode = import_row("Gula 1kg", Some("8991002101036"));
+        by_barcode.sell_price = 99_000.0;
+
+        let result = bulk_create(&conn, &admin(), vec![by_name, by_barcode])
+            .await
+            .expect("import");
+
+        assert_eq!(result.updated, 1);
+        assert_eq!(result.skipped, 1);
+        let all = products::Entity::find().all(&conn).await.expect("query");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].sell_price, 15_000.0);
+    }
+
+    /// The unbarcoded row updates an existing product that has another
+    /// barcode; a later row with a new barcode under that name is a second
+    /// product, not a repeat of the first row.
+    #[tokio::test]
+    async fn a_new_barcode_after_a_name_update_of_another_barcode_is_a_new_product() {
+        let conn = setup_test_db().await;
+        bulk_create(
+            &conn,
+            &admin(),
+            vec![import_row("Kopi Kapal Api", Some("8991002101036"))],
+        )
+        .await
+        .expect("seed");
+
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![
+                import_row("kopi kapal api", None),
+                import_row("Kopi Kapal Api", Some("8991002105003")),
+            ],
+        )
+        .await
+        .expect("import");
+
+        assert_eq!(result.updated, 1);
+        assert_eq!(result.imported, 1, "errors: {:?}", result.errors);
+        assert_eq!(result.skipped, 0);
+        let barcodes: Vec<Option<String>> = products::Entity::find()
+            .order_by_asc(products::Column::Id)
+            .all(&conn)
+            .await
+            .expect("query")
+            .into_iter()
+            .map(|product| product.barcode)
+            .collect();
+        assert_eq!(
+            barcodes,
+            vec![
+                Some("8991002101036".to_string()),
+                Some("8991002105003".to_string())
+            ]
+        );
+    }
+
+    /// A row that failed is not "already imported": a later valid row with the
+    /// same barcode still goes in.
+    #[tokio::test]
+    async fn a_repeat_of_a_rejected_row_is_not_a_duplicate() {
+        let conn = setup_test_db().await;
+        let mut bad = import_row("Teh", Some("8991002101036"));
+        bad.sell_price = 0.0;
+        let good = import_row("Teh", Some("8991002101036"));
+
+        let result = bulk_create(&conn, &admin(), vec![bad, good])
+            .await
+            .expect("import");
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.skipped, 1);
     }
 }

@@ -6,9 +6,11 @@ use sea_orm::{
 };
 
 use crate::domain::onboarding::CompleteOnboardingInput;
+use crate::domain::settings::{validate_store_name, StoreInfo};
 use crate::entity::{store_info, users};
 use crate::services::auth::{hash_pin, validate_pin};
 use crate::services::settings::get_store_info;
+use crate::utils::text::ensure_printable_len;
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
@@ -18,34 +20,51 @@ pub async fn is_pending(db: &DatabaseConnection) -> Result<bool, AppError> {
     Ok(count == 0)
 }
 
+/// What a call to [`complete`] did.
+#[derive(Debug)]
+pub enum Onboarding {
+    /// This call created the store and its admin.
+    Created(StoreInfo),
+    /// The store already existed and nothing was written. The route is
+    /// public, so this carries nothing about the existing store — least of
+    /// all its settings blob, which holds the PPOB credentials.
+    AlreadyDone,
+}
+
 /// Create the store and its first admin in one transaction.
 ///
-/// Runs before any account exists, so it takes no actor. Idempotent: once the
-/// store row is there the existing one is returned untouched.
+/// Runs before any account exists, so it takes no actor. Once the store row is
+/// there nothing is written and [`Onboarding::AlreadyDone`] comes back.
 ///
 /// The early existence check alone is not enough: two requests can both pass it
 /// before either commits. The store is therefore always inserted as row 1, so
 /// the slower of two racing requests hits the primary key, rolls back its admin
-/// with it, and returns the store the faster one created.
+/// with it, and is told onboarding is already done.
 pub async fn complete(
     db: &DatabaseConnection,
     input: CompleteOnboardingInput,
-) -> Result<store_info::Model, AppError> {
-    if let Some(store) = get_store_info(db).await? {
-        return Ok(store);
+) -> Result<Onboarding, AppError> {
+    if get_store_info(db).await?.is_some() {
+        return Ok(Onboarding::AlreadyDone);
     }
 
-    let store_name = input.store.name.trim().to_string();
-    if store_name.is_empty() {
-        return Err(AppError::Validation(
-            "Nama toko tidak boleh kosong".to_string(),
-        ));
-    }
+    let store_name = validate_store_name(&input.store.name)?;
+    ensure_printable_len(input.store.address.as_deref(), "Alamat toko")?;
+    ensure_printable_len(input.store.phone.as_deref(), "Telepon toko")?;
 
     let admin_username = input.admin.username.trim().to_string();
     if admin_username.is_empty() {
         return Err(AppError::Validation(
             "Username admin tidak boleh kosong".to_string(),
+        ));
+    }
+
+    // The rule `create_user` applies: the first admin is a user too, and their
+    // name is what every receipt they ring up prints as the cashier.
+    let admin_full_name = input.admin.full_name.trim().to_string();
+    if admin_full_name.is_empty() {
+        return Err(AppError::Validation(
+            "Nama lengkap tidak boleh kosong".to_string(),
         ));
     }
 
@@ -74,9 +93,9 @@ pub async fn complete(
         Ok(store) => store,
         Err(e) => {
             txn.rollback().await?;
-            // Lost the race: the other request's store is the answer.
+            // Lost the race: the other request created the store.
             return match get_store_info(db).await? {
-                Some(store) => Ok(store),
+                Some(_) => Ok(Onboarding::AlreadyDone),
                 None => Err(e.into()),
             };
         }
@@ -86,7 +105,7 @@ pub async fn complete(
         id: NotSet,
         username: Set(admin_username),
         pin_hash: Set(pin_hash),
-        full_name: Set(input.admin.full_name.trim().to_string()),
+        full_name: Set(admin_full_name),
         role: Set("admin".to_string()),
         is_active: Set(true),
         created_at: Set(Some(now.clone())),
@@ -97,5 +116,5 @@ pub async fn complete(
 
     txn.commit().await?;
 
-    Ok(store_result)
+    Ok(Onboarding::Created(store_result.into()))
 }

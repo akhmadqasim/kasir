@@ -2,13 +2,18 @@ import { Alert } from "@heroui/react"
 
 import { InfoPanel } from "@/components/info-panel"
 import { id } from "@/i18n/id"
-import type { TransactionDetail, TransactionItem } from "../types"
+import type { TransactionDetail, TransactionDetailItem, TransactionItem } from "../types"
 import { PpobStatusPanel } from "./ppob-status-panel"
 
 interface TransactionExtraInfoProps {
   detail: TransactionDetail
-  ppobItems: TransactionItem[]
+  ppobItems: TransactionDetailItem[]
   onResolvePpob: (item: TransactionItem, success: boolean) => void
+  onCheckPpob: (item: TransactionItem) => void
+  /** The PPOB line a status check is running for, if any. */
+  checkingPpobId: number | null
+  /** Settling a PPOB line by hand is admin-only. */
+  isAdmin: boolean
 }
 
 /**
@@ -20,6 +25,9 @@ export function TransactionExtraInfo({
   detail,
   ppobItems,
   onResolvePpob,
+  onCheckPpob,
+  checkingPpobId,
+  isAdmin,
 }: TransactionExtraInfoProps) {
   const { notes, deleted_reason: deletedReason } = detail.transaction
   if (!notes && !deletedReason && ppobItems.length === 0) return null
@@ -47,6 +55,9 @@ export function TransactionExtraInfo({
           key={item.id}
           item={item}
           showName={ppobItems.length > 1}
+          checkingId={checkingPpobId}
+          isAdmin={isAdmin}
+          onCheck={onCheckPpob}
           onResolve={onResolvePpob}
         />
       ))}

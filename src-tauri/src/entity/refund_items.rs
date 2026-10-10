@@ -8,7 +8,9 @@ pub struct Model {
     pub id: i64,
     pub refund_id: i64,
     pub transaction_item_id: i64,
-    pub product_id: i64,
+    /// `None` for a refunded PPOB line whose top-up failed (migration 029):
+    /// money went back, no stock moved.
+    pub product_id: Option<i64>,
     pub quantity: i64,
     pub subtotal: f64,
     pub condition: Option<String>,

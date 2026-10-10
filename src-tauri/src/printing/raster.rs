@@ -118,7 +118,7 @@ pub fn render_lines(
     columns: usize,
     dots_wide: u32,
 ) -> Result<Bitmap1bpp, String> {
-    let height: u32 = lines.iter().map(line_height).sum::<u32>().max(CELL_HEIGHT);
+    let height = raster_height(lines)?;
     // The text block is as wide as the columns it was laid out in, centred on
     // the paper. On 58mm the two are the same — 32 cells of 12 dots is exactly
     // the 384 the head is — and on 80mm, where Font A's 42 columns come to 504
@@ -130,6 +130,25 @@ pub fn render_lines(
     // SAFETY: every handle created below is deleted before returning, and the
     // pixel buffer is only touched while the bitmap that owns it is alive.
     unsafe { draw(lines, dots_wide, height, left as i32) }
+}
+
+/// Tallest picture we draw: 800 normal lines, about 2.5x a full 100-item sale.
+/// The DIB is `stride * height` bytes, so this caps one job at ~45 MB on 80mm.
+const MAX_RASTER_HEIGHT: u32 = CELL_HEIGHT * 800;
+
+/// Height of the picture for `lines`, refused before any allocation when it
+/// would pass [`MAX_RASTER_HEIGHT`].
+fn raster_height(lines: &[ReceiptTextLine]) -> Result<u32, String> {
+    let height = lines
+        .iter()
+        .try_fold(0_u32, |sum, line| {
+            sum.checked_add(line_height(line))
+                .filter(|h| *h <= MAX_RASTER_HEIGHT)
+        })
+        .ok_or_else(|| {
+            "Struk terlalu panjang untuk dicetak sebagai gambar. Ganti mode cetak ke teks di Pengaturan Printer.".to_string()
+        })?;
+    Ok(height.max(CELL_HEIGHT))
 }
 
 fn line_height(line: &ReceiptTextLine) -> u32 {
@@ -341,6 +360,21 @@ fn threshold(pixels: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A huge receipt (e.g. megabytes of notes) is refused before the DIB is
+    /// allocated; one at the cap still renders.
+    #[test]
+    fn a_receipt_taller_than_the_cap_is_refused() {
+        let max_lines = (MAX_RASTER_HEIGHT / CELL_HEIGHT) as usize;
+        let at_cap = vec![ReceiptTextLine::plain("x"); max_lines];
+        assert_eq!(raster_height(&at_cap), Ok(MAX_RASTER_HEIGHT));
+
+        let over = vec![ReceiptTextLine::plain("x"); max_lines + 1];
+        let err = render_lines(&over, 32, DOTS_58MM)
+            .err()
+            .expect("an over-tall receipt must be refused");
+        assert!(err.contains("terlalu panjang"), "{err}");
+    }
 
     #[test]
     fn a_blank_slip_is_one_empty_cell() {
