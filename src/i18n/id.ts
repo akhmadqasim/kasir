@@ -58,20 +58,39 @@ export const id = {
     productNotFound: (query: string) => `Produk "${query}" tidak ditemukan`,
     outOfStock: (name: string) => `Stok ${name} habis — pastikan stok sudah diperbarui`,
     /** A scanner burst typed into a dialog field; the scan is dropped, not added. */
-    scanIgnoredInQuantity: "Barcode terbaca di kolom jumlah — scan diabaikan. Tutup dialog dulu.",
-    scanIgnoredInAmount:
-      "Barcode terbaca di kolom nominal — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
+    scanIgnoredInField:
+      "Barcode terbaca — scan diabaikan. Tutup dialog dulu untuk menambah barang.",
+    scanIgnoredInPin: "Barcode terbaca di kolom PIN — scan diabaikan. Ketik PIN Mitra lagi.",
     scanIgnoredAfterSale: "Barcode terbaca — scan diabaikan. Tekan Esc dulu untuk transaksi baru.",
+    scanIgnoredInHeldCarts:
+      "Barcode terbaca — scan diabaikan, tidak ada keranjang yang dibuka. Tutup daftar dulu.",
     // Held carts
     cartHeld: (label: string) => `Transaksi disimpan sebagai "${label}"`,
     heldCartDeleted: (label: string | null | undefined) =>
       `${label ?? "Transaksi tersimpan"} dihapus`,
-    /** Recalled over a non-empty cart, which is parked as "Keranjang Aktif". */
-    cartRecalled: (label: string, parkedCurrent: boolean) =>
-      parkedCurrent
-        ? `${label} dilanjutkan. Keranjang sebelumnya disimpan sebagai "Keranjang Aktif".`
+    /** `parkedAs`: the name the non-empty cart it replaced was held under. */
+    cartRecalled: (label: string, parkedAs: string | null) =>
+      parkedAs
+        ? `${label} dilanjutkan. Keranjang sebelumnya disimpan sebagai "${parkedAs}".`
         : `${label} dilanjutkan`,
     heldCartFallbackLabel: "Transaksi",
+    // Cart lines repriced from the catalogue (reload, recall, before payment)
+    priceChanged: (name: string, from: string, to: string) =>
+      `Harga ${name} berubah dari ${from} menjadi ${to}. Total keranjang sudah diperbarui.`,
+    pricesChanged: (count: number) =>
+      `Harga ${count} barang berubah. Total keranjang sudah diperbarui.`,
+    /** Payment held back once so the cashier sees the repriced total first. */
+    checkTotalThenPay: "Periksa total baru, lalu tekan Bayar lagi.",
+    /** A PPOB line whose discount takes it below cost; the server refuses it. */
+    ppobBelowCost: (name: string) =>
+      `Harga ${name} setelah diskon di bawah harga modal. Kurangi diskonnya dulu.`,
+    /** Shown in the PPOB line's edit dialog, next to the discount. */
+    ppobBelowCostHint: (cost: string) => `Di bawah harga modal (${cost}). Kurangi diskonnya.`,
+    /** A fixed discount larger than what it applies to, cut down to that amount. */
+    discountCapped: (amount: string) => `Melebihi belanja — dipotong jadi ${amount}`,
+    /** Cart footer: a fixed cart discount larger than the cart, cut down for now. */
+    transactionDiscountCapped: (amount: string) =>
+      `Diskon dipotong jadi ${amount} (melebihi belanja)`,
     heldCartsHint:
       "Pilih untuk melanjutkan. Tekan 1–9 atau Enter untuk membuka, Delete untuk menghapus.",
     // Discount & payment
@@ -107,6 +126,9 @@ export const id = {
     cashFlowNeedsShift: "Shift belum dibuka. Buka kasir dulu sebelum mencatat uang masuk/keluar.",
     cashFlowDeleted: "Arus kas berhasil dihapus",
     cashFlowDeleteFailed: failedWith("menghapus arus kas"),
+    /** A barcode scanned into the opening-cash or cash-flow amount field. */
+    scanIgnoredInAmount:
+      "Barcode terbaca di kolom nominal — scan diabaikan. Ketik nominalnya lagi.",
     /** Dialog "Buka Kasir". */
     open: {
       title: "Buka Kasir",
@@ -225,6 +247,8 @@ export const id = {
     back: "Kembali",
     submit: "Daftarkan Toko",
     success: "Toko berhasil didaftarkan!",
+    /** POST /onboarding answered 409: an earlier (or parallel) submit already set the store up. */
+    alreadyDone: "Toko sudah terdaftar. Silakan masuk.",
   },
   common: {
     save: "Simpan",
@@ -431,6 +455,12 @@ export const id = {
     completed: "Selesai",
     pendingPpob: "Menunggu PPOB",
     ppobFailed: "PPOB Gagal",
+    /** Filter + indicator: PPOB lines whose result is not known yet (any day). */
+    ppobUncertain: "Perlu dicek",
+    ppobAttentionCount: (count: number) => `${count} PPOB perlu dicek`,
+    ppobAttentionHint:
+      "Hasilnya belum pasti. Aplikasi mengecek riwayat Mitra otomatis; buka transaksinya untuk Cek status.",
+    ppobAttentionShow: "Tampilkan",
     refunded: "Refund",
     partialRefund: "Refund Sebagian",
     detail: "Detail Transaksi",
@@ -483,6 +513,15 @@ export const id = {
     /** Some of several lines were refused; `details` names each one. */
     retryPartlyFailed: (failed: number, attempted: number, details: string) =>
       `${failed} dari ${attempted} PPOB gagal dicoba ulang — ${details}`,
+    // Look it up in the Mitra history (uncertain / ADVICE lines)
+    checkStatus: "Cek status",
+    checkStatusFailed: failedWith("mengecek status PPOB"),
+    uncertainCheckHint:
+      "Hasilnya belum pasti. Klik Cek status untuk mencocokkan dengan riwayat Mitra, atau tandai sendiri setelah dicek. Jangan coba ulang dulu.",
+    awaitingBillerTitle: (isPln: boolean) =>
+      isPln ? "Menunggu konfirmasi PLN" : "Menunggu konfirmasi biller",
+    awaitingBillerHint: (isPln: boolean) =>
+      `Pembayaran sudah dikirim ke ${isPln ? "PLN" : "biller"} dan saldo Mitra kemungkinan sudah terpotong; ${isPln ? "tokennya" : "hasilnya"} menyusul. Jangan dicoba ulang atau di-refund. Klik Cek status — aplikasi juga mengecek riwayat Mitra otomatis tiap 10 menit.`,
     // Resolve by hand
     resolveLabel: "Tandai hasil PPOB",
     markSuccess: "Tandai Berhasil",
@@ -498,6 +537,14 @@ export const id = {
     markedSuccess: "PPOB ditandai berhasil",
     markedFailed: "PPOB ditandai gagal",
     markFailedError: failedWith("menandai PPOB"),
+    /** A kasir sees the result buttons nowhere; an admin settles by hand. */
+    resolveAdminOnly: "Bila Cek status belum memberi jawaban, minta admin menandai hasilnya.",
+    /** "Tandai Gagal" on an ADVICE line opens 24 hours after the last attempt. */
+    markFailedWaitUntil: (when: string) =>
+      `Tandai Gagal baru bisa ${when}: biller masih bisa mengirim hasilnya sampai 24 jam setelah percobaan terakhir.`,
+    // Mixed cashier cart: PPOB lines next to the goods
+    cartPpobInFlight: "Menunggu hasil PPOB… struk dicetak setelah hasilnya keluar.",
+    cartPpobTokenLater: "Token menyusul — cek di Riwayat",
     // Right after checkout (PPOB page result dialog)
     rejectedTitle: "Transaksi ditolak provider",
     rejectedFallback: "Provider menolak transaksinya.",
@@ -541,6 +588,8 @@ export const id = {
     searchProduct: "Cari barang pengganti...",
     addExchangeItem: "Tambah Barang",
     totalExchange: "Total Pengganti",
+    /** A replacement of a product that is coming back, priced at what was paid. */
+    likeForLikePrice: (quantity: number, unit: string) => `${quantity} ${unit} seharga saat dibeli`,
     difference: "Selisih",
     differenceCustomerPays: "Pelanggan bayar",
     differenceStoreReturns: "Toko kembalikan",
@@ -570,6 +619,9 @@ export const id = {
     windowExpired: (days: number) =>
       `Lewat batas ${days} hari setelah pembelian, refund tidak bisa diproses`,
     windowUnknown: "Transaksi tanpa tanggal tidak bisa di-refund",
+    /** Past the window, a failed top-up may still be refunded but not exchanged. */
+    exchangeWindowExpired: (days: number) =>
+      `Lewat batas ${days} hari setelah pembelian, tukar barang tidak bisa diproses. Top-up yang gagal tetap bisa di-refund.`,
     /** The server's remaining quantity for a line was lower than the form's. */
     nothingLeftToReturn: (name: string) =>
       `${name} sudah diretur seluruhnya, tidak ada sisa yang bisa dikembalikan.`,
@@ -901,7 +953,7 @@ export const id = {
     truncated: (shown: string, total: string, noun: string) =>
       `Menampilkan ${shown} dari ${total} ${noun}`,
     truncatedStockHint:
-      "Kartu stok menipis dan nilai stok dihitung dari baris yang tampil saja. Persempit pencarian untuk angka yang utuh.",
+      "Kartu di atas sudah menghitung semua produk. Persempit pencarian untuk melihat sisanya di tabel.",
     truncatedReceiptsHint: "Persempit rentang tanggal atau pencarian untuk melihat sisanya.",
   },
   ppob: {

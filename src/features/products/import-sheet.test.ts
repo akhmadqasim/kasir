@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { utils, write } from "xlsx"
 
-import { ImportSheetError, readSheetRows } from "./import-sheet"
+import { ImportSheetError, isPercentFormat, readSheetRows } from "./import-sheet"
 
 function csv(text: string): ArrayBuffer {
   return new TextEncoder().encode(text).buffer as ArrayBuffer
@@ -47,6 +47,19 @@ describe("readSheetRows", () => {
     const data = write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer
 
     expect(readSheetRows(data).rows).toEqual([["Kopi Sachet", "12000", "0012345678905"]])
+  })
+
+  // Only a `%` that is a format code multiplies by 100; a quoted or escaped
+  // `%` is plain text.
+  it("mengenali format persen sungguhan, bukan tanda % harfiah", () => {
+    expect(isPercentFormat("0%")).toBe(true)
+    expect(isPercentFormat("0.0%")).toBe(true)
+    expect(isPercentFormat("#,##0.00%;[Red]-#,##0.00%")).toBe(true)
+    expect(isPercentFormat('0.0"%"')).toBe(false)
+    expect(isPercentFormat("0.0\\%")).toBe(false)
+    expect(isPercentFormat("[$%-421]#,##0")).toBe(false)
+    expect(isPercentFormat("#,##0")).toBe(false)
+    expect(isPercentFormat("General")).toBe(false)
   })
 
   it("menolak file yang hanya berisi header", () => {

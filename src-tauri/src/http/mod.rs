@@ -242,6 +242,18 @@ pub fn router(state: AppState) -> Router {
 /// Bind and start serving. Returns once the listener is up, so the caller knows
 /// the port before it points a window at it.
 pub async fn start(state: AppState) -> Result<ServerHandle, AppError> {
+    // Before any request is served: a checkout the previous run died in the
+    // middle of left its key `in_progress`, and the cart retrying with it is
+    // kept in the browser. Settle those keys now. A failure here is logged,
+    // not fatal — a stale key is also released when it is next retried.
+    match idempotency::recover_stranded(&state.db).await {
+        Ok((0, 0)) => {}
+        Ok((completed, released)) => logging::log_info(&format!(
+            "Recovered stranded idempotency keys: {completed} completed, {released} released"
+        )),
+        Err(e) => logging::log_error(&format!("Idempotency key recovery failed: {e}")),
+    }
+
     let listener = bind_listener(&state.config).await?;
     let port = listener
         .local_addr()

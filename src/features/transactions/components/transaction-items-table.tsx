@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
 import { isDiscountedLine, lineDiscountAmount, netLineAmount } from "@/lib/line-amounts"
-import { isPpobInFlight, ppobStatusConfig } from "@/lib/ppob-status"
+import { isPpobInFlight, ppobLineStatusConfig } from "@/lib/ppob-status"
 import type { TransactionItem } from "../types"
 
 /**
@@ -30,7 +30,7 @@ export function TransactionItemsTable({ items }: { items: TransactionItem[] }) {
               renderEmptyState={() => <NoData icon={<PackageOpen />} title={id.empty.items} />}
             >
               {items.map((item) => {
-                const ppobStatus = ppobStatusConfig(item.ppob_status)
+                const ppobStatus = ppobLineStatusConfig(item)
                 const isDiscounted = isDiscountedLine(item)
                 return (
                   <Table.Row key={item.id} id={item.id} textValue={item.product_name}>

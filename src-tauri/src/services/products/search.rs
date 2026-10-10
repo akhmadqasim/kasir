@@ -8,6 +8,8 @@ use sea_orm::{
 
 use crate::domain::products::{PaginatedProducts, ProductSearchParams};
 use crate::entity::{categories, products};
+use crate::services::pagination::clamp_per_page;
+use crate::utils::sql::{contains_literal, starts_with_literal};
 use crate::utils::AppError;
 
 /// The one definition of "stok menipis", as a SQL predicate over an unaliased
@@ -62,12 +64,18 @@ fn build_search_condition(params: &ProductSearchParams) -> Condition {
         let trimmed = query.trim();
         if !trimmed.is_empty() {
             // Name stays a substring match (users search product names by fragment).
-            // Barcode/SKU use prefix match (LIKE 'q%') so SQLite can seek the
-            // idx_products_barcode index — scanning/typing a code is a prefix.
+            // Barcode/SKU use a prefix match (LIKE 'q%') because scanning or
+            // typing a code reads it from the front. This does NOT seek
+            // idx_products_barcode: SQLite's LIKE is case-insensitive and that
+            // index uses the default BINARY collation, so the LIKE-prefix
+            // optimisation does not apply and the condition is checked row by
+            // row (the OR with the name substring scans anyway). An exact
+            // scanned barcode is looked up by equality elsewhere, which does use
+            // the index. All three are literal: `%` and `_` are not wildcards.
             let mut text_search = Condition::any()
-                .add(products::Column::Name.contains(trimmed))
-                .add(products::Column::Barcode.starts_with(trimmed))
-                .add(products::Column::Sku.starts_with(trimmed));
+                .add(contains_literal(products::Column::Name, trimmed))
+                .add(starts_with_literal(products::Column::Barcode, trimmed))
+                .add(starts_with_literal(products::Column::Sku, trimmed));
 
             // A short digit run also matches the *end* of a barcode, so
             // `484807` finds `8992761484807`. Suffix and not substring on
@@ -187,7 +195,9 @@ pub async fn search(
     params: ProductSearchParams,
 ) -> Result<PaginatedProducts, AppError> {
     let page = params.page.unwrap_or(1).max(1);
-    let per_page = params.per_page.unwrap_or(50).max(1);
+    // Bounded like every other list: `per_page=1000000` off the query string
+    // used to load the whole catalogue in one response.
+    let per_page = clamp_per_page(params.per_page);
     // Saturating: both come straight from the query string, and a page number
     // big enough to overflow is just a page past the end.
     let offset = (page - 1).saturating_mul(per_page);
@@ -309,6 +319,28 @@ mod tests {
             "every product appears exactly once: {:?}",
             seen
         );
+    }
+
+    /// `per_page` comes off the query string; a huge value used to return the
+    /// whole catalogue in one response.
+    #[tokio::test]
+    async fn the_page_size_is_capped() {
+        let conn = setup_test_db().await;
+        for i in 0..105 {
+            seed(&conn, &format!("Produk {:03}", i), 1, None).await;
+        }
+
+        let result = search(&conn, search_params("name", 1, 1_000_000))
+            .await
+            .expect("search");
+        assert_eq!(result.per_page, 100);
+        assert_eq!(result.data.len(), 100);
+        assert_eq!(result.total_pages, 2);
+
+        let result = search(&conn, search_params("name", 1, 0))
+            .await
+            .expect("search");
+        assert_eq!(result.per_page, 1);
     }
 
     /// The quick filter has to mean the same thing as the dashboard card and the
@@ -553,6 +585,15 @@ mod tests {
         let conn = seed_barcode_catalogue().await;
 
         assert_eq!(search_names(&conn, "Indo").await, vec!["Indomie Goreng"]);
+    }
+
+    /// `%` and `_` in the search box are literal characters, not wildcards.
+    #[tokio::test]
+    async fn a_wildcard_in_the_query_matches_literally() {
+        let conn = seed_barcode_catalogue().await;
+
+        assert!(search_names(&conn, "%").await.is_empty());
+        assert!(search_names(&conn, "Indomie_Goreng").await.is_empty());
     }
 
     /// A digit run that appears mid-barcode but not at the end must not match —

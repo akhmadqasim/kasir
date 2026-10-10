@@ -79,7 +79,7 @@ pub(crate) fn refund_adjust_cte(
                 UNION ALL
                 SELECT {exchange_bucket} as bucket,
                        -ei.subtotal as revenue,
-                       -(ei.quantity * COALESCE(p.buy_price, 0)) as cost,
+                       -(ei.quantity * COALESCE(ei.buy_price, p.buy_price, 0)) as cost,
                        -ei.quantity as qty
                 FROM refunds r
                 JOIN transactions t ON t.id = r.transaction_id

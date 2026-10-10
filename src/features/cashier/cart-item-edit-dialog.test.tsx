@@ -12,6 +12,11 @@ import { CartItemEditDialog } from "./components/cart-item-edit-dialog"
 import type { CartItem } from "./types"
 import { formatRupiah } from "./utils"
 
+/** The over-limit hint, with the spacing Testing Library normalises text to. */
+function cappedHint(amount: number) {
+  return `Melebihi belanja — dipotong jadi ${formatRupiah(amount)}`.replace(/\s+/g, " ")
+}
+
 function cartItem(overrides: Partial<CartItem> = {}): CartItem {
   return {
     cart_id: "line-1",
@@ -179,6 +184,73 @@ describe("cart item edit dialog", () => {
 
     expect(useCartStore.getState().itemDiscounts["line-1"]).toEqual({ type: "fixed", value: 500 })
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("clamps a nominal discount to the line total on save", () => {
+    // 2 × 3.000 = 6.000; kept whole, 50.000 would free the line once qty rises.
+    const item = cartItem()
+    resetStore({ items: [item] })
+    renderDialog(item)
+
+    const discountInput = screen.getByRole("textbox", { name: "Nilai diskon" })
+    fireEvent.change(discountInput, { target: { value: "50000" } })
+    pressKey("Enter", discountInput)
+
+    expect(useCartStore.getState().itemDiscounts["line-1"]).toEqual({ type: "fixed", value: 6000 })
+  })
+
+  it("shows the nominal discount cut down to the line total, and says so", () => {
+    // 2 × 3.000 = 6.000: the field reads what comes off, not what was typed.
+    const item = cartItem()
+    resetStore({ items: [item] })
+    renderDialog(item)
+
+    const discountInput = screen.getByRole("textbox", { name: "Nilai diskon" })
+    fireEvent.change(discountInput, { target: { value: "50000" } })
+
+    expect(discountInput).toHaveValue("6.000")
+    expect(screen.getByText(cappedHint(6000))).toBeInTheDocument()
+    expect(summaryValue("Diskon")).toBe(`-${formatRupiah(6000)}`)
+  })
+
+  it("opens with a saved discount shown as it applies to a line that shrank since", () => {
+    // Saved against 3 units; one went back, so only 6.000 can come off now.
+    const item = cartItem()
+    resetStore({ items: [item], itemDiscounts: { "line-1": { type: "fixed", value: 9000 } } })
+    renderDialog(item)
+
+    expect(screen.getByRole("textbox", { name: "Nilai diskon" })).toHaveValue("6.000")
+    expect(screen.getByText(cappedHint(6000))).toBeInTheDocument()
+  })
+
+  it("refuses to save a PPOB line discounted below cost, and says why", () => {
+    const item = cartItem({
+      cart_id: "ppob-1",
+      product_id: undefined,
+      product_name: "Pulsa 10K",
+      product_price: 12000,
+      buy_price: 10500,
+      quantity: 1,
+      is_ppob: true,
+    })
+    resetStore({ items: [item] })
+    const onOpenChange = renderDialog(item)
+
+    const discountInput = screen.getByRole("textbox", { name: "Nilai diskon" })
+    fireEvent.change(discountInput, { target: { value: "2000" } })
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      `Di bawah harga modal (${formatRupiah(10500)}). Kurangi diskonnya.`.replace(/\s+/g, " "),
+    )
+    expect(screen.getByRole("button", { name: "Simpan" })).toBeDisabled()
+    pressKey("Enter", discountInput)
+    expect(useCartStore.getState().itemDiscounts["ppob-1"]).toBeUndefined()
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    // Down to the margin: allowed.
+    fireEvent.change(discountInput, { target: { value: "1500" } })
+    pressKey("Enter", discountInput)
+    expect(useCartStore.getState().itemDiscounts["ppob-1"]).toEqual({ type: "fixed", value: 1500 })
   })
 
   it("clamps a percentage discount to 100 on save", async () => {

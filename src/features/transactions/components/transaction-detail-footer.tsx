@@ -1,16 +1,16 @@
-import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Printer, RefreshCcw, RotateCcw } from "lucide-react"
 import { Button, Modal } from "@heroui/react"
 
 import { toast } from "@/lib/toast"
 import { PendingButton } from "@/components/pending-button"
+import { useSingleFlight } from "@/hooks/use-single-flight"
 import { errorMessage } from "@/lib/api/client"
 import { printPpobReceipt, printReceipt } from "@/lib/api/printers"
 import { cn } from "@/lib/utils"
 import { id } from "@/i18n/id"
 import { isPpobPrintable } from "@/lib/ppob-status"
-import { refundBlockedReason } from "@/lib/refund-window"
+import { refundActionBlockedReason } from "@/lib/refund-window"
 import type { TransactionDetail } from "../types"
 import { RefundButton } from "./refund-button"
 import { TransactionAdminMenu } from "./transaction-admin-menu"
@@ -38,50 +38,43 @@ export function TransactionDetailFooter({
   onClose,
 }: TransactionDetailFooterProps) {
   const navigate = useNavigate()
-  const [isPrinting, setIsPrinting] = useState(false)
-  const [isPrintingPpob, setIsPrintingPpob] = useState(false)
+  const { isPending: isPrinting, run: runPrint } = useSingleFlight()
+  const { isPending: isPrintingPpob, run: runPrintPpob } = useSingleFlight()
 
   const { transaction } = detail
   const isDeleted = transaction.status === "deleted"
   const showAdminMenu = isAdmin && !isDeleted
   const ppobPrintableItems = detail.items.filter((item) => isPpobPrintable(item.ppob_status))
-  // A mixed cart's goods stay returnable; the refund page itself sets the PPOB
-  // lines aside. Only a sale with no physical line at all has nothing to refund.
-  const hasRefundAction =
-    detail.items.some((item) => item.product_id !== null) &&
-    transaction.status !== "refunded" &&
-    !isDeleted
+  // Same gate as the history row: the server decides whether any line is left
+  // to return, a failed top-up on a PPOB-page sale included. Neither the
+  // status nor the channel can tell.
+  const hasRefundAction = detail.has_refundable_goods && !isDeleted
 
-  const handlePrint = async () => {
-    if (isPrinting) return
-    setIsPrinting(true)
-    try {
-      await printReceipt(transaction.id)
-      toast.success(id.print.printed)
-    } catch (e) {
-      toast.error(id.print.failed(errorMessage(e)))
-    } finally {
-      setIsPrinting(false)
-    }
-  }
+  const handlePrint = () =>
+    runPrint(async () => {
+      try {
+        await printReceipt(transaction.id)
+        toast.success(id.print.printed)
+      } catch (e) {
+        toast.error(id.print.failed(errorMessage(e)))
+      }
+    })
 
   // Satu struk per baris PPOB yang berhasil, bukan hanya baris pertama:
   // satu keranjang bisa memuat dua pembelian PPOB dan masing-masing punya
   // token sendiri yang dibawa pelanggan.
-  const handlePrintPpobReceipt = async () => {
-    if (ppobPrintableItems.length === 0) return
-    setIsPrintingPpob(true)
-    try {
-      for (const item of ppobPrintableItems) {
-        await printPpobReceipt(item.id)
+  const handlePrintPpobReceipt = () =>
+    runPrintPpob(async () => {
+      if (ppobPrintableItems.length === 0) return
+      try {
+        for (const item of ppobPrintableItems) {
+          await printPpobReceipt(item.id)
+        }
+        toast.success(id.print.ppobPrinted(ppobPrintableItems.length))
+      } catch (e) {
+        toast.error(id.print.ppobFailed(errorMessage(e)))
       }
-      toast.success(id.print.ppobPrinted(ppobPrintableItems.length))
-    } catch (e) {
-      toast.error(id.print.ppobFailed(errorMessage(e)))
-    } finally {
-      setIsPrintingPpob(false)
-    }
-  }
+    })
 
   return (
     // The admin menu sits on the left, apart from the everyday actions on the
@@ -107,7 +100,12 @@ export function TransactionDetailFooter({
         )}
         {hasRefundAction && (
           <RefundButton
-            blockedReason={refundBlockedReason(transaction.created_at)}
+            // Opens the refund page, which keeps the exchange option closed
+            // past the window even when a failed top-up is still owed.
+            blockedReason={refundActionBlockedReason(transaction.created_at, {
+              hasRefundableFailedPpob: detail.has_refundable_failed_ppob,
+              action: "refund",
+            })}
             variant="secondary"
             onPress={() => {
               onClose()

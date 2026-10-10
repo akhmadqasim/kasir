@@ -3,14 +3,19 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 
 use super::{day_end_exclusive_utc, day_start_utc};
+use crate::domain::actor::Actor;
 use crate::domain::reports::{CashFlowReportRow, CashFlowReportSummary};
 use crate::utils::AppError;
 
+/// Same owner-or-admin rule as `shifts::list_cash_flows`: a kasir sees only
+/// the rows of their own shifts, an admin sees every shift.
 pub async fn cash_flows(
     db: &DatabaseConnection,
+    actor: &Actor,
     start_date: String,
     end_date: String,
 ) -> Result<CashFlowReportSummary, AppError> {
+    let owner_filter: Option<i64> = (!actor.is_admin()).then_some(actor.user_id);
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
@@ -23,12 +28,15 @@ pub async fn cash_flows(
                 cf.description,
                 cf.created_at
             FROM cash_flows cf
+            JOIN shifts s ON s.id = cf.shift_id
             LEFT JOIN users u ON u.id = cf.user_id
             WHERE cf.created_at >= $1 AND cf.created_at < $2
+              AND ($3 IS NULL OR s.user_id = $3)
             ORDER BY cf.created_at DESC",
             vec![
                 day_start_utc(&start_date)?.into(),
                 day_end_exclusive_utc(&end_date)?.into(),
+                owner_filter.into(),
             ],
         ))
         .await?;

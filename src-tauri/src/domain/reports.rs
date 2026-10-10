@@ -140,6 +140,12 @@ pub struct CurrentStockRow {
 pub struct CurrentStockReport {
     pub items: Vec<CurrentStockRow>,
     pub total_count: i64,
+    /// `buy_price × stock` summed over every matching product, not just the
+    /// rows in `items`.
+    pub total_stock_value: f64,
+    /// Matching products at or below their reorder point (`LOW_STOCK_SQL`),
+    /// counted over every matching product, not just the rows in `items`.
+    pub low_stock_count: i64,
 }
 
 #[derive(Debug, Serialize)]

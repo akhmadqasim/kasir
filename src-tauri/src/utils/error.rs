@@ -31,6 +31,30 @@ pub enum AppError {
     #[error("{0}")]
     UpstreamUncertain(String),
 
+    /// Mitra answered a purchase with `ADVICE`: the payment was handed to the
+    /// biller (PLN, mostly) but its final result is not known yet. The money
+    /// is usually already debited and the token follows later, so this is an
+    /// [`AppError::UpstreamUncertain`] that also carries Mitra's own reference
+    /// (`advice_id` / `uid`, as JSON text) for reconciling it from the history.
+    #[error("Mitra: ADVICE (pembayaran terkirim, hasil akhir belum ada)")]
+    UpstreamAdvice(Option<String>),
+
+    /// The third party gave no usable answer at all: no connection, a timeout,
+    /// a body that is not JSON. Its own variant, so callers can tell "nobody
+    /// answered" from "Mitra answered and refused" without reading the text.
+    /// `maybe_sent` is true when the request may have reached Mitra (a timeout
+    /// or reset after sending, an unreadable answer): for a purchase that is
+    /// as uncertain as [`AppError::UpstreamUncertain`]. False only when the
+    /// connect itself failed, so Mitra never saw the request.
+    #[error("{message}")]
+    UpstreamUnreachable { message: String, maybe_sent: bool },
+
     #[error("{0}")]
     Internal(String),
+
+    /// The current PIN given to change one's own PIN does not match. Its own
+    /// case so the route charges only this to the PIN throttle. A 422 like
+    /// `Validation`, never a 401: the frontend logs out on every 401.
+    #[error("PIN saat ini tidak sesuai")]
+    WrongCurrentPin,
 }

@@ -2,6 +2,9 @@ import { useState, type FormEvent } from "react"
 import { Button, Form, Input, Label, Modal, TextField } from "@heroui/react"
 import { PauseCircle } from "lucide-react"
 
+import { id } from "@/i18n/id"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
+
 interface HoldCartDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -35,6 +38,14 @@ function HoldCartForm({
   onHold,
 }: Pick<HoldCartDialogProps, "defaultLabel" | "onHold">) {
   const [label, setLabel] = useState("")
+  // F3 focuses the name field, so the next item scanned before the dialog is
+  // closed would hold the cart under its barcode. Its Enter is swallowed, so
+  // the form is not submitted.
+  const scanGuard = useScanBurstGuard({
+    value: label,
+    onRestore: setLabel,
+    message: id.cashier.scanIgnoredInField,
+  })
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -60,7 +71,7 @@ function HoldCartForm({
         </p>
         <TextField autoFocus fullWidth value={label} variant="secondary" onChange={setLabel}>
           <Label>Nama pelanggan</Label>
-          <Input maxLength={40} placeholder={defaultLabel} />
+          <Input maxLength={40} placeholder={defaultLabel} onKeyDown={scanGuard.handleKeyDown} />
         </TextField>
       </Modal.Body>
       <Modal.Footer>

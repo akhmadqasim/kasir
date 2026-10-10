@@ -8,6 +8,11 @@ use axum::response::Response;
 use crate::http::error::FailureInfo;
 use crate::utils::logging;
 
+/// Caps on the caller-controlled parts of a log line, so one request cannot
+/// write kilobytes to the log.
+const MAX_LOGGED_PATH_CHARS: usize = 200;
+const MAX_LOGGED_MESSAGE_CHARS: usize = 500;
+
 /// Write every failed API call to the log files, in one place.
 ///
 /// Before this, only `Database` and `Internal` errors were logged (they hide
@@ -21,7 +26,7 @@ use crate::utils::logging;
 /// logged in yet" is the expected answer).
 pub async fn log_failures(req: Request, next: Next) -> Response {
     let method = req.method().clone();
-    let path = req.uri().path().to_string();
+    let path = clip(req.uri().path(), MAX_LOGGED_PATH_CHARS);
 
     let response = next.run(req).await;
 
@@ -32,7 +37,13 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
             .get::<FailureInfo>()
             .map(|info| (info.code, info.message.as_str()))
             .unwrap_or(("-", "-"));
-        let line = format!("{method} {path} -> {} {code}: {message}", status.as_u16());
+        let line = format!(
+            "{} {} -> {} {code}: {}",
+            clip(method.as_str(), MAX_LOGGED_PATH_CHARS),
+            path,
+            status.as_u16(),
+            clip(message, MAX_LOGGED_MESSAGE_CHARS),
+        );
         if status.is_server_error() {
             logging::log_error(&line);
         } else {
@@ -41,6 +52,14 @@ pub async fn log_failures(req: Request, next: Next) -> Response {
     }
 
     response
+}
+
+/// `text` cut to `max` chars, marked with an ellipsis when cut.
+fn clip(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_owned(),
+    }
 }
 
 fn should_log_failure(status: StatusCode, method: &Method, path: &str) -> bool {
@@ -104,5 +123,16 @@ mod tests {
             &get,
             "/api/reports"
         ));
+    }
+
+    /// A huge request path must not reach the log whole.
+    #[test]
+    fn long_caller_text_is_clipped_before_logging() {
+        let path = format!("/api/products/barcode/{}", "a".repeat(60_000));
+        let clipped = clip(&path, MAX_LOGGED_PATH_CHARS);
+        assert_eq!(clipped.chars().count(), MAX_LOGGED_PATH_CHARS + 1);
+        assert!(clipped.ends_with('…'));
+        assert_eq!(clip("/api/x", MAX_LOGGED_PATH_CHARS), "/api/x");
+        assert_eq!(clip("ééé", 2), "éé…");
     }
 }

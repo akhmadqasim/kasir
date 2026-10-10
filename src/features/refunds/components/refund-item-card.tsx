@@ -13,6 +13,7 @@ import {
 import type { TransactionDetailItem } from "@/features/transactions/types"
 import type { RefundItemState } from "../hooks/use-refund-form"
 import { REFUND_CONDITION_OPTIONS, isRefundCondition } from "../labels"
+import { isPpobRefundLine } from "../refund-limits"
 
 interface RefundItemCardProps {
   item: TransactionDetailItem
@@ -25,6 +26,8 @@ export function RefundItemCard({ item, state, onUpdate }: RefundItemCardProps) {
   if (!state) return null
 
   const isFullyRefunded = state.maxQty <= 0
+  // A failed PPOB top-up goes back whole and as money only: no qty, no condition.
+  const isPpob = isPpobRefundLine(item)
 
   return (
     // Permukaan bertingkat di dalam panel; kotak centangnya sendiri yang
@@ -55,6 +58,11 @@ export function RefundItemCard({ item, state, onUpdate }: RefundItemCardProps) {
                 {formatRupiah(lineDiscountAmount(item))}
               </span>
             )}
+            {isPpob && !isFullyRefunded && (
+              <span className="text-xs text-muted">
+                Transaksi PPOB gagal — uangnya dikembalikan penuh
+              </span>
+            )}
             {isFullyRefunded ? (
               <span className="text-xs text-muted">{id.refund.fullyRefunded}</span>
             ) : item.refunded_quantity > 0 ? (
@@ -71,7 +79,7 @@ export function RefundItemCard({ item, state, onUpdate }: RefundItemCardProps) {
         </Checkbox.Content>
       </Checkbox>
 
-      {state.checked && (
+      {state.checked && !isPpob && (
         // `ps-7` menyejajarkan kolom isian dengan teks label di sebelah kotak centang.
         // Dua kolom sama lebar; batas qty turun ke Description supaya labelnya
         // tidak patah jadi dua baris di panel yang sempit (layar 1024px).

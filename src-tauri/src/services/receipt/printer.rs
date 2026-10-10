@@ -67,6 +67,7 @@ pub(super) async fn print_target(db: &DatabaseConnection) -> Result<PrintTarget,
     let settings = get_printer_settings(&store.additional_info);
     let printer_id = settings
         .printer_id
+        .filter(|id| !id.is_empty())
         .ok_or_else(|| AppError::Validation("Printer belum dikonfigurasi".into()))?;
 
     Ok(PrintTarget {

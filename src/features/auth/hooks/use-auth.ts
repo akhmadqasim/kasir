@@ -58,6 +58,19 @@ async function fetchSessionUser(): Promise<User | null> {
   }
 }
 
+/**
+ * Whoever the store next holds claims the till, at login and at the boot
+ * `/auth/me` alike: a different user starts on an empty cart with no shift
+ * cached, the same user back after an expiry keeps both.
+ */
+useAuthStore.subscribe((state, previous) => {
+  const userId = state.user?.id
+  if (userId === undefined || userId === previous.user?.id) return
+  if (useCartStore.getState().claimFor(userId)) {
+    useShiftStore.getState().clearShift()
+  }
+})
+
 export function useLogin() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()

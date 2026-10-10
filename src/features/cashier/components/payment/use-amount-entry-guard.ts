@@ -2,11 +2,7 @@ import { useCallback, useRef, type KeyboardEvent } from "react"
 
 import { id } from "@/i18n/id"
 import { toast } from "@/lib/toast"
-import {
-  EMPTY_AMOUNT_ENTRY_TIMING,
-  isScannerBurstEntry,
-  trackAmountEntry,
-} from "../../payment-behavior"
+import { EMPTY_SCANNER_BURST, isScannerBurst, trackScannerBurst } from "@/lib/scanner-burst"
 
 interface UseAmountEntryGuardArgs {
   /** `\` — fill the field's method with what is left to pay. */
@@ -18,23 +14,19 @@ interface UseAmountEntryGuardArgs {
 }
 
 /**
- * The keys of an amount field. A scanner is a keyboard: a burst of digits
- * plus Enter in an amount field must not close the sale. The timing comes
- * from `onKeyDown` (not `onChange`, as before `RupiahField`): HeroUI's
- * `TextField` only passes the value on, not the DOM event, so each
- * keystroke's `event.timeStamp` is taken here. An Enter that arrives inside
- * a scan burst is ignored and the amount emptied, so the cashier never
- * charges a barcode.
+ * The keys of an amount field. An Enter that closes a scanner burst empties
+ * the amount instead of paying. The timing comes from `onKeyDown`, since
+ * HeroUI's `TextField` passes on only the value; the digits are the field's.
  */
 export function useAmountEntryGuard({
   onRemainingAmount,
   onScanRejected,
   onSubmit,
 }: UseAmountEntryGuardArgs) {
-  const entryRef = useRef(EMPTY_AMOUNT_ENTRY_TIMING)
+  const entryRef = useRef(EMPTY_SCANNER_BURST)
 
   const resetAmountEntry = useCallback(() => {
-    entryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
+    entryRef.current = EMPTY_SCANNER_BURST
   }, [])
 
   const handleAmountKeyDown = useCallback(
@@ -47,23 +39,17 @@ export function useAmountEntryGuard({
         return
       }
       if (event.key !== "Enter") {
-        entryRef.current = trackAmountEntry(entryRef.current, event.timeStamp)
+        entryRef.current = trackScannerBurst(entryRef.current, "", event.timeStamp)
         return
       }
 
       event.preventDefault()
 
       const typedAmount = currentAmount != null ? String(currentAmount) : ""
-      if (
-        isScannerBurstEntry({
-          amount: typedAmount,
-          ...entryRef.current,
-          submittedAt: event.timeStamp,
-        })
-      ) {
-        entryRef.current = EMPTY_AMOUNT_ENTRY_TIMING
+      if (isScannerBurst({ ...entryRef.current, digits: typedAmount }, event.timeStamp)) {
+        entryRef.current = EMPTY_SCANNER_BURST
         onScanRejected(method)
-        toast.warning(id.cashier.scanIgnoredInAmount)
+        toast.warning(id.cashier.scanIgnoredInField)
         return
       }
 

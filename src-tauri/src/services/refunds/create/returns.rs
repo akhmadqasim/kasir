@@ -13,15 +13,29 @@ use crate::domain::refunds::RefundItemInput;
 use crate::domain::Actor;
 use crate::entity::{products, refund_items, refunds, stock_writeoffs, transaction_items};
 use crate::services::document_number::next_writeoff_number;
+use crate::services::transactions::is_refundable_line;
 use crate::utils::AppError;
 
 /// One validated returned line: the sold line it points at, the product whose
-/// stock it moves, and the money it hands back.
+/// stock it moves, and the money it hands back. `product_id` is `None` for a
+/// failed PPOB line: money goes back, nothing goes on the shelf.
 pub(super) struct ClaimedLine<'a> {
     input: &'a RefundItemInput,
     txn_item: &'a transaction_items::Model,
-    product_id: i64,
+    product_id: Option<i64>,
     pub(super) amount: f64,
+}
+
+impl ClaimedLine<'_> {
+    /// The product coming back on this line; `None` for a failed PPOB line.
+    pub(super) fn product_id(&self) -> Option<i64> {
+        self.product_id
+    }
+
+    /// How many units of it come back.
+    pub(super) fn quantity(&self) -> i64 {
+        self.input.quantity
+    }
 }
 
 /// Resolves the sold line a refund input points at, together with the product
@@ -29,12 +43,15 @@ pub(super) struct ClaimedLine<'a> {
 /// client: `transaction_item_id` is the only thing a caller gets to choose, and
 /// it is checked against the lines of the transaction being refunded.
 ///
-/// PPOB lines carry no `product_id` — there is no physical stock to give back —
-/// so they are rejected here rather than failing later on a NOT NULL column.
+/// PPOB lines carry no `product_id` — there is no physical stock to give back.
+/// Only a line whose top-up `failed` may come back: it was never delivered, so
+/// the customer gets the money back (see `resolve_uncertain_ppob`). A line that
+/// went through, or whose outcome is still open (`pending`, `processing`,
+/// `uncertain`), is refused.
 fn resolve_refund_line<'a>(
     txn_items: &'a [transaction_items::Model],
     item_input: &RefundItemInput,
-) -> Result<(&'a transaction_items::Model, i64), AppError> {
+) -> Result<(&'a transaction_items::Model, Option<i64>), AppError> {
     let txn_item = txn_items
         .iter()
         .find(|ti| ti.id == item_input.transaction_item_id)
@@ -45,14 +62,14 @@ fn resolve_refund_line<'a>(
             ))
         })?;
 
-    let product_id = txn_item.product_id.ok_or_else(|| {
-        AppError::Validation(format!(
-            "'{}' bukan produk fisik dan tidak bisa di-refund",
+    if !is_refundable_line(txn_item) {
+        return Err(AppError::Validation(format!(
+            "'{}' bukan produk fisik dan hanya bisa di-refund bila transaksi PPOB-nya gagal",
             txn_item.product_name
-        ))
-    })?;
+        )));
+    }
 
-    Ok((txn_item, product_id))
+    Ok((txn_item, txn_item.product_id))
 }
 
 /// Units returned per sold line (`transaction_items.id`): by earlier refunds of
@@ -112,6 +129,13 @@ impl RefundTally {
                     input.quantity, available_qty, txn_item.product_name
                 )));
             }
+            // A failed top-up delivered nothing, so all of it goes back at once.
+            if product_id.is_none() && input.quantity != available_qty {
+                return Err(AppError::Validation(format!(
+                    "'{}' harus di-refund penuh ({})",
+                    txn_item.product_name, available_qty
+                )));
+            }
 
             *self
                 .claimed_here
@@ -130,18 +154,29 @@ impl RefundTally {
     }
 
     /// The sale's status once this refund is in: `refunded` when every unit
-    /// sold has come back, `partial_refund` otherwise.
+    /// sold has come back and nothing else of the sale kept its value,
+    /// `partial_refund` otherwise.
     ///
     /// Counted per unit across the whole tally, not by matching the first input
     /// line per item: a mixed-condition return sends the same transaction item
     /// twice (one good, one damaged), and counting only the first line left a
     /// fully refunded sale stuck at `partial_refund` forever — where shift
     /// closing and the reports keep counting it at full value.
+    ///
+    /// A PPOB line (no `product_id`) that was delivered — or still may be
+    /// (`pending`, `processing`, `uncertain`) — cannot come back, and it stays
+    /// paid for: a mixed cart whose goods were all returned is still a sale
+    /// worth that line, so it stays `partial_refund`. A `failed` PPOB line is
+    /// refundable like goods, so it counts as back once it was refunded.
+    /// `refunded` tells the dashboard and the history the whole sale was
+    /// reversed. The history learns there is nothing left to return from the
+    /// lines themselves (`TransactionListItem::has_refundable_goods`).
     pub(super) fn settled_status(&self, txn_items: &[transaction_items::Model]) -> &'static str {
-        let total_refunded_qty: i64 = txn_items.iter().map(|ti| self.returned(ti.id)).sum();
-        let total_original_qty: i64 = txn_items.iter().map(|ti| ti.quantity).sum();
+        let mut refundable = txn_items.iter().filter(|ti| is_refundable_line(ti));
+        let all_back = refundable.all(|ti| self.returned(ti.id) >= ti.quantity);
+        let keeps_ppob = txn_items.iter().any(|ti| !is_refundable_line(ti));
 
-        if total_refunded_qty >= total_original_qty {
+        if all_back && !keeps_ppob {
             "refunded"
         } else {
             "partial_refund"
@@ -150,7 +185,8 @@ impl RefundTally {
 }
 
 /// Write the refund's lines. Goods in good condition go back on the shelf;
-/// damaged or expired goods stay off it and are written off instead.
+/// damaged or expired goods stay off it and are written off instead. A failed
+/// PPOB line is money only: no product, no condition, no stock movement.
 pub(super) async fn record_returned_lines<C: ConnectionTrait>(
     db: &C,
     actor: &Actor,
@@ -168,17 +204,20 @@ pub(super) async fn record_returned_lines<C: ConnectionTrait>(
             product_id: Set(line.product_id),
             quantity: Set(line.input.quantity),
             subtotal: Set(line.amount),
-            condition: Set(Some(line.input.condition.clone())),
+            condition: Set(line.product_id.map(|_| line.input.condition.clone())),
             created_at: Set(Some(now.to_string())),
         }
         .insert(db)
         .await?;
         recorded.push(refund_item);
 
+        let Some(product_id) = line.product_id else {
+            continue;
+        };
         if line.input.condition == "good" {
-            restock(db, line, now).await?;
+            restock(db, line, product_id, now).await?;
         } else {
-            write_off(db, actor, refund, line, now).await?;
+            write_off(db, actor, refund, line, product_id, now).await?;
         }
     }
 
@@ -188,16 +227,13 @@ pub(super) async fn record_returned_lines<C: ConnectionTrait>(
 async fn restock<C: ConnectionTrait>(
     db: &C,
     line: &ClaimedLine<'_>,
+    product_id: i64,
     now: &str,
 ) -> Result<(), AppError> {
     db.execute(Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "UPDATE products SET stock = stock + $1, updated_at = $2 WHERE id = $3",
-        vec![
-            line.input.quantity.into(),
-            now.into(),
-            line.product_id.into(),
-        ],
+        vec![line.input.quantity.into(), now.into(), product_id.into()],
     ))
     .await?;
 
@@ -210,12 +246,16 @@ async fn restock<C: ConnectionTrait>(
 /// the product's current buy price. Valuing every return at today's price made
 /// the same broken item a different loss depending on when the price last
 /// changed, and disagreed with the cost the reports take back off the sale.
-async fn unit_cost<C: ConnectionTrait>(db: &C, line: &ClaimedLine<'_>) -> Result<f64, AppError> {
+async fn unit_cost<C: ConnectionTrait>(
+    db: &C,
+    line: &ClaimedLine<'_>,
+    product_id: i64,
+) -> Result<f64, AppError> {
     if let Some(buy_price) = line.txn_item.buy_price {
         return Ok(buy_price);
     }
 
-    let product = products::Entity::find_by_id(line.product_id)
+    let product = products::Entity::find_by_id(product_id)
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("Produk tidak ditemukan".into()))?;
@@ -230,16 +270,17 @@ async fn write_off<C: ConnectionTrait>(
     actor: &Actor,
     refund: &refunds::Model,
     line: &ClaimedLine<'_>,
+    product_id: i64,
     now: &str,
 ) -> Result<(), AppError> {
-    let unit_cost = unit_cost(db, line).await?;
+    let unit_cost = unit_cost(db, line, product_id).await?;
 
     let writeoff_number = next_writeoff_number(db).await?;
 
     stock_writeoffs::ActiveModel {
         id: NotSet,
         writeoff_number: Set(writeoff_number),
-        product_id: Set(line.product_id),
+        product_id: Set(product_id),
         user_id: Set(actor.user_id),
         quantity: Set(line.input.quantity),
         reason: Set(line.input.condition.clone()),
@@ -313,6 +354,157 @@ mod tests {
         .expect("refund should succeed");
 
         assert_eq!(status_of(&conn, txn.id).await, "refunded");
+    }
+
+    /// A PPOB line can never be refunded and stays paid for, so a mixed cart
+    /// whose goods all came back is not a reversed sale: it stays
+    /// `partial_refund`, and nothing of it is left to return.
+    #[tokio::test]
+    async fn returning_every_good_of_a_mixed_cart_keeps_the_ppob_line_sold() {
+        let conn = setup().await;
+        let (_, txn, goods) = sold_line(&conn, "Gula 1kg", 14_000.0, 17_000.0, 20, 2).await;
+        insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1).await;
+
+        create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(goods.id, 2, "good")]),
+        )
+        .await
+        .expect("refund should succeed");
+
+        assert_eq!(status_of(&conn, txn.id).await, "partial_refund");
+        let again = create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(goods.id, 1, "good")]),
+        )
+        .await;
+        assert!(matches!(again, Err(AppError::Validation(_))));
+    }
+
+    async fn set_ppob_status(conn: &DatabaseConnection, item_id: i64, status: &str) {
+        conn.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE transaction_items SET ppob_status = $1 WHERE id = $2",
+            vec![status.into(), item_id.into()],
+        ))
+        .await
+        .expect("set ppob status");
+    }
+
+    /// Goods 20.000 + pulsa 12.000; the pulsa never arrived. The goods come
+    /// back first, then the failed pulsa: its 12.000 goes back too, as money
+    /// only (no stock, no write-off), and the sale ends fully refunded.
+    #[tokio::test]
+    async fn a_failed_ppob_line_of_a_mixed_cart_is_refunded_as_money_only() {
+        let conn = setup().await;
+        let (product, txn, goods) = sold_line(&conn, "Gula 1kg", 8_000.0, 10_000.0, 20, 2).await;
+        let pulsa =
+            insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1).await;
+        set_ppob_status(&conn, pulsa.id, "failed").await;
+
+        create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(goods.id, 2, "good")]),
+        )
+        .await
+        .expect("goods refund");
+        assert_eq!(status_of(&conn, txn.id).await, "partial_refund");
+
+        // The condition is meaningless for a top-up; even "damaged" writes
+        // nothing off.
+        let result = create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(pulsa.id, 1, "damaged")]),
+        )
+        .await
+        .expect("a failed top-up is refundable");
+
+        assert_eq!(result.refund.total_refund_amount, 12_000.0);
+        assert_eq!(result.items[0].product_id, None);
+        assert_eq!(result.items[0].condition, None);
+        assert_eq!(status_of(&conn, txn.id).await, "refunded");
+        assert_eq!(stock_of(&conn, product.id).await, 22);
+        let writeoffs = stock_writeoffs::Entity::find()
+            .all(&conn)
+            .await
+            .expect("query writeoffs");
+        assert!(writeoffs.is_empty());
+    }
+
+    /// A delivered top-up, or one whose outcome is still open, stays sold.
+    #[tokio::test]
+    async fn only_a_failed_ppob_line_can_be_refunded() {
+        for status in ["success", "uncertain", "pending", "processing"] {
+            let conn = setup().await;
+            let txn = sale(&conn, 12_000.0).await;
+            let pulsa =
+                insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1)
+                    .await;
+            set_ppob_status(&conn, pulsa.id, status).await;
+
+            let result = create(
+                &conn,
+                &actor(),
+                refund_of(txn.id, vec![line(pulsa.id, 1, "good")]),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(AppError::Validation(_))),
+                "{status} line must not be refundable, got {result:?}"
+            );
+        }
+    }
+
+    /// A failed top-up goes back whole, never a part of it.
+    #[tokio::test]
+    async fn a_failed_ppob_line_is_refunded_whole() {
+        let conn = setup().await;
+        let txn = sale(&conn, 24_000.0).await;
+        let pulsa =
+            insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 2).await;
+        set_ppob_status(&conn, pulsa.id, "failed").await;
+
+        let part = create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(pulsa.id, 1, "good")]),
+        )
+        .await;
+        assert!(matches!(part, Err(AppError::Validation(_))));
+
+        let whole = create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(pulsa.id, 2, "good")]),
+        )
+        .await
+        .expect("whole line refund");
+        assert_eq!(whole.refund.total_refund_amount, 24_000.0);
+    }
+
+    /// The goods of a mixed cart came back but the failed pulsa did not yet:
+    /// the sale must stay open for that refund, not be closed as `refunded`.
+    #[tokio::test]
+    async fn an_unrefunded_failed_ppob_line_keeps_the_sale_refundable() {
+        let conn = setup().await;
+        let (_, txn, goods) = sold_line(&conn, "Gula 1kg", 8_000.0, 10_000.0, 20, 1).await;
+        let pulsa =
+            insert_transaction_item(&conn, txn.id, None, "Pulsa 10K", 12_000.0, 10_000.0, 1).await;
+        set_ppob_status(&conn, pulsa.id, "failed").await;
+
+        create(
+            &conn,
+            &actor(),
+            refund_of(txn.id, vec![line(goods.id, 1, "good")]),
+        )
+        .await
+        .expect("goods refund");
+
+        assert_eq!(status_of(&conn, txn.id).await, "partial_refund");
     }
 
     #[tokio::test]
@@ -412,7 +604,7 @@ mod tests {
         .await
         .expect("refund should succeed");
 
-        assert_eq!(result.items[0].product_id, soap.id);
+        assert_eq!(result.items[0].product_id, Some(soap.id));
         assert_eq!(stock_of(&conn, soap.id).await, 11);
         assert_eq!(stock_of(&conn, rice.id).await, 4);
     }

@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/api/client"
 import { formatDateTime, formatRupiah } from "@/lib/format"
 import { toast } from "@/lib/toast"
 import { useAuthStore } from "@/features/auth"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
 import { useShiftStore } from "../hooks/use-shift-store"
 import { groupDigits, toDigits } from "../utils"
 
@@ -54,6 +55,14 @@ function OpenShiftForm({ isSubmitting, onSubmittingChange, onClose }: OpenShiftF
   const [openingCash, setOpeningCash] = useState("")
   const openShift = useShiftStore((s) => s.openShift)
   const user = useAuthStore((s) => s.user)
+  // The dialog opens itself on the cashier page and focuses this field, so
+  // the first item scanned before anyone looks would become the opening cash,
+  // and the scan's Enter would submit it. Its Enter is swallowed instead.
+  const scanGuard = useScanBurstGuard({
+    value: openingCash,
+    onRestore: setOpeningCash,
+    message: id.shift.scanIgnoredInAmount,
+  })
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -110,7 +119,12 @@ function OpenShiftForm({ isSubmitting, onSubmittingChange, onClose }: OpenShiftF
           onChange={(value) => setOpeningCash(toDigits(value))}
         >
           <Label>{id.shift.open.openingCash}</Label>
-          <Input className="text-right tabular-nums" inputMode="numeric" placeholder="0" />
+          <Input
+            className="text-right tabular-nums"
+            inputMode="numeric"
+            placeholder="0"
+            onKeyDown={scanGuard.handleKeyDown}
+          />
         </TextField>
       </Modal.Body>
 

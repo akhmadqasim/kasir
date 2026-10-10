@@ -1,23 +1,25 @@
 //! Store details, app settings, the admin's own PIN, and moving the database
 //! file in and out.
 
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set, TransactionTrait};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::auth::pin_has_valid_format;
 use crate::domain::settings::{
-    clamp_ui_zoom, obfuscate, parse_app_settings, parse_ui_zoom, AppSettings, ChangePinInput,
-    DatabaseInfo, PpobMarkup, PpobSettings, PublicAppSettings, PublicStoreInfo, SalesSettings,
-    UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput, UI_ZOOM_DEFAULT,
+    clamp_ui_zoom, obfuscate, parse_app_settings, parse_ui_zoom, validate_store_name, AppSettings,
+    ChangePinInput, DatabaseInfo, PpobMarkup, PpobSettings, PublicAppSettings, PublicStoreInfo,
+    SalesSettings, UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput,
+    UI_ZOOM_DEFAULT,
 };
 use crate::domain::Actor;
-use crate::entity::{store_info, users};
+use crate::entity::store_info;
 use crate::services::backup;
 use crate::services::ppob::auth::end_session;
 use crate::services::ppob::client::MitraClient;
 use crate::services::{auth, guard};
 use crate::utils::paths::{get_backup_dir, get_db_path};
+use crate::utils::text::ensure_printable_len;
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
@@ -57,10 +59,15 @@ pub async fn update_store_info(
 ) -> Result<store_info::Model, AppError> {
     guard::require_admin(actor)?;
 
+    let name = validate_store_name(&input.name)?;
+    // Both are printed in every receipt header.
+    ensure_printable_len(input.address.as_deref(), "Alamat toko")?;
+    ensure_printable_len(input.phone.as_deref(), "Telepon toko")?;
+
     let store = require_store_info(db).await?;
 
     let mut active: store_info::ActiveModel = store.into();
-    active.name = Set(input.name);
+    active.name = Set(name);
     active.address = Set(input.address);
     active.phone = Set(input.phone);
     active.email = Set(input.email);
@@ -287,21 +294,25 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, AppError
 
 /// Change the actor's own PIN. The current PIN is the proof of identity here, so
 /// this is the one privileged action that does not need a role.
+///
+/// Every other session of the account ends with the old PIN; `current_session`
+/// (the `sessions.id` of this request) is kept, so the person who just proved
+/// they know the PIN is not sent back to the login screen.
+///
+/// The write only lands while the stored hash is still the one the current PIN
+/// was checked against: an admin's reset in between wins, and this change is
+/// refused rather than silently undoing it.
 pub async fn change_pin(
     db: &DatabaseConnection,
     actor: &Actor,
+    current_session: &str,
     input: ChangePinInput,
 ) -> Result<(), AppError> {
     let user = auth::require_user(db, actor.user_id).await?;
 
-    // Verify current PIN
-    let pin_valid = auth::verify_pin(&input.current_pin, &user.pin_hash).await?;
-
-    if !pin_valid {
-        // A wrong current PIN is a rejected input, not a dead session — it
-        // must not map to 401, or the frontend's global "session is gone, log
-        // out" handler fires on a simple typo in this form.
-        return Err(AppError::Validation("PIN saat ini tidak sesuai".into()));
+    // Its own error case: the route charges only this one to the PIN throttle.
+    if !auth::verify_pin(&input.current_pin, &user.pin_hash).await? {
+        return Err(AppError::WrongCurrentPin);
     }
 
     // Worded for this form, which asks for the current PIN and the new one.
@@ -311,13 +322,18 @@ pub async fn change_pin(
         ));
     }
 
-    // Hash and save
-    let new_hash = auth::hash_pin(&input.new_pin).await?;
-
-    let mut active: users::ActiveModel = user.into();
-    active.pin_hash = Set(new_hash);
-    active.updated_at = Set(Some(now_ts()));
-    active.update(db).await?;
+    // Hashed before `begin()`, so the one pool connection stays free meanwhile.
+    let pin_hash = auth::hash_pin(&input.new_pin).await?;
+    let txn = db.begin().await?;
+    auth::set_pin(
+        &txn,
+        user.id,
+        pin_hash,
+        Some(&user.pin_hash),
+        Some(current_session),
+    )
+    .await?;
+    txn.commit().await?;
 
     Ok(())
 }
@@ -399,6 +415,7 @@ pub fn database_info() -> Result<DatabaseInfo, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::users;
     use crate::test_support::{insert_store_info, setup_test_db};
 
     /// Insert a user whose PIN really is hashed, which the shared fixture does
@@ -436,6 +453,7 @@ mod tests {
         let err = change_pin(
             &db,
             &actor,
+            "no-session",
             ChangePinInput {
                 current_pin: "9999".into(),
                 new_pin: "5678".into(),
@@ -443,12 +461,14 @@ mod tests {
         )
         .await
         .expect_err("wrong current PIN is refused");
-
         assert!(
-            matches!(err, AppError::Validation(_)),
-            "expected AppError::Validation, got {err:?}"
+            matches!(err, AppError::WrongCurrentPin),
+            "expected AppError::WrongCurrentPin, got {err:?}"
         );
         assert_eq!(err.to_string(), "PIN saat ini tidak sesuai");
+
+        let api = crate::http::error::ApiError::from(err);
+        assert_eq!(api.status(), axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// The right current PIN still changes it — the classification fix above
@@ -462,6 +482,7 @@ mod tests {
         change_pin(
             &db,
             &actor,
+            "no-session",
             ChangePinInput {
                 current_pin: "1234".into(),
                 new_pin: "5678".into(),
@@ -476,6 +497,92 @@ mod tests {
             .expect("query")
             .expect("row");
         assert!(bcrypt::verify("5678", &updated.pin_hash).expect("verify"));
+    }
+
+    /// Changing one's own PIN ends every other session of the account — a
+    /// browser that logged in with the old PIN no longer works — but keeps the
+    /// one the change was made from. A refused change touches nothing.
+    #[tokio::test]
+    async fn changing_ones_own_pin_ends_the_other_sessions_but_keeps_this_one() {
+        use crate::http::session;
+
+        let db = setup_test_db().await;
+        let user_id = insert_user_with_pin(&db, "kasir1", "1234").await;
+        let actor = Actor::new(user_id, "kasir");
+        let now = chrono::Utc::now();
+        let here = session::issue(&db, user_id, 60, None, None, now)
+            .await
+            .expect("issue")
+            .token;
+        let elsewhere = session::issue(&db, user_id, 60, None, None, now)
+            .await
+            .expect("issue")
+            .token;
+        let someone_else = session::issue(&db, 1, 60, None, None, now)
+            .await
+            .expect("issue")
+            .token;
+        let live = |token: String| {
+            let db = &db;
+            async move {
+                session::resolve(db, &token, now)
+                    .await
+                    .expect("resolve")
+                    .is_some()
+            }
+        };
+        let change = |current_pin: &str| ChangePinInput {
+            current_pin: current_pin.into(),
+            new_pin: "5678".into(),
+        };
+
+        change_pin(&db, &actor, &session::token_hash(&here), change("9999"))
+            .await
+            .expect_err("wrong current PIN");
+        assert!(
+            live(elsewhere.clone()).await,
+            "a refused change revokes nothing"
+        );
+
+        change_pin(&db, &actor, &session::token_hash(&here), change("1234"))
+            .await
+            .expect("changed");
+        assert!(live(here).await, "the session that made the change stays");
+        assert!(!live(elsewhere).await);
+        assert!(live(someone_else).await, "other accounts are untouched");
+    }
+
+    /// The store name heads every receipt and the login screen; onboarding
+    /// refuses a blank one and so must the later edit. Surrounding spaces are
+    /// trimmed rather than stored.
+    #[tokio::test]
+    async fn a_blank_store_name_is_refused_and_a_padded_one_trimmed() {
+        let db = setup_test_db().await;
+        insert_store_info(&db, false).await;
+        let admin = Actor::new(1, "admin");
+        let named = |name: &str| UpdateStoreInfoInput {
+            name: name.into(),
+            address: None,
+            phone: None,
+            email: None,
+        };
+
+        for blank in ["", "   "] {
+            let err = update_store_info(&db, &admin, named(blank))
+                .await
+                .expect_err("blank name refused");
+            assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+        }
+        assert_eq!(
+            get_store_info(&db).await.expect("read").expect("row").name,
+            "Toko Test",
+            "the stored name is untouched"
+        );
+
+        let saved = update_store_info(&db, &admin, named("  Toko Makmur  "))
+            .await
+            .expect("saved");
+        assert_eq!(saved.name, "Toko Makmur");
     }
 
     #[tokio::test]

@@ -3,10 +3,11 @@ import { Button, Table } from "@heroui/react"
 
 import { formatRupiah } from "@/lib/format"
 import { id } from "@/i18n/id"
-import type { ExchangeItem } from "../hooks/use-refund-form"
+import type { PricedExchangeItem } from "../hooks/use-refund-form"
 
 interface ExchangeItemsTableProps {
-  items: ExchangeItem[]
+  /** Priced as the server books them: see `exchange-pricing.ts`. */
+  items: PricedExchangeItem[]
   onQuantityChange: (productId: number, quantity: number) => void
   onRemove: (productId: number) => void
 }
@@ -32,8 +33,15 @@ export function ExchangeItemsTable({ items, onQuantityChange, onRemove }: Exchan
                   <div className="min-w-0">
                     <p className="font-medium leading-snug">{item.product_name}</p>
                     <p className="text-xs text-muted">
-                      {formatRupiah(item.sell_price)} / {item.unit}
+                      {formatRupiah(item.unitPrice)} / {item.unit}
                     </p>
+                    {/* Swapped for the same product: priced as the customer
+                        paid, not at today's price. */}
+                    {item.matchedQuantity > 0 && (
+                      <p className="text-xs text-muted">
+                        {id.refund.likeForLikePrice(item.matchedQuantity, item.unit)}
+                      </p>
+                    )}
                   </div>
                 </Table.Cell>
                 <Table.Cell>
@@ -63,7 +71,7 @@ export function ExchangeItemsTable({ items, onQuantityChange, onRemove }: Exchan
                   </div>
                 </Table.Cell>
                 <Table.Cell className="text-right font-medium whitespace-nowrap">
-                  {formatRupiah(item.sell_price * item.quantity)}
+                  {formatRupiah(item.subtotal)}
                 </Table.Cell>
                 <Table.Cell>
                   {/* Aksi baris yang merusak: `danger-soft` — DESIGN.md §5.4. */}

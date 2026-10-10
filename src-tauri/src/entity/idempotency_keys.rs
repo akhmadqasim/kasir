@@ -20,6 +20,14 @@ pub struct Model {
     pub response_body: Option<String>,
     pub created_at: String,
     pub expires_at: String,
+    /// The sale this key produced, written inside the sale's own DB
+    /// transaction (migration 028). Lets a key stranded `in_progress` by a
+    /// crash be completed (sale committed) or released (it did not).
+    pub transaction_id: Option<i64>,
+    /// A random token per claim (migration 030). Every attempt with a key
+    /// shares `id`; this tells one claim from a retry's re-claim, even within
+    /// the same second.
+    pub claim_nonce: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

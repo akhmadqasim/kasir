@@ -10,6 +10,7 @@ import {
   CHANNEL_FILTERS,
   PAYMENT_METHOD_FILTERS,
   STATUS_FILTERS,
+  statusFilterPatch,
   type TransactionFilters,
 } from "../transaction-filters"
 
@@ -70,7 +71,7 @@ export function TransactionFilterBar({ filters, onChange, onReset }: Transaction
         placeholder={id.transactions.allStatus}
         options={STATUS_FILTERS}
         value={filters.status || ALL}
-        onChange={(key) => onChange({ status: key === ALL || key === null ? "" : key })}
+        onChange={(key) => onChange(statusFilterPatch(key === ALL || key === null ? "" : key))}
       />
 
       {onReset && (

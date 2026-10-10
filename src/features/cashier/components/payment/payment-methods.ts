@@ -1,3 +1,4 @@
+import { isEditableElement } from "@/lib/dom"
 import {
   SELECTABLE_PAYMENT_METHODS,
   isSelectablePaymentMethod,
@@ -63,11 +64,9 @@ export function findMethodByShortcut(key: string): PaymentMethodOption | undefin
  * name, the same way the Uang Pas shortcut excludes it.
  */
 export function isTypingTarget(target: EventTarget | null): boolean {
-  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
-  if (target instanceof HTMLElement && target.isContentEditable) return true
   if (isPinField(target)) return true
-  if (!(target instanceof HTMLInputElement)) return false
-  return target.getAttribute("inputmode") !== "numeric"
+  if (target instanceof HTMLInputElement) return target.getAttribute("inputmode") !== "numeric"
+  return isEditableElement(target)
 }
 
 /** The PIN is typed digit by digit like an amount, but it is not one. */

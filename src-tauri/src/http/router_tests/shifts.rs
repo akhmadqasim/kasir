@@ -166,3 +166,74 @@ async fn a_shifts_summary_and_cash_flows_are_its_owners_or_an_admins() {
         }
     }
 }
+
+/// The cash-flow report used to list every shift's drawer rows to any session.
+/// A kasir now gets only their own shifts' rows; an admin still gets all.
+#[tokio::test]
+async fn the_cash_flow_report_shows_a_kasir_only_their_own_shifts() {
+    let db = setup_test_db().await;
+    let first = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let second = insert_user_with_pin(&db, "kasir2", "1234", "kasir").await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let first_token = login_token(&db, first.id).await;
+    let second_token = login_token(&db, second.id).await;
+    let admin_token = login_token(&db, admin.id).await;
+    let state = state(db.clone());
+
+    for (token, amount) in [(&first_token, 10_000.0), (&second_token, 20_000.0)] {
+        let shift = router(&state)
+            .oneshot(
+                same_origin(Method::POST, "/api/shifts")
+                    .header(header::COOKIE, cookie(token))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(json_body(json!({ "openingCash": 0.0 })))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let shift_id = body_json(shift).await["id"].as_i64().expect("shift id");
+        let flow = router(&state)
+            .oneshot(
+                same_origin(Method::POST, &format!("/api/shifts/{shift_id}/cash-flows"))
+                    .header(header::COOKIE, cookie(token))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(json_body(json!({
+                        "flowType": "out",
+                        "amount": amount,
+                        "description": "beli plastik",
+                    })))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(flow.status(), StatusCode::CREATED);
+    }
+
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let path = format!("/api/reports/cash-flows?start_date={today}&end_date={today}");
+    let report = |token: String| {
+        let state = state.clone();
+        let path = path.clone();
+        async move {
+            let response = router(&state)
+                .oneshot(
+                    same_origin(Method::GET, &path)
+                        .header(header::COOKIE, cookie(&token))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK);
+            body_json(response).await
+        }
+    };
+
+    let mine = report(first_token.clone()).await;
+    assert_eq!(mine["items"].as_array().expect("items").len(), 1);
+    assert_eq!(mine["totalOut"], json!(10_000.0));
+
+    let all = report(admin_token.clone()).await;
+    assert_eq!(all["items"].as_array().expect("items").len(), 2);
+    assert_eq!(all["totalOut"], json!(30_000.0));
+}

@@ -63,6 +63,9 @@ pub(crate) fn net_product_sales_ctes() -> String {
             SELECT product_id FROM sold
             UNION
             SELECT bucket as product_id FROM refund_adjust
+            -- A refunded failed PPOB line has no product (NULL bucket); like
+            -- the PPOB sale it reverses, it is not a product row.
+            WHERE bucket IS NOT NULL
         ),
         net AS (
             SELECT

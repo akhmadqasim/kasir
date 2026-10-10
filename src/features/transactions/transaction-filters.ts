@@ -29,11 +29,20 @@ export const PAYMENT_METHOD_FILTERS = [
   { key: "mixed", label: id.payment.mixed },
 ] as const
 
+/**
+ * Status filters that match the sale's PPOB *lines* (`services/transactions/
+ * queries.rs`), not `transactions.status` — checkout leaves the sale
+ * `completed` while its lines move. "Perlu dicek" lists the `uncertain` ones.
+ */
+export const PPOB_UNCERTAIN_FILTER = "ppob_uncertain"
+const PPOB_LINE_FILTERS: readonly string[] = ["pending_ppob", "ppob_failed", PPOB_UNCERTAIN_FILTER]
+
 export const STATUS_FILTERS = [
   { key: ALL, label: id.transactions.allStatus },
   { key: "completed", label: id.transactions.completed },
   { key: "pending_ppob", label: id.transactions.pendingPpob },
   { key: "ppob_failed", label: id.transactions.ppobFailed },
+  { key: PPOB_UNCERTAIN_FILTER, label: id.transactions.ppobUncertain },
   { key: "refunded", label: id.transactions.refunded },
   { key: "partial_refund", label: id.transactions.partialRefund },
   { key: "deleted", label: id.transactions.deleted },
@@ -84,4 +93,22 @@ export function transactionListParams(
     date_from: from ? toLocalDateString(from) : undefined,
     date_to: to ? toLocalDateString(to) : undefined,
   }
+}
+
+/**
+ * The patch for picking a status. A PPOB line filter also drops the date range
+ * and the channel: a line can wait days for the biller, on the PPOB page or in
+ * a cart, and "today's sales" would hide exactly the old ones that need a person.
+ * The cashier can narrow the dates again afterwards.
+ */
+export function statusFilterPatch(status: string): Partial<TransactionFilters> {
+  if (PPOB_LINE_FILTERS.includes(status)) {
+    return { status, channel: ALL, dateRange: undefined }
+  }
+  return { status }
+}
+
+/** "Perlu dicek" across every day and channel — where the indicator leads. */
+export function ppobAttentionFilters(): TransactionFilters {
+  return { ...defaultTransactionFilters(), ...statusFilterPatch(PPOB_UNCERTAIN_FILTER) }
 }

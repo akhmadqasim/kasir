@@ -79,6 +79,16 @@ pub fn run() {
 
     let mitra_client = Arc::new(Mutex::new(services::ppob::MitraClient::new()));
 
+    // After the sweep above: lines it just made `uncertain`, and every ADVICE
+    // line under a week old, are looked up in the Mitra history (backing off
+    // 10 -> 30 -> 60 min while nothing settles) until settled. The loop only
+    // reuses a saved Mitra session or refreshes it — never a password login —
+    // and does nothing while PPOB is off or has no credentials.
+    tauri::async_runtime::spawn(services::transactions::run_ppob_reconciler(
+        database.clone(),
+        mitra_client.clone(),
+    ));
+
     let backup_scheduler = Arc::new(Mutex::new(services::backup::BackupScheduler::new()));
 
     let updater = Arc::new(updater::Updater::new());
@@ -115,9 +125,15 @@ pub fn run() {
     let mut builder =
         tauri::Builder::default().plugin(tauri_plugin_updater::Builder::new().build());
 
+    // The bridge socket has no authentication and can run script in the
+    // logged-in window: opt-in only, and loopback only.
     #[cfg(debug_assertions)]
-    {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    if mcp_bridge_opted_in(std::env::var("KASIR_MCP_BRIDGE").ok().as_deref()) {
+        builder = builder.plugin(
+            tauri_plugin_mcp_bridge::Builder::new()
+                .bind_address(MCP_BRIDGE_BIND)
+                .build(),
+        );
     }
 
     builder
@@ -245,4 +261,32 @@ fn window_origin(app: &tauri::App, http_port: u16) -> String {
     let _ = app;
 
     format!("http://127.0.0.1:{http_port}")
+}
+
+/// Debug builds only. The MCP bridge listens here, never on the LAN.
+#[cfg(debug_assertions)]
+const MCP_BRIDGE_BIND: &str = "127.0.0.1";
+
+/// Whether `KASIR_MCP_BRIDGE` asks for the debug MCP bridge (`1` only).
+#[cfg(debug_assertions)]
+fn mcp_bridge_opted_in(value: Option<&str>) -> bool {
+    value.is_some_and(|v| v.trim() == "1")
+}
+
+#[cfg(all(test, debug_assertions))]
+mod mcp_bridge_tests {
+    use super::*;
+
+    #[test]
+    fn the_mcp_bridge_needs_an_explicit_opt_in_and_stays_on_loopback() {
+        assert!(!mcp_bridge_opted_in(None));
+        assert!(!mcp_bridge_opted_in(Some("")));
+        assert!(!mcp_bridge_opted_in(Some("0")));
+        assert!(!mcp_bridge_opted_in(Some("true")));
+        assert!(mcp_bridge_opted_in(Some("1")));
+        assert!(MCP_BRIDGE_BIND
+            .parse::<std::net::IpAddr>()
+            .unwrap()
+            .is_loopback());
+    }
 }

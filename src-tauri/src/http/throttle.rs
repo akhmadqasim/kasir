@@ -19,6 +19,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use sha2::{Digest, Sha256};
+
 /// Failures allowed before any delay is imposed. Three covers a mistyped PIN and
 /// a second try without annoying anybody.
 const FREE_ATTEMPTS: u32 = 3;
@@ -40,6 +42,14 @@ const RESET_AFTER: Duration = Duration::from_secs(60 * 60);
 /// attacker cycling usernames or addresses; normal use holds a handful.
 const PRUNE_THRESHOLD: usize = 1024;
 
+/// Hard cap on tracked keys. Past it, the least recently failed entries are
+/// dropped even if not yet stale, so memory stays bounded.
+const MAX_TRACKED_KEYS: usize = 4096;
+
+/// Key text longer than this is stored as its SHA-256, so a huge username or
+/// forwarded address costs a fixed amount of memory.
+const MAX_KEY_TEXT_CHARS: usize = 64;
+
 #[derive(Debug, Clone)]
 struct Failures {
     count: u32,
@@ -56,12 +66,28 @@ pub struct LoginThrottle {
 /// share a counter — usernames are compared case-sensitively by the login query,
 /// but an attacker must not get a fresh budget just by changing case.
 pub fn username_key(username: &str) -> String {
-    format!("u:{}", username.trim().to_lowercase())
+    bounded_key("u", &username.trim().to_lowercase())
+}
+
+/// Key for wrong current-PIN guesses on the own-PIN form. That form checks the
+/// same secret a login does, from a live session, so it is held to the same
+/// backoff — counted per account, since the session already names it.
+pub fn pin_change_key(user_id: i64) -> String {
+    format!("p:{user_id}")
 }
 
 /// Key for the client-address side of the count.
 pub fn address_key(address: &str) -> String {
-    format!("a:{address}")
+    bounded_key("a", address)
+}
+
+/// `prefix:text`, or `prefix#<sha256>` when `text` is too long to keep.
+fn bounded_key(prefix: &str, text: &str) -> String {
+    if text.chars().count() <= MAX_KEY_TEXT_CHARS {
+        format!("{prefix}:{text}")
+    } else {
+        format!("{prefix}#{}", hex::encode(Sha256::digest(text.as_bytes())))
+    }
 }
 
 impl LoginThrottle {
@@ -158,6 +184,10 @@ fn charge(entries: &mut HashMap<String, Failures>, keys: &[String], now: Instant
     if entries.len() > PRUNE_THRESHOLD {
         entries.retain(|_, entry| !entry.is_forgettable(now));
     }
+    if entries.len() + keys.len() > MAX_TRACKED_KEYS {
+        // Evict a quarter at once so the sort runs rarely under a flood.
+        evict_oldest(entries, MAX_TRACKED_KEYS * 3 / 4);
+    }
 
     for key in keys {
         let entry = entries.entry(key.clone()).or_insert(Failures {
@@ -176,6 +206,19 @@ fn charge(entries: &mut HashMap<String, Failures>, keys: &[String], now: Instant
         if let Some(lock) = lock_duration(entry.count) {
             entry.locked_until = Some(now + lock);
         }
+    }
+}
+
+/// Drop the least recently failed entries until at most `limit` remain.
+fn evict_oldest(entries: &mut HashMap<String, Failures>, limit: usize) {
+    let mut by_age: Vec<(Instant, String)> = entries
+        .iter()
+        .map(|(key, entry)| (entry.last_failure, key.clone()))
+        .collect();
+    by_age.sort_unstable();
+    let excess = entries.len().saturating_sub(limit);
+    for (_, key) in by_age.into_iter().take(excess) {
+        entries.remove(&key);
     }
 }
 
@@ -404,6 +447,36 @@ mod tests {
             throttle.settle_failure(&keys, now);
         }
         assert!(throttle.retry_after(&keys, now).is_none());
+    }
+
+    /// A huge username is stored as a fixed-size hash, still distinct per name.
+    #[test]
+    fn a_huge_username_is_kept_as_a_short_key() {
+        let huge = "x".repeat(1 << 20);
+        let key = username_key(&huge);
+        assert!(key.len() <= 2 + 64, "key is {} bytes", key.len());
+        assert_eq!(key, username_key(&huge.to_uppercase()));
+        assert_ne!(key, username_key(&format!("{huge}y")));
+        assert_eq!(username_key("kasir1"), "u:kasir1");
+        assert!(address_key(&"1".repeat(10_000)).len() <= 2 + 64);
+    }
+
+    /// Fresh keys that are not yet stale still cannot grow the map past its cap.
+    #[test]
+    fn the_map_never_holds_more_than_the_cap() {
+        let throttle = LoginThrottle::new();
+        let now = Instant::now();
+
+        for i in 0..(MAX_TRACKED_KEYS + 500) {
+            let at = now + Duration::from_millis(i as u64);
+            throttle.record_failure(&[username_key(&format!("user{i}"))], at);
+        }
+        assert!(throttle.tracked_keys() <= MAX_TRACKED_KEYS);
+
+        // The newest entry survives; the oldest went first.
+        let entries = throttle.entries.lock().unwrap();
+        assert!(entries.contains_key(&username_key(&format!("user{}", MAX_TRACKED_KEYS + 499))));
+        assert!(!entries.contains_key(&username_key("user0")));
     }
 
     /// A username differing only in case must not get a fresh attempt budget.

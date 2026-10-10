@@ -7,12 +7,14 @@ use sea_orm::{
 };
 
 use super::{
-    validate_payment_method, PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING, PPOB_STATUS_UNCERTAIN,
+    validate_payment_method, PPOB_STATUS_PENDING, PPOB_STATUS_PROCESSING, PPOB_STATUS_SUCCESS,
+    PPOB_STATUS_UNCERTAIN,
 };
 use crate::domain::transactions::{DeleteTransactionInput, UpdatePaymentMethodInput};
 use crate::domain::Actor;
 use crate::entity::{refunds, transaction_items, transactions};
 use crate::services::guard;
+use crate::utils::text::ensure_printable_len;
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
@@ -31,6 +33,7 @@ pub async fn void(
             "Alasan penghapusan wajib diisi".into(),
         ));
     }
+    ensure_printable_len(Some(&input.reason), "Alasan penghapusan")?;
 
     let transaction = transactions::Entity::find_by_id(input.transaction_id)
         .one(db)
@@ -103,14 +106,16 @@ pub async fn void(
 }
 
 /// Mark the sale voided, but only while it is still live, unrefunded and has
-/// no PPOB line whose outcome is still open. `false` when it matched no row.
+/// no PPOB line that is still open or already paid. `false` when it matched no
+/// row.
 ///
 /// The checks in [`void`] run outside its transaction, so two voids (a double
 /// click, or two admins) could both pass them; without this guard each restored
 /// the stock, giving the goods back twice. Whichever loses the race matches no
 /// row here and rolls back before touching stock. The same goes for a PPOB
 /// retry claimed in between: the line is `processing` again and the void must
-/// not land.
+/// not land. And a fulfilment that turns `success` in between means the
+/// provider has been paid — the void must not land then either.
 async fn soft_delete_if_voidable<C: ConnectionTrait>(
     db: &C,
     actor: &Actor,
@@ -133,7 +138,7 @@ async fn soft_delete_if_voidable<C: ConnectionTrait>(
                AND NOT EXISTS (SELECT 1 FROM refunds WHERE transaction_id = $4)
                AND NOT EXISTS (
                    SELECT 1 FROM transaction_items
-                   WHERE transaction_id = $4 AND ppob_status IN ($5, $6, $7)
+                   WHERE transaction_id = $4 AND ppob_status IN ($5, $6, $7, $8)
                )",
             vec![
                 now.into(),
@@ -143,19 +148,22 @@ async fn soft_delete_if_voidable<C: ConnectionTrait>(
                 PPOB_STATUS_PENDING.into(),
                 PPOB_STATUS_PROCESSING.into(),
                 PPOB_STATUS_UNCERTAIN.into(),
+                PPOB_STATUS_SUCCESS.into(),
             ],
         ))
         .await?;
     Ok(voided.rows_affected() == 1)
 }
 
-/// Why a sale cannot be voided yet because of its PPOB lines, if it cannot.
+/// Why a sale cannot be voided because of its PPOB lines, if it cannot.
 ///
 /// `pending` and `processing` mean a provider call is in flight: the provider
 /// may still pay, and voiding would hand the customer's money back for a
 /// purchase that then goes through. `uncertain` means the call's answer never
 /// arrived and the money may already be spent; a person has to settle it
-/// against the Mitra history first.
+/// against the Mitra history first. `success` means the provider has already
+/// been paid: voiding would zero the total and take the customer's cash out of
+/// the shift while the shop's Mitra balance is spent, so it is never allowed.
 async fn unsettled_ppob_refusal<C: ConnectionTrait>(
     db: &C,
     transaction_id: i64,
@@ -166,6 +174,7 @@ async fn unsettled_ppob_refusal<C: ConnectionTrait>(
             PPOB_STATUS_PENDING,
             PPOB_STATUS_PROCESSING,
             PPOB_STATUS_UNCERTAIN,
+            PPOB_STATUS_SUCCESS,
         ]))
         .all(db)
         .await?
@@ -173,6 +182,12 @@ async fn unsettled_ppob_refusal<C: ConnectionTrait>(
         .filter_map(|item| item.ppob_status)
         .collect::<Vec<_>>();
 
+    if statuses.iter().any(|s| s == PPOB_STATUS_SUCCESS) {
+        return Ok(Some(AppError::Validation(
+            "PPOB di transaksi ini sudah berhasil dibayar ke Mitra, jadi transaksinya tidak bisa dihapus."
+                .into(),
+        )));
+    }
     if statuses
         .iter()
         .any(|s| s == PPOB_STATUS_PENDING || s == PPOB_STATUS_PROCESSING)
@@ -245,6 +260,18 @@ pub async fn update_payment_method(
         });
     }
 
+    // A closed shift's cash was counted against what it expected; changing the
+    // method of a sale (or of a refund of it) booked to that shift would move
+    // its expected cash after the count. Checked here, after the UPDATE took
+    // the write lock, so a shift closing in between cannot slip past; the
+    // error drops `txn`, which rolls the UPDATE back.
+    if touches_closed_shift(&txn, input.transaction_id).await? {
+        return Err(AppError::Validation(
+            "Metode pembayaran tidak bisa diubah karena shift transaksi ini (atau shift refund-nya) sudah ditutup."
+                .into(),
+        ));
+    }
+
     // Changing payment method should also rewrite the payment breakdown
     // so shift closing and reports read the same source of truth.
     txn.execute(Statement::from_sql_and_values(
@@ -260,9 +287,20 @@ pub async fn update_payment_method(
          SELECT id, $2, NULL, total_amount, $3 FROM transactions WHERE id = $1",
         vec![
             input.transaction_id.into(),
-            input.payment_method.into(),
+            input.payment_method.clone().into(),
             now.into(),
         ],
+    ))
+    .await?;
+
+    // A refund copies the sale's method when it is made, and the shift's
+    // expected cash reads that copy. Left alone it would keep the old method:
+    // a cash sale corrected to QRIS would still subtract a cash payout that
+    // never left the drawer.
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "UPDATE refunds SET payment_method = $1 WHERE transaction_id = $2",
+        vec![input.payment_method.into(), input.transaction_id.into()],
     ))
     .await?;
 
@@ -274,6 +312,32 @@ pub async fn update_payment_method(
     txn.commit().await?;
 
     Ok(updated)
+}
+
+/// Whether the sale, or any refund of it, is booked to a shift that is no
+/// longer open.
+async fn touches_closed_shift<C: ConnectionTrait>(
+    db: &C,
+    transaction_id: i64,
+) -> Result<bool, AppError> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT EXISTS (
+                 SELECT 1 FROM shifts s
+                 WHERE s.status <> 'open'
+                   AND (s.id = (SELECT shift_id FROM transactions WHERE id = $1)
+                        OR s.id IN (SELECT shift_id FROM refunds
+                                    WHERE transaction_id = $1 AND shift_id IS NOT NULL))
+             ) AS closed",
+            vec![transaction_id.into()],
+        ))
+        .await?;
+
+    Ok(row
+        .map(|row| row.try_get::<bool>("", "closed"))
+        .transpose()?
+        .unwrap_or(false))
 }
 
 #[cfg(test)]
@@ -487,7 +551,7 @@ mod tests {
         }
 
         let conn = setup_test_db().await;
-        let item = seed_ppob_sale(&conn, "success").await;
+        let item = seed_ppob_sale(&conn, "failed").await;
         let voided = soft_delete_if_voidable(
             &conn,
             &actor(),
@@ -497,7 +561,37 @@ mod tests {
         )
         .await
         .expect("query");
-        assert!(voided, "a settled line does not block the write");
+        assert!(voided, "a failed line does not block the write");
+    }
+
+    /// A line that succeeded has already spent the shop's Mitra balance.
+    /// Voiding zeroed the total and took the customer's cash out of the shift,
+    /// so the sale must stay — at the pre-check and inside the write.
+    #[tokio::test]
+    async fn a_sale_whose_ppob_line_succeeded_cannot_be_voided() {
+        let conn = setup_test_db().await;
+        let item = seed_ppob_sale(&conn, PPOB_STATUS_SUCCESS).await;
+
+        match void(&conn, &actor(), void_of(&item)).await {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("sudah berhasil dibayar"),
+                "message should say the PPOB was paid, got: {msg}"
+            ),
+            other => panic!("expected Validation, got {:?}", other),
+        }
+        assert!(!is_voided(&conn, item.transaction_id).await);
+
+        let voided = soft_delete_if_voidable(
+            &conn,
+            &actor(),
+            item.transaction_id,
+            "Salah input",
+            &now_ts(),
+        )
+        .await
+        .expect("query");
+        assert!(!voided, "the write must not land on a paid PPOB line");
+        assert!(!is_voided(&conn, item.transaction_id).await);
     }
 
     /// Once the PPOB outcome is settled, the sale can be voided as before.
@@ -607,5 +701,65 @@ mod tests {
         )
         .await;
         assert!(matches!(missing, Err(AppError::NotFound(_))));
+    }
+
+    /// The sale's shift was closed and its cash counted: changing the method
+    /// now would move that shift's expected cash after the count.
+    #[tokio::test]
+    async fn the_payment_method_of_a_sale_in_a_closed_shift_cannot_change() {
+        use crate::domain::shifts::{CloseShiftInput, OpenShiftInput};
+        use crate::services::shifts;
+
+        let conn = setup_test_db().await;
+        let shift = shifts::open(
+            &conn,
+            &actor(),
+            OpenShiftInput {
+                opening_cash: Some(0.0),
+            },
+        )
+        .await
+        .expect("shift opens");
+        let sale = seed_sale(&conn).await;
+        assert_eq!(sale.transaction.shift_id, Some(shift.id));
+        shifts::close(
+            &conn,
+            &actor(),
+            CloseShiftInput {
+                shift_id: shift.id,
+                closing_cash: Some(2_000.0),
+                notes: None,
+            },
+        )
+        .await
+        .expect("shift closes");
+
+        let result = update_payment_method(
+            &conn,
+            &actor(),
+            UpdatePaymentMethodInput {
+                transaction_id: sale.transaction.id,
+                payment_method: "qris".to_string(),
+                reason: "Salah pilih".to_string(),
+            },
+        )
+        .await;
+
+        match result {
+            Err(AppError::Validation(msg)) => assert!(msg.contains("shift"), "got: {msg}"),
+            other => panic!("Expected Validation error, got: {other:?}"),
+        }
+        let stored = transactions::Entity::find_by_id(sale.transaction.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("sale");
+        assert_eq!(stored.payment_method, "cash");
+        let payments = transaction_payments::Entity::find()
+            .filter(transaction_payments::Column::TransactionId.eq(sale.transaction.id))
+            .all(&conn)
+            .await
+            .expect("query");
+        assert!(payments.iter().all(|p| p.payment_method == "cash"));
     }
 }

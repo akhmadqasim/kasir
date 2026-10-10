@@ -1,13 +1,12 @@
 //! Assembling a PPOB struk's [`PpobReceiptData`] from what we know of the line
 //! and what the provider said about it.
 
-use chrono::TimeZone;
-
 use crate::domain::ppob::HistoryPaymentItem;
 use crate::entity::{store_info, transaction_items};
 use crate::printing::ppob_receipt::PpobReceiptData;
-use crate::services::ppob::parsers::{get_num_field, parse_string, response_objects};
-use crate::utils::time::TIMESTAMP_FORMAT;
+use crate::services::ppob::history::{history_row_of_blob, parse_history_item, service_key};
+use crate::services::ppob::parsers::{find_number, find_string};
+use crate::utils::time::{utc_to_wib, TIMESTAMP_FORMAT};
 
 /// Mitra's own `"DD-MM-YYYY HH:MM:SS"` timestamp, already WIB — its history
 /// and its payment responses are never anything else, see
@@ -30,8 +29,7 @@ fn split_provider_wib_timestamp(value: &str) -> Option<(String, String)> {
 /// which zone the till happens to be set to.
 fn utc_to_wib_timestamp(utc_str: &str) -> Option<(String, String)> {
     let naive = chrono::NaiveDateTime::parse_from_str(utc_str, TIMESTAMP_FORMAT).ok()?;
-    let wib_offset = chrono::FixedOffset::east_opt(7 * 3600).unwrap();
-    let wib = wib_offset.from_utc_datetime(&naive);
+    let wib = utc_to_wib(naive.and_utc());
     Some((
         wib.format("%d-%m-%Y").to_string(),
         format!("{} WIB", wib.format("%H:%M")),
@@ -52,34 +50,6 @@ fn pulsa_date_time(
         Some((date, time)) => (Some(date), Some(time)),
         None => (None, None),
     }
-}
-
-/// First non-empty string the provider offers under any of `keys`, looked for
-/// in the response itself and in every wrapper `response_objects` knows about —
-/// a payment response keeps its status at the top and the struk details one
-/// level down, and which level that is depends on the endpoint.
-///
-/// The emptiness test sits *inside* the search, not after it. Mitra fills a
-/// field it has no value for with `""` as readily as it omits the key, so a
-/// `"receipt_text": ""` at the root would otherwise end the search and hide the
-/// real block one level down.
-/// Keys outrank nesting: `admin_fee` anywhere beats `fee` at the root. They are
-/// listed most-specific first for exactly that reason, and a wrapper holding the
-/// real `admin_fee` should not lose to a root that happens to carry a vaguer
-/// synonym.
-fn provider_field(raw: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| {
-        response_objects(raw).find_map(|object| {
-            parse_string(object.get(*key))
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
-    })
-}
-
-fn provider_number(raw: &serde_json::Value, keys: &[&str]) -> Option<f64> {
-    keys.iter()
-        .find_map(|key| response_objects(raw).find_map(|object| get_num_field(object, &[*key])))
 }
 
 /// One of our own columns, treating a blank string as the absence it means.
@@ -127,44 +97,50 @@ impl ProviderSlip {
     /// throughout: an item saved before migration 023 has no blob at all, and
     /// one whose provider answered with fields we have never seen still yields
     /// the slip's shape with the gaps left open.
+    ///
+    /// A line settled from the Mitra history keeps the history row instead,
+    /// labelled (see `history::history_receipt_blob`): that row means the
+    /// total by `amount` and the bill by `amount_base_price`, so it is read
+    /// the way [`Self::from_history`] reads a row, not as a payment response.
     pub(super) fn from_response(provider_response: Option<&str>) -> Self {
         let raw: serde_json::Value = provider_response
             .and_then(|json| serde_json::from_str(json).ok())
             .unwrap_or(serde_json::Value::Null);
 
+        if let Some(row) = history_row_of_blob(&raw) {
+            return Self::from_history(&parse_history_item(row));
+        }
+
         Self {
-            customer_id: provider_field(
+            customer_id: find_string(
                 &raw,
                 &["customer_no", "customer_id", "idpel", "no_meter", "target"],
             ),
-            customer_name: provider_field(
+            customer_name: find_string(
                 &raw,
                 &["customer_name", "nama_pelanggan", "subscriber_name", "nama"],
             ),
-            token_number: provider_field(&raw, &["token_number"]),
-            serial_number: provider_field(&raw, &["serial_number", "token", "sn"]),
-            reference_number: provider_field(
-                &raw,
-                &["no_ref", "ref", "reference", "trx_id", "trxid"],
-            ),
-            payment_code: provider_field(&raw, &["payment_code", "raw_paymentcode"]),
-            description: provider_field(&raw, &["igr_desc"]),
-            receipt_text: provider_field(&raw, &["receipt_text", "invoice_string"]),
+            token_number: find_string(&raw, &["token_number"]),
+            serial_number: find_string(&raw, &["serial_number", "token", "sn"]),
+            reference_number: find_string(&raw, &["no_ref", "ref", "reference", "trx_id", "trxid"]),
+            payment_code: find_string(&raw, &["payment_code", "raw_paymentcode"]),
+            description: find_string(&raw, &["igr_desc"]),
+            receipt_text: find_string(&raw, &["receipt_text", "invoice_string"]),
             // Deliberately not read from `amount`: the payment endpoints mean
             // the bill by it and the history endpoint means the total, and
             // from a stored blob there is no telling which shape arrived.
             // Guessing wrong prints the admin fee twice or not at all, so the
             // figure is only taken from a field that means one thing.
-            bill_amount: provider_number(&raw, &["base_price", "nominal", "denom"]),
-            admin_fee: provider_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]),
-            total: provider_number(&raw, &["total", "total_payment", "total_amount"]),
+            bill_amount: find_number(&raw, &["base_price", "nominal", "denom"]),
+            admin_fee: find_number(&raw, &["admin_fee", "admin", "amount_fee", "fee"]),
+            total: find_number(&raw, &["total", "total_payment", "total_amount"]),
             // Kept apart from `reference_number`'s own fallback list even
             // though both would otherwise read `trx_id`: they are different
             // Mitra ids (the struk prints both, under "Nomor Invoice #" and
             // "No. Ref:"), and `reference_number`'s existing fallback order
             // is left as it was for every other service.
-            invoice_number: provider_field(&raw, &["trx_id", "trxid"]),
-            formatted_date: provider_field(&raw, &["formatted_date", "created_at"]),
+            invoice_number: find_string(&raw, &["trx_id", "trxid"]),
+            formatted_date: find_string(&raw, &["formatted_date", "created_at"]),
         }
     }
 
@@ -261,22 +237,10 @@ impl PpobLine {
 
 /// Mitra's history names the service in capitals with spaces — `PLN`,
 /// `PAYMENT POINT` — where our lines use the keys the flows were written
-/// with. The struk only turns on `pln`, but the rest are mapped so the data
-/// reads the same whichever side it came from.
+/// with ([`service_key`]). A name we have not seen is kept, lowercased.
 fn history_service_type(item: &HistoryPaymentItem) -> String {
-    let raw = item
-        .service_type
-        .as_deref()
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase();
-    match raw.as_str() {
-        "" => String::new(),
-        "payment point" | "payment_point" | "pp" => "pp".to_string(),
-        "e-money" | "emoney" | "e money" => "emoney".to_string(),
-        "paket data" | "data" => "data".to_string(),
-        other => other.to_string(),
-    }
+    let raw = item.service_type.as_deref().unwrap_or_default();
+    service_key(raw).map_or_else(|| raw.trim().to_lowercase(), str::to_string)
 }
 
 /// Assemble a PPOB struk from what we know of the line and what the provider
@@ -375,16 +339,13 @@ mod tests {
     fn provider_fields_are_found_in_the_root_and_in_every_known_wrapper() {
         let flat = json!({ "serial_number": "SN-1", "total": 54500 });
         assert_eq!(
-            provider_field(&flat, &["token_number", "serial_number"]),
+            find_string(&flat, &["token_number", "serial_number"]),
             Some("SN-1".to_string())
         );
-        assert_eq!(provider_number(&flat, &["total"]), Some(54500.0));
+        assert_eq!(find_number(&flat, &["total"]), Some(54500.0));
 
         let nested = json!({ "message": "OK", "history_payment": { "no_ref": "REF-9" } });
-        assert_eq!(
-            provider_field(&nested, &["no_ref"]),
-            Some("REF-9".to_string())
-        );
+        assert_eq!(find_string(&nested, &["no_ref"]), Some("REF-9".to_string()));
     }
 
     /// Mitra sends money as a number on one service and a quoted string on the
@@ -392,14 +353,14 @@ mod tests {
     #[test]
     fn provider_values_survive_the_providers_own_inconsistency() {
         let raw = json!({ "amount": "5283.00", "customer_name": "  EDA RUSDIANI  ", "note": "" });
-        assert_eq!(provider_number(&raw, &["amount"]), Some(5283.0));
+        assert_eq!(find_number(&raw, &["amount"]), Some(5283.0));
         assert_eq!(
-            provider_field(&raw, &["customer_name"]),
+            find_string(&raw, &["customer_name"]),
             Some("EDA RUSDIANI".to_string())
         );
         // An empty string is not an answer; the struk leaves the line out.
-        assert_eq!(provider_field(&raw, &["note"]), None);
-        assert_eq!(provider_field(&raw, &["nothing_like_this"]), None);
+        assert_eq!(find_string(&raw, &["note"]), None);
+        assert_eq!(find_string(&raw, &["nothing_like_this"]), None);
     }
 
     /// Mitra fills a field it has no value for with `""` as readily as it drops
@@ -418,11 +379,11 @@ mod tests {
         });
 
         assert_eq!(
-            provider_field(&raw, &["receipt_text", "invoice_string"]),
+            find_string(&raw, &["receipt_text", "invoice_string"]),
             Some("NO METER : 45094614059".to_string())
         );
         assert_eq!(
-            provider_field(&raw, &["token_number", "serial_number"]),
+            find_string(&raw, &["token_number", "serial_number"]),
             Some("69915243803067642910".to_string())
         );
     }
@@ -442,8 +403,8 @@ mod tests {
     #[test]
     fn a_missing_provider_blob_yields_nothing_rather_than_panicking() {
         let raw = serde_json::Value::Null;
-        assert_eq!(provider_field(&raw, &["receipt_text"]), None);
-        assert_eq!(provider_number(&raw, &["total"]), None);
+        assert_eq!(find_string(&raw, &["receipt_text"]), None);
+        assert_eq!(find_number(&raw, &["total"]), None);
     }
 
     // -----------------------------------------------------------------------
@@ -656,6 +617,9 @@ mod tests {
             ppob_message: None,
             ppob_serial_number: Some("04273700000625739077".to_string()),
             created_at: Some("2026-09-12 23:44:34".to_string()),
+            ppob_advice: None,
+            ppob_last_attempt_at: None,
+            ppob_history_trx_id: None,
         }
     }
 
@@ -794,6 +758,99 @@ mod tests {
         assert_eq!(slip.total, None);
         assert_eq!(slip.receipt_text.as_deref(), Some("NO METER : 14300000001"));
         assert_eq!(ProviderSlip::from_response(None), ProviderSlip::default());
+    }
+
+    /// A PLN prepaid line settled from the Mitra history, built from the
+    /// real row behind `printing::ppob_receipt::tests::pln_prepaid` as the
+    /// live `history-payment` sends it: `amount` is the total (admin fee in
+    /// it), the bill is `amount_base_price`, the fee `amount_fee`, and there
+    /// is no `total` key at all. The struk must print 20.000 + 3.500 = 23.500,
+    /// not fall back to what the customer paid or count the fee twice.
+    #[test]
+    fn a_line_settled_from_history_prints_the_providers_own_totals() {
+        let row = json!({
+            "trxid": "50150001",
+            "status": "SUKSES",
+            "created_at": "2026-09-10 12:45:38",
+            "type": "PLN",
+            "plu": "321700757",
+            "product_name": "-",
+            "plu_desc": "PLN - 14300000001",
+            "amount": 23500,
+            "amount_base_price": 20000,
+            "amount_fee": 3500,
+            "raw_paymentcode": "14300000001",
+            "payment_code": "L14300000001-1-260910124538",
+            "token_number": "1111 2222 3333 4444 5555",
+            "no_ref": "13514299",
+            "igr_desc": "Pre paid dengan nomor meter",
+            "receipt_text": "
+
+STRUK PEMBELIAN LISTRIK PRABAYAR
+
+NO METER       : 14300000001
+TOKEN          : 1111 2222 3333 4444 5555
+"
+        });
+        let blob = crate::services::ppob::history::history_receipt_blob(row.as_object().unwrap());
+        let item = transaction_items::Model {
+            product_name: "Token PLN 20.000".to_string(),
+            product_price: 25000.0,
+            buy_price: Some(23500.0),
+            subtotal: 25000.0,
+            net_subtotal: 25000.0,
+            service_type: Some("pln".to_string()),
+            service_ref: Some("14300000001".to_string()),
+            ppob_payment_code: None,
+            ppob_flag_id: Some("0".to_string()),
+            ppob_serial_number: Some("1111 2222 3333 4444 5555".to_string()),
+            ..pulsa_item_row()
+        };
+
+        let line = PpobLine::from_item(&item, "TRX-20260910-0001");
+        let data = build_ppob_receipt_data(
+            "Toko Contoh",
+            line,
+            ProviderSlip::from_response(Some(&blob)),
+        );
+
+        assert_eq!(data.amount, 20000.0);
+        assert_eq!(data.admin_fee, 3500.0);
+        assert_eq!(data.total, 23500.0);
+        assert_eq!(data.grand_total, 25000.0);
+        assert_eq!(data.reference_number.as_deref(), Some("13514299"));
+        assert_eq!(
+            data.payment_code.as_deref(),
+            Some("L14300000001-1-260910124538")
+        );
+        assert_eq!(
+            data.serial_number.as_deref(),
+            Some("1111 2222 3333 4444 5555")
+        );
+
+        let lines: Vec<String> = format_ppob_receipt(&data, 58)
+            .into_iter()
+            .map(|line| line.text)
+            .collect();
+        assert!(
+            lines.contains(&"Total             Rp 23.500".to_string()),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.contains(&"Biaya Layanan     Rp 1.500".to_string()),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.contains(&"Grand Total       Rp 25.000".to_string()),
+            "{lines:#?}"
+        );
+
+        // The same row stored bare, as a payment response would be, is what
+        // printed the wrong figures: no bill, no total, so the struk fell
+        // back to what the customer paid.
+        let bare = ProviderSlip::from_response(Some(&row.to_string()));
+        assert_eq!(bare.total, None);
+        assert_eq!(bare.bill_amount, None);
     }
 
     /// A stored pulsa response carries its own invoice id and timestamp

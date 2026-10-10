@@ -219,3 +219,42 @@ async fn the_printer_routes_need_a_session() {
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// A printer name the spooler does not list (here a UNC print-server path) is
+/// refused on save, so the till is never pointed at an attacker's host.
+#[tokio::test]
+async fn saving_an_unlisted_printer_name_is_refused() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+    let state = state(db);
+
+    let put = |body: serde_json::Value| {
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            router(&state)
+                .oneshot(
+                    same_origin(Method::PUT, "/api/printers/settings")
+                        .header(header::COOKIE, cookie(&token))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(json_body(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("response")
+        }
+    };
+
+    let refused = put(json!({ "printer_id": r"\192.0.2.1\evil" })).await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        body_json(refused).await["message"],
+        json!(crate::printing::UNKNOWN_PRINTER)
+    );
+
+    // Clearing the choice and other fields still save.
+    let cleared = put(json!({ "printer_id": "", "paper_width": 58 })).await;
+    assert!(cleared.status().is_success(), "{}", cleared.status());
+}

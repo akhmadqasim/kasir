@@ -5,6 +5,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use super::net_revenue::SALE_FILTER;
 use super::{day_end_exclusive_utc, day_start_utc, REPORT_ROW_LIMIT};
 use crate::domain::reports::{ReceiptReport, ReceiptRow};
+use crate::utils::sql::{escape_like, LIKE_ESCAPE};
 use crate::utils::AppError;
 
 pub async fn sales_receipts(
@@ -57,7 +58,7 @@ async fn query_sales_receipts(
             FROM transactions t
             WHERE {SALE_FILTER}
             AND t.created_at >= $1 AND t.created_at < $2
-            AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%')
+            AND ($3 = '' OR t.receipt_number LIKE '%' || $3 || '%' ESCAPE '{LIKE_ESCAPE}')
         ),
         refund_totals AS (
             SELECT transaction_id, COALESCE(SUM(amount), 0) as amount
@@ -100,7 +101,7 @@ async fn query_sales_receipts(
             vec![
                 day_start_utc(start_date)?.into(),
                 day_end_exclusive_utc(end_date)?.into(),
-                search.into(),
+                escape_like(search).into(),
                 limit.into(),
             ],
         ))
@@ -208,5 +209,34 @@ mod tests {
 
         assert_eq!(report.items.len(), 2);
         assert_eq!(report.total_count, 3);
+    }
+
+    /// `%` and `_` in the receipt search are literal characters, not wildcards.
+    #[tokio::test]
+    async fn sales_receipts_search_matches_wildcards_literally() {
+        let conn = setup_test_db().await;
+        let created_at = utc_at_local_noon(today());
+        let sale = insert_transaction(&conn, 1, 10_000.0, "completed", &created_at).await;
+
+        let day = date_str(today());
+        let count = |search: &'static str| {
+            let (conn, day) = (&conn, &day);
+            async move {
+                query_sales_receipts(conn, day, day, search, REPORT_ROW_LIMIT)
+                    .await
+                    .expect("query")
+                    .total_count
+            }
+        };
+        assert_eq!(count("%").await, 0);
+        assert_eq!(count("_").await, 0);
+        let receipt = sale.receipt_number;
+        assert_eq!(
+            query_sales_receipts(&conn, &day, &day, &receipt, REPORT_ROW_LIMIT)
+                .await
+                .expect("query")
+                .total_count,
+            1
+        );
     }
 }

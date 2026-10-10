@@ -47,6 +47,11 @@ tokio-util = { version = "0.7.18", features = ["io"] }
 # Already in `Cargo.lock` through tauri; used to check that an uploaded SVG
 # logo parses as XML before it is stored and served.
 quick-xml = "0.38"
+# Both already in `Cargo.lock` (via tauri-plugin-updater). The updater reads
+# the signed file name out of an update's minisign signature and compares
+# versions by semver, so an older signed installer is never installed.
+base64 = "0.22"
+semver = "1"
 
 [dev-dependencies]
 # `ServiceExt::oneshot`, which drives the router in tests without a listener.

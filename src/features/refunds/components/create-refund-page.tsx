@@ -54,7 +54,7 @@ export function CreateRefundPage() {
     refetch,
     itemStates,
     actionType,
-    exchangeItems,
+    pricedExchangeItems,
     reason,
     isSubmitting,
     selectedItems,
@@ -63,6 +63,7 @@ export function CreateRefundPage() {
     difference,
     hasEarlierRefund,
     blockedReason,
+    exchangeBlockedReason,
     setReason,
     setActionType,
     updateItem,
@@ -133,7 +134,7 @@ export function CreateRefundPage() {
       ? null
       : selectedItems.length === 0
         ? id.refund.selectItemsFirst
-        : isExchange && exchangeItems.length === 0
+        : isExchange && pricedExchangeItems.length === 0
           ? id.refund.addExchangeItemsFirst
           : null
 
@@ -158,6 +159,7 @@ export function CreateRefundPage() {
         <ScrollShadow className="min-h-0 flex-1">
           <div className="flex flex-col gap-6 p-4">
             <RefundActionToggle
+              exchangeDisabledReason={isExchange ? null : exchangeBlockedReason}
               isDisabled={isSubmitting}
               value={actionType}
               onChange={setActionType}
@@ -182,9 +184,9 @@ export function CreateRefundPage() {
                   }
                 />
 
-                {exchangeItems.length > 0 && (
+                {pricedExchangeItems.length > 0 && (
                   <ExchangeItemsTable
-                    items={exchangeItems}
+                    items={pricedExchangeItems}
                     onQuantityChange={updateExchangeQty}
                     onRemove={removeExchangeItem}
                   />
@@ -217,8 +219,8 @@ export function CreateRefundPage() {
               <p className="text-xs text-muted tabular-nums">
                 {selectedItems.length} item diretur
                 {isExchange &&
-                  exchangeItems.length > 0 &&
-                  `, ${exchangeItems.length} item pengganti`}
+                  pricedExchangeItems.length > 0 &&
+                  `, ${pricedExchangeItems.length} item pengganti`}
               </p>
             )}
           </InfoPanel>
@@ -238,7 +240,7 @@ export function CreateRefundPage() {
               isDisabled={
                 blockedReason !== null ||
                 selectedItems.length === 0 ||
-                (isExchange && exchangeItems.length === 0)
+                (isExchange && pricedExchangeItems.length === 0)
               }
               isPending={isSubmitting}
               onPress={handleSubmit}

@@ -12,6 +12,7 @@ import {
   UsersIcon,
 } from "lucide-react"
 
+import { PpobAttentionBadge } from "@/features/transactions/components/ppob-attention-badge"
 import { id } from "@/i18n/id"
 import { isPathWithin } from "./resume-route"
 
@@ -25,6 +26,8 @@ export interface NavItem {
   title: string
   url: string
   icon: ReactNode
+  /** Drawn after the label: something on that page waits on a person. */
+  badge?: ReactNode
   items?: NavSubItem[]
 }
 
@@ -39,7 +42,14 @@ export const NAV_MAIN: NavItem[] = [
   { title: id.dashboard.title, url: "/dashboard", icon: <LayoutDashboardIcon /> },
   { title: id.nav.cashier, url: "/cashier", icon: <ShoppingCartIcon /> },
   { title: id.nav.products, url: "/products", icon: <PackageIcon /> },
-  { title: id.nav.transactions, url: "/transactions", icon: <HistoryIcon /> },
+  {
+    title: id.nav.transactions,
+    url: "/transactions",
+    icon: <HistoryIcon />,
+    // PPOB lines still waiting on an answer, on any day — the history's own
+    // filters start at today, so without this an old one is never seen.
+    badge: <PpobAttentionBadge />,
+  },
   { title: id.nav.refunds, url: "/refunds", icon: <RotateCcwIcon /> },
   { title: id.nav.stock, url: "/stock", icon: <FileWarningIcon /> },
   {

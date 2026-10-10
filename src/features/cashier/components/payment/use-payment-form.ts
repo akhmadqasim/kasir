@@ -22,6 +22,7 @@ import {
   withSplit,
   type PaymentSplitForm,
 } from "./payment-splits"
+import { useScanBurstGuard } from "@/hooks/use-scan-burst-guard"
 import { useAmountEntryGuard } from "./use-amount-entry-guard"
 import { usePaymentShortcuts } from "./use-payment-shortcuts"
 
@@ -265,16 +266,18 @@ export function usePaymentForm({ open, onOpenChange, onSuccess, sale }: UsePayme
     onSubmit: submitIfReady,
   })
 
-  // Enter in the PIN field pays like Enter in an amount field — without the
-  // scanner check, because a PIN is typed by hand, not scanned.
-  const handlePinKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter") return
-      event.preventDefault()
-      submitIfReady()
-    },
-    [submitIfReady],
-  )
+  // Enter in the PIN field pays, with the scanner check of an amount field: a
+  // scan fills the `maxLength` PIN with a well-formed six digits.
+  const pinScanGuard = useScanBurstGuard({
+    value: ppobPin,
+    onRestore: setPpobPin,
+    message: id.cashier.scanIgnoredInPin,
+  })
+  const handlePinKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (pinScanGuard.handleKeyDown(event) || event.key !== "Enter") return
+    event.preventDefault()
+    submitIfReady()
+  }
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {

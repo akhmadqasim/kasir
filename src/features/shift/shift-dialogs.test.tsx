@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen, fireEvent, within } from "@testing-library/react"
+import { createEvent, render, screen, fireEvent, within } from "@testing-library/react"
 
 import { id } from "@/i18n/id"
+import { toast } from "@/lib/toast"
 import { installApiMock, type ApiMock } from "@/test-utils/api-mock"
 import type { User } from "@/features/auth/types"
 import type { Shift } from "./types"
@@ -46,6 +47,29 @@ beforeEach(() => {
   useShiftStore.setState({ activeShift: null })
 })
 
+const BARCODE = "8991234567890"
+
+/**
+ * A scanner is a keyboard: one keydown and one change per digit, 10ms apart,
+ * then Enter 20ms later. If the field does not refuse that Enter, the browser
+ * submits the form. This is what is mimicked here.
+ */
+function scanInto(field: HTMLElement, barcode: string) {
+  let typed = ""
+  for (let i = 0; i < barcode.length; i++) {
+    const key = createEvent.keyDown(field, { key: barcode[i] })
+    Object.defineProperty(key, "timeStamp", { value: 1000 + i * 10 })
+    fireEvent(field, key)
+    typed += barcode[i]
+    fireEvent.change(field, { target: { value: typed } })
+  }
+  const enter = createEvent.keyDown(field, { key: "Enter" })
+  Object.defineProperty(enter, "timeStamp", { value: 1000 + barcode.length * 10 + 20 })
+  fireEvent(field, enter)
+  if (!enter.defaultPrevented) fireEvent.submit(field.closest("form")!)
+  return enter
+}
+
 /**
  * Uang yang diketik kasir tidak boleh berubah bentuk saat migrasi: kolom nominal
  * tetap kolom teks yang hanya menerima angka dan langsung memberi pemisah ribuan,
@@ -83,6 +107,25 @@ describe("dialog buka kasir", () => {
       expect(api.lastCall("POST /shifts")?.body).toEqual({})
     })
   })
+
+  // This dialog opens by itself on the cashier page with its field focused:
+  // the first item scanned becomes the opening cash, its Enter submits the form.
+  it("membuang barcode yang terpindai ke kolom modal awal, tanpa membuka shift", async () => {
+    const warning = vi.spyOn(toast, "warning").mockImplementation(() => {})
+    render(<OpenShiftDialog open onOpenChange={() => {}} />)
+    const field = within(await screen.findByRole("dialog")).getByLabelText(
+      id.shift.open.openingCash,
+    )
+
+    const enter = scanInto(field, BARCODE)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(field).toHaveValue("")
+    expect(warning).toHaveBeenCalledWith(id.shift.scanIgnoredInAmount)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.callsFor("POST /shifts")).toHaveLength(0)
+    warning.mockRestore()
+  })
 })
 
 describe("dialog arus kas", () => {
@@ -119,6 +162,26 @@ describe("dialog arus kas", () => {
         description: "Bayar supplier",
       })
     })
+  })
+
+  // F1 focuses the amount field: without a guard, a scanned item is booked as
+  // "Uang Masuk Rp 8.991.234.567.890".
+  it("membuang barcode yang terpindai ke kolom nominal, tanpa mencatat arus kas", async () => {
+    useShiftStore.setState({ activeShift: SHIFT })
+    const warning = vi.spyOn(toast, "warning").mockImplementation(() => {})
+    render(<CashFlowDialog open onOpenChange={() => {}} />)
+    const field = within(await screen.findByRole("dialog")).getByLabelText(
+      id.shift.cashFlow.amount,
+    )
+
+    const enter = scanInto(field, BARCODE)
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(field).toHaveValue("")
+    expect(warning).toHaveBeenCalledWith(id.shift.scanIgnoredInAmount)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.callsFor("POST /shifts/*/cash-flows")).toHaveLength(0)
+    warning.mockRestore()
   })
 
   /**

@@ -24,6 +24,16 @@ export function listTransactions(params: ListTransactionsInput): Promise<Paginat
   return apiGet<PaginatedTransactions>("/transactions", listQuery(params))
 }
 
+/** What the "PPOB perlu dicek" indicator counts. */
+export interface PpobAttention {
+  /** PPOB lines still `uncertain`, on any day and in any channel. */
+  uncertain: number
+}
+
+export function getPpobAttention(): Promise<PpobAttention> {
+  return apiGet<PpobAttention>("/transactions/ppob-attention")
+}
+
 export function getTransactionDetail(transactionId: number): Promise<TransactionDetail> {
   return apiGet<TransactionDetail>(`/transactions/${transactionId}`)
 }
@@ -86,6 +96,21 @@ export function getSaleReceiptLines(
  */
 export function retryPpobFulfillment(transactionItemId: number, pin: string): Promise<string> {
   return apiPost<string>(`/transaction-items/${transactionItemId}/ppob/retry`, { pin })
+}
+
+/** What "Cek status" found; `status` is the line's status afterwards. */
+export interface PpobCheckResult {
+  status: "success" | "failed" | "uncertain"
+  message: string
+}
+
+/**
+ * Look an `uncertain` PPOB line up in the Mitra history now. The server settles
+ * it only on a confident match; otherwise it stays `uncertain` and `message`
+ * says why.
+ */
+export function checkPpobStatus(transactionItemId: number): Promise<PpobCheckResult> {
+  return apiPost<PpobCheckResult>(`/transaction-items/${transactionItemId}/ppob/check`, {})
 }
 
 /** Settle an `uncertain` PPOB line after checking it in the Mitra history. */

@@ -1,14 +1,68 @@
 //! The replacement goods of an exchange: sold like a sale, at today's price,
-//! and taken off the shelf.
+//! and taken off the shelf. A replacement of the same product that came back
+//! is the exception: it is priced at what the customer paid for it.
+
+use std::collections::HashMap;
 
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ConnectionTrait, DbBackend, EntityTrait, Set, Statement,
 };
 
+use super::returns::ClaimedLine;
 use crate::domain::refunds::ExchangeItemInput;
 use crate::entity::{exchange_items, products};
 use crate::services::transactions::load_allow_negative_stock;
 use crate::utils::AppError;
+
+/// What came back, per product: units not yet matched by a like-for-like
+/// replacement, and the money those units were refunded at.
+///
+/// "Bisa tukar barang sama": swapping an item for the same product is
+/// administrative. A line sold with a discount comes back at the discounted
+/// price, so pricing its replacement at today's `sell_price` would charge the
+/// customer their discount back. Matched units are priced at what was paid
+/// instead; any units beyond what came back are a plain sale at `sell_price`.
+pub(super) struct ReturnedCredit {
+    by_product: HashMap<i64, (i64, f64)>,
+}
+
+impl ReturnedCredit {
+    pub(super) fn from_lines(lines: &[ClaimedLine<'_>]) -> Self {
+        let mut by_product: HashMap<i64, (i64, f64)> = HashMap::new();
+        // A failed PPOB line has no product to swap like-for-like; its money
+        // still counts toward the refund, just not toward a matched unit.
+        for line in lines {
+            let Some(product_id) = line.product_id() else {
+                continue;
+            };
+            let entry = by_product.entry(product_id).or_insert((0, 0.0));
+            entry.0 += line.quantity();
+            entry.1 += line.amount;
+        }
+        Self { by_product }
+    }
+
+    /// Take up to `quantity` returned units of `product_id`; returns how many
+    /// were matched and what they were refunded at. Taking the last unit takes
+    /// the exact remaining amount, so a full like-for-like swap nets to zero.
+    fn take(&mut self, product_id: i64, quantity: i64) -> (i64, f64) {
+        let Some((units_left, amount_left)) = self.by_product.get_mut(&product_id) else {
+            return (0, 0.0);
+        };
+        let matched = quantity.min(*units_left);
+        if matched <= 0 {
+            return (0, 0.0);
+        }
+        let amount = if matched == *units_left {
+            *amount_left
+        } else {
+            *amount_left * matched as f64 / *units_left as f64
+        };
+        *units_left -= matched;
+        *amount_left -= amount;
+        (matched, amount)
+    }
+}
 
 /// Write the replacement lines for refund `refund_id` and take their stock
 /// off. Returns the lines and what they are worth together.
@@ -16,6 +70,7 @@ pub(super) async fn record_exchange<C: ConnectionTrait>(
     db: &C,
     refund_id: i64,
     inputs: &[ExchangeItemInput],
+    credit: &mut ReturnedCredit,
     now: &str,
 ) -> Result<(Vec<exchange_items::Model>, f64), AppError> {
     let mut recorded = Vec::with_capacity(inputs.len());
@@ -51,10 +106,8 @@ pub(super) async fn record_exchange<C: ConnectionTrait>(
             )));
         }
 
-        // Guard against overselling. product.stock was read above under the
-        // up-front write lock, so this check-then-deduct is consistent: no
-        // concurrent refund/sale can slip a deduction in between, which would
-        // otherwise let stock go negative when it isn't allowed.
+        // `product.stock` was read under the up-front write lock, so no other
+        // sale or refund can deduct between this check and the UPDATE below.
         if !allow_negative_stock && product.stock < input.quantity {
             return Err(AppError::Validation(format!(
                 "Stok '{}' tidak cukup (tersedia: {}, diminta: {})",
@@ -62,7 +115,13 @@ pub(super) async fn record_exchange<C: ConnectionTrait>(
             )));
         }
 
-        let subtotal = product.sell_price * input.quantity as f64;
+        let (matched, matched_amount) = credit.take(product.id, input.quantity);
+        let subtotal = matched_amount + product.sell_price * (input.quantity - matched) as f64;
+        let unit_price = if matched == 0 {
+            product.sell_price
+        } else {
+            subtotal / input.quantity as f64
+        };
         total_exchange_amount += subtotal;
 
         let exchange_item = exchange_items::ActiveModel {
@@ -70,7 +129,8 @@ pub(super) async fn record_exchange<C: ConnectionTrait>(
             refund_id: Set(refund_id),
             product_id: Set(input.product_id),
             product_name: Set(product.name.clone()),
-            product_price: Set(product.sell_price),
+            product_price: Set(unit_price),
+            buy_price: Set(Some(product.buy_price)),
             quantity: Set(input.quantity),
             subtotal: Set(subtotal),
             created_at: Set(Some(now.to_string())),

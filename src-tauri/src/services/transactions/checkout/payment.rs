@@ -2,6 +2,7 @@
 //! each producing the method to record, what was handed over, the change, and
 //! the per-method splits.
 
+use super::discounts::MONEY_EPSILON;
 use crate::domain::transactions::{CheckoutTransactionInput, PaymentSplit};
 use crate::services::transactions::{validate_payment_method, MIXED_PAYMENT_METHOD};
 use crate::utils::AppError;
@@ -107,7 +108,7 @@ fn split_payment(splits: Vec<PaymentSplit>, total_amount: f64) -> Result<Payment
         .iter()
         .position(|split| split.payment_method == "cash")
     else {
-        if (total_paid - total_amount).abs() > 0.01 {
+        if (total_paid - total_amount).abs() > MONEY_EPSILON {
             return Err(AppError::Validation(
                 "Total pembayaran gabungan harus sama dengan total transaksi".into(),
             ));
@@ -134,14 +135,14 @@ fn split_payment(splits: Vec<PaymentSplit>, total_amount: f64) -> Result<Payment
         .map(|(_, split)| split.amount)
         .sum();
 
-    if non_cash_total - total_amount > 0.01 {
+    if non_cash_total - total_amount > MONEY_EPSILON {
         return Err(AppError::Validation(
             "Nominal non-tunai tidak boleh melebihi total transaksi".into(),
         ));
     }
 
     let remaining_due = (total_amount - non_cash_total).max(0.0);
-    if splits[cash_index].amount + 0.01 < remaining_due {
+    if splits[cash_index].amount + MONEY_EPSILON < remaining_due {
         return Err(AppError::Validation(
             "Nominal tunai belum cukup untuk menutup sisa pembayaran".into(),
         ));

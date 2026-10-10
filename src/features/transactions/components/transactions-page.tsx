@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react"
 import { ReceiptText, RefreshCw, X } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
-import { Button, Spinner } from "@heroui/react"
+import { Alert, Button, Spinner } from "@heroui/react"
 
 import { NavbarActions } from "@/components/layout/app-navbar"
 import { LoadError } from "@/components/load-error"
@@ -15,9 +15,12 @@ import { id } from "@/i18n/id"
 import {
   defaultTransactionFilters,
   hasActiveFilters,
+  PPOB_UNCERTAIN_FILTER,
+  ppobAttentionFilters,
   transactionListParams,
   type TransactionFilters,
 } from "../transaction-filters"
+import { usePpobAttention } from "../hooks/use-ppob-attention"
 import type { PaginatedTransactions, TransactionListItem } from "../types"
 import { TransactionDetailDialog } from "./transaction-detail-dialog"
 import { TransactionFilterBar } from "./transaction-filter-bar"
@@ -34,11 +37,18 @@ export function TransactionsPage() {
     [filters, debouncedSearch, page],
   )
 
-  const { data, isLoading, isFetching, error, refetch } = useApiQuery<PaginatedTransactions>(
-    queryKeys.transactions.list(queryParams),
-    () => listTransactions(queryParams),
-    { placeholderData: keepPreviousData },
-  )
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } =
+    useApiQuery<PaginatedTransactions>(
+      queryKeys.transactions.list(queryParams),
+      () => listTransactions(queryParams),
+      { placeholderData: keepPreviousData },
+    )
+
+  // A reload (a refund or delete elsewhere) can shrink the list below the
+  // current page. Without this that page shows empty, and with one page left
+  // the pager disappears too, leaving no way back.
+  const lastPage = data && !isPlaceholderData ? Math.max(1, data.total_pages) : null
+  if (lastPage != null && page > lastPage) setPage(lastPage)
 
   // Any filter change starts over at the first page.
   const updateFilters = useCallback((patch: Partial<TransactionFilters>) => {
@@ -52,6 +62,15 @@ export function TransactionsPage() {
   }, [])
 
   const hasFilters = hasActiveFilters(filters)
+
+  // PPOB lines still waiting on an answer can be days old; today's list would
+  // never show them. One press lists them all ("Perlu dicek", every day).
+  const ppobAttention = usePpobAttention()
+  const showPpobAttention = ppobAttention > 0 && filters.status !== PPOB_UNCERTAIN_FILTER
+  const showPpobAttentionList = useCallback(() => {
+    setFilters(ppobAttentionFilters())
+    setPage(1)
+  }, [])
 
   const renderEmptyState = () =>
     error ? (
@@ -99,6 +118,24 @@ export function TransactionsPage() {
           {({ isPending }) => (isPending ? <Spinner color="current" size="sm" /> : <RefreshCw />)}
         </Button>
       </NavbarActions>
+
+      {showPpobAttention && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{id.transactions.ppobAttentionCount(ppobAttention)}</Alert.Title>
+            <Alert.Description>{id.transactions.ppobAttentionHint}</Alert.Description>
+          </Alert.Content>
+          <Button
+            className="shrink-0"
+            size="sm"
+            variant="secondary"
+            onPress={showPpobAttentionList}
+          >
+            {id.transactions.ppobAttentionShow}
+          </Button>
+        </Alert>
+      )}
 
       <TransactionFilterBar
         filters={filters}

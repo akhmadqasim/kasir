@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domain::backup::BackupSettings;
+use crate::utils::AppError;
 
 // Simple obfuscation for sensitive fields stored in DB
 // Prevents plaintext credential exposure in database files
@@ -267,12 +268,59 @@ pub struct PublicStoreInfo {
     pub has_logo: bool,
 }
 
+/// The store row as any signed-in client sees it: everything except
+/// `additional_info`. That column is the settings blob, and it holds the PPOB
+/// password in a form [`deobfuscate`] reverses with a key compiled into the
+/// binary — so it is never serialised to a client. The settings a client may
+/// read come from their own routes (`/settings`, `/settings/sales`,
+/// `/settings/ppob/markup`), which report `has_credentials` instead of the
+/// secret. Built field by field so a column added later is not exposed by
+/// accident.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreInfo {
+    pub id: i64,
+    pub name: String,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub logo_path: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+impl From<crate::entity::store_info::Model> for StoreInfo {
+    fn from(store: crate::entity::store_info::Model) -> Self {
+        Self {
+            id: store.id,
+            name: store.name,
+            address: store.address,
+            phone: store.phone,
+            email: store.email,
+            logo_path: store.logo_path,
+            created_at: store.created_at,
+            updated_at: store.updated_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateStoreInfoInput {
     pub name: String,
     pub address: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
+}
+
+/// The store name, trimmed. It heads every receipt and the login screen, so a
+/// blank one is refused rather than printed, at onboarding and on every later
+/// edit alike.
+pub fn validate_store_name(name: &str) -> Result<String, AppError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(AppError::Validation("Nama toko tidak boleh kosong".into()));
+    }
+    crate::utils::text::ensure_printable_len(Some(name), "Nama toko")?;
+    Ok(name.to_string())
 }
 
 /// Changing one's own PIN. The account is the actor's, never a field here.

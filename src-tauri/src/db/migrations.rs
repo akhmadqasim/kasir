@@ -108,6 +108,34 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "026_one_open_shift_per_user",
         include_str!("../../migrations/026_one_open_shift_per_user.sql"),
     ),
+    (
+        "027_exchange_item_buy_price",
+        include_str!("../../migrations/027_exchange_item_buy_price.sql"),
+    ),
+    (
+        "028_idempotency_key_transaction",
+        include_str!("../../migrations/028_idempotency_key_transaction.sql"),
+    ),
+    (
+        "029_refund_item_ppob_line",
+        include_str!("../../migrations/029_refund_item_ppob_line.sql"),
+    ),
+    (
+        "030_idempotency_claim_nonce",
+        include_str!("../../migrations/030_idempotency_claim_nonce.sql"),
+    ),
+    (
+        "031_ppob_advice",
+        include_str!("../../migrations/031_ppob_advice.sql"),
+    ),
+    (
+        "032_ppob_reconcile_anchor",
+        include_str!("../../migrations/032_ppob_reconcile_anchor.sql"),
+    ),
+    (
+        "033_ppob_line_indexes",
+        include_str!("../../migrations/033_ppob_line_indexes.sql"),
+    ),
 ];
 
 pub async fn run_migrations(conn: &DatabaseConnection) -> Result<(), AppError> {

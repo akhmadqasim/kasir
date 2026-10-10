@@ -205,6 +205,26 @@ describe("transaction success dialog", () => {
     expect(onNewTransaction).not.toHaveBeenCalled()
   })
 
+  it("prints one receipt for a double or held Enter", async () => {
+    let release: () => void = () => {}
+    api.route(
+      "POST /transactions/*/print",
+      () => new Promise((resolve) => (release = () => resolve(null))),
+    )
+    renderDialog()
+    const newSale = await screen.findByRole("button", { name: /Transaksi baru/ })
+    await waitFor(() => expect(newSale).toHaveFocus())
+
+    // Two presses in one tick, then the key held down: still the first print.
+    fireEvent.keyDown(newSale, { key: "Enter" })
+    fireEvent.keyDown(newSale, { key: "Enter" })
+    fireEvent.keyDown(newSale, { key: "Enter", repeat: true })
+    release()
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1)
+  })
+
   it("does not reprint when Enter ends a barcode scan", async () => {
     const onNewTransaction = vi.fn()
     renderDialog({ onNewTransaction })
@@ -318,12 +338,75 @@ describe("transaction success dialog", () => {
     await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
   })
 
-  it("does not repeat PPOB lines or their status — the struk and Riwayat carry them", async () => {
-    renderDialog({ result: { ...RESULT, items: [PPOB_LINE] } })
+  /** `GET /transactions/1` answers with `lines[n]` on call n; the last one sticks. */
+  function routeDetail(...lines: Partial<TransactionItem>[]) {
+    let call = 0
+    api.route("GET /transactions/1", () => {
+      const line = lines[Math.min(call, lines.length - 1)]
+      call += 1
+      return {
+        transaction: RESULT.transaction,
+        items: [
+          {
+            ...PPOB_LINE,
+            ...line,
+            refunded_quantity: 0,
+            refundable: false,
+            refundable_quantity: 0,
+          },
+        ],
+        cashier_name: "Kasir Satu",
+        has_refundable_goods: false,
+        has_ppob: true,
+        ppob_status: line.ppob_status ?? null,
+        ppob_message: null,
+        ppob_serial_number: null,
+        payment_breakdown: RESULT.payment_breakdown,
+      }
+    })
+  }
+
+  // A mixed cart: checkout answers before the provider, so the PPOB line comes
+  // back `pending`. The struk must not print, and the dialog must not close,
+  // before the line has an answer — the cashier never saw ADVICE otherwise.
+  it("holds auto-print and auto-close while a PPOB line is in flight, then shows its result", async () => {
+    routeDetail(
+      { ppob_status: "pending" },
+      { ppob_status: "success", ppob_serial_number: "SN-123" },
+    )
+    const onNewTransaction = vi.fn()
+    renderDialog({ result: { ...RESULT, items: [PPOB_LINE] }, autoPrint: true, onNewTransaction })
 
     const dialog = await screen.findByRole("dialog")
-    expect(dialog).not.toHaveTextContent("Menunggu")
-    expect(dialog).not.toHaveTextContent("PPOB diproses di latar belakang")
+    expect(await screen.findByText("Pulsa Telkomsel 50.000")).toBeInTheDocument()
+    expect(dialog).toHaveTextContent("Menunggu hasil PPOB")
+    expect(api.callsFor("POST /transactions/1/print")).toHaveLength(0)
+
+    expect(await screen.findByText("SN-123", {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(dialog).toHaveTextContent("Berhasil")
+    await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
+    await waitFor(() => expect(onNewTransaction).toHaveBeenCalledTimes(1), { timeout: 3000 })
+  }, 10_000)
+
+  it("says the token follows and stays open when a PPOB line ends uncertain", async () => {
+    routeDetail({ ppob_status: "uncertain", ppob_advice: "{}", service_type: "pln" })
+    const onNewTransaction = vi.fn()
+    renderDialog({ result: { ...RESULT, items: [PPOB_LINE] }, autoPrint: true, onNewTransaction })
+
+    expect(await screen.findByText("Token menyusul — cek di Riwayat")).toBeInTheDocument()
+    expect(screen.getAllByText("Menunggu Konfirmasi PLN").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Cek status" })).toBeInTheDocument()
+    // The goods struk still prints once nothing is in flight; the dialog stays.
+    await waitFor(() => expect(api.callsFor("POST /transactions/1/print")).toHaveLength(1))
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    expect(onNewTransaction).not.toHaveBeenCalled()
+  }, 10_000)
+
+  it("asks for no PPOB status on a sale without PPOB lines", async () => {
+    renderDialog({ autoPrint: true })
+
+    expect(await screen.findByText("Struk otomatis dicetak.")).toBeInTheDocument()
+    expect(api.callsFor("GET /transactions/1")).toHaveLength(0)
   })
 
   it("shows a struk preview drawn from the exact lines the printer would get", async () => {

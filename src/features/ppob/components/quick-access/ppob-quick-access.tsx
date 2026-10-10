@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { Button } from "@heroui/react"
 import { ArrowLeft } from "lucide-react"
 
@@ -43,6 +43,10 @@ export function PpobQuickAccess({
   wideLayout = false,
 }: PpobQuickAccessProps = {}) {
   const [selectedService, setSelectedService] = useState<ServiceType | null>(initialService ?? null)
+  // Bumped after a line goes into the cart, so the service form remounts empty.
+  // With `initialService` the service does not change, and the confirm card
+  // used to stay up: a second tap added the same inquiry twice.
+  const [flowKey, setFlowKey] = useState(0)
   const { getMarkupConfig, customPrices } = usePpobMarkup()
   const addPpobItem = useCartStore((s) => s.addPpobItem)
 
@@ -68,6 +72,7 @@ export function PpobQuickAccess({
     addPpobItem({ ...line, sell_price: sellPrice })
     toast.success(id.cashier.addedToCart(item.name))
     setSelectedService(initialService ?? null)
+    setFlowKey((key) => key + 1)
   }
 
   if (selectedService) {
@@ -111,12 +116,14 @@ export function PpobQuickAccess({
           </div>
         )}
 
-        {selectedService === "pulsa" && <PulsaInput {...inputProps} productType="pulsa" />}
-        {selectedService === "data" && <PulsaInput {...inputProps} productType="data" />}
-        {selectedService === "pln" && <PlnInput {...inputProps} />}
-        {selectedService === "pdam" && <PdamInput {...inputProps} />}
-        {selectedService === "bpjs" && <BpjsInput {...inputProps} />}
-        {selectedService === "emoney" && <EmoneyInput {...inputProps} />}
+        <Fragment key={flowKey}>
+          {selectedService === "pulsa" && <PulsaInput {...inputProps} productType="pulsa" />}
+          {selectedService === "data" && <PulsaInput {...inputProps} productType="data" />}
+          {selectedService === "pln" && <PlnInput {...inputProps} />}
+          {selectedService === "pdam" && <PdamInput {...inputProps} />}
+          {selectedService === "bpjs" && <BpjsInput {...inputProps} />}
+          {selectedService === "emoney" && <EmoneyInput {...inputProps} />}
+        </Fragment>
       </div>
     )
   }

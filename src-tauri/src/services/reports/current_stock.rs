@@ -1,10 +1,11 @@
 //! What is on the shelf right now, and what it is worth at cost.
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement, TryGetable};
 
 use super::REPORT_ROW_LIMIT;
 use crate::domain::reports::{CurrentStockReport, CurrentStockRow};
 use crate::services::products::LOW_STOCK_SQL;
+use crate::utils::sql::{escape_like, LIKE_ESCAPE};
 use crate::utils::AppError;
 
 pub async fn current_stock(
@@ -41,11 +42,14 @@ async fn query_current_stock(
             p.buy_price,
             p.sell_price,
             p.buy_price * p.stock as stock_value,
-            COUNT(*) OVER () as total_count
+            COUNT(*) OVER () as total_count,
+            TOTAL(p.buy_price * p.stock) OVER () as total_stock_value,
+            SUM(CASE WHEN {LOW_STOCK_SQL} THEN 1 ELSE 0 END) OVER () as low_stock_count
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
         WHERE p.is_active = 1
-        AND ($1 = '' OR p.name LIKE '%' || $1 || '%' OR p.barcode LIKE '%' || $1 || '%')
+        AND ($1 = '' OR p.name LIKE '%' || $1 || '%' ESCAPE '{LIKE_ESCAPE}'
+             OR p.barcode LIKE '%' || $1 || '%' ESCAPE '{LIKE_ESCAPE}')
         {low_stock_clause}
         ORDER BY p.name
         LIMIT $2"
@@ -55,14 +59,16 @@ async fn query_current_stock(
         .query_all(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             &sql,
-            vec![search.into(), limit.into()],
+            vec![escape_like(search.trim()).into(), limit.into()],
         ))
         .await?;
 
-    let total_count = rows
-        .first()
-        .and_then(|row| row.try_get_by_index::<i64>(10).ok())
-        .unwrap_or(0);
+    // The totals are window aggregates over every matching row, computed
+    // before LIMIT: summed in the browser they covered only the rows sent, so
+    // a catalogue past the limit under-reported its value and its low stock.
+    let total_count = window_total(&rows, "total_count");
+    let total_stock_value = window_total(&rows, "total_stock_value");
+    let low_stock_count = window_total(&rows, "low_stock_count");
 
     let items = rows
         .iter()
@@ -80,7 +86,20 @@ async fn query_current_stock(
         })
         .collect();
 
-    Ok(CurrentStockReport { items, total_count })
+    Ok(CurrentStockReport {
+        items,
+        total_count,
+        total_stock_value,
+        low_stock_count,
+    })
+}
+
+/// A window aggregate read off the first row; every row carries the same
+/// value. No rows means nothing matched, so zero.
+fn window_total<T: TryGetable + Default>(rows: &[QueryResult], column: &str) -> T {
+    rows.first()
+        .and_then(|row| row.try_get("", column).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -101,6 +120,55 @@ mod tests {
 
         assert_eq!(report.items.len(), 2);
         assert_eq!(report.total_count, 3);
+    }
+
+    /// The value and low-stock cards used to be summed in the browser over the
+    /// rows sent, so a truncated list under-reported both.
+    #[tokio::test]
+    async fn current_stock_totals_cover_rows_past_the_limit() {
+        let conn = setup_test_db().await;
+        insert_product(&conn, "Beras", 30_000.0, 50_000.0, 10).await;
+        insert_product(&conn, "Gula", 20_000.0, 30_000.0, 10).await;
+        // Sorted last, so cut off by the limit; out of stock, so low.
+        insert_product(&conn, "Minyak", 10_000.0, 20_000.0, 0).await;
+        insert_product(&conn, "Teh", 5_000.0, 7_000.0, 4).await;
+
+        let report = query_current_stock(&conn, "", "all", 2)
+            .await
+            .expect("query");
+
+        assert_eq!(report.items.len(), 2);
+        assert_eq!(
+            report.total_stock_value,
+            300_000.0 + 200_000.0 + 0.0 + 20_000.0
+        );
+        assert_eq!(report.low_stock_count, 1);
+
+        // The totals follow the search, too.
+        let report = query_current_stock(&conn, "gula", "all", 2)
+            .await
+            .expect("query");
+        assert_eq!(report.total_stock_value, 200_000.0);
+        assert_eq!(report.low_stock_count, 0);
+    }
+
+    /// `%` and `_` in the search box are literal characters, not wildcards.
+    #[tokio::test]
+    async fn current_stock_search_matches_wildcards_literally() {
+        let conn = setup_test_db().await;
+        insert_product(&conn, "Diskon 50% Sabun", 1_000.0, 2_000.0, 1).await;
+        insert_product(&conn, "Sabun 500g", 1_000.0, 2_000.0, 1).await;
+
+        let report = query_current_stock(&conn, "50%", "all", REPORT_ROW_LIMIT)
+            .await
+            .expect("query");
+        assert_eq!(report.total_count, 1);
+        assert_eq!(report.items[0].product_name, "Diskon 50% Sabun");
+
+        let report = query_current_stock(&conn, "_", "all", REPORT_ROW_LIMIT)
+            .await
+            .expect("query");
+        assert_eq!(report.total_count, 0);
     }
 
     #[tokio::test]

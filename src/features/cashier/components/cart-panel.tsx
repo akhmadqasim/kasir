@@ -7,7 +7,8 @@ import { id } from "@/i18n/id"
 import { NoData } from "@/components/no-data"
 import { formatNumber } from "@/lib/format"
 import { toast } from "@/lib/toast"
-import { useCartStore } from "@/stores/cart-store"
+import { nextHoldLabel, useCartStore } from "@/stores/cart-store"
+import { cappedTransactionDiscount } from "@/stores/cart-totals"
 import { CashFlowDialog, useShiftStore } from "@/features/shift"
 import { CartFooter } from "./cart-footer"
 import { CartItemRow } from "./cart-item-row"
@@ -22,7 +23,7 @@ interface CartPanelProps {
   onPay: () => void
   /** Why Bayar is off even with items in the cart (no shift open), shown under it. */
   payBlockedReason?: string
-  /** Matikan shortcut saat dialog milik CashierPage sedang terbuka */
+  /** Turns the shortcuts (F4 included) off while one of CashierPage's dialogs is open */
   shortcutsDisabled?: boolean
   onRequestProductSearchFocus?: () => void
 }
@@ -50,7 +51,10 @@ export function CartPanel({
   const itemDiscounts = useCartStore((s) => s.itemDiscounts)
   const activeShift = useShiftStore((s) => s.activeShift)
 
-  const { total, subtotal, totalDiscount } = getCartTotals()
+  const transactionDiscount = useCartStore((s) => s.transactionDiscount)
+
+  const { total, subtotal, totalDiscount, transactionDiscountAmount } = getCartTotals()
+  const discountCappedTo = cappedTransactionDiscount(transactionDiscount, transactionDiscountAmount)
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
   const closeEditDialog = useCallback(() => {
@@ -65,7 +69,7 @@ export function CartPanel({
   const [autoHoldLabel, setAutoHoldLabel] = useState("")
 
   const openHoldDialog = useCallback(() => {
-    setAutoHoldLabel(`Pelanggan ${useCartStore.getState().heldCarts.length + 1}`)
+    setAutoHoldLabel(nextHoldLabel(useCartStore.getState().heldCarts))
     setHoldDialogOpen(true)
   }, [])
 
@@ -87,15 +91,14 @@ export function CartPanel({
 
   const handleRecall = useCallback(
     (holdId: string) => {
-      const { heldCarts: held, items: current } = useCartStore.getState()
+      const { heldCarts: held } = useCartStore.getState()
       const label =
         held.find((cart) => cart.id === holdId)?.label ?? id.cashier.heldCartFallbackLabel
-      // Recalling over a non-empty cart parks that cart as "Keranjang Aktif"
-      // (see `recallCart`); say so, or it looks like it vanished.
-      const parkedCurrent = current.length > 0
-      recallCart(holdId)
+      // Recalling over a non-empty cart holds that cart under the next free
+      // name (see `recallCart`); say which, or it looks like it vanished.
+      const parkedAs = recallCart(holdId)
       setRecallDialogOpen(false)
-      toast.success(id.cashier.cartRecalled(label, parkedCurrent))
+      toast.success(id.cashier.cartRecalled(label, parkedAs))
       onRequestProductSearchFocus?.()
     },
     [recallCart, onRequestProductSearchFocus],
@@ -110,7 +113,10 @@ export function CartPanel({
     [removeHeldCart],
   )
 
-  // F1 = cash flow, F2 = discount, F3 = hold, F6 = close shift, F9 = recall, F10 = edit last item
+  // F1 = cash flow, F2 = discount, F3 = hold, F4 = pay, F6 = close shift, F9 = recall,
+  // F10 = edit last item. F4 lives here rather than in CashierPage so it obeys
+  // this panel's own dialogs too: payment must not open over the hold or
+  // discount dialog.
   const anyDialogOpen =
     holdDialogOpen || recallDialogOpen || discountDialogOpen || cashFlowOpen || !!editItem
   useEffect(() => {
@@ -145,6 +151,10 @@ export function CartPanel({
         e.preventDefault()
         openHoldDialog()
       }
+      if (e.key === "F4" && items.length > 0) {
+        e.preventDefault()
+        onPay()
+      }
       if (e.key === "F6" && activeShift) {
         e.preventDefault()
         navigate("/close-shift")
@@ -166,6 +176,7 @@ export function CartPanel({
     editItem,
     closeEditDialog,
     openHoldDialog,
+    onPay,
   ])
 
   return (
@@ -252,6 +263,7 @@ export function CartPanel({
         total={total}
         subtotal={subtotal}
         totalDiscount={totalDiscount}
+        discountCappedTo={discountCappedTo}
         hasItems={items.length > 0}
         hasShift={!!activeShift}
         payBlockedReason={payBlockedReason}

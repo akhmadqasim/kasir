@@ -92,12 +92,18 @@ export function PlnInput({
 
   const handleConfirm = () => {
     if (!inquiryResult) return
+    // `pln/payment` requires `product_code`: for a token, the `pln/get-denom`
+    // row the inquiry was made for. Postpaid has no denomination to send.
+    const denomId = mode === "token" ? selectedDenom : null
     onAddToCart({
       name: itemName,
       price: sellPrice,
       service_type: "pln",
       service_ref: customerId,
       buy_price: vendorCost,
+      ...(denomId !== null
+        ? { ppob_product_id: denomId, ppob_product_code: String(denomId) }
+        : {}),
       ppob_inquiry_id: inquiryResult.inquiryId,
       ppob_payment_code: customerId,
       ppob_flag_id: mode === "token" ? "0" : "1",

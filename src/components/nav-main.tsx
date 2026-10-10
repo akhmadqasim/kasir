@@ -38,6 +38,7 @@ export function NavMain({ items, className }: { items: NavItem[]; className?: st
               >
                 {item.icon}
                 <SidebarLabel className="truncate">{item.title}</SidebarLabel>
+                {item.badge}
               </SidebarMenuLink>
             </SidebarMenuItem>
           ),

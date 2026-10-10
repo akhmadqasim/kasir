@@ -98,11 +98,11 @@ impl ApiError {
 
     /// The request cannot proceed in the state the server is currently in.
     ///
-    /// Only the idempotency guard raises this, for the duplicate-in-flight case:
-    /// a second attempt arrives while the first still holds the same
+    /// The idempotency guard raises this for the duplicate-in-flight case: a
+    /// second attempt arrives while the first still holds the same
     /// `Idempotency-Key`. It is deliberately not a 422 — nothing about the
     /// request is wrong, and the same request will succeed or replay once the
-    /// first attempt lands.
+    /// first attempt lands. Onboarding raises it too, once the store exists.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, "conflict", message)
     }
@@ -133,9 +133,13 @@ impl From<AppError> for ApiError {
             AppError::Forbidden(message) => ApiError::forbidden(message),
             AppError::NotFound(message) => ApiError::not_found(message),
             AppError::Validation(message) => ApiError::validation(message),
-            AppError::Upstream(message) | AppError::UpstreamUncertain(message) => {
-                ApiError::upstream(message)
+            AppError::WrongCurrentPin => {
+                ApiError::validation(AppError::WrongCurrentPin.to_string())
             }
+            AppError::Upstream(message)
+            | AppError::UpstreamUncertain(message)
+            | AppError::UpstreamUnreachable { message, .. } => ApiError::upstream(message),
+            advice @ AppError::UpstreamAdvice(_) => ApiError::upstream(advice.to_string()),
             // The two that must not be echoed. `Display` on the sea-orm error
             // includes the failing SQL; `Internal` routinely carries a path.
             AppError::Database(err) => {

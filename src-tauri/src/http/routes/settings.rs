@@ -41,12 +41,11 @@ use axum::Extension;
 use axum::Router;
 
 use crate::domain::settings::{
-    DatabaseInfo, PpobMarkup, PublicAppSettings, PublicStoreInfo, SalesSettings,
+    DatabaseInfo, PpobMarkup, PublicAppSettings, PublicStoreInfo, SalesSettings, StoreInfo,
     UpdateAppSettingsInput, UpdatePpobCredentialsInput, UpdateStoreInfoInput,
 };
 use crate::domain::store_logo::MAX_LOGO_BYTES;
 use crate::domain::Actor;
-use crate::entity::store_info;
 use crate::http::error::{ApiError, ApiResult};
 use crate::http::extract::{Json, UploadedFile};
 use crate::http::AppState;
@@ -92,11 +91,12 @@ async fn get_public_store(
     ))
 }
 
-async fn get_store(
-    State(state): State<AppState>,
-) -> ApiResult<axum::Json<Option<store_info::Model>>> {
+/// The store row without its settings blob — see [`StoreInfo`].
+async fn get_store(State(state): State<AppState>) -> ApiResult<axum::Json<Option<StoreInfo>>> {
     Ok(axum::Json(
-        services::settings::get_store_info(&state.db).await?,
+        services::settings::get_store_info(&state.db)
+            .await?
+            .map(StoreInfo::from),
     ))
 }
 
@@ -104,9 +104,11 @@ async fn update_store(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
     Json(input): Json<UpdateStoreInfoInput>,
-) -> ApiResult<axum::Json<store_info::Model>> {
+) -> ApiResult<axum::Json<StoreInfo>> {
     Ok(axum::Json(
-        services::settings::update_store_info(&state.db, &actor, input).await?,
+        services::settings::update_store_info(&state.db, &actor, input)
+            .await?
+            .into(),
     ))
 }
 
@@ -146,9 +148,11 @@ async fn upload_store_logo(
     State(state): State<AppState>,
     Extension(actor): Extension<Actor>,
     UploadedFile(data): UploadedFile,
-) -> ApiResult<axum::Json<store_info::Model>> {
+) -> ApiResult<axum::Json<StoreInfo>> {
     Ok(axum::Json(
-        services::store_logo::save(&state.db, &actor, &data).await?,
+        services::store_logo::save(&state.db, &actor, &data)
+            .await?
+            .into(),
     ))
 }
 

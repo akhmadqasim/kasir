@@ -4,6 +4,7 @@ import { Table } from "@heroui/react"
 import { StatusBadge } from "@/components/status-badge"
 import { TableSkeletonRows } from "@/components/table-skeleton-rows"
 import { formatDateTime, formatRupiah } from "@/lib/format"
+import { ppobRowBadge } from "@/lib/ppob-status"
 import { paymentMethodLabel, transactionStatusLabel, transactionStatusVariant } from "@/lib/labels"
 import { id } from "@/i18n/id"
 import type { TransactionListItem } from "../types"
@@ -82,6 +83,9 @@ export function TransactionsTable({
               transactions.map((txn) => {
                 const isDeleted = txn.status === "deleted"
                 const descriptions = transactionDescriptions(txn)
+                const ppobBadge = isDeleted
+                  ? null
+                  : ppobRowBadge({ ...txn, service_type: txn.ppob_service_type })
                 return (
                   <Table.Row
                     key={txn.id}
@@ -127,14 +131,24 @@ export function TransactionsTable({
                     {/* Lencana hanya untuk pengecualian — DESIGN.md §5.4. Sepuluh
                         lencana "Selesai" berjajar membuat "Refund Sebagian" atau
                         "Dihapus" tenggelam di antaranya. */}
+                    {/* The PPOB status sits under the sale status: checkout
+                        leaves the sale "Selesai" while its PPOB lines are still
+                        waiting, failed, or need a check. */}
                     <Table.Cell className="whitespace-nowrap">
-                      {txn.status === "completed" ? (
-                        <span className="text-muted">{transactionStatusLabel(txn.status)}</span>
-                      ) : (
-                        <StatusBadge status={transactionStatusVariant(txn.status)}>
-                          {transactionStatusLabel(txn.status)}
-                        </StatusBadge>
-                      )}
+                      <div className="flex flex-col items-start gap-1">
+                        {txn.status === "completed" ? (
+                          <span className="text-muted">{transactionStatusLabel(txn.status)}</span>
+                        ) : (
+                          <StatusBadge status={transactionStatusVariant(txn.status)}>
+                            {transactionStatusLabel(txn.status)}
+                          </StatusBadge>
+                        )}
+                        {ppobBadge && (
+                          <StatusBadge size="sm" status={ppobBadge.variant}>
+                            {ppobBadge.label}
+                          </StatusBadge>
+                        )}
+                      </div>
                     </Table.Cell>
                     {/* No strike-through on deleted rows: voiding zeroes
                           `total_amount`, so it would strike "Rp 0". The

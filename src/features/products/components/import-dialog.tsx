@@ -15,7 +15,7 @@ import {
   type ColumnMap,
   type TargetFieldKey,
 } from "../import-mapping"
-import { ImportSheetError, readSheetRows } from "../import-sheet"
+import { ImportSheetError, readSheetRows, type PercentCells } from "../import-sheet"
 import { ImportMappingStep } from "./import-mapping-step"
 import { ImportResultStep } from "./import-result-step"
 import { ImportUploadStep } from "./import-upload-step"
@@ -32,6 +32,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [step, setStep] = useState<Step>("upload")
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<string[][]>([])
+  const [percentCells, setPercentCells] = useState<PercentCells>(() => new Map())
   const [columnMap, setColumnMap] = useState<ColumnMap>({})
   const [result, setResult] = useState<BulkImportResult | null>(null)
   const [isReading, setIsReading] = useState(false)
@@ -53,6 +54,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setStep("upload")
     setHeaders([])
     setRows([])
+    setPercentCells(new Map())
     setColumnMap({})
     setResult(null)
     setIsReading(false)
@@ -79,6 +81,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         const sheet = readSheetRows(evt.target?.result as ArrayBuffer)
         setHeaders(sheet.headers)
         setRows(sheet.rows)
+        setPercentCells(sheet.percentCells)
         setColumnMap(autoMapColumns(sheet.headers))
         setStep("mapping")
       } catch (err) {
@@ -94,7 +97,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 
   // Memoised: the mapping footer shows the count on every render, and a price
   // list can hold ~10k rows.
-  const mappedRows = useMemo(() => mapImportRows(rows, columnMap), [rows, columnMap])
+  const mappedRows = useMemo(
+    () => mapImportRows(rows, columnMap, percentCells),
+    [rows, columnMap, percentCells],
+  )
 
   const handleImport = async () => {
     const { products, skippedRowNumbers } = mappedRows

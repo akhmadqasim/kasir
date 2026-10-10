@@ -190,4 +190,151 @@ mod tests {
         assert!(!is_sqlite_database(b""));
         assert!(!is_sqlite_database(b"<html>not a database</html>"));
     }
+
+    /// A scratch folder per test, removed when the guard drops.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("kasir-restore-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&dir).expect("scratch dir");
+            Self(dir)
+        }
+
+        fn db(&self) -> PathBuf {
+            self.0.join("kasir.db")
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A real SQLite file at `path` holding one table named `table`.
+    fn sqlite_with_table(path: &Path, table: &str) {
+        let conn = rusqlite::Connection::open(path).expect("open");
+        conn.execute_batch(&format!(
+            "CREATE TABLE {table} (id INTEGER); INSERT INTO {table} VALUES (1);"
+        ))
+        .expect("schema");
+    }
+
+    fn has_table(path: &Path, table: &str) -> bool {
+        let conn = rusqlite::Connection::open(path).expect("open");
+        conn.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("query")
+            == 1
+    }
+
+    #[test]
+    fn with_nothing_staged_the_live_database_is_left_alone() {
+        let scratch = Scratch::new();
+        sqlite_with_table(&scratch.db(), "live_rows");
+
+        assert!(!apply_pending_restore(&scratch.db()).expect("no-op"));
+        assert!(has_table(&scratch.db(), "live_rows"));
+        assert!(!pre_restore_path(&scratch.db()).exists());
+    }
+
+    /// Bytes that are not a database never become a pending restore.
+    #[test]
+    fn a_non_sqlite_image_is_refused_and_nothing_is_staged() {
+        let scratch = Scratch::new();
+
+        let error = stage_restore_bytes(&scratch.db(), b"PK\x03\x04 a zip, not a database")
+            .expect_err("refused");
+        assert!(matches!(error, AppError::Validation(_)), "{error:?}");
+        assert!(!pending_restore_path(&scratch.db()).exists());
+        assert!(!staging_restore_path(&scratch.db()).exists());
+    }
+
+    /// The swap installs the staged image, keeps the replaced database as
+    /// `.pre-restore`, and removes the old database's `-wal`/`-shm`, which
+    /// would otherwise be replayed over the restored file.
+    #[test]
+    fn a_staged_restore_replaces_the_live_database_and_keeps_the_old_one() {
+        let scratch = Scratch::new();
+        sqlite_with_table(&scratch.db(), "old_rows");
+
+        let image_path = scratch.0.join("image.db");
+        sqlite_with_table(&image_path, "restored_rows");
+        let image = fs::read(&image_path).expect("read image");
+        stage_restore_bytes(&scratch.db(), &image).expect("stage");
+        assert!(pending_restore_path(&scratch.db()).exists());
+
+        fs::write(sibling_path(&scratch.db(), "-wal"), b"stale wal").expect("wal");
+        fs::write(sibling_path(&scratch.db(), "-shm"), b"stale shm").expect("shm");
+
+        assert!(apply_pending_restore(&scratch.db()).expect("applied"));
+
+        assert!(has_table(&scratch.db(), "restored_rows"));
+        assert!(!has_table(&scratch.db(), "old_rows"));
+        assert!(has_table(&pre_restore_path(&scratch.db()), "old_rows"));
+        assert!(!pending_restore_path(&scratch.db()).exists());
+        assert!(
+            !sibling_path(&scratch.db(), "-wal").exists() || {
+                // Opening the restored file above may legitimately create a fresh
+                // sidecar; what must not survive is the stale content.
+                fs::read(sibling_path(&scratch.db(), "-wal")).unwrap_or_default() != b"stale wal"
+            }
+        );
+        assert_ne!(
+            fs::read(sibling_path(&scratch.db(), "-shm")).unwrap_or_default(),
+            b"stale shm"
+        );
+
+        // Applied once; a second launch has nothing to do.
+        assert!(!apply_pending_restore(&scratch.db()).expect("no-op"));
+    }
+
+    /// A pending file that lost its header (crash, disk trouble) is thrown
+    /// away, and the live database is not touched.
+    #[test]
+    fn a_corrupt_pending_restore_is_discarded_and_the_live_database_kept() {
+        let scratch = Scratch::new();
+        sqlite_with_table(&scratch.db(), "live_rows");
+        fs::write(pending_restore_path(&scratch.db()), b"SQLite").expect("truncated pending");
+
+        assert!(apply_pending_restore(&scratch.db()).is_err());
+        assert!(!pending_restore_path(&scratch.db()).exists());
+        assert!(has_table(&scratch.db(), "live_rows"));
+    }
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(bytes).expect("gzip");
+        encoder.finish().expect("gzip")
+    }
+
+    #[test]
+    fn an_archive_restores_only_when_it_holds_a_database() {
+        let scratch = Scratch::new();
+
+        let not_gzip = scratch.0.join("plain.db.gz");
+        fs::write(&not_gzip, b"not gzip at all").expect("write");
+        assert!(stage_restore_from_archive(&scratch.db(), &not_gzip).is_err());
+
+        let gz_text = scratch.0.join("text.db.gz");
+        fs::write(&gz_text, gzip(b"hello, not sqlite")).expect("write");
+        assert!(matches!(
+            stage_restore_from_archive(&scratch.db(), &gz_text),
+            Err(AppError::Validation(_))
+        ));
+        assert!(!pending_restore_path(&scratch.db()).exists());
+
+        let image_path = scratch.0.join("image.db");
+        sqlite_with_table(&image_path, "restored_rows");
+        let good = scratch.0.join("good.db.gz");
+        fs::write(&good, gzip(&fs::read(&image_path).expect("read"))).expect("write");
+        stage_restore_from_archive(&scratch.db(), &good).expect("staged");
+        assert!(pending_restore_path(&scratch.db()).exists());
+    }
 }

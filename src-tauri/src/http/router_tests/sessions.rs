@@ -211,6 +211,47 @@ async fn a_session_belonging_to_a_deactivated_user_is_refused() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// A new PIN ends the sessions the old one opened. The browser that made the
+/// change keeps working; the one on another device is logged out.
+#[tokio::test]
+async fn changing_ones_own_pin_logs_out_the_other_devices_only() {
+    let db = setup_test_db().await;
+    let kasir = insert_user_with_pin(&db, "kasir1", "1234", "kasir").await;
+    let here = login_token(&db, kasir.id).await;
+    let elsewhere = login_token(&db, kasir.id).await;
+    let state = state(db);
+
+    let changed = router(&state)
+        .oneshot(
+            same_origin(Method::PUT, "/api/auth/me/pin")
+                .header(header::COOKIE, cookie(&here))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(json_body(json!({ "currentPin": "1234", "newPin": "5678" })))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(changed.status(), StatusCode::NO_CONTENT);
+
+    let me_with = |token: String| {
+        let state = &state;
+        async move {
+            router(state)
+                .oneshot(
+                    same_origin(Method::GET, "/api/auth/me")
+                        .header(header::COOKIE, cookie(&token))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response")
+                .status()
+        }
+    };
+    assert_eq!(me_with(here).await, StatusCode::OK);
+    assert_eq!(me_with(elsewhere).await, StatusCode::UNAUTHORIZED);
+}
+
 // ---------------------------------------------------------------------------
 // Roles
 // ---------------------------------------------------------------------------

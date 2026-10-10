@@ -30,6 +30,17 @@ pub struct Model {
     pub ppob_message: Option<String>,
     pub ppob_serial_number: Option<String>,
     pub created_at: Option<String>,
+    /// Mitra's references from an `ADVICE` answer, as JSON text
+    /// (`{"advice_id":…,"uid":…}`). Non-NULL exactly when Mitra said ADVICE;
+    /// `{}` when the references are unknown. See migration 031.
+    pub ppob_advice: Option<String>,
+    /// When the latest payment request for this line went out (UTC). NULL
+    /// until a retry: the first attempt is the one started at `created_at`.
+    /// See migration 032.
+    pub ppob_last_attempt_at: Option<String>,
+    /// The Mitra history `trx_id` this line was settled from, so no other
+    /// line can be settled from the same row. See migration 032.
+    pub ppob_history_trx_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

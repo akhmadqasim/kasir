@@ -4,6 +4,7 @@ import type {
   CreateProductInput,
   PaginatedProducts,
   Product,
+  ProductLookup,
   SearchProductsParams,
   ShortcutProduct,
   UpdateProductInput,
@@ -38,6 +39,24 @@ export function searchProducts(params: SearchProductsParams): Promise<PaginatedP
 
 export function getProductByBarcode(barcode: string): Promise<Product | null> {
   return apiGet<Product | null>(`/products/barcode/${encodeURIComponent(barcode)}`)
+}
+
+/** The most ids `GET /products/lookup` takes per request; mirrors the server's cap. */
+export const MAX_LOOKUP_IDS = 500
+
+/**
+ * The current price, stock and unit of each product in `ids`. Asked in chunks
+ * of `MAX_LOOKUP_IDS`, since the server refuses a longer list.
+ */
+export async function lookupProducts(ids: number[]): Promise<ProductLookup[]> {
+  const chunks: number[][] = []
+  for (let start = 0; start < ids.length; start += MAX_LOOKUP_IDS) {
+    chunks.push(ids.slice(start, start + MAX_LOOKUP_IDS))
+  }
+  const answers = await Promise.all(
+    chunks.map((chunk) => apiGet<ProductLookup[]>("/products/lookup", { ids: chunk.join(",") })),
+  )
+  return answers.flat()
 }
 
 export function getPopularProducts(limit: number): Promise<ShortcutProduct[]> {

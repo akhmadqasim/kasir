@@ -109,6 +109,9 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 /// hands them to the device untouched instead of letting the driver rasterise
 /// them. This is what makes ESC/POS text print in the printer's own font.
 pub fn send_raw_data(printer_name: &str, data: &[u8]) -> Result<(), String> {
+    // Checked here, at the sink, so no caller can open an unlisted (e.g. UNC) name.
+    let listed = list_printers()?;
+    super::ensure_listed_printer(printer_name, listed.iter().map(|p| p.name.as_str()))?;
     unsafe {
         let printer_name_wide = to_wide(printer_name);
         let mut handle = PRINTER_HANDLE::default();
@@ -275,6 +278,15 @@ mod tests {
     fn an_unknown_queue_reports_an_error() {
         let err = send_raw_data("No Such Printer XYZ", b"\x1B\x40test\n")
             .expect_err("opening a missing queue must fail");
-        assert!(err.contains("Gagal membuka printer"), "unexpected: {}", err);
+        assert_eq!(err, crate::printing::UNKNOWN_PRINTER);
+    }
+
+    /// A UNC name is refused before OpenPrinterW, so the till never connects
+    /// to the host it names.
+    #[test]
+    fn a_unc_name_is_refused_before_opening() {
+        let err = send_raw_data(r"\\192.0.2.1\evil", b"\x1B\x40test\n")
+            .expect_err("an unlisted UNC name must be refused");
+        assert_eq!(err, crate::printing::UNKNOWN_PRINTER);
     }
 }

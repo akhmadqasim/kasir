@@ -26,6 +26,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use semver::Version;
 use serde::Serialize;
 use tauri_plugin_updater::{Update, UpdaterBuilder};
 
@@ -195,6 +196,21 @@ impl Updater {
             return Ok(status_of(&inner));
         }
         match result {
+            // The manifest's `version` is unsigned. Only offer a release whose
+            // signed file name names that same version, so an older signed
+            // installer cannot be passed off as a newer one (rollback).
+            Ok(Some(update)) if !signed_version_matches(&update.signature, &update.version) => {
+                logging::log_error(&format!(
+                    "Update {} refused: its signature names a different file",
+                    update.version
+                ));
+                inner.update = None;
+                inner.bytes = None;
+                inner.phase = UpdatePhase::Failed {
+                    step: UpdateStep::Check,
+                    message: "Informasi rilis di server tidak cocok dengan berkasnya.".into(),
+                };
+            }
             Ok(Some(update)) => {
                 // A re-check that finds the version already sitting downloaded
                 // must not throw those bytes away.
@@ -328,6 +344,18 @@ impl Updater {
                     "Pembaruan belum diunduh. Unduh dulu sebelum memasang.".into(),
                 ));
             };
+            // Download verified the signature, so the file name in it is
+            // authentic now: never launch an installer that is not newer.
+            if !is_newer_str(env!("CARGO_PKG_VERSION"), &update.version)
+                || !signed_version_matches(&update.signature, &update.version)
+            {
+                inner.update = None;
+                inner.phase = UpdatePhase::Failed {
+                    step: UpdateStep::Install,
+                    message: "Berkas pembaruan bukan versi yang lebih baru. Tidak dipasang.".into(),
+                };
+                return Ok(status_of(&inner));
+            }
             inner.phase = UpdatePhase::Installing {
                 version: update.version.clone(),
             };
@@ -380,7 +408,11 @@ impl Updater {
     }
 
     fn builder(&self) -> Result<UpdaterBuilder, AppError> {
-        self.factory.get().map(|make| make()).ok_or_else(|| {
+        // Strictly newer only, by semver; never an equal or older release.
+        let newer_only = |make: &BuilderFactory| {
+            make().version_comparator(|current, release| is_newer(&current, &release.version))
+        };
+        self.factory.get().map(newer_only).ok_or_else(|| {
             AppError::Internal("updater used before the Tauri app handle was attached".into())
         })
     }
@@ -406,6 +438,41 @@ fn status_of(inner: &Inner) -> UpdateStatus {
         current_version: env!("CARGO_PKG_VERSION").to_string(),
         phase: inner.phase.clone(),
     }
+}
+
+/// `candidate` is strictly newer than `current`, by semver precedence.
+fn is_newer(current: &Version, candidate: &Version) -> bool {
+    candidate > current
+}
+
+/// [`is_newer`] for version strings; anything that does not parse is not newer.
+fn is_newer_str(current: &str, candidate: &str) -> bool {
+    match (Version::parse(current), Version::parse(candidate)) {
+        (Ok(current), Ok(candidate)) => is_newer(&current, &candidate),
+        _ => false,
+    }
+}
+
+/// Whether the minisign signature's trusted comment (`file:kasir_1.3.0_x64-setup.exe`)
+/// names `version` as one of its `_`-separated parts. The trusted comment is
+/// covered by the signature's global signature, which the plugin checks when it
+/// verifies the download.
+pub(crate) fn signed_version_matches(signature_b64: &str, version: &str) -> bool {
+    use base64::Engine;
+    let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(signature_b64.trim()) else {
+        return false;
+    };
+    let Ok(text) = std::str::from_utf8(&raw) else {
+        return false;
+    };
+    text.lines()
+        .find_map(|line| line.strip_prefix("trusted comment: "))
+        .and_then(|comment| {
+            comment
+                .split('\t')
+                .find_map(|field| field.strip_prefix("file:"))
+        })
+        .is_some_and(|file| !version.is_empty() && file.split('_').any(|part| part == version))
 }
 
 /// Indonesian text for the screen. The plugin's messages name URLs and crates;
@@ -584,5 +651,48 @@ mod tests {
         let release: tauri_plugin_updater::RemoteRelease =
             serde_json::from_value(manifest).expect("parses");
         assert_eq!(release.version.to_string(), "0.6.0");
+    }
+
+    /// Only a strictly newer semver release is offered or installed: equal and
+    /// older are refused, and `1.10.0` beats `1.9.0` (not a string compare).
+    #[test]
+    fn only_a_strictly_newer_version_counts_as_an_update() {
+        let v = |s: &str| Version::parse(s).expect("semver");
+        assert!(is_newer(&v("1.3.0"), &v("1.3.1")));
+        assert!(is_newer(&v("1.9.0"), &v("1.10.0")));
+        assert!(!is_newer(&v("1.3.0"), &v("1.3.0")));
+        assert!(!is_newer(&v("1.3.0"), &v("1.2.3")));
+        assert!(!is_newer(&v("1.3.0"), &v("1.3.0-rc.1")));
+        assert!(is_newer_str("1.3.0", "2.0.0"));
+        assert!(!is_newer_str("1.3.0", "0.9.0"));
+        assert!(!is_newer_str("1.3.0", "not-a-version"));
+    }
+
+    /// The manifest `version` is unsigned; the signed trusted comment carries
+    /// the installer's file name. A manifest that relabels an old installer
+    /// (signed as 1.2.3) as 9.9.9 is refused.
+    #[test]
+    fn the_signed_file_name_must_name_the_manifest_version() {
+        use base64::Engine;
+        let sig = |file: &str| {
+            base64::engine::general_purpose::STANDARD.encode(format!(
+                "untrusted comment: signature from tauri secret key\nRUQ=\n\
+                 trusted comment: timestamp:1790462247\tfile:{file}\nVdF=\n"
+            ))
+        };
+        let nsis = sig("kasir_1.3.0_x64-setup.exe");
+        assert!(signed_version_matches(&nsis, "1.3.0"));
+        assert!(signed_version_matches(
+            &sig("kasir_1.3.0_x64_en-US.msi"),
+            "1.3.0"
+        ));
+        assert!(!signed_version_matches(&nsis, "9.9.9"));
+        assert!(!signed_version_matches(&nsis, "1.3"));
+        assert!(!signed_version_matches(&nsis, ""));
+        assert!(!signed_version_matches(
+            &sig("kasir_1.2.3_x64-setup.exe"),
+            "9.9.9"
+        ));
+        assert!(!signed_version_matches("%%% not base64", "1.3.0"));
     }
 }

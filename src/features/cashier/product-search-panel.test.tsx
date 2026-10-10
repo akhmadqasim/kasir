@@ -1,3 +1,4 @@
+import { createRef } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -16,6 +17,7 @@ vi.mock("@/lib/toast", () => ({
 import { apiFailure, installApiMock, type ApiCall, type ApiMock } from "@/test-utils/api-mock"
 import type { PaginatedProducts, Product } from "@/features/products/types"
 import { useCartStore } from "@/stores/cart-store"
+import { refreshCartPrices, resetCartPriceRefresh } from "./cart-price-refresh"
 import { ProductSearchPanel } from "./components/product-search-panel"
 
 function product(overrides: Partial<Product> = {}): Product {
@@ -118,6 +120,7 @@ beforeEach(() => {
     "POST /products/*/select": null,
   })
   toastError.mockReset()
+  resetCartPriceRefresh()
   useCartStore.setState({
     items: [],
     heldCarts: [],
@@ -173,13 +176,89 @@ describe("product search panel", () => {
 
     scan(field, "8991234567890")
     await waitFor(() => expect(api.callsFor("GET /products/barcode/*")).toHaveLength(1))
-    // Scan kedua mulai sebelum lookup pertama menjawab.
-    fireEvent.change(field, { target: { value: "89912345678908" } })
-    fireEvent.change(field, { target: { value: "899123456789089" } })
+    // The field empties as soon as the lookup leaves, so the next scan starts
+    // clean instead of on the tail of this one.
+    expect(field).toHaveValue("")
+    nowMs += 300
+    fireEvent.change(field, { target: { value: "8" } })
+    nowMs += 10
+    fireEvent.change(field, { target: { value: "89" } })
     release()
 
     await waitFor(() => expect(cartLines()).toHaveLength(1))
     expect(field).toHaveValue("89")
+  })
+
+  it("looks up a second scan finished while the first lookup is pending on its own", async () => {
+    const pending: Array<() => void> = []
+    api.route(
+      "GET /products/barcode/*",
+      (call) =>
+        new Promise((resolve) =>
+          pending.push(() =>
+            resolve(CATALOGUE.find((item) => item.barcode === scannedBarcode(call)) ?? null),
+          ),
+        ),
+    )
+    renderPanel()
+    const field = searchField()
+
+    scan(field, "8991234567890")
+    nowMs += 300
+    scan(field, "8990001112223")
+    await waitFor(() => expect(api.callsFor("GET /products/barcode/*")).toHaveLength(2))
+    pending.forEach((resolve) => resolve())
+
+    await waitFor(() => expect(cartLines()).toHaveLength(2))
+    expect(api.callsFor("GET /products/barcode/*").map(scannedBarcode)).toEqual([
+      "8991234567890",
+      "8990001112223",
+    ])
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it("lets a scan replace text left in the field instead of appending to it", async () => {
+    renderPanel()
+    const field = searchField()
+
+    fireEvent.change(field, { target: { value: "ind" } })
+    nowMs += 1000
+    scan(field, "8990001112223")
+
+    await waitFor(() => expect(cartLines()).toHaveLength(1))
+    expect(cartLines()[0].product_name).toBe("Beras Premium 5kg")
+    expect(api.lastCall("GET /products/barcode/*")?.path).toBe("/products/barcode/8990001112223")
+  })
+
+  it("keeps text typed by hand, even typed quickly in short runs", () => {
+    renderPanel()
+    const field = searchField()
+
+    fireEvent.change(field, { target: { value: "ind" } })
+    nowMs += 200
+    // Four quick keys — a fast hand, not a scanner burst.
+    for (const value of ["indo", "indom", "indomi", "indomie"]) {
+      nowMs += 20
+      fireEvent.change(field, { target: { value } })
+    }
+
+    expect(field).toHaveValue("indomie")
+  })
+
+  it("keeps text typed by hand, even a long run typed as fast as a scanner", () => {
+    renderPanel()
+    const field = searchField()
+
+    fireEvent.change(field, { target: { value: "ind" } })
+    nowMs += 200
+    // Eleven letters at scanner speed: still a hand, because a scan is digits.
+    const rest = "omie goreng"
+    for (let length = 1; length <= rest.length; length++) {
+      nowMs += 10
+      fireEvent.change(field, { target: { value: `ind${rest.slice(0, length)}` } })
+    }
+
+    expect(field).toHaveValue("indomie goreng")
   })
 
   it("reports a barcode that is not in the catalogue", async () => {
@@ -309,30 +388,61 @@ describe("product search panel", () => {
     expect(cartLines()[0].product_name).toBe("Beras Premium 5kg")
   })
 
-  it("returns focus to the scan field when the parent asks for it", async () => {
+  /**
+   * Search results and tiles may come from the query cache, up to its stale
+   * time old. Only a fresh barcode lookup may let the check after a cart
+   * change skip the line.
+   */
+  describe("the price check after a cart change", () => {
+    beforeEach(() => {
+      api.route("GET /products/lookup", (call: ApiCall) =>
+        (call.query.get("ids") ?? "").split(",").map((productId) => ({
+          id: Number(productId),
+          sell_price: 3000,
+          stock: 50,
+          unit: "pcs",
+          is_active: true,
+        })),
+      )
+    })
+
+    it("still checks a line added from the search list", async () => {
+      renderPanel()
+      fireEvent.change(searchField(), { target: { value: "indomie" } })
+      await screen.findByRole("listbox", { name: "Hasil pencarian produk" })
+      fireEvent.keyDown(searchField(), { key: "Enter" })
+      await waitFor(() => expect(cartLines()).toHaveLength(1))
+
+      await refreshCartPrices({ skipLookupPriced: true })
+
+      expect(api.callsFor("GET /products/lookup")).toHaveLength(1)
+    })
+
+    it("skips a line a barcode lookup has just priced", async () => {
+      renderPanel()
+      scan(searchField(), "8991234567890")
+      await waitFor(() => expect(cartLines()).toHaveLength(1))
+
+      await refreshCartPrices({ skipLookupPriced: true })
+
+      expect(api.callsFor("GET /products/lookup")).toHaveLength(0)
+    })
+  })
+
+  it("uses the parent's ref for the scan field", () => {
+    const inputRef = createRef<HTMLInputElement>()
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
-    const { rerender } = render(
+    render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProductSearchPanel focusKey={0} />
+          <ProductSearchPanel inputRef={inputRef} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
 
-    searchField().blur()
-    expect(searchField()).not.toHaveFocus()
-
-    rerender(
-      <QueryClientProvider client={client}>
-        <MemoryRouter>
-          <ProductSearchPanel focusKey={1} />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    )
-
-    await waitFor(() => expect(searchField()).toHaveFocus())
+    expect(inputRef.current).toBe(searchField())
   })
 
   /**

@@ -28,6 +28,10 @@ const PAGE: PaginatedTransactions = {
       item_count: 2,
       notes: null,
       created_at: "2026-09-05 03:00:00",
+      has_refundable_goods: true,
+      has_refundable_failed_ppob: false,
+      ppob_service_type: null,
+      ppob_advice: null,
       has_ppob: false,
       ppob_status: null,
       ppob_message: null,
@@ -52,6 +56,10 @@ const PAGE: PaginatedTransactions = {
       item_count: 1,
       notes: null,
       created_at: "2026-09-05 04:00:00",
+      has_refundable_goods: true,
+      has_refundable_failed_ppob: false,
+      ppob_service_type: null,
+      ppob_advice: null,
       has_ppob: false,
       ppob_status: null,
       ppob_message: null,
@@ -96,6 +104,8 @@ const DETAIL: TransactionDetail = {
   },
   items: [],
   cashier_name: "Ahmad",
+  has_refundable_goods: false,
+  has_refundable_failed_ppob: false,
   has_ppob: false,
   ppob_status: null,
   ppob_message: null,
@@ -120,6 +130,9 @@ function renderPage() {
 }
 
 let api: ApiMock
+
+/** The first row's refund action, named with its receipt number. */
+const REFUND_FIRST_ROW = /^Refund \/ Tukar Barang TRX-20260905-0001/
 
 /** Nomor halaman dari setiap `GET /transactions`, urut waktu. */
 function requestedPages(): number[] {
@@ -218,6 +231,41 @@ describe("halaman riwayat transaksi", () => {
     expect(
       screen.getByRole("button", { name: "Cetak Struk TRX-20260905-0002" }),
     ).toBeInTheDocument()
+  })
+
+  it("tidak menawarkan refund untuk penjualan yang barangnya sudah kembali semua", async () => {
+    // A mixed cart whose goods all came back: its PPOB line keeps it at
+    // `partial_refund`, so only `has_refundable_goods` tells it is done.
+    const [first, second] = PAGE.data
+    const settled = { ...first, status: "partial_refund", has_refundable_goods: false }
+    api.route("GET /transactions", { ...PAGE, data: [settled, second] })
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0001")
+    expect(screen.queryAllByRole("button", { name: REFUND_FIRST_ROW })).toHaveLength(0)
+  })
+
+  it("menawarkan refund selama masih ada barang yang bisa dikembalikan", async () => {
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0001")
+    expect(screen.queryAllByRole("button", { name: REFUND_FIRST_ROW }).length).toBeGreaterThan(0)
+  })
+
+  it("menawarkan refund untuk top-up gagal yang dibeli di halaman PPOB", async () => {
+    // A PPOB-page sale whose top-up failed: the server says it can come back.
+    const [first, second] = PAGE.data
+    const failedTopUp = {
+      ...first,
+      channel: "ppob" as const,
+      has_ppob: true,
+      ppob_status: "failed",
+    }
+    api.route("GET /transactions", { ...PAGE, data: [failedTopUp, second] })
+    renderPage()
+
+    await screen.findByText("TRX-20260905-0001")
+    expect(screen.queryAllByRole("button", { name: REFUND_FIRST_ROW }).length).toBeGreaterThan(0)
   })
 
   it("menawarkan reset filter saat hasil kosong karena filter", async () => {

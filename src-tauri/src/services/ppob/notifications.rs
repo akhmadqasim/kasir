@@ -1,4 +1,3 @@
-use chrono::TimeZone;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -10,6 +9,7 @@ use crate::services::ppob::auth::get_mitra_request_context;
 use crate::services::ppob::client::MitraClient;
 use crate::services::ppob::parsers::get_str_field;
 use crate::services::ppob::session_cache::{SessionCache, Ticket};
+use crate::utils::time::wib_to_utc;
 use crate::utils::AppError;
 
 // Cache for notification data to avoid re-fetching 2000+ items on every page change
@@ -100,12 +100,11 @@ fn wib_date_to_local(raw: String) -> String {
     };
     let iso = format!("{year}-{month}-{day}T{time}");
 
-    let wib = chrono::FixedOffset::east_opt(7 * 3600).expect("UTC+7 is a valid offset");
     chrono::NaiveDateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M:%S")
         .ok()
-        .and_then(|naive| wib.from_local_datetime(&naive).single())
-        .map(|at| {
-            at.with_timezone(&chrono::Local)
+        .map(|naive| {
+            wib_to_utc(naive)
+                .with_timezone(&chrono::Local)
                 .format("%Y-%m-%dT%H:%M:%S")
                 .to_string()
         })
@@ -273,8 +272,8 @@ mod tests {
 
     #[test]
     fn a_wib_formatted_date_becomes_local_iso() {
-        let expected = chrono::FixedOffset::east_opt(7 * 3600)
-            .unwrap()
+        use chrono::TimeZone;
+        let expected = crate::utils::time::wib()
             .with_ymd_and_hms(2026, 9, 5, 18, 30, 0)
             .unwrap()
             .with_timezone(&chrono::Local)

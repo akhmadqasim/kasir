@@ -1,4 +1,5 @@
 import { parseIndonesianInteger, parseIndonesianNumber } from "@/lib/format"
+import type { PercentCells } from "./import-sheet"
 import type { BulkImportResult, BulkProductInput } from "./types"
 
 /**
@@ -96,21 +97,13 @@ function isValidCheckDigit(code: string): boolean {
   return (10 - (sum % 10)) % 10 === check
 }
 
-/** Pad barcode with leading zeros to standard lengths and validate check digit */
+/** Restores the one zero Excel drops (7 → EAN-8, 11 → UPC-A) if the check digit holds. */
 export function fixBarcodeLeadingZero(value: string): string {
   if (!value || !/^\d+$/.test(value)) return value
   if (value.startsWith("0")) return value
-  const len = value.length
-  // Already a standard length - leave as is
-  if (len === 8 || len === 12 || len === 13) return value
-  // Try padding to each standard barcode length (smallest first)
-  for (const targetLen of [8, 12, 13]) {
-    if (len < targetLen) {
-      const padded = value.padStart(targetLen, "0")
-      if (isValidCheckDigit(padded)) return padded
-    }
-  }
-  return value
+  if (value.length !== 7 && value.length !== 11) return value
+  const padded = `0${value}`
+  return isValidCheckDigit(padded) ? padded : value
 }
 
 export interface MappedRows {
@@ -119,15 +112,30 @@ export interface MappedRows {
   skippedRowNumbers: number[]
 }
 
-export function mapImportRows(rows: string[][], columnMap: ColumnMap): MappedRows {
+/**
+ * `percentCells` are the sheet's Excel percent cells (`SheetRows.percentCells`),
+ * whose text is the percent shown. That is the value only for the margin, which
+ * is a percent; any other column takes the fraction the cell holds.
+ */
+export function mapImportRows(
+  rows: string[][],
+  columnMap: ColumnMap,
+  percentCells: PercentCells = new Map(),
+): MappedRows {
   const products: BulkProductInput[] = []
   const skippedRowNumbers: number[] = []
 
   rows.forEach((row, rowIdx) => {
     const product: Partial<Record<TargetFieldKey, string>> = {}
+    const rowPercents = percentCells.get(rowIdx)
     Object.entries(columnMap).forEach(([colIdxStr, field]) => {
       if (field === "skip") return
-      product[field] = String(row[parseInt(colIdxStr, 10)] ?? "").trim()
+      const colIdx = parseInt(colIdxStr, 10)
+      const fraction = rowPercents?.get(colIdx)
+      product[field] =
+        fraction !== undefined && field !== "margin"
+          ? String(fraction).replace(".", ",")
+          : String(row[colIdx] ?? "").trim()
     })
 
     if (!product.name) {
@@ -136,16 +144,23 @@ export function mapImportRows(rows: string[][], columnMap: ColumnMap): MappedRow
       return
     }
 
-    products.push({
+    // Unmapped columns and blank cells are left out, not zeroed (see `BulkProductInput`).
+    const input: BulkProductInput = {
       name: product.name,
-      barcode: fixBarcodeLeadingZero(product.barcode || "") || undefined,
-      category_name: product.category_name || undefined,
-      buy_price: parseIndonesianNumber(product.buy_price) ?? 0,
       sell_price: parseIndonesianNumber(product.sell_price) ?? 0,
-      margin: parseIndonesianNumber(product.margin) ?? 0,
-      stock: parseIndonesianInteger(product.stock) ?? 0,
-      unit: product.unit || "pcs",
-    })
+      row_number: rowIdx + 1,
+    }
+    const barcode = fixBarcodeLeadingZero(product.barcode ?? "")
+    if (barcode) input.barcode = barcode
+    if (product.category_name) input.category_name = product.category_name
+    const buyPrice = parseIndonesianNumber(product.buy_price)
+    if (buyPrice != null) input.buy_price = buyPrice
+    const margin = parseIndonesianNumber(product.margin)
+    if (margin != null) input.margin = margin
+    const stock = parseIndonesianInteger(product.stock)
+    if (stock != null) input.stock = stock
+    if (product.unit) input.unit = product.unit
+    products.push(input)
   })
 
   return { products, skippedRowNumbers }

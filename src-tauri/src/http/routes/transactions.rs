@@ -39,6 +39,7 @@ pub fn session() -> Router<AppState> {
             "/transactions/next-receipt-number",
             get(next_receipt_number),
         )
+        .route("/transactions/ppob-attention", get(ppob_attention))
         .route("/transactions/{id}", get(detail))
         .route("/transactions/{id}", delete(void))
         .route("/transactions/{id}/payment-method", patch(payment_method))
@@ -46,6 +47,7 @@ pub fn session() -> Router<AppState> {
         .route("/transactions/{id}/receipt/lines", get(receipt_lines))
         .route("/transaction-items/{id}/ppob/retry", post(retry_ppob))
         .route("/transaction-items/{id}/ppob/resolve", post(resolve_ppob))
+        .route("/transaction-items/{id}/ppob/check", post(check_ppob))
 }
 
 async fn list(
@@ -60,6 +62,17 @@ async fn list(
 async fn next_receipt_number(State(state): State<AppState>) -> ApiResult<axum::Json<String>> {
     Ok(axum::Json(
         services::transactions::next_receipt_number(&state.db).await?,
+    ))
+}
+
+/// How many PPOB lines wait on someone, for the app-wide indicator. Polled,
+/// so it is a single `COUNT`; the background reconcile settling a line shows
+/// up on the next poll.
+async fn ppob_attention(
+    State(state): State<AppState>,
+) -> ApiResult<axum::Json<services::transactions::queries::PpobAttention>> {
+    Ok(axum::Json(
+        services::transactions::queries::ppob_attention(&state.db).await?,
     ))
 }
 
@@ -94,13 +107,17 @@ async fn checkout(
 
     let user_id = actor.user_id;
     let (db, mitra) = (state.db.clone(), state.mitra.clone());
+    // The sale is linked to its key's claim in its own DB transaction, so a key
+    // a crash strands `in_progress` can be settled later.
     idempotency::run(
         &state.db,
         idempotency::SCOPE_CHECKOUT,
         user_id,
         &key,
         &body,
-        async move { services::transactions::checkout(&db, &mitra, &actor, input).await },
+        |claim| async move {
+            services::transactions::checkout(&db, &mitra, &actor, input, Some(&claim)).await
+        },
     )
     .await
 }
@@ -241,5 +258,17 @@ async fn resolve_ppob(
             body.serial_number,
         )
         .await?,
+    ))
+}
+
+/// "Cek status": look an `uncertain` PPOB line up in the Mitra history now and
+/// settle it if the history is clear. A line the history does not decide stays
+/// `uncertain`; the answer says why.
+async fn check_ppob(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<axum::Json<services::transactions::PpobCheckResult>> {
+    Ok(axum::Json(
+        services::transactions::check_ppob_status(&state.db, &state.mitra, id).await?,
     ))
 }
