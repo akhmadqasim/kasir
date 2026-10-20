@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "kasir"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
