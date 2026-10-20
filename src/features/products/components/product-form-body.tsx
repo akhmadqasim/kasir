@@ -204,7 +204,8 @@ export function ProductFormBody({ product, onOpenChange, onCreateSuccess }: Prod
 
         <ProductPriceFields
           buyPrice={form.buyPrice}
-          buyPriceError={errors.buyPrice}
+          // The margin error sits under the buy price but either price fixes it.
+          buyPriceError={errors.buyPrice ?? errors.margin}
           margin={form.margin}
           sellPrice={form.sellPrice}
           sellPriceError={errors.sellPrice}
@@ -217,10 +218,12 @@ export function ProductFormBody({ product, onOpenChange, onCreateSuccess }: Prod
               ...(sellPrice != null ? { sellPrice } : {}),
             }))
             clearError("buyPrice")
+            clearError("margin")
           }}
           onMarginChange={(margin) => {
             const sellPrice = sellPriceFromMarkup(form.buyPrice, margin)
             setForm((prev) => ({ ...prev, margin, ...(sellPrice != null ? { sellPrice } : {}) }))
+            if (sellPrice != null) clearError("margin")
           }}
           onSellPriceChange={(value) => {
             setForm((prev) => ({
@@ -229,6 +232,7 @@ export function ProductFormBody({ product, onOpenChange, onCreateSuccess }: Prod
               margin: markupFromPrices(form.buyPrice, value),
             }))
             clearError("sellPrice")
+            clearError("margin")
           }}
         />
       </Modal.Body>

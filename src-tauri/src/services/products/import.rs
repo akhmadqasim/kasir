@@ -9,9 +9,12 @@ use sea_orm::{
 };
 
 use super::crud::{normalize_code, validate_product_fields};
-use crate::domain::products::{BulkImportResult, BulkProductInput};
+use crate::domain::products::{
+    validate_margin, BulkImportResult, BulkProductInput, BUY_PRICE_ABOVE_SELL_PRICE,
+};
 use crate::domain::Actor;
 use crate::entity::{categories as category_entity, products};
+use crate::printing::layout::format_rupiah;
 use crate::services::{categories, guard};
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
@@ -147,16 +150,6 @@ pub async fn bulk_create(
             .filter(|u| !u.is_empty())
             .map(str::to_string);
 
-        let category_name = input
-            .category_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|name| !name.is_empty());
-        let category_id = match category_name {
-            Some(name) => Some(resolve_category(&txn, &mut category_ids, name).await?),
-            None => None,
-        };
-
         // Find the product this row is about.
         //
         // A barcode is the authoritative identity, so it is tried first. Rows
@@ -232,6 +225,37 @@ pub async fn bulk_create(
             ));
             continue;
         }
+
+        // A row without a buy price keeps the stored one, so the margin rule
+        // is checked against it: a new sell price below the stored buy price
+        // sells at a loss just the same. A row that carries a buy price was
+        // already checked with it above.
+        if let (None, Some(existing)) = (input.buy_price, &existing_product) {
+            if validate_margin(existing.buy_price, input.sell_price).is_err() {
+                skipped += 1;
+                errors.push(format!(
+                    "Baris {}: {} (harga beli tersimpan {}, harga jual di file {}). \
+                     Isi kolom Harga Beli atau perbaiki harga jualnya",
+                    row_num,
+                    BUY_PRICE_ABOVE_SELL_PRICE,
+                    format_rupiah(existing.buy_price),
+                    format_rupiah(input.sell_price)
+                ));
+                continue;
+            }
+        }
+
+        // Resolved only once the row is known to be written, so a skipped row
+        // never leaves a new category behind.
+        let category_name = input
+            .category_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        let category_id = match category_name {
+            Some(name) => Some(resolve_category(&txn, &mut category_ids, name).await?),
+            None => None,
+        };
 
         let now = now_ts();
         // The barcode of the product this row writes.
@@ -397,6 +421,7 @@ mod tests {
     use crate::services::products::test_fixtures::{admin, make_valid_input};
     use crate::services::products::{create, delete};
     use crate::test_support::setup_test_db;
+    use sea_orm::PaginatorTrait;
 
     // --- Bulk import ---
 
@@ -528,6 +553,97 @@ mod tests {
         assert_eq!(result.skipped, 3);
         assert_eq!(result.errors.len(), 3);
         assert_eq!(products::Entity::find().all(&conn).await.unwrap().len(), 0);
+    }
+
+    /// A row whose buy price is above its sell price is reported and skipped;
+    /// the rest of the file still goes in.
+    #[tokio::test]
+    async fn import_rejects_a_row_with_a_buy_price_above_the_sell_price() {
+        let conn = setup_test_db().await;
+        let mut per_pack = import_row("Creamy Latte25", None);
+        per_pack.buy_price = Some(18_233.0);
+        per_pack.sell_price = 2_500.0;
+        per_pack.row_number = Some(2);
+        let mut at_cost = import_row("Gula Curah", None);
+        at_cost.buy_price = Some(12_000.0);
+
+        let result = bulk_create(
+            &conn,
+            &admin(),
+            vec![import_row("Beras Curah", None), per_pack, at_cost],
+        )
+        .await
+        .expect("import");
+
+        assert_eq!(result.imported, 2, "errors: {:?}", result.errors);
+        assert_eq!(result.skipped, 1);
+        assert_eq!(
+            result.errors,
+            vec![format!("Baris 2: {}", BUY_PRICE_ABOVE_SELL_PRICE)]
+        );
+        let names: Vec<String> = products::Entity::find()
+            .all(&conn)
+            .await
+            .expect("query")
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert!(!names.contains(&"Creamy Latte25".to_string()));
+    }
+
+    /// A price-only row keeps the stored buy price, so the rule is checked
+    /// against it: a sell price below it is refused and the product is left
+    /// as it was. The same row with a buy price that fits goes through.
+    #[tokio::test]
+    async fn import_checks_a_new_sell_price_against_the_stored_buy_price() {
+        let conn = setup_test_db().await;
+        let product = create(&conn, &admin(), make_valid_input())
+            .await
+            .expect("product");
+
+        let below_cost = BulkProductInput {
+            category_name: Some("Kategori Baru".to_string()),
+            ..price_only_row("Beras 5kg", Some("1234567890123"), 40_000.0)
+        };
+        let result = bulk_create(&conn, &admin(), vec![below_cost.clone()])
+            .await
+            .expect("import");
+        assert_eq!(result.updated, 0);
+        assert_eq!(result.skipped, 1);
+        // The skipped row leaves no category behind.
+        let categories = category_entity::Entity::find()
+            .filter(category_entity::Column::Name.eq("Kategori Baru"))
+            .count(&conn)
+            .await
+            .expect("query");
+        assert_eq!(categories, 0);
+        assert!(
+            result.errors[0].starts_with(&format!("Baris 1: {}", BUY_PRICE_ABOVE_SELL_PRICE))
+                && result.errors[0].contains("harga beli tersimpan 50.000"),
+            "{}",
+            result.errors[0]
+        );
+        let unchanged = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(unchanged.sell_price, 65_000.0);
+
+        let with_cost = BulkProductInput {
+            buy_price: Some(35_000.0),
+            ..below_cost
+        };
+        let result = bulk_create(&conn, &admin(), vec![with_cost])
+            .await
+            .expect("import");
+        assert_eq!(result.updated, 1, "errors: {:?}", result.errors);
+        let after = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!((after.buy_price, after.sell_price), (35_000.0, 40_000.0));
     }
 
     /// An unattended bulk path must not bring back products an admin removed on

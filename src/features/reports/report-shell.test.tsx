@@ -467,6 +467,72 @@ describe("angka bersih yang negatif", () => {
   })
 })
 
+describe("Penjualan Produk: per halaman", () => {
+  // 120 produk: "Produk 001" … "Produk 120". Laporan nyata bisa ribuan baris,
+  // dan menggambar semuanya sekaligus membuat kotak cari tersendat.
+  const MANY_ROWS = Array.from({ length: 120 }, (_, i) => {
+    const n = i + 1
+    return {
+      productId: n,
+      productName: `Produk ${String(n).padStart(3, "0")}`,
+      barcode: null,
+      categoryName: null,
+      qtySold: 1,
+      totalRevenue: 1000,
+      totalCost: 800,
+      profit: 200,
+    }
+  })
+
+  /** Baris data saja, tanpa baris kepala tabel. */
+  function dataRows() {
+    const grid = screen.getByRole("grid", { name: "Penjualan Produk" })
+    return within(grid)
+      .getAllByRole("row")
+      .filter((r) => within(r).queryByRole("rowheader") !== null)
+  }
+
+  beforeEach(() => {
+    installApiMock({ ...REPORT_ROUTES, "GET /reports/products/sales": MANY_ROWS })
+  })
+
+  it("hanya menggambar 50 baris dan menampilkan navigasi halaman", async () => {
+    renderWithQuery(<ProductSalesPage />)
+
+    expect(await screen.findByText("Produk 001")).toBeInTheDocument()
+    expect(dataRows()).toHaveLength(50)
+    expect(screen.queryByText("Produk 051")).not.toBeInTheDocument()
+
+    const nav = screen.getByRole("navigation", { name: "Navigasi halaman" })
+    expect(within(nav).getByText("Halaman 1 dari 3")).toBeInTheDocument()
+
+    fireEvent.click(within(nav).getByRole("button", { name: /Selanjutnya/ }))
+    expect(await screen.findByText("Produk 051")).toBeInTheDocument()
+    expect(screen.queryByText("Produk 001")).not.toBeInTheDocument()
+    expect(dataRows()).toHaveLength(50)
+  })
+
+  it("kembali ke halaman 1 saat pencarian berubah", async () => {
+    renderWithQuery(<ProductSalesPage />)
+
+    expect(await screen.findByText("Produk 001")).toBeInTheDocument()
+    const nav = screen.getByRole("navigation", { name: "Navigasi halaman" })
+    fireEvent.click(within(nav).getByRole("button", { name: /Selanjutnya/ }))
+    expect(await screen.findByText("Produk 051")).toBeInTheDocument()
+
+    // "Produk 0" cocok dengan 001–099: tetap dua halaman. Kalau halamannya tidak
+    // kembali ke 1, yang tampil masih 051–099 dan "Produk 001" tidak ada.
+    fireEvent.change(screen.getByRole("searchbox", { name: "Cari produk..." }), {
+      target: { value: "Produk 0" },
+    })
+
+    expect(await screen.findByText("Halaman 1 dari 2", {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(screen.getByText("Produk 001")).toBeInTheDocument()
+    expect(screen.queryByText("Produk 051")).not.toBeInTheDocument()
+    expect(dataRows()).toHaveLength(50)
+  })
+})
+
 describe("Stok Saat Ini: stok menipis", () => {
   it("produk tanpa batas minimum yang habis ikut dihitung dan ditandai, sama seperti filter backend", async () => {
     installApiMock({

@@ -6,7 +6,7 @@ use sea_orm::{
     EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 
-use crate::domain::products::{CreateProductInput, UpdateProductInput};
+use crate::domain::products::{validate_margin, CreateProductInput, UpdateProductInput};
 use crate::domain::Actor;
 use crate::entity::products;
 use crate::services::transactions::load_allow_negative_stock;
@@ -14,7 +14,8 @@ use crate::services::{categories, guard};
 use crate::utils::time::now_ts;
 use crate::utils::AppError;
 
-/// Price and stock rules shared by create and update.
+/// Price and stock rules shared by create, update and import, including the
+/// margin rule ([`validate_margin`]).
 pub(super) fn validate_product_fields(
     name: &str,
     sell_price: f64,
@@ -37,6 +38,7 @@ pub(super) fn validate_product_fields(
             "Harga beli tidak boleh negatif".to_string(),
         ));
     }
+    validate_margin(buy_price, sell_price)?;
     if stock < 0 {
         return Err(AppError::Validation("Stok tidak boleh negatif".to_string()));
     }
@@ -166,6 +168,8 @@ pub async fn update(
 ) -> Result<products::Model, AppError> {
     guard::require_admin(actor)?;
 
+    // Both prices are always sent and written, so the margin rule sees the
+    // values the row will hold.
     let name = validate_product_fields(
         &input.name,
         input.sell_price,
@@ -262,6 +266,7 @@ pub async fn delete(db: &DatabaseConnection, actor: &Actor, id: i64) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::products::is_margin_error;
     use crate::services::products::test_fixtures::{admin, make_valid_input};
     use crate::test_support::setup_test_db;
 
@@ -402,6 +407,51 @@ mod tests {
             AppError::Validation(msg) => assert!(msg.contains("negatif")),
             other => panic!("Expected Validation error, got: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn creating_a_product_with_a_buy_price_above_the_sell_price_fails() {
+        let conn = setup_test_db().await;
+        let input = CreateProductInput {
+            buy_price: 18_233.0,
+            sell_price: 2_500.0,
+            ..make_valid_input()
+        };
+
+        let result = create(&conn, &admin(), input).await;
+        assert!(is_margin_error(&result), "{result:?}");
+        assert!(products::Entity::find()
+            .all(&conn)
+            .await
+            .expect("query")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn updating_a_product_to_a_buy_price_above_the_sell_price_fails() {
+        let conn = setup_test_db().await;
+        let product = create(&conn, &admin(), make_valid_input())
+            .await
+            .expect("product");
+
+        let result = update(
+            &conn,
+            &admin(),
+            UpdateProductInput {
+                buy_price: 80_000.0,
+                ..edit_of(&product)
+            },
+        )
+        .await;
+
+        assert!(is_margin_error(&result), "{result:?}");
+        let unchanged = products::Entity::find_by_id(product.id)
+            .one(&conn)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(unchanged.buy_price, 50_000.0);
+        assert_eq!(unchanged.sell_price, 65_000.0);
     }
 
     #[tokio::test]

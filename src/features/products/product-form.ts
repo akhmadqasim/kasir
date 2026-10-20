@@ -27,7 +27,7 @@ export interface ProductFormState {
 }
 
 export type ProductFormErrors = Partial<
-  Record<"name" | "sellPrice" | "buyPrice" | "stock" | "minStock", string>
+  Record<"name" | "sellPrice" | "buyPrice" | "margin" | "stock" | "minStock", string>
 >
 
 export const EMPTY_PRODUCT_FORM: ProductFormState = {
@@ -94,6 +94,9 @@ export function validateProductForm(
   if (form.sellPrice == null || form.sellPrice <= 0)
     errors.sellPrice = id.validation.sellPricePositive
   if (form.buyPrice == null || form.buyPrice < 0) errors.buyPrice = id.validation.buyPriceInvalid
+  // Same rule as the server's `validate_margin`.
+  else if (!errors.sellPrice && form.sellPrice != null && form.buyPrice > form.sellPrice)
+    errors.margin = id.validation.buyPriceAboveSellPrice
   // Stock is an INTEGER column: "1.5" used to pass here and fail on the server.
   const stock = Number(form.stock)
   if (form.stock.trim() === "") errors.stock = id.validation.stockRequired

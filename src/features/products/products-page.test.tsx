@@ -8,6 +8,7 @@ import type { User } from "@/features/auth/types"
 import type { Category, PaginatedProducts, Product } from "./types"
 
 import { id } from "@/i18n/id"
+import { toast } from "@/lib/toast"
 import { useAuthStore } from "@/features/auth/hooks/use-auth-store"
 import { ProductsPage } from "./components/products-page"
 
@@ -276,6 +277,45 @@ describe("halaman produk", () => {
 
       await vi.waitFor(() => expect(updatedProductInput()).toBeDefined())
       expect(updatedProductInput()).not.toHaveProperty("stock")
+    })
+
+    it("menolak harga beli di atas harga jual sampai salah satunya diperbaiki", async () => {
+      const dialog = await openEditForm()
+
+      // Indomie costs 2.500; a sell price under it (a per-pack cost read as
+      // per piece looks the same) must not be saved.
+      fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "2000" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      expect(await dialog.findByText(id.validation.buyPriceAboveSellPrice)).toBeInTheDocument()
+      expect(api.callsFor("PUT /products/*")).toHaveLength(0)
+
+      // The message sits under the buy price, but fixing the sell price
+      // clears it too.
+      fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "2500" } })
+      expect(dialog.queryByText(id.validation.buyPriceAboveSellPrice)).not.toBeInTheDocument()
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      await vi.waitFor(() => expect(updatedProductInput()).toBeDefined())
+      expect(updatedProductInput()).toMatchObject({ buy_price: 2500, sell_price: 2500 })
+    })
+
+    it("menampilkan pesan dari server bila server menolak harganya", async () => {
+      const toastError = vi.spyOn(toast, "error")
+      api.route(
+        "PUT /products/*",
+        apiFailure(422, "validation", id.validation.buyPriceAboveSellPrice),
+      )
+      const dialog = await openEditForm()
+
+      fireEvent.change(dialog.getByLabelText("Harga Jual"), { target: { value: "3500" } })
+      fireEvent.click(dialog.getByRole("button", { name: "Simpan" }))
+
+      await vi.waitFor(() =>
+        expect(toastError).toHaveBeenCalledWith(id.validation.buyPriceAboveSellPrice),
+      )
+      expect(screen.getByRole("dialog")).toBeInTheDocument()
+      toastError.mockRestore()
     })
 
     it("menolak stok pecahan", async () => {

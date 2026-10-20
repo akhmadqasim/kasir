@@ -396,6 +396,7 @@ export const id = {
     productNameRequired: "Nama produk wajib diisi",
     sellPricePositive: "Harga jual harus lebih dari 0",
     buyPriceInvalid: "Harga modal tidak valid",
+    buyPriceAboveSellPrice: "Harga beli tidak boleh lebih besar dari harga jual",
     stockRequired: "Stok wajib diisi",
     stockInteger: "Stok harus bilangan bulat",
     stockNegative: "Stok tidak boleh negatif",

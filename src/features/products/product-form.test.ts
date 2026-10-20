@@ -109,6 +109,19 @@ describe("validateProductForm", () => {
     expect(validateProductForm(form({ buyPrice: 0 }), undefined)).toEqual({})
   })
 
+  it("refuses a buy price above the sell price, but allows an equal one", () => {
+    expect(validateProductForm(form({ buyPrice: 18233, sellPrice: 2500 }), undefined)).toEqual({
+      margin: "Harga beli tidak boleh lebih besar dari harga jual",
+    })
+    expect(validateProductForm(form({ buyPrice: 2500, sellPrice: 2500 }), undefined)).toEqual({})
+  })
+
+  it("leaves the margin check to the sell price's own error when that is missing", () => {
+    expect(validateProductForm(form({ buyPrice: 1000, sellPrice: 0 }), undefined)).toEqual({
+      sellPrice: "Harga jual harus lebih dari 0",
+    })
+  })
+
   it("requires a whole-number stock", () => {
     expect(validateProductForm(form({ stock: "" }), undefined).stock).toBe("Stok wajib diisi")
     expect(validateProductForm(form({ stock: "1.5" }), undefined).stock).toBe(

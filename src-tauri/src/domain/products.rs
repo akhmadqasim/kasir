@@ -1,9 +1,10 @@
-//! Product search, CRUD and bulk-import types.
+//! Product search, CRUD and bulk-import types, and the price rule they share.
 
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 
 use crate::entity::products;
+use crate::utils::AppError;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProductSearchParams {
@@ -114,4 +115,48 @@ pub struct ProductLookup {
     pub stock: i64,
     pub unit: String,
     pub is_active: bool,
+}
+
+/// Shown when a product would sell below its buy price.
+pub const BUY_PRICE_ABOVE_SELL_PRICE: &str = "Harga beli tidak boleh lebih besar dari harga jual";
+
+/// A product's margin may never be negative: `buy_price <= sell_price`, equal
+/// and a zero buy price included.
+///
+/// A buy price entered per pack instead of per piece (18.233 against a sell
+/// price of 2.500) used to save without a word and make every sale of the
+/// product pull the dashboard's gross profit down. Every write of a product's
+/// prices — the form, an edit, a spreadsheet import — goes through this, with
+/// the values the row will hold after the write. Rows saved before the rule
+/// with buy > sell are left as they are, but cannot be saved again until one
+/// of the two prices is fixed.
+pub fn validate_margin(buy_price: f64, sell_price: f64) -> Result<(), AppError> {
+    if buy_price > sell_price {
+        return Err(AppError::Validation(BUY_PRICE_ABOVE_SELL_PRICE.to_string()));
+    }
+    Ok(())
+}
+
+/// Whether `result` is [`validate_margin`]'s rejection.
+#[cfg(test)]
+pub(crate) fn is_margin_error<T>(result: &Result<T, AppError>) -> bool {
+    matches!(result, Err(AppError::Validation(message)) if message == BUY_PRICE_ABOVE_SELL_PRICE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_buy_price_above_the_sell_price_is_rejected() {
+        assert!(is_margin_error(&validate_margin(18_233.0, 2_500.0)));
+        assert!(is_margin_error(&validate_margin(2_500.5, 2_500.0)));
+    }
+
+    #[test]
+    fn an_equal_or_lower_or_zero_buy_price_is_allowed() {
+        assert!(validate_margin(2_500.0, 2_500.0).is_ok());
+        assert!(validate_margin(2_000.0, 2_500.0).is_ok());
+        assert!(validate_margin(0.0, 2_500.0).is_ok());
+    }
 }
