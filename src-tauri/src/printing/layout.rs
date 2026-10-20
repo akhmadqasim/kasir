@@ -103,7 +103,7 @@ pub(super) fn wrap_words(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Format currency in Indonesian style: 100.000
-pub(super) fn format_rupiah(amount: f64) -> String {
+pub(crate) fn format_rupiah(amount: f64) -> String {
     let rounded = amount.round() as i64;
     if rounded == 0 {
         return "0".to_string();

@@ -293,6 +293,48 @@ async fn a_duplicate_barcode_is_a_422_on_create_and_edit() {
     assert_eq!(steal.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// A buy price above the sell price is a 422 carrying the rule's message, on
+/// create and on edit, and the edit leaves the product as it was.
+#[tokio::test]
+async fn a_buy_price_above_the_sell_price_is_a_422_on_create_and_edit() {
+    let db = setup_test_db().await;
+    let (admin, _) = sessions(&db).await;
+    let mut below_cost = product_body("Creamy Latte25", None, None);
+    below_cost["buy_price"] = json!(18_233.0);
+    below_cost["sell_price"] = json!(2_500.0);
+
+    let created = send(
+        &db,
+        &admin,
+        Method::POST,
+        "/api/products",
+        Some(below_cost.clone()),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        body_json(created).await["message"],
+        crate::domain::products::BUY_PRICE_ABOVE_SELL_PRICE
+    );
+
+    let beras = insert_product(&db, "Beras", 50_000.0, 65_000.0, 10).await;
+    let edited = send(
+        &db,
+        &admin,
+        Method::PUT,
+        &format!("/api/products/{}", beras.id),
+        Some(below_cost),
+    )
+    .await;
+    assert_eq!(edited.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let row = products::Entity::find_by_id(beras.id)
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("row");
+    assert_eq!((row.buy_price, row.sell_price), (50_000.0, 65_000.0));
+}
+
 /// The scan route answers `null` for an unknown or deleted code and the
 /// product for a live one.
 #[tokio::test]

@@ -249,6 +249,7 @@ async fn a_number_finds_the_product_with_that_price() {
     input.name = "Roti".to_string();
     input.barcode = None;
     input.sku = None;
+    input.buy_price = 6_000.0;
     input.sell_price = 7_500.0;
     create(&conn, &admin(), input).await.expect("product");
     make(&conn, "Beras", None, None).await;

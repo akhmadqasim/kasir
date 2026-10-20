@@ -4,7 +4,9 @@ import { Table } from "@heroui/react"
 import { id } from "@/i18n/id"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { SearchInput } from "@/components/search-input"
+import { TablePagination } from "@/components/table-pagination"
 import { formatNumber, formatRupiah } from "@/lib/format"
+import { ITEMS_PER_PAGE } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useReportDateRange } from "../hooks/use-report-date-range"
@@ -19,6 +21,7 @@ const SEARCH_PLACEHOLDER = id.reports.searchProduct
 export function ProductSalesPage() {
   const { dateRange, setDateRange, startDate, endDate } = useReportDateRange()
   const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
   const debouncedSearch = useDebounce(search, 300)
 
   const { data, isLoading, isFetching, error, refetch } = useProductSales(startDate, endDate)
@@ -31,6 +34,15 @@ export function ProductSalesPage() {
     return data.filter((r) => r.productName.toLowerCase().includes(query))
   }, [data, query])
 
+  // Laporan rentang panjang bisa berisi ribuan produk; menggambar semuanya
+  // sekaligus ke tabel React Aria membuat setiap ketikan di kotak cari tersendat.
+  // Jadi tabelnya hanya menerima satu halaman.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
+  // Dijepit ke halaman terakhir: hasil yang menyusut (misalnya setelah dimuat
+  // ulang) tidak pernah menyisakan halaman kosong tanpa jalan kembali.
+  const currentPage = Math.min(page, totalPages)
+  const pageRows = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+
   return (
     <ReportPage
       filters={
@@ -40,10 +52,19 @@ export function ProductSalesPage() {
             placeholder={SEARCH_PLACEHOLDER}
             className="w-full sm:w-64"
             value={search}
-            onChange={setSearch}
+            onChange={(value) => {
+              setSearch(value)
+              setPage(1)
+            }}
           />
           <div className="ml-auto">
-            <DateRangePicker value={dateRange} onChange={setDateRange} />
+            <DateRangePicker
+              value={dateRange}
+              onChange={(range) => {
+                setDateRange(range)
+                setPage(1)
+              }}
+            />
           </div>
         </>
       }
@@ -72,7 +93,7 @@ export function ProductSalesPage() {
           </>
         }
       >
-        {filtered.map((row) => (
+        {pageRows.map((row) => (
           <Table.Row key={row.productId} id={row.productId} textValue={row.productName}>
             {/* `text-pretty`: nama yang terlipat tidak menyisakan satuannya ("g", "kg")
                 sendirian di baris kedua. */}
@@ -91,6 +112,8 @@ export function ProductSalesPage() {
           </Table.Row>
         ))}
       </ReportTable>
+
+      <TablePagination page={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </ReportPage>
   )
 }
