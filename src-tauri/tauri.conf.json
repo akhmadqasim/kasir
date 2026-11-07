@@ -26,7 +26,33 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/udev/rules.d/70-kasir-printer.rules": "linux/70-kasir-printer.rules"
+        },
+        "postInstallScript": "linux/postinstall.sh",
+        "postRemoveScript": "linux/postremove.sh",
+        "depends": [
+          "libc6 (>= 2.34)",
+          "libssl3t64 | libssl3"
+        ]
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib/udev/rules.d/70-kasir-printer.rules": "linux/70-kasir-printer.rules"
+        },
+        "postInstallScript": "linux/postinstall.sh",
+        "postRemoveScript": "linux/postremove.sh",
+        "depends": [
+          "libssl.so.3()(64bit)",
+          "libcrypto.so.3()(64bit)"
+        ]
+      }
+    },
+    "category": "Business",
+    "longDescription": "Aplikasi kasir (POS) untuk toko sembako: penjualan dengan barcode, PPOB, refund dan tukar barang, stok, laporan, dan struk thermal lewat USB atau Bluetooth."
   },
   "plugins": {
     "updater": {

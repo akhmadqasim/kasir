@@ -590,29 +590,27 @@ mod tests {
         assert_eq!(failed["step"], "download");
     }
 
-    /// The manifest `scripts/release.ps1` uploads, in the exact shape it
-    /// writes, must be something the plugin can parse and resolve for a
-    /// Windows install of either bundle type. Guards the contract between the
-    /// script and the plugin without a network.
+    /// The manifest `scripts/release.ts` uploads, in the exact shape it
+    /// writes, must be something the plugin can parse and resolve for every
+    /// install it updates: the Windows NSIS build and the Linux AppImage, deb
+    /// and rpm. Guards the contract between the script and the plugin without a
+    /// network.
     #[test]
     fn the_release_script_manifest_shape_is_what_the_plugin_reads() {
+        const SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=";
+        const DOWNLOAD: &str = "https://github.com/akhmadqasim/kasir/releases/download/v0.6.0";
+        let entry = |asset: &str| serde_json::json!({ "signature": SIGNATURE, "url": format!("{DOWNLOAD}/{asset}") });
         let manifest = serde_json::json!({
             "version": "0.6.0",
             "notes": "Perbaikan struk PPOB.",
             "pub_date": "2026-09-13T02:00:00Z",
             "platforms": {
-                "windows-x86_64-nsis": {
-                    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=",
-                    "url": "https://github.com/akhmadqasim/kasir/releases/download/v0.6.0/kasir_0.6.0_x64-setup.exe"
-                },
-                "windows-x86_64-msi": {
-                    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=",
-                    "url": "https://github.com/akhmadqasim/kasir/releases/download/v0.6.0/kasir_0.6.0_x64_en-US.msi"
-                },
-                "windows-x86_64": {
-                    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=",
-                    "url": "https://github.com/akhmadqasim/kasir/releases/download/v0.6.0/kasir_0.6.0_x64-setup.exe"
-                }
+                "windows-x86_64-nsis": entry("kasir_0.6.0_x64-setup.exe"),
+                "windows-x86_64": entry("kasir_0.6.0_x64-setup.exe"),
+                "linux-x86_64-appimage": entry("kasir_0.6.0_amd64.AppImage"),
+                "linux-x86_64-deb": entry("kasir_0.6.0_amd64.deb"),
+                "linux-x86_64-rpm": entry("kasir-0.6.0-1.x86_64.rpm"),
+                "linux-x86_64": entry("kasir_0.6.0_amd64.AppImage"),
             }
         });
 
@@ -620,24 +618,18 @@ mod tests {
             serde_json::from_value(manifest).expect("the plugin parses the manifest");
         assert_eq!(release.version.to_string(), "0.6.0");
         assert!(release.pub_date.is_some());
-        for target in [
-            "windows-x86_64-nsis",
-            "windows-x86_64-msi",
-            "windows-x86_64",
+        for (target, asset_suffix) in [
+            ("windows-x86_64-nsis", "-setup.exe"),
+            ("windows-x86_64", "-setup.exe"),
+            ("linux-x86_64-appimage", ".AppImage"),
+            ("linux-x86_64-deb", ".deb"),
+            ("linux-x86_64-rpm", ".rpm"),
+            ("linux-x86_64", ".AppImage"),
         ] {
-            release.download_url(target).expect(target);
             release.signature(target).expect(target);
+            let url = release.download_url(target).expect(target);
+            assert!(url.path().ends_with(asset_suffix), "{target}: {url}");
         }
-        assert!(release
-            .download_url("windows-x86_64-nsis")
-            .unwrap()
-            .path()
-            .ends_with("-setup.exe"));
-        assert!(release
-            .download_url("windows-x86_64-msi")
-            .unwrap()
-            .path()
-            .ends_with(".msi"));
     }
 
     /// `v0.6.0` — the tag name — is accepted as a version too, so a script
