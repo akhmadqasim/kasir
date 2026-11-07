@@ -3,7 +3,7 @@
     "allow": [
       "Bash(for d:*)",
       "Bash(do echo:*)",
-      "Read(//e/kasir/src/features/**)",
+      "Read(//mnt/code/kasir/src/features/**)",
       "Bash(done)",
       "WebFetch(domain:ui.shadcn.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
