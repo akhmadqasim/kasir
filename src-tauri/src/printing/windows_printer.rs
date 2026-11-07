@@ -13,12 +13,7 @@ use windows::Win32::Graphics::Printing::{
     PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_HANDLE, PRINTER_INFO_2W,
 };
 
-/// One print queue, as `services::receipt::list_printers` needs it.
-#[derive(Debug)]
-pub struct PrinterInfo {
-    pub name: String,
-    pub is_default: bool,
-}
+use super::{PrinterInfo, PrinterKind};
 
 /// Convert Rust string to null-terminated wide string
 fn to_wide(s: &str) -> Vec<u16> {
@@ -98,7 +93,13 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         for printer in printers {
             let name = pwstr_to_string(printer.pPrinterName);
             let is_default = default_printer.as_ref().is_some_and(|d| d == &name);
-            result_list.push(PrinterInfo { name, is_default });
+            // A queue is addressed by its name, so the name is the id.
+            result_list.push(PrinterInfo {
+                id: name.clone(),
+                name,
+                kind: PrinterKind::Spooler,
+                is_default,
+            });
         }
 
         Ok(result_list)

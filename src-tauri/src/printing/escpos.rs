@@ -1,7 +1,8 @@
 //! ESC/POS encoder: turns formatted receipt text lines into raw printer bytes.
 //!
-//! The bytes are sent straight to the printer through the Windows spooler with
-//! datatype "RAW". Two shapes go down that pipe: `encode_lines` sends characters
+//! The bytes go to the printer unchanged: as a RAW job through the Windows
+//! spooler, or straight to a USB or Bluetooth printer on Linux (see
+//! `printing::system_printer`). Two shapes go down that pipe: `encode_lines` sends characters
 //! for the printer's own font engine to set, and `encode_raster` sends a picture
 //! drawn by `super::raster` — see `receipt::PrintMode` for which and why.
 //!
@@ -116,15 +117,14 @@ fn print_mode(line: &ReceiptTextLine) -> u8 {
 
 /// Send a rendered receipt as dots.
 ///
-/// `GS v 0` takes a raster and burns it, which is how the Mitra app prints and
-/// the only way to get one uniform face across a whole slip. It also steps
+/// `GS v 0` takes a raster and burns it: the only way to get one uniform face
+/// across a whole slip. It also steps
 /// around everything the text engine on this unit turned out to dislike: no
 /// print modes to track, no `GS !`, no 32nd column.
 ///
 /// The image goes in stripes rather than as one command. A full receipt is tens
 /// of kilobytes and this printer's buffer is not; sixty-four rows at a time is
 /// about 3 KB, which it swallows without complaint.
-#[cfg(windows)]
 pub fn encode_raster(bitmap: &super::raster::Bitmap1bpp) -> Vec<u8> {
     let bytes_per_row = bitmap.bytes_per_row() as usize;
     debug_assert_eq!(bitmap.data.len(), bytes_per_row * bitmap.height as usize);
@@ -343,12 +343,11 @@ mod tests {
     /// most sixty-four rows, and closes with the feed and cut a text job ends
     /// with. Each header's row count and byte width have to match the bytes that
     /// follow it, or the printer reads the next header as picture.
-    #[cfg(windows)]
     #[test]
     fn every_stripe_header_declares_its_own_size() {
         use crate::printing::raster::{render_lines, DOTS_58MM};
 
-        // 100 rows: 24 per line over four lines is 96, plus one more line.
+        // Five 32-row lines: two full 64-row stripes and a short one.
         let lines: Vec<ReceiptTextLine> = (0..5).map(|_| ReceiptTextLine::plain("X")).collect();
         let bitmap = render_lines(&lines, 32, DOTS_58MM).expect("rendered");
         let bytes_per_row = bitmap.bytes_per_row() as usize;

@@ -24,7 +24,8 @@ pub fn get_data_dir() -> PathBuf {
         }
     }
 
-    // Production: use %APPDATA%/com.kasir.pos/ (always writable, even in MSIX)
+    // Production: the per-user data dir (%APPDATA%\com.kasir.pos on Windows,
+    // ~/.local/share/com.kasir.pos on Linux), always writable, even in MSIX
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("com.kasir.pos")

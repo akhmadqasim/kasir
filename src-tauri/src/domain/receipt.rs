@@ -8,7 +8,7 @@ use crate::printing::receipt::{LineSize, ReceiptTextLine};
 pub struct PrinterInfoItem {
     pub id: String,
     pub name: String,
-    pub printer_type: String, // "windows" or "usb"
+    pub printer_type: String, // `printing::PrinterKind::as_str`: "windows", "usb" or "bluetooth"
     pub is_default: bool,
 }
 

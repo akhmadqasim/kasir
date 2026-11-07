@@ -450,5 +450,5 @@ fn group_token(serial: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests;
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod samples;

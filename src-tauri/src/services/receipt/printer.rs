@@ -5,45 +5,38 @@ use sea_orm::DatabaseConnection;
 use super::settings::{get_printer_settings, receipt_render_settings, ReceiptRenderSettings};
 use crate::domain::receipt::PrinterInfoItem;
 use crate::entity::store_info;
+use crate::printing::layout::columns;
+use crate::printing::raster::{render_lines, DOTS_58MM, DOTS_80MM};
 use crate::printing::receipt::{format_test_page_text, PrintMode, ReceiptTextLine};
+use crate::printing::system_printer;
 use crate::utils::AppError;
 
-/// Encode the lines and send them to the print queue as RAW data.
+/// Encode the lines and send them, unchanged, to the system printer.
 ///
-/// In raster mode the text is drawn with GDI and the picture is sent, which is
-/// how the Mitra Indogrosir app prints and what the shop asked us to match; in
-/// text mode the characters go to the printer's own font engine, which is
-/// faster and much smaller but looks like three fonts on one slip.
+/// In raster mode the text is drawn in the bundled typewriter face and the
+/// picture is sent: one uniform face across the slip. In text mode the
+/// characters go to the printer's own font engine, as the Mitra Indogrosir app
+/// prints: faster and much smaller, but bold and double-size read as different
+/// fonts. See `PrintMode`.
 fn send_to_printer(
     printer_id: &str,
     lines: &[ReceiptTextLine],
     paper_width: u8,
     mode: PrintMode,
 ) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use crate::printing::layout::columns;
-        use crate::printing::raster::{render_lines, DOTS_58MM, DOTS_80MM};
-
-        let bytes = match mode {
-            PrintMode::Raster => {
-                let dots = if paper_width >= 80 {
-                    DOTS_80MM
-                } else {
-                    DOTS_58MM
-                };
-                let bitmap = render_lines(lines, columns(paper_width), dots)?;
-                crate::printing::escpos::encode_raster(&bitmap)
-            }
-            PrintMode::Text => crate::printing::escpos::encode_lines(lines),
-        };
-        crate::printing::windows_printer::send_raw_data(printer_id, &bytes)
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (printer_id, lines, paper_width, mode);
-        Err("Printing hanya tersedia di Windows".to_string())
-    }
+    let bytes = match mode {
+        PrintMode::Raster => {
+            let dots = if paper_width >= 80 {
+                DOTS_80MM
+            } else {
+                DOTS_58MM
+            };
+            let bitmap = render_lines(lines, columns(paper_width), dots)?;
+            crate::printing::escpos::encode_raster(&bitmap)
+        }
+        PrintMode::Text => crate::printing::escpos::encode_lines(lines),
+    };
+    system_printer::send_raw_data(printer_id, &bytes)
 }
 
 /// Where a print job goes and how the paper is set up. Every print path needs
@@ -113,27 +106,22 @@ pub(super) async fn send_jobs(
 
 pub async fn list_printers() -> Result<Vec<PrinterInfoItem>, AppError> {
     tokio::task::spawn_blocking(|| {
-        let mut all_printers = Vec::new();
-
         // A failed enumeration (spooler stopped, say) is an error the screen
         // should show, not an empty list that reads as "no printers here".
-        #[cfg(windows)]
-        {
-            for p in crate::printing::windows_printer::list_printers()? {
-                all_printers.push(PrinterInfoItem {
-                    id: p.name.clone(),
-                    name: if p.is_default {
-                        format!("{} (Default)", p.name)
-                    } else {
-                        p.name
-                    },
-                    printer_type: "windows".to_string(),
-                    is_default: p.is_default,
-                });
-            }
-        }
-
-        Ok::<_, String>(all_printers)
+        let printers = system_printer::list_printers()?
+            .into_iter()
+            .map(|p| PrinterInfoItem {
+                id: p.id,
+                name: if p.is_default {
+                    format!("{} (Default)", p.name)
+                } else {
+                    p.name
+                },
+                printer_type: p.kind.as_str().to_string(),
+                is_default: p.is_default,
+            })
+            .collect();
+        Ok::<Vec<PrinterInfoItem>, String>(printers)
     })
     .await
     .map_err(|e| AppError::Internal(format!("List printers error: {}", e)))?

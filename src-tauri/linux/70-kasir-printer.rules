@@ -1,0 +1,5 @@
+# kasir: let the logged-in user send receipts straight to USB printers.
+# usblp gives every USB Printer Class device a /dev/usb/lpN node; uaccess
+# grants the user at the local seat access to it (73-seat-late.rules applies
+# the tag, which is why this file sorts before 73).
+SUBSYSTEM=="usbmisc", KERNEL=="lp[0-9]*", TAG+="uaccess"

@@ -42,26 +42,28 @@ bun run tauri build
 ## Release (local build & publish)
 
 Releases are built **locally** and published to GitHub Releases — there is **no CI/CD**
-(the repo is private, so Windows CI minutes are costly; local build is free). This
+(the repo is private, so CI minutes are costly; local build is free). This
 additionally requires the [GitHub CLI](https://cli.github.com/) (`gh`) authenticated
 with `repo` scope.
 
-```powershell
+```bash
 # Bump version (package.json + tauri.conf.json + Cargo.toml), build, tag, push,
-# and create a GitHub Release with the MSI + NSIS installers attached:
-pwsh scripts/release.ps1 -Version 0.6.0
+# and create a GitHub Release with the Windows NSIS installer and the Linux
+# AppImage, deb and rpm attached:
+bun scripts/release.ts 0.6.0
 
 # Build only, do not publish:
-pwsh scripts/release.ps1 -Version 0.6.0 -NoPublish
+bun scripts/release.ts 0.6.0 --no-publish
 ```
 
-Nothing is committed, tagged, pushed, or published if the build fails. Installers
-land in `src-tauri/target/release/bundle/{msi,nsis}/` and are currently
+Nothing is committed, tagged, pushed, or published if the build fails. The Windows
+installer lands in `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`, the
+Linux bundles in `src-tauri/target/release/bundle/{appimage,deb,rpm}/`. Installers are currently
 **unsigned** (Windows SmartScreen shows an "unknown publisher" warning — click
 *More info → Run anyway*).
 
 > **Build note:** on machines with many CPU cores but limited free RAM, release
-> builds can OOM `rustc`. The script defaults to `-Jobs 2` (`CARGO_BUILD_JOBS=2`);
+> builds can OOM `rustc`. The script defaults to `--jobs 2` (`CARGO_BUILD_JOBS=2`);
 > raise it on a beefier machine for speed.
 
 ## Project Structure

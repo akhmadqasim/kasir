@@ -22,28 +22,36 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
 ## Build & Release
 
 - Development: `bun run tauri dev`. Production build: `bun run tauri build`.
-- Releases are built **locally and published to GitHub Releases — there is no CI/CD**
-  (private repo → Windows CI minutes are costly; local build is free). Use the script:
+- Releases are built **locally on the Ubuntu PC and published to GitHub Releases — there
+  is no CI/CD** (private repo → CI minutes are costly; local build is free). Use the script:
 
-  ```powershell
-  pwsh scripts/release.ps1 -Version X.Y.Z            # bump 3 version files, build, tag, push, gh release
-  pwsh scripts/release.ps1 -Version X.Y.Z -NoPublish # build only
+  ```bash
+  bun scripts/release.ts X.Y.Z               # bump 3 version files, build, tag, push, gh release
+  bun scripts/release.ts X.Y.Z --no-publish  # build only
   ```
 
   It keeps `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
-  versions in sync, produces the Windows MSI + NSIS installers under
-  `src-tauri/target/release/bundle/`, and only commits/tags/publishes if the build
-  succeeds. Installers carry **no Authenticode signature** (SmartScreen warns on first
+  versions in sync and only commits/tags/publishes if every build succeeds. It builds
+  the **Windows NSIS installer** (the store PC; cross-compiled with `cargo-xwin` into
+  `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`; no MSI, WiX only runs
+  on Windows) and the **Linux AppImage + deb + rpm** (`src-tauri/target/release/bundle/`). The deb and rpm
+  install a udev rule (`src-tauri/linux/`) so receipts go straight to USB printers.
+  Prerequisites: the [Tauri Linux packages](https://v2.tauri.app/start/prerequisites/)
+  (`libwebkit2gtk-4.1-dev`, `pkg-config`, …) plus `libdbus-1-dev` (Bluetooth printing),
+  `sudo apt install nsis lld llvm clang`, `rustup target add x86_64-pc-windows-msvc`,
+  `cargo install --locked cargo-xwin`, `gh auth login`. Set
+  `XWIN_CACHE_DIR=src-tauri/target/xwin-cache` so the 1 GB Windows SDK stays on the NVMe.
+  Installers carry **no Authenticode signature** (SmartScreen warns on first
   manual install); updates are verified by the updater's own minisign signature instead.
 - **Self-update.** The app polls
   `https://github.com/akhmadqasim/kasir/releases/latest/download/latest.json`
   (`tauri-plugin-updater`, driven from Rust in `src-tauri/src/updater/`, exposed as
   `/api/updates*`; the webview has no Tauri IPC). The release script uploads the
   installers, their `.sig` files and a generated `latest.json`. Two things follow:
-  - **The build needs the signing key.** Set once per shell (or in the user env):
-    ```powershell
-    $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\kasir.key"   # path or key content
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""                             # the key has no password
+  - **The build needs the signing key.** Set once per shell (or in `~/.profile`):
+    ```bash
+    export TAURI_SIGNING_PRIVATE_KEY=~/.tauri/kasir.key   # path or key content
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""          # the key has no password
     ```
     The private key is **not in the repo**; only its public half is, in
     `tauri.conf.json` → `plugins.updater.pubkey`. Losing the private key means every
@@ -54,10 +62,9 @@ Aplikasi Point of Sale (POS) desktop untuk toko sembako. Single-terminal, local-
     each newer release itself (banner + Pengaturan → Aplikasi → "Periksa pembaruan").
   - Debug builds never auto-check (they would offer to replace themselves with the
     installer); the explicit button still works.
-- **Build gotcha:** on high-core / low-free-RAM machines, cargo's default job count
-  can OOM `rustc` (`STATUS_STACK_BUFFER_OVERRUN` / `rust_oom`). Use `CARGO_BUILD_JOBS=2`
-  (the release script defaults to `-Jobs 2`). Note `cargo` lives at `~/.cargo/bin`, not
-  always on the Git-Bash PATH.
+- **Build gotcha:** release builds are memory heavy; on high-core / low-free-RAM machines
+  cargo's default job count can OOM `rustc`. The release script defaults to `--jobs 2`
+  (`CARGO_BUILD_JOBS`); raise it when RAM allows.
 
 ## Architecture
 
@@ -391,7 +398,9 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 
 - Frontend: Vitest + React Testing Library
 - Backend: Rust built-in tests (`cargo test`)
-- E2E: Playwright (optional, later)
+- E2E: Playwright smoke specs in `e2e/` against the Vite dev server, with `/api/*` mocked
+  (`bun run test:e2e`; once per machine `bunx playwright install chromium`). The plan for
+  driving the real Tauri app is in `docs/testing/e2e-plan.md`.
 - Focus testing on: business logic, calculations, edge cases
 
 ## Security

@@ -258,3 +258,49 @@ async fn saving_an_unlisted_printer_name_is_refused() {
     let cleared = put(json!({ "printer_id": "", "paper_width": 58 })).await;
     assert!(cleared.status().is_success(), "{}", cleared.status());
 }
+
+/// The saved printer was checked when it was picked. An unplugged USB printer
+/// (or a stopped BlueZ) drops it from the list, and that must not block saving
+/// the paper width; a different unlisted name is still refused.
+#[tokio::test]
+async fn the_saved_printer_need_not_be_listed_to_save_other_settings() {
+    let db = setup_test_db().await;
+    crate::test_support::insert_store_info(&db, true).await;
+    let unplugged = "usb:unplugged-test-printer";
+    crate::services::settings::merge_additional_info(&db, |info| {
+        info["printer_id"] = json!(unplugged);
+        Ok(())
+    })
+    .await
+    .expect("saved printer");
+    let admin = insert_user_with_pin(&db, "admin2", "1234", "admin").await;
+    let token = login_token(&db, admin.id).await;
+    let state = state(db);
+
+    let put = |body: serde_json::Value| {
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            router(&state)
+                .oneshot(
+                    same_origin(Method::PUT, "/api/printers/settings")
+                        .header(header::COOKIE, cookie(&token))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(json_body(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("response")
+        }
+    };
+
+    let unchanged = put(json!({ "printer_id": unplugged, "paper_width": 80 })).await;
+    assert!(unchanged.status().is_success(), "{}", unchanged.status());
+
+    let refused = put(json!({ "printer_id": "usb:another-unlisted-printer" })).await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        body_json(refused).await["message"],
+        json!(crate::printing::UNKNOWN_PRINTER)
+    );
+}
