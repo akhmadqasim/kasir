@@ -73,11 +73,17 @@ pub async fn update_printer_settings(
     input: UpdatePrinterSettingsInput,
 ) -> Result<(), AppError> {
     ensure_printable_len(input.footer_text.as_deref(), "Teks footer struk")?;
-    // An empty name clears the choice; anything else must be a listed queue.
+    // An empty name clears the choice, and the saved name was checked when it
+    // was picked: an unplugged USB printer or a stopped BlueZ must not block
+    // saving the paper width. Only a newly chosen name must be listed now.
     if let Some(id) = input.printer_id.as_deref().filter(|id| !id.is_empty()) {
-        let listed = super::printer::list_printers().await?;
-        crate::printing::ensure_listed_printer(id, listed.iter().map(|p| p.id.as_str()))
-            .map_err(AppError::Validation)?;
+        let store = get_store_info(db).await?;
+        let saved_id = get_printer_settings(&store.and_then(|s| s.additional_info)).printer_id;
+        if saved_id.as_deref() != Some(id) {
+            let listed = super::printer::list_printers().await?;
+            crate::printing::ensure_listed_printer(id, listed.iter().map(|p| p.id.as_str()))
+                .map_err(AppError::Validation)?;
+        }
     }
     merge_additional_info(db, |info| {
         if let Some(id) = &input.printer_id {

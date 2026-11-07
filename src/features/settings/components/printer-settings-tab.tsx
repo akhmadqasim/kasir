@@ -33,10 +33,17 @@ const PAPER_WIDTHS = [
   { key: "80", label: "80mm (42 karakter/baris)" },
 ]
 
+// Where the printer list comes from depends on the OS the till runs on, which
+// the webview's user agent names: Windows lists its installed printers, Linux
+// lists USB printers and paired Bluetooth printers directly.
+const PRINTER_HINT = navigator.userAgent.includes("Windows")
+  ? "Pastikan printer thermal sudah terhubung dan terpasang di Windows"
+  : "Pastikan printer thermal sudah tersambung lewat USB, atau sudah dipasangkan lewat Bluetooth"
+
 // Teks adalah bawaannya: font printer sendiri, persis cara aplikasi Mitra
-// Indogrosir mencetak struknya di printer yang sama, dan datanya kecil sehingga
-// cepat. Gambar menggambar struk dengan satu font mesin tik lalu mengirim
-// gambarnya — seragam, tapi lebih lambat dan hanya jalan di Windows.
+// Indogrosir mencetak struknya, dan datanya kecil sehingga cepat. Gambar
+// menggambar struk dengan satu font mesin tik lalu mengirim gambarnya —
+// seragam, tapi lebih lambat.
 const PRINT_MODES = [
   { key: "text", label: "Teks (font printer)" },
   { key: "raster", label: "Gambar (font mesin tik)" },
@@ -45,7 +52,7 @@ const PRINT_MODES = [
 // Matches the comment above: the Mitra app prints text, so "Teks" is the one
 // that looks like its struk.
 const PRINT_MODE_DESCRIPTION =
-  "Teks: font bawaan printer, paling cepat — seperti struk Mitra. Gambar: huruf seragam, tapi lebih lambat dan hanya di Windows."
+  "Teks: font bawaan printer, paling cepat — seperti struk Mitra. Gambar: huruf seragam, tapi lebih lambat."
 
 /**
  * Saving is admin-only on the server (`PUT /printers/settings`), so a kasir gets
@@ -129,7 +136,7 @@ export function PrinterSettingsTab({ isAdmin }: { isAdmin: boolean }) {
 
   const printers = printersQuery.data ?? []
   const printerOptions = printers.map((printer) => ({ key: printer.id, label: printer.name }))
-  // A saved printer that is unplugged (or renamed in Windows) is not in the
+  // A saved printer that is unplugged (or renamed in the OS) is not in the
   // list; without its own option the field showed "Tidak ada printer" while the
   // setting still pointed at it.
   if (selectedPrinter && !printerOptions.some((option) => option.key === selectedPrinter)) {
@@ -210,7 +217,7 @@ export function PrinterSettingsTab({ isAdmin }: { isAdmin: boolean }) {
           placeholder={printerPlaceholder}
           value={selectedPrinter || null}
           variant="secondary"
-          description="Pastikan printer thermal sudah terhubung dan terpasang di Windows"
+          description={PRINTER_HINT}
           onChange={(value) => setSelectedPrinter(value ?? "")}
         />
 

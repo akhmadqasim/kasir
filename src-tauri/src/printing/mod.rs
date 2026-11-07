@@ -1,19 +1,71 @@
 pub mod escpos;
 pub mod layout;
 pub mod ppob_receipt;
-#[cfg(windows)]
 pub mod raster;
 pub mod receipt;
 
+#[cfg(target_os = "linux")]
+mod bluetooth_printer;
+#[cfg(target_os = "linux")]
+pub mod linux_printer;
+#[cfg(target_os = "linux")]
+mod usb_printer;
 #[cfg(windows)]
 pub mod windows_printer;
 
-/// Shown when a printer name is not one the spooler lists.
-pub const UNKNOWN_PRINTER: &str =
-    "Printer tidak ditemukan di daftar printer Windows. Pilih ulang printer di Pengaturan.";
+/// The system's printers: spooler queues on Windows; USB (through `usblp`) and
+/// paired Bluetooth printers on Linux. Both modules offer the same
+/// `list_printers` and `send_raw_data`.
+#[cfg(target_os = "linux")]
+pub use linux_printer as system_printer;
+#[cfg(windows)]
+pub use windows_printer as system_printer;
 
-/// Only a queue Windows itself lists may be opened. A free-typed name such as
-/// `\\host\queue` would make the till connect (and authenticate) to that host.
+/// One printer, as `services::receipt::list_printers` needs it.
+#[derive(Debug)]
+pub struct PrinterInfo {
+    /// What the settings store and `send_raw_data` takes back.
+    pub id: String,
+    pub name: String,
+    pub kind: PrinterKind,
+    pub is_default: bool,
+}
+
+/// How a printer is reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrinterKind {
+    /// A Windows spooler queue.
+    #[cfg(windows)]
+    Spooler,
+    /// A `usblp` node.
+    #[cfg(target_os = "linux")]
+    Usb,
+    /// A paired Bluetooth SPP device.
+    #[cfg(target_os = "linux")]
+    Bluetooth,
+}
+
+impl PrinterKind {
+    /// The `printer_type` the API reports.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            #[cfg(windows)]
+            Self::Spooler => "windows",
+            #[cfg(target_os = "linux")]
+            Self::Usb => "usb",
+            #[cfg(target_os = "linux")]
+            Self::Bluetooth => "bluetooth",
+        }
+    }
+}
+
+/// Shown when a printer name is not one the system lists.
+pub const UNKNOWN_PRINTER: &str =
+    "Printer tidak ditemukan di daftar printer komputer ini. Pilih ulang printer di Pengaturan.";
+
+/// Only a printer the system itself lists may be saved as the till's printer.
+/// A free-typed Windows queue name such as `\\host\queue` would make the till
+/// connect (and authenticate) to that host.
 pub fn ensure_listed_printer<'a>(
     name: &str,
     mut listed: impl Iterator<Item = &'a str>,

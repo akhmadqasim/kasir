@@ -57,5 +57,16 @@ semver = "1"
 # `ServiceExt::oneshot`, which drives the router in tests without a listener.
 tower = { version = "0.5", features = ["util"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Draws raster receipts (`printing/raster/glyphs.rs`); Windows uses GDI instead.
+ab_glyph = "0.2"
+# Bluetooth SPP printers through BlueZ (`printing/bluetooth_printer.rs`). Needs
+# libdbus-1-dev and pkg-config to build.
+bluer = { version = "0.17", features = ["bluetoothd", "rfcomm"] }
+# `StreamExt::next` on bluer's profile handle.
+futures = "0.3"
+# `poll` and `O_NONBLOCK` give USB printer writes a deadline (`printing/usb_printer.rs`).
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_Security"] }

@@ -134,9 +134,9 @@ impl ReceiptTextLine {
 /// `Text` sends characters for the printer's own font engine to set. It is the
 /// default because it is what the Mitra Indogrosir app does — its print job,
 /// captured off the phone, is plain Font A — and because it is a few kilobytes
-/// where a picture is sixty. `Raster` draws the text with GDI in a bundled
-/// typewriter face and sends the picture: one uniform face across the slip, at
-/// the cost of speed and of being Windows-only.
+/// where a picture is sixty. `Raster` draws the text in a bundled typewriter
+/// face (GDI on Windows, `ab_glyph` elsewhere) and sends the picture: one
+/// uniform face across the slip, at the cost of speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PrintMode {
     Raster,
