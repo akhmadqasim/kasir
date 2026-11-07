@@ -398,7 +398,9 @@ PRAGMA temp_store = MEMORY;         -- Temp tables in memory
 
 - Frontend: Vitest + React Testing Library
 - Backend: Rust built-in tests (`cargo test`)
-- E2E: Playwright (optional, later)
+- E2E: Playwright smoke specs in `e2e/` against the Vite dev server, with `/api/*` mocked
+  (`bun run test:e2e`; once per machine `bunx playwright install chromium`). The plan for
+  driving the real Tauri app is in `docs/testing/e2e-plan.md`.
 - Focus testing on: business logic, calculations, edge cases
 
 ## Security
