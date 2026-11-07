@@ -20,10 +20,10 @@ async function renderWithUserAgent(userAgent: string) {
   installApiMock({
     "GET /printers/settings": SETTINGS,
     "GET /printers": [],
-  }, 15000)
+  })
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  }, 15000)
+  })
   render(
     <QueryClientProvider client={client}>
       <PrinterSettingsTab isAdmin={false} />
